@@ -1,0 +1,43 @@
+Name: reflex
+Version: 0.1
+Synopsis: Glitch-free higher-order Functional Reactive Programming
+Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system
+License: AllRightsReserved
+License-file: LICENSE
+Author: Ryan Trinkle
+Maintainer: ryan.trinkle@gmail.com
+Stability: Experimental
+Category: FRP
+Build-type: Simple
+Cabal-version: >=1.9.2
+
+library
+  hs-source-dirs: src
+  build-depends:
+    base,
+    dependent-sum,
+    dependent-map,
+    semigroups,
+    mtl,
+    containers,
+    these,
+    lens,
+    primitive,
+    HList,
+    template-haskell
+
+  exposed-modules:
+    Reflex,
+    Reflex.Spider,
+    Reflex.Spider.Internal,
+    Reflex.Class,
+    Reflex.Dynamic,
+    Reflex.Dynamic.TH,
+    Reflex.Host.Class,
+    Data.Functor.Misc,
+    Control.Monad.TypedId,
+    Control.Monad.Ref
+
+  other-extensions: TemplateHaskell
+  ghc-prof-options: -fprof-auto
+  ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2
