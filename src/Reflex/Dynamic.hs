@@ -29,6 +29,7 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
                       , demux
                       , getDemuxed
                         -- Things that probably aren't very useful:
+                      , HList (..)
                       , FHList (..)
                       , distributeFHListOverDyn
                       ) where
