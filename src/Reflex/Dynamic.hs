@@ -46,7 +46,41 @@ import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare (GCompare (..), GEq (..), (:~:) (..), GOrdering (..))
 import Data.Monoid
-import Data.HList (HList (..), hBuild)
+--import Data.HList (HList (..), hBuild)
+
+data HList (l::[*]) where
+    HNil  :: HList '[]
+    HCons :: e -> HList l -> HList (e ': l)
+
+infixr 2 `HCons`
+
+type family HRevApp (l1 :: [k]) (l2 :: [k]) :: [k]
+type instance HRevApp '[] l = l
+type instance HRevApp (e ': l) l' = HRevApp l (e ': l')
+
+hRevApp :: HList l1 -> HList l2 -> HList (HRevApp l1 l2)
+hRevApp HNil l = l
+hRevApp (HCons x l) l' = hRevApp l (HCons x l')
+
+hReverse l = hRevApp l HNil
+
+hEnd :: HList l -> HList l
+hEnd = id
+
+hBuild :: (HBuild' '[] r) => r
+hBuild =  hBuild' HNil
+
+class HBuild' l r where
+    hBuild' :: HList l -> r
+
+instance (l' ~ HRevApp l '[])
+      => HBuild' l (HList l') where
+  hBuild' l = hReverse l
+
+instance HBuild' (a ': l) r
+      => HBuild' l (a->r) where
+  hBuild' l x = hBuild' (HCons x l)
+
 
 data Dynamic t a
   = Dynamic (Behavior t a) (Event t a)

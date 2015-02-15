@@ -23,7 +23,6 @@ library
     these,
     lens,
     primitive,
-    HList,
     template-haskell
 
   exposed-modules:
