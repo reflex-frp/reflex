@@ -766,7 +766,7 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
             , mergeSubscribedAccum = accumRef
             , mergeSubscribedHeight = heightRef
             , mergeSubscribedSubscribers = subsRef
-            , mergeSubscribedSelf = unsafeCoerce $ map (^._1) subscribers --TODO: Does lack of strictness make this leak?
+            , mergeSubscribedSelf = unsafeCoerce $ map (\(x, _, _, _) -> x) subscribers --TODO: Does lack of strictness make this leak?
             , mergeSubscribedParents = DMap.fromDistinctAscList $ map (^._4) subscribers
             }
       liftIO $ writeIORef subscribedRef subscribed
