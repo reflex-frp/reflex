@@ -1,16 +1,12 @@
-{ cabal, dependentMap, dependentSum, lens
-, mtl, semigroups, these, HList
+{ mkDerivation, dependent-map, dependent-sum, lens
+, mtl, semigroups, these
 }:
-cabal.mkDerivation (self: {
+mkDerivation {
   pname = "reflex";
   version = "0.1";
   src = ./.;
   buildDepends = [
-    dependentMap dependentSum lens mtl semigroups these HList
+    dependent-map dependent-sum lens mtl semigroups these
   ];
-  meta = {
-    description = "Glitch-free Functional Reactive Programming";
-    license = self.stdenv.lib.licenses.unfree;
-    platforms = self.ghc.meta.platforms;
-  };
-})
+  license = null;
+}
