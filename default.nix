@@ -4,7 +4,7 @@
 mkDerivation {
   pname = "reflex";
   version = "0.1";
-  src = ./.;
+  src = builtins.filterSource (path: type: baseNameOf path != ".git") ./.;
   buildDepends = [
     dependent-map dependent-sum lens mtl semigroups these
   ];
