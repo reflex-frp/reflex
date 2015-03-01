@@ -13,6 +13,8 @@ import Data.Align
 import Data.GADT.Compare (GEq (..), (:~:) (..))
 import Data.GADT.Show (GShow (..))
 import Data.Dependent.Sum (ShowTag (..))
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc
@@ -215,6 +217,12 @@ leftmost = mergeWith const
 mergeList :: Reflex t => [Event t a] -> Event t (NonEmpty a)
 mergeList [] = never
 mergeList es = mergeWith (<>) $ map (fmap (:|[])) es
+
+mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
+mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
+
+fanMap :: (Reflex t, Ord k) => Event t (Map k a) -> EventSelector t (Const2 k a)
+fanMap = fan . fmap mapToDMap
 
 -- | Switches to the new event whenever it receives one; the new event is used immediately, on the same frame that it is switched to
 switchPromptly :: forall t m a. (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)

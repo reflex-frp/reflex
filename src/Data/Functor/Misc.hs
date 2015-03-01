@@ -2,6 +2,8 @@
 module Data.Functor.Misc where
 
 import Data.GADT.Compare
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Typeable hiding (Refl)
@@ -58,3 +60,12 @@ rewrapDMap f = DMap.fromDistinctAscList . map (\(WrapArg k :=> v) -> WrapArg k :
 
 unwrapDMap :: (forall a. f a -> a) -> DMap (WrapArg f k) -> DMap k
 unwrapDMap f = DMap.fromDistinctAscList . map (\(WrapArg k :=> v) -> k :=> f v) . DMap.toAscList
+
+mapToDMap :: Map k v -> DMap (Const2 k v)
+mapToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> v) . Map.toAscList
+
+mapWithFunctorToDMap :: Map k (f v) -> DMap (WrapArg f (Const2 k v))
+mapWithFunctorToDMap = DMap.fromDistinctAscList . map (\(k, v) -> WrapArg (Const2 k) :=> v) . Map.toAscList
+
+dmapToMap :: DMap (Const2 k v) -> Map k v
+dmapToMap = Map.fromDistinctAscList . map (\(Const2 k :=> v) -> (k, v)) . DMap.toAscList
