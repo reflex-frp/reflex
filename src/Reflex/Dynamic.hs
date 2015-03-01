@@ -33,6 +33,8 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
                       , HList (..)
                       , FHList (..)
                       , distributeFHListOverDyn
+                        -- Unsafe
+                      , unsafeDynamic
                       ) where
 
 import Reflex.Class
@@ -88,6 +90,9 @@ instance HBuild' (a ': l) r
 
 data Dynamic t a
   = Dynamic (Behavior t a) (Event t a)
+
+unsafeDynamic :: Behavior t a -> Event t a -> Dynamic t a
+unsafeDynamic = Dynamic
 
 current :: Dynamic t a -> Behavior t a
 current (Dynamic b _) = b
