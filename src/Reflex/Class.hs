@@ -227,3 +227,6 @@ switchPromptly ea0 eea = do
 instance Reflex t => Align (Event t) where
   nil = never
   align ea eb = fmapMaybe dmapToThese $ merge $ DMap.fromList [WrapArg LeftTag :=> ea, WrapArg RightTag :=> eb]
+
+gate :: Reflex t => Behavior t Bool -> Event t a -> Event t a
+gate = attachWithMaybe $ \allow a -> if allow then Just a else Nothing
