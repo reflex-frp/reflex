@@ -125,10 +125,10 @@ forDyn = flip mapDyn
 
 {-# INLINE mapDynM #-}
 mapDynM :: forall t m a b. (Reflex t, MonadHold t m) => (forall m'. MonadSample t m' => a -> m' b) -> Dynamic t a -> m (Dynamic t b)
-mapDynM f (~(Dynamic b e)) = do
-  let e' = push (liftM Just . f :: a -> PushM t (Maybe b)) e
+mapDynM f d = do
+  let e' = push (liftM Just . f :: a -> PushM t (Maybe b)) $ updated d
       eb' = fmap constant e'
-      v0 = pull $ f =<< sample b
+      v0 = pull $ f =<< sample (current d)
   bb' :: Behavior t (Behavior t b) <- hold v0 eb'
   let b' = pull $ sample =<< sample bb'
   return $ Dynamic b' e'
@@ -203,19 +203,19 @@ distributeDMapOverDyn dm = case DMap.toList dm of
     return $ Dynamic bdm edm
 
 combineDyn :: forall t m a b c. (Reflex t, MonadHold t m) => (a -> b -> c) -> Dynamic t a -> Dynamic t b -> m (Dynamic t c)
-combineDyn f (~(Dynamic ba ea)) (~(Dynamic bb eb)) = do
-  let eab = align ea eb
+combineDyn f da db = do
+  let eab = align (updated da) (updated db)
       ec = flip push eab $ \o -> do
         (a, b) <- case o of
           This a -> do
-            b <- sample bb
+            b <- sample $ current db
             return (a, b)
           That b -> do
-            a <- sample ba
+            a <- sample $ current da
             return (a, b)
           These a b -> return (a, b)
         return $ Just $ f a b
-      c0 :: Behavior t c = pull $ liftM2 f (sample ba) (sample bb)
+      c0 :: Behavior t c = pull $ liftM2 f (sample $ current da) (sample $ current db)
   bbc :: Behavior t (Behavior t c) <- hold c0 $ fmap constant ec
   let bc :: Behavior t c = pull $ sample =<< sample bbc
   return $ Dynamic bc ec
@@ -281,16 +281,18 @@ attachDynWithMaybe f d e =
 -- Demux
 --------------------------------------------------------------------------------
 
-data Demux t k = Demux (Behavior t k) (EventSelector t (Const2 k Bool))
+data Demux t k = Demux { demuxValue :: Behavior t k
+                       , demuxSelector :: EventSelector t (Const2 k Bool)
+                       }
 
 demux :: (Reflex t, Ord k) => Dynamic t k -> Demux t k
 demux k = Demux (current k) (fan $ attachWith (\k0 k1 -> if k0 == k1 then DMap.empty else DMap.fromList [Const2 k0 :=> False, Const2 k1 :=> True]) (current k) (updated k))
 
 --TODO: The pattern of using hold (sample b0) can be reused in various places as a safe way of building certain kinds of Dynamics; see if we can factor this out
 getDemuxed :: (Reflex t, MonadHold t m, Eq k) => Demux t k -> k -> m (Dynamic t Bool)
-getDemuxed (Demux bk es) k = do
-  let e = select es (Const2 k)
-  bb <- hold (liftM (==k) $ sample bk) $ fmap return e
+getDemuxed d k = do
+  let e = select (demuxSelector d) (Const2 k)
+  bb <- hold (liftM (==k) $ sample $ demuxValue d) $ fmap return e
   let b = pull $ join $ sample bb
   return $ Dynamic b e
 
