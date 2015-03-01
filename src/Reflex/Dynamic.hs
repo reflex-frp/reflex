@@ -22,6 +22,7 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
                       , mconcatDyn
                       , distributeDMapOverDyn
                       , joinDyn
+                      , joinDynThroughMap
                       , traceDyn
                       , traceDynWith
                       , splitDyn
@@ -42,6 +43,8 @@ import Control.Monad.Fix
 import Control.Monad.Identity
 import Data.These
 import Data.Align
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
@@ -231,6 +234,21 @@ joinDyn dd =
       eOuter :: Event t a = pushAlways (sample . current) $ updated dd
       eInner :: Event t a = switch $ fmap updated (current dd)
       eBoth :: Event t a = coincidence $ fmap updated (updated dd)
+      e' = leftmost [eBoth, eOuter, eInner]
+  in Dynamic b' e'
+
+--TODO: Generalize this to functors other than Maps
+joinDynThroughMap :: forall t k a. (Reflex t, Ord k) => Dynamic t (Map k (Dynamic t a)) -> Dynamic t (Map k a)
+joinDynThroughMap dd =
+  let b' = pull $ mapM (sample . current) =<< sample (current dd)
+      eOuter :: Event t (Map k a) = pushAlways (mapM (sample . current)) $ updated dd
+      eInner :: Event t (Map k a) = attachWith (flip Map.union) b' $ switch $ fmap (mergeMap . fmap updated) (current dd) --Note: the flip is important because Map.union is left-biased
+      readNonFiring :: MonadSample t m => These (Dynamic t a) a -> m a
+      readNonFiring = \case
+        This d -> sample $ current d
+        That a -> return a
+        These _ a -> return a
+      eBoth :: Event t (Map k a) = coincidence $ fmap (\m -> pushAlways (mapM readNonFiring . align m) $ mergeMap $ fmap updated m) (updated dd)
       e' = leftmost [eBoth, eOuter, eInner]
   in Dynamic b' e'
 
