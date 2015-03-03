@@ -34,12 +34,6 @@ debugPropagate :: Bool
 
 debugInvalidateHeight :: Bool
 
-class HasNodeId a where
-  getNodeId :: a -> Int
-
-showNodeId :: HasNodeId a => a -> String
-showNodeId = ("#"<>) . show . getNodeId
-
 #ifdef DEBUG
 
 #define DEBUG_NODEIDS
@@ -47,6 +41,9 @@ showNodeId = ("#"<>) . show . getNodeId
 debugPropagate = True
 
 debugInvalidateHeight = True
+
+class HasNodeId a where
+  getNodeId :: a -> Int
 
 instance HasNodeId (Hold a) where
   getNodeId = holdNodeId
@@ -66,14 +63,20 @@ instance HasNodeId (FanSubscribed a) where
 instance HasNodeId (CoincidenceSubscribed a) where
   getNodeId = coincidenceSubscribedNodeId
 
+instance HasNodeId (RootSubscribed a) where
+  getNodeId = rootSubscribedNodeId
+
+showNodeId :: HasNodeId a => a -> String
+showNodeId = ("#"<>) . show . getNodeId
+
 #else
 
 debugPropagate = False
 
 debugInvalidateHeight = False
 
-instance HasNodeId a where
-  getNodeId = const ""
+showNodeId :: a -> String
+showNodeId = const ""
 
 #endif
 
