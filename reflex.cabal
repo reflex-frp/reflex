@@ -40,3 +40,4 @@ library
   other-extensions: TemplateHaskell
   ghc-prof-options: -fprof-auto
   ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2
+--  cpp-options: -DDEBUG

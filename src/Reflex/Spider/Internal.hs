@@ -151,6 +151,9 @@ emitCoincidenceInfo sci = EventM $ do
 -- Note: hold cannot examine its event until after the phase is over
 hold :: a -> Event a -> EventM (Behavior a)
 hold v0 e = do
+#ifdef DEBUG_NODEIDS
+  let !nid = unsafeNodeId (v0, e)
+#endif
   holdInitRef <- askHoldInitRef
   liftIO $ do
     valRef <- newIORef v0
@@ -163,7 +166,7 @@ hold v0 e = do
           , holdSubscriber = subscriberRef
           , holdParent = parentRef
 #ifdef DEBUG_NODEIDS
-          , holdNodeId = unsafeNodeId (v0, e)
+          , holdNodeId = nid
 #endif
           }
         !s = SubscriberHold h
@@ -214,6 +217,10 @@ data Invalidator
 data RootSubscribed a
    = RootSubscribed { rootSubscribedSubscribers :: !(IORef [WeakSubscriber a])
                     , rootSubscribedOccurrence :: !(IORef (Maybe a)) -- Alias to rootOccurrence
+                    , rootSubscribedSubscribed :: !(IORef (Maybe (RootSubscribed a)))
+#ifdef DEBUG_NODEIDS
+                    , rootSubscribedNodeId :: Int
+#endif
                     }
 
 data Root a
@@ -684,6 +691,7 @@ readEvent e = case e of
     subscribed <- getSwitchSubscribed s
     liftIO $ do
       result <- readIORef $ switchSubscribedOccurrence subscribed
+      touch $ switchSubscribedParent subscribed
       touch $ switchSubscribedSelf subscribed
       touch $ switchSubscribedOwnInvalidator subscribed
       return result
@@ -768,6 +776,9 @@ subscribe e ws = do
 
 getRootSubscribed :: Root a -> EventM (RootSubscribed a)
 getRootSubscribed r = do
+#ifdef DEBUG_NODEIDS
+  let !nid = unsafeNodeId r
+#endif
   mSubscribed <- liftIO $ readIORef $ rootSubscribed r
   case mSubscribed of
     Just subscribed -> return subscribed
@@ -776,11 +787,17 @@ getRootSubscribed r = do
       let !subscribed = RootSubscribed
             { rootSubscribedOccurrence = rootOccurrence r
             , rootSubscribedSubscribers = subscribersRef
+            , rootSubscribedSubscribed = rootSubscribed r --TODO: This seems to fix a GC issue, but it's strange because it just has a reference to 'subscribed' itself
+#ifdef DEBUG_NODEIDS
+            , rootSubscribedNodeId = nid
+#endif
             }
       -- Strangely, init needs the same stuff as a RootSubscribed has, but it must not be the same as the one that everyone's subscribing to, or it'll leak memory
       uninit <- rootInit r $ RootTrigger (subscribersRef, rootOccurrence r)
       addFinalizer subscribed $ do
---        putStrLn "Uninit root"
+#ifdef DEBUG_NODEIDS
+        putStrLn $ "Uninit Root" <> showNodeId subscribed
+#endif
         uninit
       liftIO $ writeIORef (rootSubscribed r) $ Just subscribed
       return subscribed
@@ -788,6 +805,9 @@ getRootSubscribed r = do
 -- When getPushSubscribed returns, the PushSubscribed returned will have a fully filled-in
 getPushSubscribed :: Push a b -> EventM (PushSubscribed a b)
 getPushSubscribed p = do
+#ifdef DEBUG_NODEIDS
+  let !nid = unsafeNodeId p
+#endif
   mSubscribed <- liftIO $ readIORef $ pushSubscribed p
   case mSubscribed of
     Just subscribed -> return subscribed
@@ -808,7 +828,7 @@ getPushSubscribed p = do
             , pushSubscribedSelf = unsafeCoerce s
             , pushSubscribedParent = subd
 #ifdef DEBUG_NODEIDS
-            , pushSubscribedNodeId = unsafeNodeId p
+            , pushSubscribedNodeId = nid
 #endif
             }
       liftIO $ writeIORef (pushSubscribed p) $ Just subscribed
@@ -816,6 +836,9 @@ getPushSubscribed p = do
 
 getMergeSubscribed :: forall k. GCompare k => Merge k -> EventM (MergeSubscribed k)
 getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
+#ifdef DEBUG_NODEIDS
+  let !nid = unsafeNodeId m
+#endif
   mSubscribed <- liftIO $ readIORef $ mergeSubscribed m
   case mSubscribed of
     Just subscribed -> return subscribed
@@ -854,7 +877,7 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
             , mergeSubscribedSelf = unsafeCoerce $ map (\(x, _, _, _) -> x) subscribers --TODO: Does lack of strictness make this leak?
             , mergeSubscribedParents = DMap.fromDistinctAscList $ map (^._4) subscribers
 #ifdef DEBUG_NODEIDS
-            , mergeSubscribedNodeId = unsafeNodeId m
+            , mergeSubscribedNodeId = nid
 #endif
             }
       liftIO $ writeIORef subscribedRef subscribed
@@ -877,6 +900,9 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
 
 getFanSubscribed :: GCompare k => Fan k -> EventM (FanSubscribed k)
 getFanSubscribed f = do
+#ifdef DEBUG_NODEIDS
+  let !nid = unsafeNodeId f
+#endif
   mSubscribed <- liftIO $ readIORef $ fanSubscribed f
   case mSubscribed of
     Just subscribed -> return subscribed
@@ -891,7 +917,7 @@ getFanSubscribed f = do
             , fanSubscribedSubscribers = subscribersRef
             , fanSubscribedSelf = sub
 #ifdef DEBUG_NODEIDS
-            , fanSubscribedNodeId = unsafeNodeId f
+            , fanSubscribedNodeId = nid
 #endif
             }
       liftIO $ writeIORef (fanSubscribed f) $ Just subscribed
@@ -899,6 +925,9 @@ getFanSubscribed f = do
 
 getSwitchSubscribed :: Switch a -> EventM (SwitchSubscribed a)
 getSwitchSubscribed s = do
+#ifdef DEBUG_NODEIDS
+  let !nid = unsafeNodeId s
+#endif
   mSubscribed <- liftIO $ readIORef $ switchSubscribed s
   case mSubscribed of
     Just subscribed -> return subscribed
@@ -932,7 +961,7 @@ getSwitchSubscribed s = do
             , switchSubscribedParent = switchParent s
             , switchSubscribedCurrentParent = subdRef
 #ifdef DEBUG_NODEIDS
-            , switchSubscribedNodeId = unsafeNodeId s
+            , switchSubscribedNodeId = nid
 #endif
             }
       liftIO $ writeIORef subscribedRef subscribed
@@ -941,6 +970,9 @@ getSwitchSubscribed s = do
 
 getCoincidenceSubscribed :: forall a. Coincidence a -> EventM (CoincidenceSubscribed a)
 getCoincidenceSubscribed c = do
+#ifdef DEBUG_NODEIDS
+  let !nid = unsafeNodeId c
+#endif
   mSubscribed <- liftIO $ readIORef $ coincidenceSubscribed c
   case mSubscribed of
     Just subscribed -> return subscribed
@@ -971,7 +1003,7 @@ getCoincidenceSubscribed c = do
             , coincidenceSubscribedOuterParent = outerSubd
             , coincidenceSubscribedInnerParent = innerSubdRef
 #ifdef DEBUG_NODEIDS
-            , coincidenceSubscribedNodeId = unsafeNodeId c
+            , coincidenceSubscribedNodeId = nid
 #endif
             }
       liftIO $ writeIORef subscribedRef subscribed
