@@ -10,7 +10,6 @@ Stability: Experimental
 Category: FRP
 Build-type: Simple
 Cabal-version: >=1.9.2
-source-repository: https://github.com/ryantrinkle/reflex
 bug-reports: https://github.com/ryantrinkle/reflex/issues
 
 library
@@ -41,4 +40,8 @@ library
 
   other-extensions: TemplateHaskell
   ghc-prof-options: -fprof-auto
-  ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+
+source-repository head
+  type: git
+  location: https://github.com/ryantrinkle/reflex
