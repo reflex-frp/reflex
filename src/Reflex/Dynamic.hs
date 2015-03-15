@@ -37,13 +37,16 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
                       , unsafeDynamic
                       ) where
 
+import Prelude hiding (mapM, mapM_)
+
 import Reflex.Class
 import Data.Functor.Misc
 
-import Control.Monad
+import Control.Monad hiding (mapM, mapM_, forM, forM_)
 import Control.Monad.Fix
-import Control.Monad.Identity
+import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_)
 import Data.These
+import Data.Traversable (mapM, forM)
 import Data.Align
 import Data.Map (Map)
 import qualified Data.Map as Map
