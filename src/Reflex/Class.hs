@@ -6,7 +6,6 @@ import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.Reader hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import Control.Monad.Writer hiding (mapM, mapM_, forM, forM_, sequence, sequence_, (<>))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.These
 import Data.Align
@@ -14,7 +13,6 @@ import Data.GADT.Compare (GEq (..), (:~:) (..))
 import Data.GADT.Show (GShow (..))
 import Data.Dependent.Sum (ShowTag (..))
 import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc

@@ -5,7 +5,6 @@ import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
 import Reflex.Class
 
-import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.Reader hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Data.Dependent.Sum (DSum)
@@ -47,10 +46,10 @@ newEventWithTriggerRef = do
 
 instance (Reflex t, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigger t (ReaderT r m) where
   newEventWithTrigger initializer = do
-    r <- ask
     lift $ newEventWithTrigger initializer
 
 instance (Reflex t, MonadReflexHost t m) => MonadReflexHost t (ReaderT r m) where
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   subscribeEvent = lift . subscribeEvent
   runFrame = lift . runFrame
+  runHostFrame = lift . runHostFrame

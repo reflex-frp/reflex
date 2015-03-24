@@ -22,7 +22,6 @@ import Data.Maybe
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Control.Lens hiding (coerce)
-import Control.Monad.TypedId
 import Control.Monad.Ref
 import Data.Monoid ((<>))
 
@@ -452,6 +451,7 @@ newRoot = do
     , rootInit = const $ return $ return ()
     }
 
+propagateAndUpdateSubscribersRef :: IORef [WeakSubscriber a] -> a -> EventM ()
 propagateAndUpdateSubscribersRef subscribersRef a = do
   subscribers <- liftIO $ readIORef subscribersRef
   liftIO $ writeIORef subscribersRef []
@@ -1278,13 +1278,6 @@ instance R.MonadReadEvent Spider ResultM where
   {-# INLINE readEvent #-}
   readEvent = liftM (fmap return) . readEvent . unSpiderEvent
 
---TODO: Can probably get rid of this now that we're not using it for performEvent
-instance MonadTypedId EventM where
-  type TypedId EventM = TypedId IO
-  {-# INLINE getTypedId #-}
-  getTypedId = do
-    liftIO getTypedId
-
 instance MonadRef EventM where
   type Ref EventM = Ref IO
   {-# INLINE newRef #-}
@@ -1307,7 +1300,8 @@ instance R.MonadHold Spider SpiderHostFrame where
   {-# INLINE hold #-}
   hold v0 e = SpiderHostFrame $ R.hold v0 e
 
-newEventWithTriggerIO f= do
+newEventWithTriggerIO :: (RootTrigger a -> IO (IO ())) -> IO (R.Event Spider a)
+newEventWithTriggerIO f = do
   occRef <- newIORef Nothing
   subscribedRef <- newIORef Nothing
   let !r = Root

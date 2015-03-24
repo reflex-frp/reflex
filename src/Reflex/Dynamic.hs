@@ -71,10 +71,8 @@ hRevApp :: HList l1 -> HList l2 -> HList (HRevApp l1 l2)
 hRevApp HNil l = l
 hRevApp (HCons x l) l' = hRevApp l (HCons x l')
 
+hReverse :: HList l -> HList (HRevApp l '[])
 hReverse l = hRevApp l HNil
-
-hEnd :: HList l -> HList l
-hEnd = id
 
 hBuild :: (HBuild' '[] r) => r
 hBuild =  hBuild' HNil
@@ -314,19 +312,6 @@ data FHList f l where
   FHNil :: FHList f '[]
   FHCons :: f e -> FHList f l -> FHList f (e ': l)
 
-natMap :: (forall a. f a -> g a) -> FHList f l -> FHList g l
-natMap f = \case
-  FHNil -> FHNil
-  h `FHCons` t -> f h `FHCons` natMap f t
-
-sequenceFHList :: Monad m => FHList m l -> m (HList l)
-sequenceFHList = \case
-  FHNil -> return HNil
-  h `FHCons` t -> do
-    hResult <- h
-    tResult <- sequenceFHList t
-    return $ hResult `HCons` tResult
-
 instance GEq (HListPtr l) where
   HHeadPtr `geq` HHeadPtr = Just Refl
   HHeadPtr `geq` HTailPtr _ = Nothing
@@ -362,11 +347,7 @@ instance RebuildSortedHList t => RebuildSortedHList (h ': t) where
   rebuildSortedFHList ((WrapArg HHeadPtr :=> h) : t) = FHCons h $ rebuildSortedFHList $ map (\(WrapArg (HTailPtr p) :=> v) -> WrapArg p :=> v) t
   rebuildSortedHList ((HHeadPtr :=> h) : t) = HCons h $ rebuildSortedHList $ map (\(HTailPtr p :=> v) -> p :=> v) t
 
-
-dmapToFHList :: forall f l. RebuildSortedHList l => DMap (WrapArg f (HListPtr l)) -> FHList f l
-dmapToFHList = rebuildSortedFHList . DMap.toList
-
-dmapToHList :: forall f l. RebuildSortedHList l => DMap (HListPtr l) -> HList l
+dmapToHList :: forall l. RebuildSortedHList l => DMap (HListPtr l) -> HList l
 dmapToHList = rebuildSortedHList . DMap.toList
 
 distributeFHListOverDyn :: forall t m l. (Reflex t, MonadHold t m, RebuildSortedHList l) => FHList (Dynamic t) l -> m (Dynamic t (HList l))

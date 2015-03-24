@@ -37,7 +37,6 @@ library
     Reflex.Dynamic.TH,
     Reflex.Host.Class,
     Data.Functor.Misc,
-    Control.Monad.TypedId,
     Control.Monad.Ref
 
   other-extensions: TemplateHaskell

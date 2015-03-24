@@ -5,7 +5,6 @@ import Reflex.Dynamic
 
 import Language.Haskell.TH
 import Data.Data
-import Control.Monad
 import Control.Monad.State
 
 -- | Quote a Dynamic expression.  Within the quoted expression, you can use '$(unqDyn [| x |])' to refer to any expression 'x' of type 'Dynamic t a'; the unquoted result will be of type 'a'
