@@ -21,7 +21,6 @@ import Data.Functor.Misc
 import Data.Maybe
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
-import Control.Lens hiding (coerce)
 import Control.Monad.Ref
 import Data.Monoid ((<>))
 
@@ -829,8 +828,8 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
         parentOcc <- {-# SCC "getMergeSubscribed.a.parentOcc" #-} liftIO $ getEventSubscribedOcc parentSubd
         height <- {-# SCC "getMergeSubscribed.a.height" #-} liftIO $ readIORef $ eventSubscribedHeightRef parentSubd
         return $ {-# SCC "getMergeSubscribed.a.returnVal" #-} (unsafeCoerce s :: Any, fmap (k :=>) parentOcc, height, WrapArg k :=> parentSubd)
-      let dm = DMap.fromDistinctAscList $ catMaybes $ map (^._2) subscribers
-          subscriberHeights = map (^._3) subscribers
+      let dm = DMap.fromDistinctAscList $ catMaybes $ map (\(_, x, _, _) -> x) subscribers
+          subscriberHeights = map (\(_, _, x, _) -> x) subscribers
           myHeight =
             if any (==invalidHeight) subscriberHeights --TODO: Replace 'any' with invalidHeight-preserving 'maximum'
             then invalidHeight
@@ -852,7 +851,7 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
             , mergeSubscribedHeight = heightRef
             , mergeSubscribedSubscribers = subsRef
             , mergeSubscribedSelf = unsafeCoerce $ map (\(x, _, _, _) -> x) subscribers --TODO: Does lack of strictness make this leak?
-            , mergeSubscribedParents = DMap.fromDistinctAscList $ map (^._4) subscribers
+            , mergeSubscribedParents = DMap.fromDistinctAscList $ map (\(_, _, _, x) -> x) subscribers
 #ifdef DEBUG_NODEIDS
             , mergeSubscribedNodeId = unsafeNodeId m
 #endif
