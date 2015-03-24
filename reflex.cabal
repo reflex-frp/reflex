@@ -10,21 +10,22 @@ Stability: Experimental
 Category: FRP
 Build-type: Simple
 Cabal-version: >=1.9.2
+homepage: https://github.com/ryantrinkle/reflex
 bug-reports: https://github.com/ryantrinkle/reflex/issues
 
 library
   hs-source-dirs: src
   build-depends:
-    base == 4.8.*,
+    base >= 4.7 && < 4.9,
     dependent-sum == 0.2.*,
     dependent-map == 0.1.*,
     semigroups == 0.16.*,
     mtl == 2.2.*,
     containers == 0.5.*,
     these == 0.4.*,
-    lens == 4.7.*,
+    lens >= 4.7 && < 4.9,
     primitive == 0.5.*,
-    template-haskell == 2.10.*
+    template-haskell >= 2.9 && < 2.11
 
   exposed-modules:
     Reflex,
