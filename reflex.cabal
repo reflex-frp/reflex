@@ -20,11 +20,12 @@ library
     dependent-sum == 0.2.*,
     dependent-map == 0.1.*,
     semigroups == 0.16.*,
-    mtl == 2.2.*,
+    mtl >= 2.1 && < 2.3,
     containers == 0.5.*,
     these == 0.4.*,
     primitive == 0.5.*,
-    template-haskell >= 2.9 && < 2.11
+    template-haskell >= 2.9 && < 2.11,
+    ref-tf == 0.4.*
 
   exposed-modules:
     Reflex,
@@ -34,8 +35,7 @@ library
     Reflex.Dynamic,
     Reflex.Dynamic.TH,
     Reflex.Host.Class,
-    Data.Functor.Misc,
-    Control.Monad.Ref
+    Data.Functor.Misc
 
   other-extensions: TemplateHaskell
   ghc-prof-options: -fprof-auto

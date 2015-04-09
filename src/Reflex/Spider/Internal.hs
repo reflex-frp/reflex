@@ -1282,10 +1282,12 @@ instance MonadRef EventM where
   {-# INLINE newRef #-}
   {-# INLINE readRef #-}
   {-# INLINE writeRef #-}
-  {-# INLINE atomicModifyRef #-}
   newRef = liftIO . newRef
   readRef = liftIO . readRef
   writeRef r a = liftIO $ writeRef r a
+
+instance MonadAtomicRef EventM where
+  {-# INLINE atomicModifyRef #-}
   atomicModifyRef r f = liftIO $ atomicModifyRef r f
 
 newtype SpiderHost a = SpiderHost { runSpiderHost :: IO a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO)
@@ -1329,6 +1331,8 @@ instance MonadRef SpiderHost where
   newRef = SpiderHost . newRef
   readRef = SpiderHost . readRef
   writeRef r = SpiderHost . writeRef r
+
+instance MonadAtomicRef SpiderHost where
   atomicModifyRef r = SpiderHost . atomicModifyRef r
 
 instance MonadRef SpiderHostFrame where
@@ -1336,4 +1340,6 @@ instance MonadRef SpiderHostFrame where
   newRef = SpiderHostFrame . newRef
   readRef = SpiderHostFrame . readRef
   writeRef r = SpiderHostFrame . writeRef r
+
+instance MonadAtomicRef SpiderHostFrame where
   atomicModifyRef r = SpiderHostFrame . atomicModifyRef r
