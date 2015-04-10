@@ -382,7 +382,7 @@ showEventType = \case
   EventCoincidence _ -> "EventCoincidence"
 
 data EventSubscribed a
-   = EventSubscribedRoot !(RootSubscribed a)
+   = EventSubscribedRoot {-# NOUNPACK #-} (RootSubscribed a)
    | EventSubscribedNever
    | forall b. EventSubscribedPush !(PushSubscribed b a)
    | forall k. (GCompare k, a ~ DMap k) => EventSubscribedMerge !(MergeSubscribed k)
@@ -765,6 +765,10 @@ subscribe e ws = do
   liftIO $ subscribeEventSubscribed subd ws
   return subd
 
+noinlineFalse :: Bool
+noinlineFalse = False
+{-# NOINLINE noinlineFalse #-}
+
 getRootSubscribed :: Root a -> EventM (RootSubscribed a)
 getRootSubscribed r = do
   mSubscribed <- liftIO $ readIORef $ rootSubscribed r
@@ -779,6 +783,7 @@ getRootSubscribed r = do
       -- Strangely, init needs the same stuff as a RootSubscribed has, but it must not be the same as the one that everyone's subscribing to, or it'll leak memory
       uninit <- rootInit r $ RootTrigger (subscribersRef, rootOccurrence r)
       addFinalizer subscribed $ do
+        when noinlineFalse $ putStr "" -- For some reason, without this line, the finalizer will run earlier than it should
 --        putStrLn "Uninit root"
         uninit
       liftIO $ writeIORef (rootSubscribed r) $ Just subscribed
