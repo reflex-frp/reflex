@@ -382,7 +382,7 @@ showEventType = \case
   EventCoincidence _ -> "EventCoincidence"
 
 data EventSubscribed a
-   = EventSubscribedRoot !(RootSubscribed a)
+   = EventSubscribedRoot {-# NOUNPACK #-} (RootSubscribed a)
    | EventSubscribedNever
    | forall b. EventSubscribedPush !(PushSubscribed b a)
    | forall k. (GCompare k, a ~ DMap k) => EventSubscribedMerge !(MergeSubscribed k)
