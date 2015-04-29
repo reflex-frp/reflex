@@ -13,7 +13,9 @@ import Data.Traversable
 import Control.Monad hiding (mapM, mapM_, forM_, forM, sequence)
 import Control.Monad.Reader hiding (mapM, mapM_, forM_, forM, sequence)
 import GHC.Exts
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
+#endif
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.GADT.Compare
