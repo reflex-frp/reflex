@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, TypeOperators, GADTs, EmptyDataDecls #-}
+{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, TypeOperators, GADTs, EmptyDataDecls, PatternGuards #-}
 module Reflex.Dynamic.TH (qDyn, unqDyn) where
 
 import Reflex.Dynamic
