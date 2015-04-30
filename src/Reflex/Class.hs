@@ -83,7 +83,7 @@ instance Reflex t => Functor (Behavior t) where
   fmap f = pull . liftM f . sample
 
 --TODO: See if there's a better class in the standard libraries already
--- | A class for values that combined filtering and mapping using 'Maybe'.
+-- | A class for values that combines filtering and mapping using 'Maybe'.
 class FunctorMaybe f where
   -- | Combined mapping and filtering function.
   fmapMaybe :: (a -> Maybe b) -> f a -> f b
@@ -104,7 +104,8 @@ instance Reflex t => Functor (Event t) where
   fmap f = fmapMaybe $ Just . f
 
 -- | Create a new 'Event' by combining each occurence with the next value
--- of the list using the supplied function. Blocks 'Event' when the list is empty.
+-- of the list using the supplied function. If the list runs out of items,
+-- all subsequent 'Event' occurrences will be ignored.
 zipListWithEvent :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> c) -> [a] -> Event t b -> m (Event t c)
 zipListWithEvent f l e = do
   rec lb <- hold l eTail
@@ -117,26 +118,26 @@ zipListWithEvent f l e = do
       lb `seq` eBoth `seq` eTail `seq` return ()
   return $ fmap fst eBoth
 
--- | Replace the occurrence value of the 'Event' with the value of the
--- 'Behavior' at the time of the occurrence.
+-- | Replace each occurrence value of the 'Event' with the value of the
+-- 'Behavior' at the time of that occurrence.
 tag :: Reflex t => Behavior t b -> Event t a -> Event t b
 tag b = pushAlways $ \_ -> sample b
 
--- | Create a new 'Event' by combining each occurence with the current
--- value of the 'Behavior'. Doesn't occur if the combining function
--- returns Nothing
-attachWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Behavior t a -> Event t b -> Event t c
-attachWithMaybe f b e = flip push e $ \o -> liftM (flip f o) $ sample b
+-- | Create a new 'Event' that combines occurences of supplied 'Event'
+-- with the current value of the 'Behavior'.
+attach :: Reflex t => Behavior t a -> Event t b -> Event t (a, b)
+attach = attachWith (,)
 
 -- | Create a new 'Event' that occurs when the supplied 'Event' occurs
 -- by combining it with the current value of the 'Behavior'.
 attachWith :: Reflex t => (a -> b -> c) -> Behavior t a -> Event t b -> Event t c
 attachWith f = attachWithMaybe $ \a b -> Just $ f a b
 
--- | Create a new 'Event' that combines occurences of supplied 'Event'
--- with the current value of the 'Behavior'.
-attach :: Reflex t => Behavior t a -> Event t b -> Event t (a, b)
-attach = attachWith (,)
+-- | Create a new 'Event' by combining each occurence with the current
+-- value of the 'Behavior'. The occurrence is discarded if the combining function
+-- returns Nothing
+attachWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Behavior t a -> Event t b -> Event t c
+attachWithMaybe f b e = flip push e $ \o -> liftM (flip f o) $ sample b
 
 -- | Alias for 'headE'
 onceE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
@@ -172,11 +173,17 @@ splitE e = (fmap fst e, fmap snd e)
 
 -- | Print the supplied 'String' and the value of the 'Event' on each
 -- occurence. This should /only/ be used for debugging.
+--
+-- Note: As with Debug.Trace.trace, the message will only be printed if
+-- the 'Event' is actually used.
 traceEvent :: (Reflex t, Show a) => String -> Event t a -> Event t a
 traceEvent s = traceEventWith $ \x -> s <> ": " <> show x
 
 -- | Print the output of the supplied function on each occurence of
 -- the 'Event'. This should /only/ be used for debugging.
+--
+-- Note: As with Debug.Trace.trace, the message will only be printed if
+-- the 'Event' is actually used.
 traceEventWith :: Reflex t => (a -> String) -> Event t a -> Event t a
 traceEventWith f = push $ \x -> trace (f x) $ return $ Just x
 
@@ -234,7 +241,7 @@ dmapToThese m = case (DMap.lookup LeftTag m, DMap.lookup RightTag m) of
 appendEvents :: (Reflex t, Monoid a) => Event t a -> Event t a -> Event t a
 appendEvents e1 e2 = fmap (mergeThese mappend) $ align e1 e2
 
-{-# DEPRECATED sequenceThese "Use bisequenceA from the bifunctors package instead" #-}
+{-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
 sequenceThese t = case t of
   This ma -> liftM This ma
@@ -248,7 +255,7 @@ instance (Semigroup a, Reflex t) => Monoid (Event t a) where
 
 -- | Create a new 'Event' that occurs if at least one of the 'Event's
 -- in the list occurs. If multiple occur at the same time they are
--- folded from the left.
+-- folded from the left with the given function.
 mergeWith :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
 mergeWith f es = fmap (Prelude.foldl1 f . map (\(Const2 _ :=> v) -> v) . DMap.toList) $ merge $ DMap.fromList $ map (\(k, v) -> WrapArg (Const2 k) :=> v) $ zip [0 :: Int ..] es
 
