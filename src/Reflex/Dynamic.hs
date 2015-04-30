@@ -89,7 +89,8 @@ instance HBuild' (a ': l) r
   hBuild' l x = hBuild' (HCons x l)
 
 -- | A container for a value that can change over time and allows notifications on changes.
--- Basically a combination of a 'Behavior' and an 'Event'.
+-- Basically a combination of a 'Behavior' and an 'Event', with a rule that the Behavior will
+-- change if and only if the Event fires.
 data Dynamic t a
   = Dynamic (Behavior t a) (Event t a)
 
@@ -135,11 +136,12 @@ instance Reflex t => Functor (Dynamic t) where
 mapDyn :: (Reflex t, MonadHold t m) => (a -> b) -> Dynamic t a -> m (Dynamic t b)
 mapDyn f = mapDynM $ return . f
 
--- | Flipped version of 'forDyn'.
+-- | Flipped version of 'mapDyn'.
 forDyn :: (Reflex t, MonadHold t m) => Dynamic t a -> (a -> b) -> m (Dynamic t b)
 forDyn = flip mapDyn
 
--- | Map a monadic function over a 'Dynamic'.
+-- | Map a monadic function over a 'Dynamic'.  The only monadic action that the given function can
+-- perform is 'sample'.
 {-# INLINE mapDynM #-}
 mapDynM :: forall t m a b. (Reflex t, MonadHold t m) => (forall m'. MonadSample t m' => a -> m' b) -> Dynamic t a -> m (Dynamic t b)
 mapDynM f d = do
@@ -177,7 +179,8 @@ toggle :: (Reflex t, MonadHold t m, MonadFix m) => Bool -> Event t a -> m (Dynam
 toggle = foldDyn (const not)
 
 -- | Switches to the new 'Event' whenever it receives one.  Switching
--- occurs *before* occurring the inner 'Event'.
+-- occurs *before* the inner 'Event' fires - so if the 'Dynamic' changes and both the old and new
+-- inner Events fire simultaneously, the output will fire with the value of the *new* 'Event'.
 switchPromptlyDyn :: forall t a. Reflex t => Dynamic t (Event t a) -> Event t a
 switchPromptlyDyn de =
   let eLag = switch $ current de
@@ -293,12 +296,18 @@ joinDynThroughMap dd =
 
 -- | Print the value of the 'Dynamic' on each change and prefix it
 -- with the provided string. This should /only/ be used for debugging.
+--
+-- Note: Just like Debug.Trace.trace, the value will only be shown if something
+-- else in the system is depending on it.
 traceDyn :: (Reflex t, Show a) => String -> Dynamic t a -> Dynamic t a
 traceDyn s = traceDynWith $ \x -> s <> ": " <> show x
 
 -- | Print the result of applying the provided function to the value
 -- of the 'Dynamic' on each change. This should /only/ be used for
 -- debugging.
+--
+-- Note: Just like Debug.Trace.trace, the value will only be shown if something
+-- else in the system is depending on it.
 traceDynWith :: Reflex t => (a -> String) -> Dynamic t a -> Dynamic t a
 traceDynWith f d =
   let e' = traceEventWith f $ updated d
@@ -306,22 +315,36 @@ traceDynWith f d =
 
 -- | Replace the value of the 'Event' with the current value of the 'Dynamic'
 -- each time the 'Event' occurs.
+--
+-- Note: `tagDyn d e` differs from `tag (current d) e` in the case that `e` is firing
+-- at the same time that `d` is changing.  With `tagDyn d e`, the *new* value of `d`
+-- will replace the value of `e`, whereas with `tag (current d) e`, the *old* value
+-- will be used, since the 'Behavior' won't be updated until the end of the frame.
+-- Additionally, this means that the output 'Event' may not be used to directly change
+-- the input 'Dynamic', because that would mean its value depends on itself.  When creating
+-- cyclic data flows, generally `tag (current d) e` is preferred.
 tagDyn :: Reflex t => Dynamic t a -> Event t b -> Event t a
 tagDyn = attachDynWith const
 
 -- | Attach the current value of the 'Dynamic' to the value of the
 -- 'Event' each time it occurs.
+--
+-- Note: `attachDyn d` is not the same as `attach (current d)`.  See 'tagDyn' for details.
 attachDyn :: Reflex t => Dynamic t a -> Event t b -> Event t (a, b)
 attachDyn = attachDynWith (,)
 
 -- | Combine the current value of the 'Dynamic' with the value of the
 -- 'Event' each time it occurs.
+--
+-- Note: `attachDynWith f d` is not the same as `attachWith f (current d)`.  See 'tagDyn' for details.
 attachDynWith :: Reflex t => (a -> b -> c) -> Dynamic t a -> Event t b -> Event t c
 attachDynWith f = attachDynWithMaybe $ \a b -> Just $ f a b
 
 -- | Create a new 'Event' by combining the value at each occurence
 -- with the current value of the 'Dynamic' value and possibly
 -- filtering if the combining function returns 'Nothing'.
+--
+-- Note: `attachDynWithMaybe f d` is not the same as `attachWithMaybe f (current d)`.  See 'tagDyn' for details.
 attachDynWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Dynamic t a -> Event t b -> Event t c
 attachDynWithMaybe f d e =
   let e' = attach (current d) e
@@ -335,25 +358,24 @@ attachDynWithMaybe f d e =
 --------------------------------------------------------------------------------
 
 -- | Represents a time changing value together with an 'EventSelector'
--- for changes to this value.
+-- that can efficiently detect when the underlying Dynamic has a particular value.
+-- This is useful for representing data like the current selection of a long list.
+--
+-- Semantically,
+-- > getDemuxed (demux d) k === mapDyn (== k) d
+-- However, the when getDemuxed is used multiple times, the complexity is only /O(log(n))/,
+-- rather than /O(n)/ for mapDyn.
 data Demux t k = Demux { demuxValue :: Behavior t k
                        , demuxSelector :: EventSelector t (Const2 k Bool)
                        }
 
--- | Create 'Demux' out of a 'Dynamic' that has the value of the
--- 'Dynamic' and allows selecting between the values of the 'Event'
--- and the 'Behavior' of the 'Dynamic' for the occurences of 'Event'
--- where they differ. Selecting the value of the 'Behavior' will
--- return 'False' while selecting the value of the 'Event' will return
--- 'True'.
+-- | Demultiplex an input value to a 'Demux' with many outputs.  At any given time, whichever output is indicated by the given 'Dynamic' will be 'True'.
 demux :: (Reflex t, Ord k) => Dynamic t k -> Demux t k
 demux k = Demux (current k) (fan $ attachWith (\k0 k1 -> if k0 == k1 then DMap.empty else DMap.fromList [Const2 k0 :=> False, Const2 k1 :=> True]) (current k) (updated k))
 
 --TODO: The pattern of using hold (sample b0) can be reused in various places as a safe way of building certain kinds of Dynamics; see if we can factor this out
--- | Extract the 'Event' of the 'Demux' for the supplied value and
--- create a 'Dynamic' with the initial value of the equality of the
--- 'Behavior' and the supplied value. Each occurence of the extracted
--- 'Event' changes the value of the 'Dynamic'.
+-- | Select a particular output of the 'Demux'; this is equivalent to (but much faster than)
+-- mapping over the original 'Dynamic' and checking whether it is equal to the given key.
 getDemuxed :: (Reflex t, MonadHold t m, Eq k) => Demux t k -> k -> m (Dynamic t Bool)
 getDemuxed d k = do
   let e = select (demuxSelector d) (Const2 k)
