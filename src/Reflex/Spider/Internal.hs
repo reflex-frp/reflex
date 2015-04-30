@@ -13,7 +13,9 @@ import Data.Traversable
 import Control.Monad hiding (mapM, mapM_, forM_, forM, sequence)
 import Control.Monad.Reader hiding (mapM, mapM_, forM_, forM, sequence)
 import GHC.Exts
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
+#endif
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.GADT.Compare
@@ -164,7 +166,7 @@ hold v0 e = do
           , holdNodeId = unsafeNodeId (v0, e)
 #endif
           }
-        !s = SubscriberHold h
+    s <- newSubscriberHold h
     writeIORef subscriberRef $ unsafeCoerce s
     modifyIORef' holdInitRef (SomeHoldInit e h :)
     return $ BehaviorHold h
@@ -277,7 +279,7 @@ instance GCompare k => GCompare (FanSubscriberKey k) where
 data FanSubscribed k
    = FanSubscribed { fanSubscribedSubscribers :: !(IORef (DMap (FanSubscriberKey k)))
                    , fanSubscribedParent :: !(EventSubscribed (DMap k))
-                   , fanSubscribedSelf :: !(Subscriber (DMap k))
+                   , fanSubscribedSelf :: {-# NOUNPACK #-} (Subscriber (DMap k))
 #ifdef DEBUG_NODEIDS
                    , fanSubscribedNodeId :: Int
 #endif
@@ -292,9 +294,9 @@ data SwitchSubscribed a
    = SwitchSubscribed { switchSubscribedOccurrence :: !(IORef (Maybe a))
                       , switchSubscribedHeight :: !(IORef Int)
                       , switchSubscribedSubscribers :: !(IORef [WeakSubscriber a])
-                      , switchSubscribedSelf :: !(Subscriber a)
+                      , switchSubscribedSelf :: {-# NOUNPACK #-} (Subscriber a)
                       , switchSubscribedSelfWeak :: !(IORef (Weak (Subscriber a)))
-                      , switchSubscribedOwnInvalidator :: !Invalidator
+                      , switchSubscribedOwnInvalidator :: {-# NOUNPACK #-} Invalidator
                       , switchSubscribedOwnWeakInvalidator :: !(IORef (Weak Invalidator))
                       , switchSubscribedBehaviorParents :: !(IORef [SomeBehaviorSubscribed])
                       , switchSubscribedParent :: !(Behavior (Event a))
@@ -313,7 +315,7 @@ data CoincidenceSubscribed a
    = CoincidenceSubscribed { coincidenceSubscribedOccurrence :: !(IORef (Maybe a))
                            , coincidenceSubscribedSubscribers :: !(IORef [WeakSubscriber a])
                            , coincidenceSubscribedHeight :: !(IORef Int)
-                           , coincidenceSubscribedOuter :: !(Subscriber (Event a))
+                           , coincidenceSubscribedOuter :: {-# NOUNPACK #-} (Subscriber (Event a))
                            , coincidenceSubscribedOuterParent :: !(EventSubscribed (Event a))
                            , coincidenceSubscribedInnerParent :: !(IORef (Maybe (EventSubscribed a)))
 #ifdef DEBUG_NODEIDS
@@ -389,6 +391,59 @@ data EventSubscribed a
    | forall k. GCompare k => EventSubscribedFan !(k a) !(FanSubscribed k)
    | EventSubscribedSwitch !(SwitchSubscribed a)
    | EventSubscribedCoincidence !(CoincidenceSubscribed a)
+
+-- These function are constructor functions that are marked NOINLINE so they are
+-- opaque to GHC. If we do not do this, then GHC will sometimes fuse the constructor away
+-- so any weak references that are attached to the constructors will have their
+-- finalizer run. Using the opaque constructor, does not see the
+-- constructor application, so it behaves like an IORef and cannot be fused away.
+--
+-- The result is also evaluated to WHNF, since forcing a thunk invalidates
+-- the weak pointer to it in some cases.
+
+{-# NOINLINE newRootSubscribed #-}
+newRootSubscribed :: IORef (Maybe a) -> IORef [WeakSubscriber a] -> IO (RootSubscribed a)
+newRootSubscribed occ subs =
+  return $! RootSubscribed
+    { rootSubscribedOccurrence = occ
+    , rootSubscribedSubscribers = subs
+    }
+
+{-# NOINLINE newSubscriberPush #-}
+newSubscriberPush :: (a -> EventM (Maybe b)) -> PushSubscribed a b -> IO (Subscriber a)
+newSubscriberPush compute subd = return $! SubscriberPush compute subd
+
+{-# NOINLINE newSubscriberHold #-}
+newSubscriberHold :: Hold a -> IO (Subscriber a)
+newSubscriberHold h = return $! SubscriberHold h
+
+{-# NOINLINE newSubscriberFan #-}
+newSubscriberFan :: GCompare k => FanSubscribed k -> IO (Subscriber (DMap k))
+newSubscriberFan subd = return $! SubscriberFan subd
+
+{-# NOINLINE newSubscriberSwitch #-}
+newSubscriberSwitch :: SwitchSubscribed a -> IO (Subscriber a)
+newSubscriberSwitch subd = return $! SubscriberSwitch subd
+
+{-# NOINLINE newSubscriberCoincidenceOuter #-}
+newSubscriberCoincidenceOuter :: CoincidenceSubscribed b -> IO (Subscriber (Event b))
+newSubscriberCoincidenceOuter subd = return $! SubscriberCoincidenceOuter subd
+
+{-# NOINLINE newSubscriberCoincidenceInner #-}
+newSubscriberCoincidenceInner :: CoincidenceSubscribed a -> IO (Subscriber a)
+newSubscriberCoincidenceInner subd = return $! SubscriberCoincidenceInner subd
+
+{-# NOINLINE newInvalidatorSwitch #-}
+newInvalidatorSwitch :: SwitchSubscribed a -> IO Invalidator
+newInvalidatorSwitch subd = return $! InvalidatorSwitch subd
+
+{-# NOINLINE newInvalidatorPull #-}
+newInvalidatorPull :: Pull a -> IO Invalidator
+newInvalidatorPull p = return $! InvalidatorPull p
+
+{-# NOINLINE newBox #-}
+newBox :: a -> IO (Box a)
+newBox a = return $! Box a
 
 --type role Behavior representational
 data Behavior a
@@ -605,7 +660,7 @@ data SomeCoincidenceInfo = forall a. SomeCoincidenceInfo (Weak (Subscriber a)) (
 
 subscribeCoincidenceInner :: Event a -> Int -> CoincidenceSubscribed a -> EventM (Maybe a, Int, EventSubscribed a)
 subscribeCoincidenceInner o outerHeight subscribedUnsafe = do
-  let !subInner = SubscriberCoincidenceInner subscribedUnsafe
+  subInner <- liftIO $ newSubscriberCoincidenceInner subscribedUnsafe
   wsubInner <- liftIO $ mkWeakPtrWithDebug subInner "SubscriberCoincidenceInner"
   innerSubd <- {-# SCC "innerSubd" #-} (subscribe o $ WeakSubscriberSimple wsubInner)
   innerOcc <- liftIO $ getEventSubscribedOcc innerSubd
@@ -644,7 +699,7 @@ readBehaviorTracked b = case b of
         liftIO $ touch $ pullSubscribedOwnInvalidator subscribed
         return $ pullSubscribedValue subscribed
       Nothing -> do
-        let !i = InvalidatorPull p
+        i <- liftIO $ newInvalidatorPull p
         wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorPull"
         parentsRef <- liftIO $ newIORef []
         a <- liftIO $ runReaderT (unBehaviorM $ pullCompute p) $ Just (wi, parentsRef)
@@ -776,10 +831,7 @@ getRootSubscribed r = do
     Just subscribed -> return subscribed
     Nothing -> liftIO $ do
       subscribersRef <- newIORef []
-      let !subscribed = RootSubscribed
-            { rootSubscribedOccurrence = rootOccurrence r
-            , rootSubscribedSubscribers = subscribersRef
-            }
+      subscribed <- newRootSubscribed (rootOccurrence r) subscribersRef
       -- Strangely, init needs the same stuff as a RootSubscribed has, but it must not be the same as the one that everyone's subscribing to, or it'll leak memory
       uninit <- rootInit r $ RootTrigger (subscribersRef, rootOccurrence r)
       addFinalizer subscribed $ do
@@ -797,7 +849,7 @@ getPushSubscribed p = do
     Just subscribed -> return subscribed
     Nothing -> do -- Not yet subscribed
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ liftM fromJust $ readIORef $ pushSubscribed p
-      let !s = SubscriberPush (pushCompute p) subscribedUnsafe
+      s <- liftIO $ newSubscriberPush (pushCompute p) subscribedUnsafe
       ws <- liftIO $ mkWeakPtrWithDebug s "SubscriberPush"
       subd <- subscribe (pushParent p) $ WeakSubscriberSimple ws
       parentOcc <- liftIO $ getEventSubscribedOcc subd
@@ -826,7 +878,7 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
     Nothing -> if DMap.null $ mergeParents m then emptyMergeSubscribed else do
       subscribedRef <- liftIO $ newIORef $ error "getMergeSubscribed: subscribedRef not yet initialized"
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
-      let !s = Box subscribedUnsafe
+      s <- liftIO $ newBox subscribedUnsafe
       ws <- liftIO $ mkWeakPtrWithDebug s "SubscriberMerge"
       subscribers :: [(Any, Maybe (DSum k), Int, DSum (WrapArg EventSubscribed k))] <- forM (DMap.toList $ mergeParents m) $ {-# SCC "getMergeSubscribed.a" #-} \(WrapArg k :=> e) -> {-# SCC "getMergeSubscribed.a1" #-} do
         parentSubd <- {-# SCC "getMergeSubscribed.a.parentSubd" #-} subscribe e $ WeakSubscriberMerge k ws
@@ -886,7 +938,7 @@ getFanSubscribed f = do
     Just subscribed -> return subscribed
     Nothing -> do
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ liftM fromJust $ readIORef $ fanSubscribed f
-      let !sub = SubscriberFan subscribedUnsafe
+      sub <- liftIO $ newSubscriberFan subscribedUnsafe
       wsub <- liftIO $ mkWeakPtrWithDebug sub "SubscriberFan"
       subd <- subscribe (fanParent f) $ WeakSubscriberSimple wsub
       subscribersRef <- liftIO $ newIORef DMap.empty
@@ -909,8 +961,8 @@ getSwitchSubscribed s = do
     Nothing -> do
       subscribedRef <- liftIO $ newIORef $ error "getSwitchSubscribed: subscribed has not yet been created"
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
-      let !i = InvalidatorSwitch subscribedUnsafe
-          !sub = SubscriberSwitch subscribedUnsafe
+      i <- liftIO $ newInvalidatorSwitch subscribedUnsafe
+      sub <- liftIO $ newSubscriberSwitch subscribedUnsafe
       wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorSwitch"
       wiRef <- liftIO $ newIORef wi
       wsub <- liftIO $ mkWeakPtrWithDebug sub "SubscriberSwitch"
@@ -951,7 +1003,7 @@ getCoincidenceSubscribed c = do
     Nothing -> do
       subscribedRef <- liftIO $ newIORef $ error "getCoincidenceSubscribed: subscribed has not yet been created"
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
-      let !subOuter = SubscriberCoincidenceOuter subscribedUnsafe
+      subOuter <- liftIO $ newSubscriberCoincidenceOuter subscribedUnsafe
       wsubOuter <- liftIO $ mkWeakPtrWithDebug subOuter "subOuter"
       outerSubd <- subscribe (coincidenceParent c) $ WeakSubscriberSimple wsubOuter
       outerOcc <- liftIO $ getEventSubscribedOcc outerSubd
@@ -1287,10 +1339,12 @@ instance MonadRef EventM where
   {-# INLINE newRef #-}
   {-# INLINE readRef #-}
   {-# INLINE writeRef #-}
-  {-# INLINE atomicModifyRef #-}
   newRef = liftIO . newRef
   readRef = liftIO . readRef
   writeRef r a = liftIO $ writeRef r a
+
+instance MonadAtomicRef EventM where
+  {-# INLINE atomicModifyRef #-}
   atomicModifyRef r f = liftIO $ atomicModifyRef r f
 
 newtype SpiderHost a = SpiderHost { runSpiderHost :: IO a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO)
@@ -1334,6 +1388,8 @@ instance MonadRef SpiderHost where
   newRef = SpiderHost . newRef
   readRef = SpiderHost . readRef
   writeRef r = SpiderHost . writeRef r
+
+instance MonadAtomicRef SpiderHost where
   atomicModifyRef r = SpiderHost . atomicModifyRef r
 
 instance MonadRef SpiderHostFrame where
@@ -1341,4 +1397,6 @@ instance MonadRef SpiderHostFrame where
   newRef = SpiderHostFrame . newRef
   readRef = SpiderHostFrame . readRef
   writeRef r = SpiderHostFrame . writeRef r
+
+instance MonadAtomicRef SpiderHostFrame where
   atomicModifyRef r = SpiderHostFrame . atomicModifyRef r
