@@ -19,6 +19,13 @@ class (ReflexHost t, Monad m) => MonadReadEvent t m | m -> t where
   readEvent :: EventHandle t a -> m (Maybe (m a))
 
 class (Monad m, ReflexHost t) => MonadReflexCreateTrigger t m | m -> t where
+  -- | Creates an original Event (one that is not based on any other event).
+  -- When a subscriber first subscribes to an event (building another event
+  -- that depends on the subscription) the given callback function is run by
+  -- passing a trigger. The event is then set up in IO. The callback
+  -- function returns an accompanying teardown action.
+  -- Any time between setup and teardown the trigger can be used to fire
+  -- the event.
   newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event t a)
 
 class (Monad m, ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexHost t m | m -> t where
