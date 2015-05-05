@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.1.1
+Version: 0.2
 Synopsis: Higher-order Functional Reactive Programming
 Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system
 License: BSD3
@@ -20,11 +20,12 @@ library
     dependent-sum == 0.2.*,
     dependent-map == 0.1.*,
     semigroups == 0.16.*,
-    mtl == 2.2.*,
+    mtl >= 2.1 && < 2.3,
     containers == 0.5.*,
     these == 0.4.*,
     primitive == 0.5.*,
-    template-haskell >= 2.9 && < 2.11
+    template-haskell >= 2.9 && < 2.11,
+    ref-tf == 0.4.*
 
   exposed-modules:
     Reflex,
@@ -34,12 +35,28 @@ library
     Reflex.Dynamic,
     Reflex.Dynamic.TH,
     Reflex.Host.Class,
-    Data.Functor.Misc,
-    Control.Monad.Ref
+    Data.Functor.Misc
 
   other-extensions: TemplateHaskell
   ghc-prof-options: -fprof-auto
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+
+benchmark spider-bench
+  type: exitcode-stdio-1.0
+  hs-source-dirs: bench
+  main-is: Main.hs
+  ghc-options: -O2 -rtsopts
+  build-depends:
+    base,
+    dependent-sum,
+    dependent-map,
+    transformers >= 0.3 && < 0.5,
+    stm == 2.4.*,
+    deepseq >= 1.3 && < 1.5,
+    mtl,
+    primitive,
+    criterion == 1.1.*,
+    reflex
 
 source-repository head
   type: git

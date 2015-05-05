@@ -70,9 +70,12 @@ instance MonadHold t m => MonadHold t (ReaderT r m) where
 -- Convenience functions
 --------------------------------------------------------------------------------
 
+-- | Create an Event from another Event.
+-- The provided function can sample 'Behavior's and hold 'Event's.
 pushAlways :: Reflex t => (a -> PushM t b) -> Event t a -> Event t b
 pushAlways f e = push (liftM Just . f) e
 
+-- | Flipped version of 'fmap'.
 ffor :: Functor f => f a -> (a -> b) -> f b
 ffor = flip fmap
 
@@ -80,12 +83,17 @@ instance Reflex t => Functor (Behavior t) where
   fmap f = pull . liftM f . sample
 
 --TODO: See if there's a better class in the standard libraries already
+-- | A class for values that combines filtering and mapping using 'Maybe'.
 class FunctorMaybe f where
+  -- | Combined mapping and filtering function.
   fmapMaybe :: (a -> Maybe b) -> f a -> f b
 
+-- | Flipped version of 'fmapMaybe'.
 fforMaybe :: FunctorMaybe f => f a -> (a -> Maybe b) -> f b
 fforMaybe = flip fmapMaybe
 
+-- | Filter 'f a' using the provided predicate.
+-- Relies on 'fforMaybe'.
 ffilter :: FunctorMaybe f => (a -> Bool) -> f a -> f a
 ffilter f = fmapMaybe $ \x -> if f x then Just x else Nothing
 
@@ -95,6 +103,9 @@ instance Reflex t => FunctorMaybe (Event t) where
 instance Reflex t => Functor (Event t) where
   fmap f = fmapMaybe $ Just . f
 
+-- | Create a new 'Event' by combining each occurence with the next value
+-- of the list using the supplied function. If the list runs out of items,
+-- all subsequent 'Event' occurrences will be ignored.
 zipListWithEvent :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> c) -> [a] -> Event t b -> m (Event t c)
 zipListWithEvent f l e = do
   rec lb <- hold l eTail
@@ -107,22 +118,33 @@ zipListWithEvent f l e = do
       lb `seq` eBoth `seq` eTail `seq` return ()
   return $ fmap fst eBoth
 
--- | Replace the occurrence value of the Event with the value of the Behavior at the time of the occurrence
+-- | Replace each occurrence value of the 'Event' with the value of the
+-- 'Behavior' at the time of that occurrence.
 tag :: Reflex t => Behavior t b -> Event t a -> Event t b
 tag b = pushAlways $ \_ -> sample b
 
-attachWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Behavior t a -> Event t b -> Event t c
-attachWithMaybe f b e = flip push e $ \o -> liftM (flip f o) $ sample b
-
-attachWith :: Reflex t => (a -> b -> c) -> Behavior t a -> Event t b -> Event t c
-attachWith f = attachWithMaybe $ \a b -> Just $ f a b
-
+-- | Create a new 'Event' that combines occurences of supplied 'Event'
+-- with the current value of the 'Behavior'.
 attach :: Reflex t => Behavior t a -> Event t b -> Event t (a, b)
 attach = attachWith (,)
 
+-- | Create a new 'Event' that occurs when the supplied 'Event' occurs
+-- by combining it with the current value of the 'Behavior'.
+attachWith :: Reflex t => (a -> b -> c) -> Behavior t a -> Event t b -> Event t c
+attachWith f = attachWithMaybe $ \a b -> Just $ f a b
+
+-- | Create a new 'Event' by combining each occurence with the current
+-- value of the 'Behavior'. The occurrence is discarded if the combining function
+-- returns Nothing
+attachWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Behavior t a -> Event t b -> Event t c
+attachWithMaybe f b e = flip push e $ \o -> liftM (flip f o) $ sample b
+
+-- | Alias for 'headE'
 onceE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
 onceE = headE
 
+-- | Create a new 'Event' that only occurs on the first occurence of
+-- the supplied 'Event'.
 headE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
 headE e = do
   rec be <- hold e $ fmap (const never) e'
@@ -130,24 +152,42 @@ headE e = do
       e' `seq` return ()
   return e'
 
+-- | Create a new 'Event' that occurs on all but the first occurence
+-- of the supplied 'Event'.
 tailE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
 tailE e = liftM snd $ headTailE e
 
+-- | Create a tuple of two 'Event's with the first one occuring only
+-- the first time the supplied 'Event' occurs and the second occuring
+-- on all but the first occurence.
 headTailE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a, Event t a)
 headTailE e = do
   eHead <- headE e
   be <- hold never $ fmap (const e) eHead
   return (eHead, switch be)
 
+-- | Split the supplied 'Event' into two individual 'Event's occuring
+-- at the same time with the respective values from the tuple.
 splitE :: Reflex t => Event t (a, b) -> (Event t a, Event t b)
 splitE e = (fmap fst e, fmap snd e)
 
+-- | Print the supplied 'String' and the value of the 'Event' on each
+-- occurence. This should /only/ be used for debugging.
+--
+-- Note: As with Debug.Trace.trace, the message will only be printed if
+-- the 'Event' is actually used.
 traceEvent :: (Reflex t, Show a) => String -> Event t a -> Event t a
 traceEvent s = traceEventWith $ \x -> s <> ": " <> show x
 
+-- | Print the output of the supplied function on each occurence of
+-- the 'Event'. This should /only/ be used for debugging.
+--
+-- Note: As with Debug.Trace.trace, the message will only be printed if
+-- the 'Event' is actually used.
 traceEventWith :: Reflex t => (a -> String) -> Event t a -> Event t a
 traceEventWith f = push $ \x -> trace (f x) $ return $ Just x
 
+-- | Tag type for 'Either' to use it as a 'DSum'.
 data EitherTag l r a where
   LeftTag :: EitherTag l r l
   RightTag :: EitherTag l r r
@@ -175,16 +215,19 @@ instance (Show l, Show r) => ShowTag (EitherTag l r) where
     LeftTag -> showsPrec n a
     RightTag -> showsPrec n a
 
+-- | Convert 'Either' to a 'DSum'. Inverse of 'dsumToEither'.
 eitherToDSum :: Either a b -> DSum (EitherTag a b)
 eitherToDSum = \case
   Left a -> LeftTag :=> a
   Right b -> RightTag :=> b
 
+-- | Convert 'DSum' to 'Either'. Inverse of 'eitherToDSum'.
 dsumToEither :: DSum (EitherTag a b) -> Either a b
 dsumToEither = \case
   LeftTag :=> a -> Left a
   RightTag :=> b -> Right b
 
+-- | Extract the values of a 'DMap' of 'EitherTag's.
 dmapToThese :: DMap (EitherTag a b) -> Maybe (These a b)
 dmapToThese m = case (DMap.lookup LeftTag m, DMap.lookup RightTag m) of
   (Nothing, Nothing) -> Nothing
@@ -192,9 +235,13 @@ dmapToThese m = case (DMap.lookup LeftTag m, DMap.lookup RightTag m) of
   (Nothing, Just b) -> Just $ That b
   (Just a, Just b) -> Just $ These a b
 
+-- | Create a new 'Event' that occurs if at least one of the supplied
+-- 'Event's occurs. If both occur at the same time they are combined
+-- using 'mappend'.
 appendEvents :: (Reflex t, Monoid a) => Event t a -> Event t a -> Event t a
 appendEvents e1 e2 = fmap (mergeThese mappend) $ align e1 e2
 
+{-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
 sequenceThese t = case t of
   This ma -> liftM This ma
@@ -206,19 +253,33 @@ instance (Semigroup a, Reflex t) => Monoid (Event t a) where
   mappend a b = mconcat [a, b]
   mconcat = fmap sconcat . mergeList
 
+-- | Create a new 'Event' that occurs if at least one of the 'Event's
+-- in the list occurs. If multiple occur at the same time they are
+-- folded from the left with the given function.
 mergeWith :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
 mergeWith f es = fmap (Prelude.foldl1 f . map (\(Const2 _ :=> v) -> v) . DMap.toList) $ merge $ DMap.fromList $ map (\(k, v) -> WrapArg (Const2 k) :=> v) $ zip [0 :: Int ..] es
 
+-- | Create a new 'Event' that occurs if at least one of the 'Event's
+-- in the list occurs. If multiple occur at the same time the value is
+-- the value of the leftmost event.
 leftmost :: Reflex t => [Event t a] -> Event t a
 leftmost = mergeWith const
 
+-- | Create a new 'Event' that occurs if at least one of the 'Event's
+-- in the list occurs and has a list of the values of all 'Event's
+-- occuring at that time.
 mergeList :: Reflex t => [Event t a] -> Event t (NonEmpty a)
 mergeList [] = never
 mergeList es = mergeWith (<>) $ map (fmap (:|[])) es
 
+-- | Create a new 'Event' combining the map of 'Event's into an
+-- 'Event' that occurs if at least one of them occurs and has a map of
+-- values of all 'Event's occuring at that time.
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
 
+-- | Split the event into an 'EventSelector' that allows efficient
+-- selection of the individual 'Event's.
 fanMap :: (Reflex t, Ord k) => Event t (Map k a) -> EventSelector t (Const2 k a)
 fanMap = fan . fmap mapToDMap
 
@@ -234,5 +295,7 @@ instance Reflex t => Align (Event t) where
   nil = never
   align ea eb = fmapMaybe dmapToThese $ merge $ DMap.fromList [WrapArg LeftTag :=> ea, WrapArg RightTag :=> eb]
 
+-- | Create a new 'Event' that only occurs if the supplied 'Event'
+-- occurs and the 'Behavior' is true at the time of occurence.
 gate :: Reflex t => Behavior t Bool -> Event t a -> Event t a
 gate = attachWithMaybe $ \allow a -> if allow then Just a else Nothing
