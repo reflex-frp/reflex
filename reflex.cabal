@@ -23,7 +23,7 @@ library
     mtl >= 2.1 && < 2.3,
     containers == 0.5.*,
     these == 0.4.*,
-    primitive == 0.5.*,
+    primitive >= 0.5 && < 0.7,
     template-haskell >= 2.9 && < 2.11,
     ref-tf == 0.4.*
 
