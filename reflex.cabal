@@ -12,6 +12,7 @@ Build-type: Simple
 Cabal-version: >=1.9.2
 homepage: https://github.com/ryantrinkle/reflex
 bug-reports: https://github.com/ryantrinkle/reflex/issues
+X-Revision: 1
 
 library
   hs-source-dirs: src
