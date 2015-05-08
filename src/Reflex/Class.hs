@@ -82,6 +82,13 @@ ffor = flip fmap
 instance Reflex t => Functor (Behavior t) where
   fmap f = pull . liftM f . sample
 
+--TODO: Rewrite rules for Applicative
+instance Reflex t => Applicative (Behavior t) where
+  pure = constant
+  f <*> x = pull $ sample f <*> sample x
+  a *> b = b
+  a <* b = a
+
 --TODO: See if there's a better class in the standard libraries already
 -- | A class for values that combines filtering and mapping using 'Maybe'.
 class FunctorMaybe f where
