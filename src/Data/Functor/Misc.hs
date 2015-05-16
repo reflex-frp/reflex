@@ -1,4 +1,4 @@
-{-# LANGUAGE KindSignatures, GADTs, DeriveDataTypeable, RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE KindSignatures, GADTs, DeriveDataTypeable, RankNTypes, ScopedTypeVariables, PolyKinds #-}
 module Data.Functor.Misc where
 
 import Data.GADT.Compare
@@ -9,7 +9,7 @@ import qualified Data.Dependent.Map as DMap
 import Data.Typeable hiding (Refl)
 import Data.These
 
-data WrapArg :: (* -> *) -> (* -> *) -> * -> * where
+data WrapArg :: (k -> *) -> (k -> *) -> * -> * where
   WrapArg :: f a -> WrapArg g f (g a)
 
 instance GEq f => GEq (WrapArg g f) where
