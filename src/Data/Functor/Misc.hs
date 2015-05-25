@@ -8,6 +8,7 @@ import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Typeable hiding (Refl)
 import Data.These
+import Data.Maybe
 
 data WrapArg :: (k -> *) -> (k -> *) -> * -> * where
   WrapArg :: f a -> WrapArg g f (g a)
@@ -60,6 +61,9 @@ rewrapDMap f = DMap.fromDistinctAscList . map (\(WrapArg k :=> v) -> WrapArg k :
 
 unwrapDMap :: (forall a. f a -> a) -> DMap (WrapArg f k) -> DMap k
 unwrapDMap f = DMap.fromDistinctAscList . map (\(WrapArg k :=> v) -> k :=> f v) . DMap.toAscList
+
+unwrapDMapMaybe :: (forall a. f a -> Maybe a) -> DMap (WrapArg f k) -> DMap k
+unwrapDMapMaybe f = DMap.fromDistinctAscList . catMaybes . map (\(WrapArg k :=> v) -> fmap (k :=>) $ f v) . DMap.toAscList
 
 mapToDMap :: Map k v -> DMap (Const2 k v)
 mapToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> v) . Map.toAscList
