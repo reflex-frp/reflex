@@ -12,6 +12,8 @@ import qualified Data.Dependent.Map as DMap
 
 data Pure t
 
+-- | The Enum instance of t must be dense: for all x :: t, there must not exist any y :: t such that pred x < y < x
+--   The HasTrie instance will be used exclusively to memoize functions of t, not for any of its other capabilities
 instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   newtype Behavior (Pure t) a = Behavior { unBehavior :: t -> a }
   newtype Event (Pure t) a = Event { unEvent :: t -> Maybe a }
