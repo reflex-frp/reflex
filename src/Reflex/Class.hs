@@ -3,6 +3,7 @@ module Reflex.Class where
 
 import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
+import Control.Applicative (Applicative(..))
 import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.Reader hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
