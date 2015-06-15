@@ -119,8 +119,13 @@ holdDyn v0 e = do
 -- | Create a new 'Dynamic' that only signals changes if the values
 -- actually changed.
 nubDyn :: (Reflex t, Eq a) => Dynamic t a -> Dynamic t a
-nubDyn d =
-  let e' = attachWithMaybe (\x x' -> if x' == x then Nothing else Just x') (current d) (updated d)
+nubDyn = nubDynBy id
+
+-- | Create a new 'Dynamic' that only signals changes if a function of the value
+-- actually changed.
+nubDynBy :: (Reflex t, Eq b) => (a -> b) -> Dynamic t a -> Dynamic t a
+nubDynBy f d =
+  let e' = attachWithMaybe (\x x' -> if f x' == f x then Nothing else Just x') (current d) (updated d)
   in Dynamic (current d) e' --TODO: Avoid invalidating the outgoing Behavior
 
 {-
