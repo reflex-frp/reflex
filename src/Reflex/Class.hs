@@ -3,6 +3,7 @@ module Reflex.Class where
 
 import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
+import Control.Applicative (Applicative(..))
 import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.Reader hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
@@ -17,6 +18,7 @@ import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc
 import Data.Semigroup
+import Data.Traversable
 
 import Debug.Trace (trace)
 
@@ -81,6 +83,28 @@ ffor = flip fmap
 
 instance Reflex t => Functor (Behavior t) where
   fmap f = pull . liftM f . sample
+
+instance Reflex t => Applicative (Behavior t) where
+  pure = constant
+  f <*> x = pull $ sample f `ap` sample x
+  _ *> b = b
+  a <* _ = a
+
+instance Reflex t => Monad (Behavior t) where
+  a >>= f = pull $ sample a >>= sample . f
+  -- Note: it is tempting to write (_ >> b = b); however, this would result in (fail x >> return y) succeeding (returning y), which violates the law that (a >> b = a >>= \_ -> b), since the implementation of (>>=) above actually will fail.  Since we can't examine Behaviors other than by using sample, I don't think it's possible to write (>>) to be more efficient than the (>>=) above.
+  return = constant
+  fail = error "Monad (Behavior t) does not support fail"
+
+instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
+  a <> b = pull $ liftM2 (<>) (sample a) (sample b)
+  sconcat = pull . liftM sconcat . mapM sample
+  times1p n = fmap $ times1p n
+
+instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
+  mempty = constant mempty
+  mappend a b = pull $ liftM2 mappend (sample a) (sample b)
+  mconcat = pull . liftM mconcat . mapM sample
 
 --TODO: See if there's a better class in the standard libraries already
 -- | A class for values that combines filtering and mapping using 'Maybe'.

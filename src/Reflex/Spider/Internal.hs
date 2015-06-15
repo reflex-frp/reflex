@@ -13,9 +13,7 @@ import Data.Traversable
 import Control.Monad hiding (mapM, mapM_, forM_, forM, sequence)
 import Control.Monad.Reader hiding (mapM, mapM_, forM_, forM, sequence)
 import GHC.Exts
-#if !MIN_VERSION_base(4,8,0)
-import Control.Applicative
-#endif
+import Control.Applicative -- Unconditionally import, because otherwise it breaks on GHC 7.10.1RC2
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.GADT.Compare
@@ -24,6 +22,7 @@ import Data.Maybe
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Control.Monad.Ref
+import Control.Monad.Exception
 import Data.Monoid ((<>))
 
 import System.IO.Unsafe
@@ -225,7 +224,7 @@ data Root a
 data SomeHoldInit = forall a. SomeHoldInit (Event a) (Hold a)
 
 -- EventM can do everything BehaviorM can, plus create holds
-newtype EventM a = EventM { unEventM :: ReaderT EventEnv IO a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO) -- The environment should be Nothing if we are not in a frame, and Just if we are - in which case it is a list of assignments to be done after the frame is over
+newtype EventM a = EventM { unEventM :: ReaderT EventEnv IO a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException) -- The environment should be Nothing if we are not in a frame, and Just if we are - in which case it is a list of assignments to be done after the frame is over
 
 data PushSubscribed a b
    = PushSubscribed { pushSubscribedOccurrence :: !(IORef (Maybe b)) -- If the current height is less than our height, this should always be Nothing; during our height, this will get filled in at some point, always before our children are notified; after our height, this will be filled in with the correct value (Nothing if we are not firing, Just if we are)
@@ -1347,9 +1346,9 @@ instance MonadAtomicRef EventM where
   {-# INLINE atomicModifyRef #-}
   atomicModifyRef r f = liftIO $ atomicModifyRef r f
 
-newtype SpiderHost a = SpiderHost { runSpiderHost :: IO a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO)
+newtype SpiderHost a = SpiderHost { runSpiderHost :: IO a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
-newtype SpiderHostFrame a = SpiderHostFrame { runSpiderHostFrame :: EventM a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO)
+newtype SpiderHostFrame a = SpiderHostFrame { runSpiderHostFrame :: EventM a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 instance R.MonadSample Spider SpiderHostFrame where
   sample = SpiderHostFrame . R.sample --TODO: This can cause problems with laziness, so we should get rid of it if we can
