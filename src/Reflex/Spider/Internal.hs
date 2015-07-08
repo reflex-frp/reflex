@@ -1323,15 +1323,16 @@ instance R.MonadHold Spider EventM where
   hold v0 e = SpiderBehavior <$> hold v0 (unSpiderEvent e)
 
 newtype RootTrigger a = RootTrigger (IORef [WeakSubscriber a], IORef (Maybe a))
+newtype SpiderEventHandle a = SpiderEventHandle { unEventHandle :: Event a }
 
 instance R.ReflexHost Spider where
   type EventTrigger Spider = RootTrigger
-  type EventHandle Spider = R.Event Spider
+  type EventHandle Spider = SpiderEventHandle
   type HostFrame Spider = SpiderHostFrame
 
 instance R.MonadReadEvent Spider ResultM where
   {-# INLINE readEvent #-}
-  readEvent = liftM (fmap return) . readEvent . unSpiderEvent
+  readEvent = liftM (fmap return) . readEvent . unEventHandle
 
 instance MonadRef EventM where
   type Ref EventM = Ref IO
@@ -1378,7 +1379,7 @@ instance R.MonadReflexHost Spider SpiderHost where
   fireEventsAndRead es a = SpiderHost $ run es a
   subscribeEvent e = SpiderHost $ do
     _ <- runFrame $ getEventSubscribed $ unSpiderEvent e --TODO: The result of this should actually be used
-    return e
+    return $ SpiderEventHandle (unSpiderEvent e)
   runFrame = SpiderHost . runFrame
   runHostFrame = SpiderHost . runFrame . runSpiderHostFrame
 
