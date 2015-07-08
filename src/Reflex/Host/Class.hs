@@ -5,7 +5,7 @@ import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
 import Reflex.Class
 
-import Control.Monad.Trans.Class
+import Control.Monad.Trans
 import Control.Monad.Reader (ReaderT())
 import Control.Monad.Writer (WriterT())
 import Control.Monad.Cont   (ContT())
