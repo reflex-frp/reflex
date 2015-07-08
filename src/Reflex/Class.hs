@@ -6,6 +6,10 @@ import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.Reader hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
+import Control.Monad.Writer (WriterT())
+import Control.Monad.Except (ExceptT())
+import Control.Monad.Cont (ContT())
+import Control.Monad.RWS (RWST())
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.These
 import Data.Align
@@ -65,6 +69,36 @@ instance MonadSample t m => MonadSample t (ReaderT r m) where
   sample = lift . sample
 
 instance MonadHold t m => MonadHold t (ReaderT r m) where
+  hold a0 = lift . hold a0
+
+instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
+  sample = lift . sample
+
+instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
+  hold a0 = lift . hold a0
+
+instance MonadSample t m => MonadSample t (StateT s m) where
+  sample = lift . sample
+
+instance MonadHold t m => MonadHold t (StateT s m) where
+  hold a0 = lift . hold a0
+
+instance MonadSample t m => MonadSample t (ExceptT e m) where
+  sample = lift . sample
+
+instance MonadHold t m => MonadHold t (ExceptT e m) where
+  hold a0 = lift . hold a0
+
+instance (MonadSample t m, Monoid w) => MonadSample t (RWST r w s m) where
+  sample = lift . sample
+
+instance (MonadHold t m, Monoid w) => MonadHold t (RWST r w s m) where
+  hold a0 = lift . hold a0
+
+instance MonadSample t m => MonadSample t (ContT r m) where
+  sample = lift . sample
+
+instance MonadHold t m => MonadHold t (ContT r m) where
   hold a0 = lift . hold a0
 
 --------------------------------------------------------------------------------
