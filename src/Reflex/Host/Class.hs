@@ -5,8 +5,13 @@ import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
 import Reflex.Class
 
-import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import Control.Monad.Reader hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
+import Control.Monad.Trans.Class
+import Control.Monad.Reader (ReaderT())
+import Control.Monad.Writer (WriterT())
+import Control.Monad.Cont   (ContT())
+import Control.Monad.Except (ExceptT())
+import Control.Monad.RWS    (RWST())
+import Control.Monad.State  (StateT())
 import Data.Dependent.Sum (DSum)
 import Control.Monad.Ref
 
@@ -31,7 +36,7 @@ class (Monad m, ReflexHost t) => MonadReflexCreateTrigger t m | m -> t where
 class (Monad m, ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexHost t m | m -> t where
   fireEventsAndRead :: [DSum (EventTrigger t)] -> (forall m'. (MonadReadEvent t m') => m' a) -> m a
   subscribeEvent :: Event t a -> m (EventHandle t a) --TODO: Return a handle, and use them in fireEventsAnRead
-  runFrame :: PushM t a -> m a
+
   runHostFrame :: HostFrame t a -> m a
 
 fireEvents :: MonadReflexHost t m => [DSum (EventTrigger t)] -> m ()
@@ -51,12 +56,51 @@ newEventWithTriggerRef = do
 -- Instances
 --------------------------------------------------------------------------------
 
-instance (Reflex t, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigger t (ReaderT r m) where
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ReaderT r m) where
   newEventWithTrigger initializer = do
     lift $ newEventWithTrigger initializer
 
-instance (Reflex t, MonadReflexHost t m) => MonadReflexHost t (ReaderT r m) where
+instance MonadReflexHost t m => MonadReflexHost t (ReaderT r m) where
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   subscribeEvent = lift . subscribeEvent
-  runFrame = lift . runFrame
+  runHostFrame = lift . runHostFrame
+
+instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (WriterT w m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+
+instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (WriterT w m) where
+  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
+  subscribeEvent = lift . subscribeEvent
+  runHostFrame = lift . runHostFrame
+
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (StateT s m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+
+instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
+  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
+  subscribeEvent = lift . subscribeEvent
+  runHostFrame = lift . runHostFrame
+
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ContT r m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+
+instance MonadReflexHost t m => MonadReflexHost t (ContT r m) where
+  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
+  subscribeEvent = lift . subscribeEvent
+  runHostFrame = lift . runHostFrame
+
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ExceptT e m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+
+instance MonadReflexHost t m => MonadReflexHost t (ExceptT e m) where
+  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
+  subscribeEvent = lift . subscribeEvent
+  runHostFrame = lift . runHostFrame
+
+instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (RWST r w s m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+
+instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (RWST r w s m) where
+  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
+  subscribeEvent = lift . subscribeEvent
   runHostFrame = lift . runHostFrame
