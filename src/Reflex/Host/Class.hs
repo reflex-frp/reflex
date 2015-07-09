@@ -5,6 +5,7 @@ import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
 import Reflex.Class
 
+import Control.Monad.Fix
 import Control.Monad.Trans
 import Control.Monad.Reader (ReaderT())
 import Control.Monad.Writer (WriterT())
@@ -16,7 +17,7 @@ import Data.Dependent.Sum (DSum)
 import Control.Monad.Ref
 
 -- | Framework implementation support class for the reflex implementation represented by @t@.
-class (Reflex t, MonadReflexCreateTrigger t (HostFrame t), MonadSample t (HostFrame t), MonadHold t (HostFrame t)) => ReflexHost t where
+class (Reflex t, MonadReflexCreateTrigger t (HostFrame t), MonadSample t (HostFrame t), MonadHold t (HostFrame t), MonadFix (HostFrame t)) => ReflexHost t where
   type EventTrigger t :: * -> *
   type EventHandle t :: * -> *
   type HostFrame t :: * -> *
