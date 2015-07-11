@@ -1380,7 +1380,6 @@ instance R.MonadReflexHost Spider SpiderHost where
   subscribeEvent e = SpiderHost $ do
     _ <- runFrame $ getEventSubscribed $ unSpiderEvent e --TODO: The result of this should actually be used
     return $ SpiderEventHandle (unSpiderEvent e)
-  runFrame = SpiderHost . runFrame
   runHostFrame = SpiderHost . runFrame . runSpiderHostFrame
 
 instance MonadRef SpiderHost where
