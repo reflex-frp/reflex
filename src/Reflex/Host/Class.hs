@@ -7,12 +7,12 @@ import Reflex.Class
 
 import Control.Monad.Fix
 import Control.Monad.Trans
-import Control.Monad.Reader (ReaderT())
-import Control.Monad.Writer (WriterT())
-import Control.Monad.Cont   (ContT())
-import Control.Monad.Except (ExceptT())
-import Control.Monad.RWS    (RWST())
-import Control.Monad.State  (StateT())
+import Control.Monad.Trans.Reader (ReaderT())
+import Control.Monad.Trans.Writer (WriterT())
+import Control.Monad.Trans.Cont   (ContT())
+import Control.Monad.Trans.Except (ExceptT())
+import Control.Monad.Trans.RWS    (RWST())
+import Control.Monad.Trans.State  (StateT())
 import Data.Dependent.Sum (DSum)
 import Control.Monad.Ref
 
