@@ -1,8 +1,6 @@
 {-# LANGUAGE ExistentialQuantification, GADTs, ScopedTypeVariables, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, RankNTypes, BangPatterns, UndecidableInstances, EmptyDataDecls, RecursiveDo, RoleAnnotations, FunctionalDependencies, FlexibleContexts #-}
 module Reflex.Host.Class where
 
-import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
-
 import Reflex.Class
 
 import Control.Monad.Fix
@@ -14,7 +12,11 @@ import Control.Monad.Trans.Except (ExceptT())
 import Control.Monad.Trans.RWS    (RWST())
 import Control.Monad.Trans.State  (StateT())
 import Data.Dependent.Sum (DSum)
+import Data.Monoid
 import Control.Monad.Ref
+
+-- Note: this import must come last to silence warnings from AMP
+import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
 -- | Framework implementation support class for the reflex implementation represented by @t@.
 class (Reflex t, MonadReflexCreateTrigger t (HostFrame t), MonadSample t (HostFrame t), MonadHold t (HostFrame t), MonadFix (HostFrame t)) => ReflexHost t where
