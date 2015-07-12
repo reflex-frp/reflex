@@ -1,8 +1,6 @@
 {-# LANGUAGE CPP, ExistentialQuantification, GADTs, ScopedTypeVariables, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, RankNTypes, BangPatterns, UndecidableInstances, EmptyDataDecls, RecursiveDo, RoleAnnotations, LambdaCase #-}
 module Reflex.Spider.Internal where
 
-import Prelude hiding (mapM, mapM_, any, sequence, concat)
-
 import qualified Reflex.Class as R
 import qualified Reflex.Host.Class as R
 
@@ -28,6 +26,9 @@ import Data.Monoid ((<>))
 import System.IO.Unsafe
 import Unsafe.Coerce
 import Control.Monad.Primitive
+
+-- Note: must come last to silence warnings due to AMP on GHC < 7.10
+import Prelude hiding (mapM, mapM_, any, sequence, concat)
 
 debugPropagate :: Bool
 

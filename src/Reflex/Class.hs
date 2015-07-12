@@ -1,8 +1,7 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase #-}
 module Reflex.Class where
 
-import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
-
+import Control.Applicative
 import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.Reader hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
@@ -22,6 +21,9 @@ import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc
 import Data.Semigroup
 import Data.Traversable
+
+-- Note: must come last to silence warnings due to AMP on GHC < 7.10
+import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
 import Debug.Trace (trace)
 
