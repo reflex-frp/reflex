@@ -8,7 +8,6 @@ script:
   - cabal-$CABALVER configure -v2 --enable-tests
   - cabal-$CABALVER build
   - cabal-$CABALVER test
-  - cabal-$CABALVER check
   - cabal-$CABALVER sdist   # tests that a source-distribution can be generated
 # Check that the resulting source distribution can be built & installed.
 # If there are no other `.tar.gz` files in `dist`, this can be even simpler:
