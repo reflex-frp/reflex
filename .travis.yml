@@ -1,0 +1,28 @@
+sudo: false
+cache:
+  directories:
+    - $HOME/hlint
+before_install:
+  - travis_retry cabal-$CABALVER update
+  - export PATH=/opt/ghc/$GHCVER/bin:/opt/happy/1.19.5/bin:/opt/alex/3.1.4/bin:$PATH
+install:
+  - travis_retry cabal-$CABALVER install --only-dependencies -j --enable-tests
+script:
+  - cabal-$CABALVER configure -v2 --enable-tests
+  - cabal-$CABALVER build
+  - cabal-$CABALVER test
+  - cabal-$CABALVER check
+  - cabal-$CABALVER sdist   # tests that a source-distribution can be generated
+# Check that the resulting source distribution can be built & installed.
+# If there are no other `.tar.gz` files in `dist`, this can be even simpler:
+# `cabal install --force-reinstalls dist/*-*.tar.gz`
+  - SRC_TGZ=$(cabal-$CABALVER info . | awk '{print $2;exit}').tar.gz &&
+    (cd dist && cabal-$CABALVER install --force-reinstalls "$SRC_TGZ")
+
+matrix:
+  include:
+    - env: CABALVER=1.18 GHCVER=7.8.4
+      addons: {apt: {packages: [cabal-install-1.18, ghc-7.8.4, alex-3.1.4, happy-1.19.5], sources: [hvr-ghc]}}
+    - env: CABALVER=1.22 GHCVER=7.10.1
+      addons: {apt: {packages: [cabal-install-1.22, ghc-7.10.1, alex-3.1.4, happy-1.19.5],sources: [hvr-ghc]}}
+  fast_finish: true
