@@ -1,15 +1,14 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase #-}
 module Reflex.Class where
 
-import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
-
+import Control.Applicative
 import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.Reader hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import Control.Monad.Writer (WriterT())
-import Control.Monad.Except (ExceptT())
-import Control.Monad.Cont (ContT())
-import Control.Monad.RWS (RWST())
+import Control.Monad.Trans.Writer (WriterT())
+import Control.Monad.Trans.Except (ExceptT())
+import Control.Monad.Trans.Cont (ContT())
+import Control.Monad.Trans.RWS (RWST())
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.These
 import Data.Align
@@ -22,6 +21,9 @@ import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc
 import Data.Semigroup
 import Data.Traversable
+
+-- Note: must come last to silence warnings due to AMP on GHC < 7.10
+import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
 import Debug.Trace (trace)
 
@@ -51,7 +53,7 @@ class (MonadHold t (PushM t), MonadSample t (PullM t), Functor (Event t), Functo
   -- | Create an Event that will occur whenever the input event is occurring and its occurrence value, another Event, is also occurring
   coincidence :: Event t (Event t a) -> Event t a
 
-class Monad m => MonadSample t m | m -> t where
+class (Applicative m, Monad m) => MonadSample t m | m -> t where
   -- | Get the current value in the Behavior
   sample :: Behavior t a -> m a
 

@@ -26,7 +26,9 @@ library
     primitive >= 0.5 && < 0.7,
     template-haskell >= 2.9 && < 2.11,
     ref-tf == 0.4.*,
-    exception-transformers == 0.4.*
+    exception-transformers == 0.4.*,
+    transformers >= 0.2,
+    transformers-compat >= 0.3
 
   exposed-modules:
     Reflex,
