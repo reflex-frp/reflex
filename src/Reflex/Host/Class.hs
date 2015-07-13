@@ -14,6 +14,7 @@ import Control.Monad.Trans.RWS    (RWST())
 import Control.Monad.Trans.State  (StateT())
 import Data.Dependent.Sum (DSum)
 import Data.Monoid
+import Data.GADT.Compare
 import Control.Monad.Ref
 
 -- Note: this import must come last to silence warnings from AMP
@@ -50,6 +51,7 @@ class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
   --
   -- Note: An event may be set up multiple times. So after the teardown action is executed, the event may still be set up again in the future.
   newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event t a)
+  newFanEventWithTrigger :: GCompare k => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> m (EventSelector t k)
 
 class (ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexHost t m | m -> t where
   -- | Propagate some events firings and read the values of events afterwards.

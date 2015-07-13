@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, ExistentialQuantification, GADTs, ScopedTypeVariables, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, RankNTypes, BangPatterns, UndecidableInstances, EmptyDataDecls, RecursiveDo, RoleAnnotations, LambdaCase #-}
+{-# LANGUAGE CPP, ExistentialQuantification, GADTs, ScopedTypeVariables, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, RankNTypes, BangPatterns, UndecidableInstances, EmptyDataDecls, RecursiveDo, RoleAnnotations, LambdaCase, TypeOperators #-}
 module Reflex.Spider.Internal where
 
 import qualified Reflex.Class as R
@@ -109,6 +109,7 @@ data EventEnv
    = EventEnv { eventEnvAssignments :: !(IORef [SomeAssignment])
               , eventEnvHoldInits :: !(IORef [SomeHoldInit])
               , eventEnvClears :: !(IORef [SomeMaybeIORef])
+              , eventEnvRootClears :: !(IORef [SomeDMapIORef])
               , eventEnvCurrentHeight :: !(IORef Int)
               , eventEnvCoincidenceInfos :: !(IORef [SomeCoincidenceInfo])
               , eventEnvDelayedMerges :: !(IORef (IntMap [DelayedMerge]))
@@ -137,6 +138,11 @@ scheduleClear :: IORef (Maybe a) -> EventM ()
 scheduleClear r = EventM $ do
   clears <- asks eventEnvClears
   liftIO $ modifyIORef' clears (SomeMaybeIORef r :)
+
+scheduleRootClear :: IORef (DMap k) -> EventM ()
+scheduleRootClear r = EventM $ do
+  clears <- asks eventEnvRootClears
+  liftIO $ modifyIORef' clears (SomeDMapIORef r :)
 
 scheduleMerge :: Int -> MergeSubscribed a -> EventM ()
 scheduleMerge height subscribed = EventM $ do
@@ -213,13 +219,13 @@ data Invalidator
 
 data RootSubscribed a
    = RootSubscribed { rootSubscribedSubscribers :: !(IORef [WeakSubscriber a])
-                    , rootSubscribedOccurrence :: !(IORef (Maybe a)) -- Alias to rootOccurrence
+                    , rootSubscribedOccurrence :: !(IO (Maybe a)) -- Lookup from rootOccurrence
                     }
 
-data Root a
-   = Root { rootOccurrence :: !(IORef (Maybe a)) -- The currently-firing occurrence of this event
-          , rootSubscribed :: !(IORef (Maybe (RootSubscribed a)))
-          , rootInit :: !(RootTrigger a -> IO (IO ()))
+data Root (k :: * -> *)
+   = Root { rootOccurrence :: !(IORef (DMap k)) -- The currently-firing occurrence of this event
+          , rootSubscribed :: !(IORef (DMap (WrapArg RootSubscribed k)))
+          , rootInit :: !(forall a. k a -> RootTrigger a -> IO (IO ()))
           }
 
 data SomeHoldInit = forall a. SomeHoldInit (Event a) (Hold a)
@@ -365,7 +371,7 @@ showSubscriberType = \case
   SubscriberCoincidenceInner _ -> "SubscriberCoincidenceInner"
 
 data Event a
-   = EventRoot !(Root a)
+   = forall k. GCompare k => EventRoot !(k a) !(Root k)
    | EventNever
    | forall b. EventPush !(Push b a)
    | forall k. (GCompare k, a ~ DMap k) => EventMerge !(Merge k)
@@ -375,7 +381,7 @@ data Event a
 
 showEventType :: Event a -> String
 showEventType = \case
-  EventRoot _ -> "EventRoot"
+  EventRoot _ _ -> "EventRoot"
   EventNever -> "EventNever"
   EventPush _ -> "EventPush"
   EventMerge _ -> "EventMerge"
@@ -402,7 +408,7 @@ data EventSubscribed a
 -- the weak pointer to it in some cases.
 
 {-# NOINLINE newRootSubscribed #-}
-newRootSubscribed :: IORef (Maybe a) -> IORef [WeakSubscriber a] -> IO (RootSubscribed a)
+newRootSubscribed :: IO (Maybe a) -> IORef [WeakSubscriber a] -> IO (RootSubscribed a)
 newRootSubscribed occ subs =
   return $! RootSubscribed
     { rootSubscribedOccurrence = occ
@@ -495,14 +501,14 @@ coincidence a = EventCoincidence $ Coincidence
   , coincidenceSubscribed = unsafeNewIORef a Nothing
   }
 
-newRoot :: IO (Root a)
+newRoot :: IO (Root k)
 newRoot = do
-  occRef <- newIORef Nothing
-  subscribedRef <- newIORef Nothing
+  occRef <- newIORef DMap.empty
+  subscribedRef <- newIORef DMap.empty
   return $ Root
     { rootOccurrence = occRef
     , rootSubscribed = subscribedRef
-    , rootInit = const $ return $ return ()
+    , rootInit = \_ _ -> return $ return ()
     }
 
 propagateAndUpdateSubscribersRef :: IORef [WeakSubscriber a] -> a -> EventM ()
@@ -517,10 +523,16 @@ run :: [DSum RootTrigger] -> ResultM b -> IO b
 run roots after = do
   when debugPropagate $ putStrLn "Running an event frame"
   result <- runFrame $ do
-    forM_ roots $ \(RootTrigger (_, occRef) :=> a) -> do
-      liftIO $ writeIORef occRef $ Just a
-      scheduleClear occRef
-    forM_ roots $ \(RootTrigger (subscribersRef, _) :=> a) -> do
+    rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
+      occBefore <- liftIO $ do
+        occBefore <- readIORef occRef
+        writeIORef occRef $ DMap.insert k a occBefore
+        return occBefore
+      if DMap.null occBefore
+        then do scheduleRootClear occRef
+                return $ Just r
+        else return Nothing
+    forM_ (catMaybes rootsToPropagate) $ \(RootTrigger (subscribersRef, _, k) :=> a) -> do
       propagateAndUpdateSubscribersRef subscribersRef a
     delayedRef <- EventM $ asks eventEnvDelayedMerges
     let go = do
@@ -552,6 +564,8 @@ run roots after = do
   return result
 
 data SomeMaybeIORef = forall a. SomeMaybeIORef (IORef (Maybe a))
+
+data SomeDMapIORef = forall k. SomeDMapIORef (IORef (DMap k))
 
 data SomeAssignment = forall a. SomeAssignment (Hold a) a
 
@@ -717,7 +731,7 @@ readBehaviorTracked b = case b of
 
 readEvent :: Event a -> ResultM (Maybe a)
 readEvent e = case e of
-  EventRoot r -> liftIO $ readIORef $ rootOccurrence r
+  EventRoot k r -> liftIO $ liftM (DMap.lookup k) $ readIORef $ rootOccurrence r
   EventNever -> return Nothing
   EventPush p -> do
     subscribed <- getPushSubscribed p
@@ -756,7 +770,7 @@ zeroRef = unsafePerformIO $ newIORef 0
 
 getEventSubscribed :: Event a -> EventM (EventSubscribed a)
 getEventSubscribed e = case e of
-  EventRoot r -> liftM EventSubscribedRoot $ getRootSubscribed r
+  EventRoot k r -> liftM EventSubscribedRoot $ getRootSubscribed k r
   EventNever -> return EventSubscribedNever
   EventPush p -> liftM EventSubscribedPush $ getPushSubscribed p
   EventFan k f -> liftM (EventSubscribedFan k) $ getFanSubscribed f
@@ -793,7 +807,7 @@ subscribeEventSubscribed es ws = case es of
 
 getEventSubscribedOcc :: EventSubscribed a -> IO (Maybe a)
 getEventSubscribedOcc es = case es of
-  EventSubscribedRoot r -> readIORef $ rootSubscribedOccurrence r
+  EventSubscribedRoot r -> rootSubscribedOccurrence r
   EventSubscribedNever -> return Nothing
   EventSubscribedPush subscribed -> readIORef $ pushSubscribedOccurrence subscribed
   EventSubscribedFan k subscribed -> do
@@ -824,21 +838,21 @@ noinlineFalse :: Bool
 noinlineFalse = False
 {-# NOINLINE noinlineFalse #-}
 
-getRootSubscribed :: Root a -> EventM (RootSubscribed a)
-getRootSubscribed r = do
+getRootSubscribed :: GCompare k => k a -> Root k -> EventM (RootSubscribed a)
+getRootSubscribed k r = do
   mSubscribed <- liftIO $ readIORef $ rootSubscribed r
-  case mSubscribed of
+  case DMap.lookup (WrapArg k) mSubscribed of
     Just subscribed -> return subscribed
     Nothing -> liftIO $ do
       subscribersRef <- newIORef []
-      subscribed <- newRootSubscribed (rootOccurrence r) subscribersRef
+      subscribed <- newRootSubscribed (liftM (DMap.lookup k) $ readIORef $ rootOccurrence r) subscribersRef
       -- Strangely, init needs the same stuff as a RootSubscribed has, but it must not be the same as the one that everyone's subscribing to, or it'll leak memory
-      uninit <- rootInit r $ RootTrigger (subscribersRef, rootOccurrence r)
+      uninit <- rootInit r k $ RootTrigger (subscribersRef, rootOccurrence r, k)
       addFinalizer subscribed $ do
         when noinlineFalse $ putStr "" -- For some reason, without this line, the finalizer will run earlier than it should
 --        putStrLn "Uninit root"
         uninit
-      liftIO $ writeIORef (rootSubscribed r) $ Just subscribed
+      liftIO $ modifyIORef' (rootSubscribed r) $ DMap.insert (WrapArg k) subscribed
       return subscribed
 
 -- When getPushSubscribed returns, the PushSubscribed returned will have a fully filled-in
@@ -1057,9 +1071,10 @@ runFrame a = do
   holdInitRef <- newIORef []
   heightRef <- newIORef 0
   toClearRef <- newIORef []
+  toClearRootRef <- newIORef []
   coincidenceInfosRef <- newIORef []
   delayedRef <- liftIO $ newIORef IntMap.empty
-  result <- flip runEventM (EventEnv toAssignRef holdInitRef toClearRef heightRef coincidenceInfosRef delayedRef) $ do
+  result <- flip runEventM (EventEnv toAssignRef holdInitRef toClearRef toClearRootRef heightRef coincidenceInfosRef delayedRef) $ do
     result <- a
     let runHoldInits = do
           holdInits <- liftIO $ readIORef holdInitRef
@@ -1071,6 +1086,8 @@ runFrame a = do
     return result
   toClear <- readIORef toClearRef
   forM_ toClear $ \(SomeMaybeIORef ref) -> writeIORef ref Nothing
+  toClearRoot <- readIORef toClearRootRef
+  forM_ toClearRoot $ \(SomeDMapIORef ref) -> writeIORef ref DMap.empty
   toAssign <- readIORef toAssignRef
   toReconnectRef <- newIORef []
   forM_ toAssign $ \(SomeAssignment h v) -> do
@@ -1323,7 +1340,7 @@ instance R.MonadHold Spider EventM where
   {-# INLINE hold #-}
   hold v0 e = SpiderBehavior <$> hold v0 (unSpiderEvent e)
 
-newtype RootTrigger a = RootTrigger (IORef [WeakSubscriber a], IORef (Maybe a))
+data RootTrigger a = forall k. GCompare k => RootTrigger (IORef [WeakSubscriber a], IORef (DMap k), k a)
 newtype SpiderEventHandle a = SpiderEventHandle { unEventHandle :: Event a }
 
 instance R.ReflexHost Spider where
@@ -1359,22 +1376,33 @@ instance R.MonadHold Spider SpiderHostFrame where
   {-# INLINE hold #-}
   hold v0 e = SpiderHostFrame $ R.hold v0 e
 
-newEventWithTriggerIO :: (RootTrigger a -> IO (IO ())) -> IO (R.Event Spider a)
+newEventWithTriggerIO :: forall a. (RootTrigger a -> IO (IO ())) -> IO (Event a)
 newEventWithTriggerIO f = do
-  occRef <- newIORef Nothing
-  subscribedRef <- newIORef Nothing
+  es <- newFanEventWithTriggerIO $ \Refl -> f
+  return $ select es Refl
+
+newFanEventWithTriggerIO :: GCompare k => (forall a. k a -> RootTrigger a -> IO (IO ())) -> IO (EventSelector k)
+newFanEventWithTriggerIO f = do
+  occRef <- newIORef DMap.empty
+  subscribedRef <- newIORef DMap.empty
   let !r = Root
         { rootOccurrence = occRef
         , rootSubscribed = subscribedRef
         , rootInit = f
         }
-  return $ SpiderEvent $ EventRoot r
+  return $ EventSelector $ \k -> EventRoot k r
 
 instance R.MonadReflexCreateTrigger Spider SpiderHost where
-  newEventWithTrigger = SpiderHost . newEventWithTriggerIO
+  newEventWithTrigger = SpiderHost . liftM SpiderEvent . newEventWithTriggerIO
+  newFanEventWithTrigger f = SpiderHost $ do
+    es <- newFanEventWithTriggerIO f
+    return $ R.EventSelector $ SpiderEvent . select es
 
 instance R.MonadReflexCreateTrigger Spider SpiderHostFrame where
-  newEventWithTrigger = SpiderHostFrame . EventM . liftIO . newEventWithTriggerIO
+  newEventWithTrigger = SpiderHostFrame . EventM . liftIO . liftM SpiderEvent . newEventWithTriggerIO
+  newFanEventWithTrigger f = SpiderHostFrame $ EventM $ liftIO $ do
+    es <- newFanEventWithTriggerIO f
+    return $ R.EventSelector $ SpiderEvent . select es
 
 instance R.MonadReflexHost Spider SpiderHost where
   fireEventsAndRead es a = SpiderHost $ run es a
