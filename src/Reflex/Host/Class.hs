@@ -3,6 +3,7 @@ module Reflex.Host.Class where
 
 import Reflex.Class
 
+import Control.Applicative
 import Control.Monad.Fix
 import Control.Monad.Trans
 import Control.Monad.Trans.Reader (ReaderT())
@@ -25,7 +26,7 @@ class (Reflex t, MonadReflexCreateTrigger t (HostFrame t), MonadSample t (HostFr
   type HostFrame t :: * -> *
 
 -- | Monad that allows to read events' values.
-class (ReflexHost t, Monad m) => MonadReadEvent t m | m -> t where
+class (ReflexHost t, Applicative m, Monad m) => MonadReadEvent t m | m -> t where
   -- | Read the value of an 'Event' from an 'EventHandle' (created by calling 'subscribeEvent').
   --
   -- After event propagation is done, all events can be in two states: either they are firing with some value or they are not firing.
@@ -36,7 +37,7 @@ class (ReflexHost t, Monad m) => MonadReadEvent t m | m -> t where
   readEvent :: EventHandle t a -> m (Maybe (m a))
 
 -- | A monad where new events feed from external sources can be created.
-class Monad m => MonadReflexCreateTrigger t m | m -> t where
+class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
   -- | Creates a root 'Event' (one that is not based on any other event).
   --
   -- When a subscriber first subscribes to an event (building another event
@@ -50,7 +51,7 @@ class Monad m => MonadReflexCreateTrigger t m | m -> t where
   -- Note: An event may be set up multiple times. So after the teardown action is executed, the event may still be set up again in the future.
   newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event t a)
 
-class (Monad m, ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexHost t m | m -> t where
+class (ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexHost t m | m -> t where
   -- | Propagate some events firings and read the values of events afterwards.
   --
   -- This function will create a new frame to fire the given events. It will then update all

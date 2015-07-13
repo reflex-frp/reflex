@@ -53,7 +53,7 @@ class (MonadHold t (PushM t), MonadSample t (PullM t), Functor (Event t), Functo
   -- | Create an Event that will occur whenever the input event is occurring and its occurrence value, another Event, is also occurring
   coincidence :: Event t (Event t a) -> Event t a
 
-class Monad m => MonadSample t m | m -> t where
+class (Applicative m, Monad m) => MonadSample t m | m -> t where
   -- | Get the current value in the Behavior
   sample :: Behavior t a -> m a
 
