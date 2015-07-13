@@ -1,7 +1,4 @@
 sudo: false
-cache:
-  directories:
-    - $HOME/hlint
 before_install:
   - travis_retry cabal-$CABALVER update
   - export PATH=/opt/ghc/$GHCVER/bin:/opt/happy/1.19.5/bin:/opt/alex/3.1.4/bin:$PATH
