@@ -532,7 +532,7 @@ run roots after = do
         then do scheduleRootClear occRef
                 return $ Just r
         else return Nothing
-    forM_ (catMaybes rootsToPropagate) $ \(RootTrigger (subscribersRef, _, k) :=> a) -> do
+    forM_ (catMaybes rootsToPropagate) $ \(RootTrigger (subscribersRef, _, _) :=> a) -> do
       propagateAndUpdateSubscribersRef subscribersRef a
     delayedRef <- EventM $ asks eventEnvDelayedMerges
     let go = do
