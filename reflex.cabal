@@ -42,7 +42,7 @@ library
 
   other-extensions: TemplateHaskell
   ghc-prof-options: -fprof-auto
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -Werror -fwarn-tabs -funbox-strict-fields -O2
 
 benchmark spider-bench
   type: exitcode-stdio-1.0
