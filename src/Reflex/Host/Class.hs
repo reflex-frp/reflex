@@ -115,8 +115,8 @@ newEventWithTriggerRef = do
 --------------------------------------------------------------------------------
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ReaderT r m) where
-  newEventWithTrigger initializer = do
-    lift $ newEventWithTrigger initializer
+  newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance MonadReflexHost t m => MonadReflexHost t (ReaderT r m) where
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
@@ -125,6 +125,7 @@ instance MonadReflexHost t m => MonadReflexHost t (ReaderT r m) where
 
 instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (WriterT w m) where
   newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (WriterT w m) where
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
@@ -133,6 +134,7 @@ instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (WriterT w m) wher
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (StateT s m) where
   newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
@@ -141,6 +143,7 @@ instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ContT r m) where
   newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance MonadReflexHost t m => MonadReflexHost t (ContT r m) where
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
@@ -149,6 +152,7 @@ instance MonadReflexHost t m => MonadReflexHost t (ContT r m) where
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ExceptT e m) where
   newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance MonadReflexHost t m => MonadReflexHost t (ExceptT e m) where
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
@@ -157,6 +161,7 @@ instance MonadReflexHost t m => MonadReflexHost t (ExceptT e m) where
 
 instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (RWST r w s m) where
   newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (RWST r w s m) where
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
