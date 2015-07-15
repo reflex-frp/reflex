@@ -421,12 +421,20 @@ class RebuildSortedHList l where
   rebuildSortedHList :: [DSum (HListPtr l)] -> HList l
 
 instance RebuildSortedHList '[] where
-  rebuildSortedFHList [] = FHNil
-  rebuildSortedHList [] = HNil
+  rebuildSortedFHList l = case l of
+    [] -> FHNil
+    _ : _ -> error "rebuildSortedFHList{'[]}: empty list expected"
+  rebuildSortedHList l = case l of
+    [] -> HNil
+    _ : _ -> error "rebuildSortedHList{'[]}: empty list expected"
 
 instance RebuildSortedHList t => RebuildSortedHList (h ': t) where
-  rebuildSortedFHList ((WrapArg HHeadPtr :=> h) : t) = FHCons h $ rebuildSortedFHList $ map (\(WrapArg (HTailPtr p) :=> v) -> WrapArg p :=> v) t
-  rebuildSortedHList ((HHeadPtr :=> h) : t) = HCons h $ rebuildSortedHList $ map (\(HTailPtr p :=> v) -> p :=> v) t
+  rebuildSortedFHList l = case l of
+    ((WrapArg HHeadPtr :=> h) : t) -> FHCons h $ rebuildSortedFHList $ map (\(WrapArg (HTailPtr p) :=> v) -> WrapArg p :=> v) t
+    _ -> error "rebuildSortedFHList{h':t}: non-empty list with HHeadPtr expected"
+  rebuildSortedHList l = case l of
+    ((HHeadPtr :=> h) : t) -> HCons h $ rebuildSortedHList $ map (\(HTailPtr p :=> v) -> p :=> v) t
+    _ -> error "rebuildSortedHList{h':t}: non-empty list with HHeadPtr expected"
 
 dmapToHList :: forall l. RebuildSortedHList l => DMap (HListPtr l) -> HList l
 dmapToHList = rebuildSortedHList . DMap.toList
@@ -449,12 +457,16 @@ class AllAreFunctors (f :: a -> *) (l :: [a]) where
 
 instance AllAreFunctors f '[] where
   type FunctorList f '[] = '[]
-  toFHList HNil = FHNil
+  toFHList l = case l of
+    HNil -> FHNil
+    _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
   fromFHList FHNil = HNil
 
 instance AllAreFunctors f t => AllAreFunctors f (h ': t) where
   type FunctorList f (h ': t) = f h ': FunctorList f t
-  toFHList (a `HCons` b) = a `FHCons` toFHList b
+  toFHList l = case l of
+    a `HCons` b -> a `FHCons` toFHList b
+    _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
   fromFHList (a `FHCons` b) = a `HCons` fromFHList b
 
 collectDyn :: ( RebuildSortedHList (HListElems b)
@@ -475,14 +487,20 @@ class IsHList a where
 instance IsHList (a, b) where
   type HListElems (a, b) = [a, b]
   toHList (a, b) = hBuild a b
-  fromHList (a `HCons` b `HCons` HNil) = (a, b)
+  fromHList l = case l of
+    a `HCons` b `HCons` HNil -> (a, b)
+    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
 
 instance IsHList (a, b, c, d) where
   type HListElems (a, b, c, d) = [a, b, c, d]
   toHList (a, b, c, d) = hBuild a b c d
-  fromHList (a `HCons` b `HCons` c `HCons` d `HCons` HNil) = (a, b, c, d)
+  fromHList l = case l of
+    a `HCons` b `HCons` c `HCons` d `HCons` HNil -> (a, b, c, d)
+    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
 
 instance IsHList (a, b, c, d, e, f) where
   type HListElems (a, b, c, d, e, f) = [a, b, c, d, e, f]
   toHList (a, b, c, d, e, f) = hBuild a b c d e f
-  fromHList (a `HCons` b `HCons` c `HCons` d `HCons` e `HCons` f `HCons` HNil) = (a, b, c, d, e, f)
+  fromHList l = case l of
+    a `HCons` b `HCons` c `HCons` d `HCons` e `HCons` f `HCons` HNil -> (a, b, c, d, e, f)
+    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
