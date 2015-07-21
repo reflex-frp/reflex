@@ -27,7 +27,7 @@ import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
 import Debug.Trace (trace)
 
-class (MonadHold t (PushM t), MonadSample t (PullM t), Functor (Event t), Functor (Behavior t)) => Reflex t where
+class (MonadHold t (PushM t), MonadSample t (PullM t), MonadFix (PushM t), Functor (Event t), Functor (Behavior t)) => Reflex t where
   -- | A container for a value that can change over time.  Behaviors can be sampled at will, but it is not possible to be notified when they change
   data Behavior t :: * -> *
   -- | A stream of occurrences.  During any given frame, an Event is either occurring or not occurring; if it is occurring, it will contain a value of the given type (its "occurrence type")
@@ -46,7 +46,7 @@ class (MonadHold t (PushM t), MonadSample t (PullM t), Functor (Event t), Functo
   type PullM t :: * -> *
   -- | Merge a collection of events; the resulting Event will only occur if at least one input event is occuring, and will contain all of the input keys that are occurring simultaneously
   merge :: GCompare k => DMap (WrapArg (Event t) k) -> Event t (DMap k) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
-  -- | Efficiently fan-out an event to many destinations.  This function should be partially applied, and then the result applied repeatedly to create child events 
+  -- | Efficiently fan-out an event to many destinations.  This function should be partially applied, and then the result applied repeatedly to create child events
   fan :: GCompare k => Event t (DMap k) -> EventSelector t k --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
   -- | Create an Event that will occur whenever the currently-selected input Event occurs
   switch :: Behavior t (Event t a) -> Event t a
@@ -110,7 +110,7 @@ instance MonadHold t m => MonadHold t (ContT r m) where
 -- | Create an Event from another Event.
 -- The provided function can sample 'Behavior's and hold 'Event's.
 pushAlways :: Reflex t => (a -> PushM t b) -> Event t a -> Event t b
-pushAlways f e = push (liftM Just . f) e
+pushAlways f = push (liftM Just . f)
 
 -- | Flipped version of 'fmap'.
 ffor :: Functor f => f a -> (a -> b) -> f b
@@ -298,7 +298,7 @@ dmapToThese m = case (DMap.lookup LeftTag m, DMap.lookup RightTag m) of
 -- 'Event's occurs. If both occur at the same time they are combined
 -- using 'mappend'.
 appendEvents :: (Reflex t, Monoid a) => Event t a -> Event t a -> Event t a
-appendEvents e1 e2 = fmap (mergeThese mappend) $ align e1 e2
+appendEvents e1 e2 = mergeThese mappend <$> align e1 e2
 
 {-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
@@ -358,3 +358,9 @@ instance Reflex t => Align (Event t) where
 -- occurs and the 'Behavior' is true at the time of occurence.
 gate :: Reflex t => Behavior t Bool -> Event t a -> Event t a
 gate = attachWithMaybe $ \allow a -> if allow then Just a else Nothing
+
+-- | Create a new behavior given a starting behavior and switch to a the
+--   behvior carried by the event when it fires.
+switcher :: (Reflex t, MonadHold t m)
+        => Behavior t a -> Event t (Behavior t a) -> m (Behavior t a)
+switcher b eb = pull . (sample <=< sample) <$> hold b eb
