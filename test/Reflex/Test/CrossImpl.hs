@@ -21,6 +21,7 @@ import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, se
 import Control.Monad.Writer hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Data.Dependent.Map (DSum (..))
 import System.Mem
+import System.Exit
 
 import System.IO.Unsafe
 
@@ -85,16 +86,20 @@ testSpider builder (bMap, eMap) = unsafePerformIO $ S.runSpiderHost $ do
 tracePerf :: Show a => a -> b -> b
 tracePerf = flip const
 
-testAgreement :: (Eq c, Eq d, Show c, Show d) => (forall m t. TestCaseConstraint t m => (Behavior t a, Event t b) -> m (Behavior t c, Event t d)) -> (Map Int a, Map Int b) -> IO ()
+testAgreement :: (Eq c, Eq d, Show c, Show d) => (forall m t. TestCaseConstraint t m => (Behavior t a, Event t b) -> m (Behavior t c, Event t d)) -> (Map Int a, Map Int b) -> IO Bool
 testAgreement builder inputs = do
   let identityResult = testPure builder inputs
   tracePerf "---------" $ return ()
   let spiderResult = testSpider builder inputs
   tracePerf "---------" $ return ()
-  if identityResult == spiderResult then putStrLn "Success:" >> print identityResult else do
-    putStrLn "Failure:"
-    putStrLn $ "Pure result: " <> show identityResult
-    putStrLn $ "Spider result:   " <> show spiderResult
+  let resultsAgree = identityResult == spiderResult
+  if resultsAgree
+    then do putStrLn "Success:"
+            print identityResult
+    else do putStrLn "Failure:"
+            putStrLn $ "Pure result: " <> show identityResult
+            putStrLn $ "Spider result:   " <> show spiderResult
+  return resultsAgree
 
 type TestCaseConstraint t m = (Reflex t, MonadSample t m, MonadHold t m, MonadFix m, MonadFix (PushM t))
 
@@ -215,7 +220,9 @@ testCases =
 
 test :: IO ()
 test = do
-  forM_ testCases $ \(name, TestCase inputs builder) -> do
+  results <- forM testCases $ \(name, TestCase inputs builder) -> do
     putStrLn $ "Test: " <> name
     testAgreement builder inputs
-  return ()
+  exitWith $ if and results
+             then ExitSuccess
+             else ExitFailure 1

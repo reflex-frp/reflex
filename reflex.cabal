@@ -44,6 +44,20 @@ library
   ghc-prof-options: -fprof-auto
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
 
+test-suite cross-impl
+  type: exitcode-stdio-1.0
+  main-is: Reflex/Test/CrossImpl.hs
+  ghc-options: -O2 -main-is Reflex.Test.CrossImpl.test
+  hs-source-dirs: test
+  build-depends:
+    base,
+    reflex,
+    ref-tf,
+    mtl,
+    containers,
+    dependent-map,
+    MemoTrie == 0.6.*
+
 benchmark spider-bench
   type: exitcode-stdio-1.0
   hs-source-dirs: bench
