@@ -1343,6 +1343,11 @@ instance R.MonadHold Spider EventM where
 data RootTrigger a = forall k. GCompare k => RootTrigger (IORef [WeakSubscriber a], IORef (DMap k), k a)
 newtype SpiderEventHandle a = SpiderEventHandle { unEventHandle :: Event a }
 
+instance R.MonadSubscribeEvent Spider SpiderHostFrame where
+  subscribeEvent e = SpiderHostFrame $ do
+    _ <- getEventSubscribed $ unSpiderEvent e --TODO: The result of this should actually be used
+    return $ SpiderEventHandle (unSpiderEvent e)
+
 instance R.ReflexHost Spider where
   type EventTrigger Spider = RootTrigger
   type EventHandle Spider = SpiderEventHandle
@@ -1404,14 +1409,16 @@ instance R.MonadReflexCreateTrigger Spider SpiderHostFrame where
     es <- newFanEventWithTriggerIO f
     return $ R.EventSelector $ SpiderEvent . select es
 
+instance R.MonadSubscribeEvent Spider SpiderHost where
+  subscribeEvent e = SpiderHost $ do
+    _ <- runFrame $ getEventSubscribed $ unSpiderEvent e --TODO: The result of this should actually be used
+    return $ SpiderEventHandle (unSpiderEvent e)
+
 newtype ReadPhase a = ReadPhase { runReadPhase :: ResultM a } deriving (Functor, Applicative, Monad, MonadFix, R.MonadSample Spider, R.MonadHold Spider)
 
 instance R.MonadReflexHost Spider SpiderHost where
   type ReadPhase SpiderHost = ReadPhase
   fireEventsAndRead es (ReadPhase a) = SpiderHost $ run es a
-  subscribeEvent e = SpiderHost $ do
-    _ <- runFrame $ getEventSubscribed $ unSpiderEvent e --TODO: The result of this should actually be used
-    return $ SpiderEventHandle (unSpiderEvent e)
   runHostFrame = SpiderHost . runFrame . runSpiderHostFrame
 
 instance MonadRef SpiderHost where
