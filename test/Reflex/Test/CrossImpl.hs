@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase, BangPatterns, ConstraintKinds #-}
 module Reflex.Test.CrossImpl (test) where
 
-import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
+import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl, and)
 
 import Reflex.Class
 import Reflex.Host.Class
