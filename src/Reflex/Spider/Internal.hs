@@ -1348,9 +1348,9 @@ instance R.ReflexHost Spider where
   type EventHandle Spider = SpiderEventHandle
   type HostFrame Spider = SpiderHostFrame
 
-instance R.MonadReadEvent Spider ResultM where
+instance R.MonadReadEvent Spider ReadPhase where
   {-# INLINE readEvent #-}
-  readEvent = liftM (fmap return) . readEvent . unEventHandle
+  readEvent = ReadPhase . liftM (fmap return) . readEvent . unEventHandle
 
 instance MonadRef EventM where
   type Ref EventM = Ref IO
@@ -1404,8 +1404,11 @@ instance R.MonadReflexCreateTrigger Spider SpiderHostFrame where
     es <- newFanEventWithTriggerIO f
     return $ R.EventSelector $ SpiderEvent . select es
 
+newtype ReadPhase a = ReadPhase { runReadPhase :: ResultM a } deriving (Functor, Applicative, Monad, MonadFix, R.MonadSample Spider, R.MonadHold Spider)
+
 instance R.MonadReflexHost Spider SpiderHost where
-  fireEventsAndRead es a = SpiderHost $ run es a
+  type ReadPhase SpiderHost = ReadPhase
+  fireEventsAndRead es (ReadPhase a) = SpiderHost $ run es a
   subscribeEvent e = SpiderHost $ do
     _ <- runFrame $ getEventSubscribed $ unSpiderEvent e --TODO: The result of this should actually be used
     return $ SpiderEventHandle (unSpiderEvent e)

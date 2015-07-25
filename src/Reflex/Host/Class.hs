@@ -53,7 +53,8 @@ class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
   newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event t a)
   newFanEventWithTrigger :: GCompare k => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> m (EventSelector t k)
 
-class (ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexHost t m | m -> t where
+class (ReflexHost t, MonadReflexCreateTrigger t m, MonadReadEvent t (ReadPhase m), MonadSample t (ReadPhase m), MonadHold t (ReadPhase m)) => MonadReflexHost t m | m -> t where
+  type ReadPhase m :: * -> *
   -- | Propagate some events firings and read the values of events afterwards.
   --
   -- This function will create a new frame to fire the given events. It will then update all
@@ -67,7 +68,7 @@ class (ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexHost t m | m ->
   -- The main loop waits for external events to happen (such as keyboard input or a mouse click)
   -- and then fires the corresponding events using this function. The read callback can be used
   -- to read output events and perform a corresponding response action to the external event.
-  fireEventsAndRead :: [DSum (EventTrigger t)] -> (forall m'. (MonadReadEvent t m') => m' a) -> m a
+  fireEventsAndRead :: [DSum (EventTrigger t)] -> (ReadPhase m a) -> m a
 
   -- | Subscribe to an event and set it up if needed.
   --
@@ -119,6 +120,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ReaderT r m
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance MonadReflexHost t m => MonadReflexHost t (ReaderT r m) where
+  type ReadPhase (ReaderT r m) = ReadPhase m
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   subscribeEvent = lift . subscribeEvent
   runHostFrame = lift . runHostFrame
@@ -128,6 +130,7 @@ instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t 
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (WriterT w m) where
+  type ReadPhase (WriterT w m) = ReadPhase m
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   subscribeEvent = lift . subscribeEvent
   runHostFrame = lift . runHostFrame
@@ -137,6 +140,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (StateT s m)
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
+  type ReadPhase (StateT s m) = ReadPhase m
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   subscribeEvent = lift . subscribeEvent
   runHostFrame = lift . runHostFrame
@@ -146,6 +150,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ContT r m) 
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance MonadReflexHost t m => MonadReflexHost t (ContT r m) where
+  type ReadPhase (ContT r m) = ReadPhase m
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   subscribeEvent = lift . subscribeEvent
   runHostFrame = lift . runHostFrame
@@ -155,6 +160,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ExceptT e m
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance MonadReflexHost t m => MonadReflexHost t (ExceptT e m) where
+  type ReadPhase (ExceptT e m) = ReadPhase m
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   subscribeEvent = lift . subscribeEvent
   runHostFrame = lift . runHostFrame
@@ -164,6 +170,7 @@ instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t 
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
 instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (RWST r w s m) where
+  type ReadPhase (RWST r w s m) = ReadPhase m
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   subscribeEvent = lift . subscribeEvent
   runHostFrame = lift . runHostFrame
