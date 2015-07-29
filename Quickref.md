@@ -1,10 +1,28 @@
-# Reflex Quick Reference
+# Reflex / Reflex-Dom Quick(ish) Reference
 
-Note that function signatures have been simplified by removing most typeclass constraints.
+## Typeclasses
+
+Many Reflex functions operate in monadic context `X a`, where the monadic type X supports various additional typeclasses such as MonadWidget, MonadHold, or MonadSample in addition to Monad itself.  For Reflex-Dom users, the type X will generally be `Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider))`, from the Reflex-Dom main entry point:
+
+```haskell
+mainWidget :: Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
+```
+
+The function signatures here have been simplified by removing many typeclass constraints and adding simple annotations to each function.
 
 Functions annotated with "[ ]" are *pure*:  They operate on Events, Behaviors, or Dynamics uniformly without regard to the "current time".
 
-Other functions must operate in some monadic context, because they produce a result "as of now".  Functions annotated with "[H]" run in any monad supporting MonadHold.  For Reflex-Dom users, this will typically be MonadWidget.  Functions with "[S]" (of which there is only one) operate in MonadSample.  Again, for Reflex-Dom users this is likely MonadWidget (because any MonadHold context also supports MonadSample).
+Other functions must operate in some monadic context, because they produce a result "as of now".  The annotations are:
+
+```haskell
+[S]   -- Function runs in any monad supporting MonadSample
+[H]   -- Function runs in any monad supporting MonadHold
+[W]   -- Function runs in any monad supporting MonadWidget
+```
+
+Since MonadWidget depends on MonadHold and MonadHold depends on MonadSample, any [S] function also runs in [H] or [W] context, and any [H] function also runs in [W].
+
+## Reflex
 
 ### Functions producing Event
 
@@ -75,11 +93,10 @@ Other functions must operate in some monadic context, because they produce a res
 [ ]   <*> :: Behavior t (a -> b) -> Behavior t a -> Behavior t b
 [ ]   >>= :: Behavior t a -> (a -> Behavior t b) -> Behavior t b
 [ ]   <> :: Monoid a => Behavior t a -> Behavior t a -> Behavior t a
--- Monadic value to Behavior
+-- Behavior to Behavior via monadic value
+[S]   sample :: Behavior t a -> m a
 [ ]   pull :: m a -> Behavior t a
       -- Note supplied value is in [S] context
--- Behavior to monadic value
-[S]   sample :: Behavior t a -> m a
 -- Event to monadic Behavior
 [H]   hold :: a -> Event t a -> m (Behavior t a)
 -- Unwrap Event-of-Behavior to monadic Behavior
@@ -91,14 +108,14 @@ Other functions must operate in some monadic context, because they produce a res
 ```haskell
 -- Trivial Dynamic
 [ ]   constDyn :: a -> Dynamic t a
--- Construct monadic Dynamic from Event
+-- Construct Dynamic from Event
 [H]   holdDyn :: a -> Event t a -> m (Dynamic t a)
 [H]   foldDyn :: (a -> b -> b) -> b -> Event t a -> m (Dynamic t b)
 [H]   foldDynM :: (a -> b -> m' b) -> b -> Event t a -> m (Dynamic t b)
       -- Note supplied function operates in [H] context
 [H]   count :: Num b => Event t a -> m (Dynamic t b)
 [H]   toggle :: Bool -> Event t a -> m (Dynamic t Bool)
--- Transform Dynamic to monadic Dynamic using function
+-- Transform Dynamic to Dynamic using function
 [H]   mapDyn :: (a -> b) -> Dynamic t a -> m (Dynamic t b)
 [H]   forDyn :: Dynamic t a -> (a -> b) -> m (Dynamic t b)
 [H]   mapDynM :: (a -> m' b) -> Dynamic t a -> m (Dynamic t b)
@@ -114,9 +131,49 @@ Other functions must operate in some monadic context, because they produce a res
 -- Efficient one-to-many fanout
 [ ]   demux :: Ord k => Dynamic t k -> Demux t k
 [H]   getDemuxed :: Eq k => Demux t k -> k -> m (Dynamic t Bool)
--- Dynamic to Dynamic, removing Event occurrences w/o value change
+-- Dynamic to Dynamic, removing updates w/o value change
 [ ]   nubDyn :: Eq a => Dynamic t a -> Dynamic t a
 -- Dynamic to identical Dynamic with debug trace.
 [ ]   traceDyn :: Show a => String -> Dynamic t a -> Dynamic t a
 [ ]   traceDynWith :: (a -> String) -> Dynamic t a -> Dynamic t a
+```
+
+## Reflex-Dom
+
+### Startup
+
+```haskell
+-- Reflex-Dom entry point.  Takes a monadic widget-building action of lengthy type and turns it into an IO action.
+[I]   mainWidget :: Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
+[I]   mainWidgetWithHead :: Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
+[I]   mainWidgetWithCss :: ByteString -> Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
+-- One-shot Event that is triggered once all initial widgets are built
+[W]   getPostBuild :: m (Event t ())
+```
+
+### Performing side-effects
+
+```haskell
+-- Run side-effecting actions in Event when it occurs; returned Event contains results.  Side effects run in (WidgetHost m) monad, which includes [S] and [H] and can also do I/O via liftIO
+[W]   performEvent :: Event t (WidgetHost m a) -> m (Event t a)
+-- Just run side-effects; no return Event
+[W]   performEvent_ :: Event t (WidgetHost m ()) -> m ()
+-- Actions are run asynchronously; each action is given a callback to call when it completes
+[W]   performEventAsync :: Event t ((a -> IO ()) -> WidgetHost m ()) -> m (Event t a)
+```
+
+```haskell
+-- Create a static text element
+[W]   text :: String -> m ()
+-- Additionally return the DOM element that was created.
+[W]   text' :: String -> m Text
+-- Create a dynamic text element
+[W]   dynText :: Dynamic t String -> m ()
+[W]   display :: Show a => Dynamic t a -> m ()
+-- Create a dynamically-redefined Widget, returning DOM elements as they're created
+[W]   dyn :: Dynamic t (m a) -> m (Event t a)
+-- Like holdDyn, but each Event occurrence redefines the widget
+[W]   widgetHold :: m a -> Event t (m a) -> m (Dynamic t a)
+
+. . .
 ```
