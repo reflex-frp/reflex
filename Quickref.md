@@ -162,18 +162,35 @@ Since MonadWidget depends on MonadHold and MonadHold depends on MonadSample, any
 [W]   performEventAsync :: Event t ((a -> IO ()) -> WidgetHost m ()) -> m (Event t a)
 ```
 
+### Creating widgets (DOM elements)
+
+In general, we want widgets that change over time -- why else are we using FRP? But there are two levels of dynamic behavior created by these functions.  In the simple case, the *content* of a widget is dynamic but the *definition* of the widget is static (imagine a text element with changing text).  The other possibility is that the definition of the widget is itself changing over time.
+
 ```haskell
--- Create a static text element
+-- Create a static text element (text' also returns the created DOM element)
 [W]   text :: String -> m ()
--- Additionally return the DOM element that was created.
 [W]   text' :: String -> m Text
 -- Create a dynamic text element
 [W]   dynText :: Dynamic t String -> m ()
 [W]   display :: Show a => Dynamic t a -> m ()
--- Create a dynamically-redefined Widget, returning DOM elements as they're created
+-- Create a dynamically-redefined widget. Returns Event of newly-created widgets.
 [W]   dyn :: Dynamic t (m a) -> m (Event t a)
--- Like holdDyn, but each Event occurrence redefines the widget
+-- Create a dynamically-redefined widget. Returns Dynamic of created widgets.
 [W]   widgetHold :: m a -> Event t (m a) -> m (Dynamic t a)
+-- Given a Dynamic key/value map and a function to create a widget for a given
+-- key & Dynamic value, create a bunch of widgets.  Widgets will be created,
+-- destroyed, and updated appropriately as the map changes.  Returns Dynamic map
+-- from keys to widgets.
+[W]   listWithKey :: Ord k => Dynamic t (Map k v) -> (k -> Dynamic t v -> m a) -> m (Dynamic t (Map k a))
+-- As above, but the supplied function creates dynamically-redefined widgets
+-- where the definition of the widget can depend on the Dynamic via 'dyn'.
+[W]   listViewWithKey :: Ord k => Dynamic t (Map k v) -> (k -> Dynamic t v -> m (Event t a)) -> m (Event t (Map k a))
+-- As above, but there is a "current key", and the widget constructor gets a
+-- Dynamic Bool indicating if that widget is currently selected.  This allows
+-- widgets to render differently when selected.
+[W]   selectViewListWithKey_ :: Ord k => Dynamic t k -> Dynamic t (Map k v) -> (k -> Dynamic t v -> Dynamic t Bool -> m (Event t a)) -> m (Event t k)
+-- As listWithKey, but takes initial values and an update Event instead of Dynamic.
+[W]   listWithKey' :: Ord k => Map k v -> Event t (Map k (Maybe v)) -> (k -> v -> Event t v -> m a) -> m (Dynamic t (Map k a))
 
 . . .
 ```
