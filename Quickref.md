@@ -152,10 +152,6 @@ These functions flatten Event-of-Event, Behavior-of-Event, or Dynamic-of-Event i
 [H]   distributeDMapOverDyn :: GCompare k => DMap (WrapArg Dynamic k) -> m (Dynamic (DMap k))
 [H]   combineDyn :: (a -> b -> c) -> Dynamic a -> Dynamic b -> m (Dynamic c)
 
--- Unwrap Dynamic-of-Dynamic to Dynamic
-[ ]   joinDyn :: Dynamic (Dynamic a) -> Dynamic a
-[ ]   joinDynThroughMap :: Ord k => Dynamic (Map k (Dynamic a)) -> Dynamic (Map k a)
-
 -- Efficient one-to-many fanout
 [ ]   demux :: Ord k => Dynamic k -> Demux k
 [H]   getDemuxed :: Eq k => Demux k -> k -> m (Dynamic Bool)
@@ -166,6 +162,11 @@ These functions flatten Event-of-Event, Behavior-of-Event, or Dynamic-of-Event i
 -- Dynamic to identical Dynamic with debug trace.
 [ ]   traceDyn :: Show a => String -> Dynamic a -> Dynamic a
 [ ]   traceDynWith :: (a -> String) -> Dynamic a -> Dynamic a
+
+-- Flatten Dynamic-of-Dynamic to Dynamic.  New Dynamic is used immediately.
+-- Output updated whenever inner or outer Dynamic updates. 
+[ ]   joinDyn :: Dynamic (Dynamic a) -> Dynamic a
+[ ]   joinDynThroughMap :: Ord k => Dynamic (Map k (Dynamic a)) -> Dynamic (Map k a)
 ```
 
 ## Reflex-Dom
@@ -213,12 +214,6 @@ Widgets may return any type (this is 'a' in many of the functions below).  Often
 -- Create a dynamic text element
 [W]   dynText :: Dynamic String -> m ()
 [W]   display :: Show a => Dynamic a -> m ()
-
--- Create a link ("a" element), given the destination URL.
-[W]   link :: String -> m Link
-
--- Same as above with a class attribute.
-[W]   linkClass :: String -> String -> m Link
 
 -- Create a "button" element with given label, return onClick Event
 [W]   button :: String -> m (Event ())
@@ -274,7 +269,7 @@ Note the "list" functions do not imply particular HTML tags (ul, li, etc), thoug
 
 ### Connecting to the real world (I/O)
 
-#### Input: Creating Events from user input
+#### Connecting to DOM events
 
 ```haskell
 -- Extract the specified Event from an 'El'.  The allowable event names, and their corresponding
@@ -282,7 +277,7 @@ Note the "list" functions do not imply particular HTML tags (ul, li, etc), thoug
 [ ]   domEvent :: EventName en -> El -> Event (EventResultType en)
 ```
 
-#### Output: Performing side-effects in response to Events
+#### Performing arbitrary I/O in response to Events
 
 ```haskell
 -- Run side-effecting actions in Event when it occurs; returned Event contains results.
