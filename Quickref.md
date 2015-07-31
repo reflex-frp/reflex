@@ -224,28 +224,6 @@ Widgets may return any type (this is 'a' in many of the functions below).  Often
 [W]   blank :: m ()
 ```
 
-#### Input widgets
-
-(These could be implemented entirely using the functions above.)
-
-These widget builders take a configuration record and return a record containing Events or other useful data associated with the created widget (similar to 'El').  The configuration records have default values, so you can just supply 'def'.  See Reflex/Dom/Widget/Input.hs for record fields (Lenses are provided).
-
-look into preventDefault
-
-```haskell
--- Text input.
-[W]   textInput :: TextInputConfig -> m TextInput
-[ ]   textInputGetEnter :: TextInput -> Event ()
-[W]   textArea :: TextAreaConfig -> m TextArea
-
--- Checkbox.  The Bool supplies the initial state.
-[W]   checkbox :: Bool -> CheckboxConfig -> m Checkbox
-
--- Dropdown with Dynamic options.  First argument is initial state.
-[W]   dropdown :: (Ord k, Show k, Read k) =>
-          k -> Dynamic (Map k String) -> DropdownConfig k -> m (Dropdown k)
-```
-
 #### Dynamic widgets
 
 In the Dynamic cases so far, the *content* of a widget is dynamic but the *definition* of the widget is static.  The functions below enable the definition and/or structure of the widget itself to change over time.
@@ -300,6 +278,33 @@ Note the "list" functions do not imply particular HTML tags (ul, li, etc), thoug
 -- workflowView
 ```
 
+#### Utility widgets
+
+These are useful widgets that are implemented (or could be implemented) in terms of the low-level widgets above.
+
+Some of these widget builders take a configuration record and return a record containing Events or other useful data associated with the created widget (similar to 'El').  The configuration records have default values, so you can just supply 'def'.  See Reflex/Dom/Widget/Input.hs for record fields (Lenses are provided).
+
+```haskell
+-- Text input.
+[W]   textInput :: TextInputConfig -> m TextInput
+[ ]   textInputGetEnter :: TextInput -> Event ()
+[W]   textArea :: TextAreaConfig -> m TextArea
+
+-- Checkbox.  The Bool supplies the initial state.
+[W]   checkbox :: Bool -> CheckboxConfig -> m Checkbox
+
+-- Dropdown with Dynamic options.  First argument is initial state.
+[W]   dropdown :: (Ord k, Show k, Read k) =>
+          k -> Dynamic (Map k String) -> DropdownConfig k -> m (Dropdown k)
+
+-- Widget to efficiently display long scrolling lists.  Dynamically control number of items in
+-- list, current scroll position, attributes, and row content.  Returns current scroll position
+-- and current selection.  Full documentation in Reflex/Dom/Widget/Lazy.hs
+[W]   virtualListWithSelection :: Ord k => Int -> Int -> Dynamic Int -> Int -> Event Int ->
+          String -> Dynamic (Map String String) -> String -> Dynamic (Map String String) ->
+          (k -> Dynamic v -> m ()) -> Dynamic (Map k v) -> m (Dynamic (Int, Int), Event k)
+```
+
 ### Connecting to the real world (I/O)
 
 #### Connecting to DOM events
@@ -323,6 +328,39 @@ Note the "list" functions do not imply particular HTML tags (ul, li, etc), thoug
 
 -- Actions run asynchronously; actions are given a callback to send return values
 [W]   performEventAsync :: Event ((a -> IO ()) -> WidgetHost m ()) -> m (Event a)
+```
+
+#### XMLHttpRequest
+
+Convenience functions for XMLHttpRequest.  For configuration field details, see Reflex/Dom/Xhr.hs.
+
+```haskell
+-- Given method, URL, and config record (with default instance), construct a request.
+[ ]   xhrRequest :: String -> String -> XhrRequestConfig -> XhrRequest
+
+-- Given Event of requests, issue them and produce Event of responses.
+[W]   performRequestAsync :: Event XhrRequest -> m (Event XhrResponse)
+
+-- Issue a collection of requests, wait for them ALL to complete, return collected results.
+[W]   performRequestsAsync :: Traversable f => Event (f XhrRequest) -> m (Event (f XhrResponse))
+
+-- Convenience function to decode JSON-encoded response.
+[ ]   decodeXhrResponse :: FromJSON a => XhrResponse -> Maybe a
+
+-- Simplified interface to "GET" URLs and return decoded results.
+[W]   getAndDecode :: FromJSON a => Event String -> m (Event (Maybe a))
+```
+
+#### Time
+
+```haskell
+-- Given a time interval in seconds and a basis time, create an Event that fires on the given
+-- interval. The Event will report the number of time intervals elapsed since the basis time
+-- (and other info, see Reflex/Dom/Time.hs).  High load will cause ticks to be dropped.
+[W]   tickLossy :: NominalDiffTime -> UTCTime -> m (Event t TickInfo)
+
+-- Delay an Event's occurences by a given amount in seconds.
+[W]   delay :: NominalDiffTime -> Event t a -> m (Event t a)
 ```
 
 ### Startup
