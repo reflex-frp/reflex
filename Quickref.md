@@ -39,7 +39,6 @@ Since MonadWidget depends on MonadHold and MonadHold depends on MonadSample, any
 [ ]   ffilter   :: (a ->    Bool) ->        Event a -> Event a
 [ ]   ffor      ::        Event a -> (a ->       b) -> Event b
 [ ]   fforMaybe ::        Event a -> (a -> Maybe b) -> Event b
-[ ]   splitE :: Event (a, b) -> (Event a, Event b)
 
 -- Event to identical Event with debug trace.
 [ ]   traceEvent     :: Show a => String -> Event a -> Event a
@@ -78,32 +77,6 @@ Since MonadWidget depends on MonadHold and MonadHold depends on MonadSample, any
 [H]   headE     :: Event a -> m (Event a)
 [H]   tailE     :: Event a -> m (Event a)
 [H]   headTailE :: Event a -> m (Event a, Event a)
-```
-
-### Event flattening functions
-
-These functions flatten Event-of-Event, Behavior-of-Event, or Dynamic-of-Event into Event, where the returned Event fires whenever the latest Event supplied by the wrapper fires.  There are subtle differences in how they handle *coincidences* -- situations where the old or new Event fires at the same instant that we switch from old to new.  In some cases, the output Event tracks the old Event at the instant of switchover, while in other cases it tracks the new Event.
-
-```haskell
--- Flatten Event-of-Event to monadic Event.  New Event is used immediately.
-[H]   switchPromptly    ::       Event a ->    Event (Event a)  -> m (Event a)
-
--- Flatten Behavior-of-Event to Event.  Old Event is used during switchover.
-[ ]   switch            ::                  Behavior (Event a)  ->    Event a
-
--- Flatten Dyanmic-of-Event to Event.  New Event is used immediately.
-[ ]   switchPromptlyDyn ::                   Dynamic (Event a)  ->    Event a
-
--- Flatten Event-of-Event to Event that fires when both wrapper and new Event fire.
-[ ]   coincidence       ::                     Event (Event a)  ->    Event a
-
--- Flatten Dynamic-of-Dynamic to Dynamic.  New Dynamic is used immediately.
--- Output updated whenever inner or outer Dynamic updates. 
-[ ]   joinDyn           ::          Dynamic        (Dynamic a)  ->  Dynamic a
-[ ]   joinDynThroughMap :: Ord k => Dynamic (Map k (Dynamic a)) ->  Dynamic (Map k a)
-
--- Flatten Event-of-Behavior to monadic Behavior
-[H]   switcher          :: Behavior a -> Event (Behavior a) -> m (Behavior a)
 ```
 
 ### Functions producing Behavior
@@ -168,6 +141,34 @@ These functions flatten Event-of-Event, Behavior-of-Event, or Dynamic-of-Event i
 -- Dynamic to identical Dynamic with debug trace.
 [ ]   traceDyn     :: Show a => String -> Dynamic a -> Dynamic a
 [ ]   traceDynWith ::    (a -> String) -> Dynamic a -> Dynamic a
+```
+
+### Flattening functions
+
+These functions flatten nested types such as Event-of-Event, Behavior-of-Event, Event-of-Behavior etc, removing the outer wrapper.
+
+For Events, the returned Event fires whenever the latest Event supplied by the wrapper fires.  There are differences in how the functions handle *coincidences* -- situations where the old or new Event fires at the same instant that we switch from old to new.  In some cases, the output Event tracks the old Event at the instant of switchover, while in other cases it tracks the new Event.
+
+```haskell
+-- Flatten Event-of-Event to monadic Event.  New Event is used immediately.
+[H]   switchPromptly    ::       Event a ->    Event (Event a)  -> m (Event a)
+
+-- Flatten Behavior-of-Event to Event.  Old Event is used during switchover.
+[ ]   switch            ::                  Behavior (Event a)  ->    Event a
+
+-- Flatten Dyanmic-of-Event to Event.  New Event is used immediately.
+[ ]   switchPromptlyDyn ::                   Dynamic (Event a)  ->    Event a
+
+-- Flatten Event-of-Event to Event that fires when both wrapper AND new Event fire.
+[ ]   coincidence       ::                     Event (Event a)  ->    Event a
+
+-- Flatten Dynamic-of-Dynamic to Dynamic.  New Dynamic is used immediately.
+-- Output updated whenever inner OR outer Dynamic updates. 
+[ ]   joinDyn           ::          Dynamic        (Dynamic a)  ->  Dynamic a
+[ ]   joinDynThroughMap :: Ord k => Dynamic (Map k (Dynamic a)) ->  Dynamic (Map k a)
+
+-- Flatten Event-of-Behavior to monadic Behavior
+[H]   switcher          ::    Behavior a -> Event (Behavior a)  -> m (Behavior a)
 ```
 
 ## Reflex-Dom
