@@ -156,16 +156,22 @@ mapDynM f d = do
 -- time the 'Event' occurs using a folding function on the previous
 -- value and the value of the 'Event'.
 foldDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> b) -> b -> Event t a -> m (Dynamic t b)
-foldDyn f = foldDynM (\o v -> return $ f o v)
+foldDyn f = foldDynMaybe $ \o v -> Just $ f o v
 
 -- | Create a 'Dynamic' using the initial value and change it each
 -- time the 'Event' occurs using a monadic folding function on the
 -- previous value and the value of the 'Event'.
 foldDynM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t b) -> b -> Event t a -> m (Dynamic t b)
-foldDynM f z e = do
+foldDynM f = foldDynMaybeM $ \o v -> liftM Just $ f o v
+
+foldDynMaybe :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> Maybe b) -> b -> Event t a -> m (Dynamic t b)
+foldDynMaybe f = foldDynMaybeM $ \o v -> return $ f o v
+
+foldDynMaybeM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe b)) -> b -> Event t a -> m (Dynamic t b)
+foldDynMaybeM f z e = do
   rec let e' = flip push e $ \o -> do
             v <- sample b'
-            liftM Just $ f o v
+            f o v
       b' <- hold z e'
   return $ Dynamic b' e'
 
