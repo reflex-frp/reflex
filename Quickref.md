@@ -28,33 +28,33 @@ Since MonadWidget depends on MonadHold and MonadHold depends on MonadSample, any
 
 ```haskell
 -- Trivial Event
-[ ]   never :: Event a
+[ ]   never   ::              Event a
 
 -- Extract Event from Dynamic
 [ ]   updated :: Dynamic a -> Event a
 
 -- Transform Event to Event using function
-[ ]   fmap :: (a -> b) -> Event a -> Event b
-[ ]   fmapMaybe :: (a -> Maybe b) -> Event a -> Event b
-[ ]   ffor :: Event a -> (a -> b) -> Event b
-[ ]   fforMaybe :: Event a -> (a -> Maybe b) -> Event b
-[ ]   ffilter :: (a -> Bool) -> Event a -> Event a
+[ ]   fmap      :: (a ->       b) ->        Event a -> Event b
+[ ]   fmapMaybe :: (a -> Maybe b) ->        Event a -> Event b
+[ ]   ffilter   :: (a ->    Bool) ->        Event a -> Event a
+[ ]   ffor      ::        Event a -> (a ->       b) -> Event b
+[ ]   fforMaybe ::        Event a -> (a -> Maybe b) -> Event b
 [ ]   splitE :: Event (a, b) -> (Event a, Event b)
 
 -- Event to identical Event with debug trace.
-[ ]   traceEvent :: Show a => String -> Event a -> Event a
-[ ]   traceEventWith :: (a -> String) -> Event a -> Event a
+[ ]   traceEvent     :: Show a => String -> Event a -> Event a
+[ ]   traceEventWith ::    (a -> String) -> Event a -> Event a
 
 -- Transform Event to Event by sampling Behavior or Dynamic
-[ ]   tag :: Behavior b -> Event a -> Event b
-[ ]   tagDyn :: Dynamic a -> Event b -> Event a
-[ ]   gate :: Behavior Bool -> Event a -> Event a
-[ ]   attach :: Behavior a -> Event b -> Event (a, b)
-[ ]   attachDyn :: Dynamic a -> Event b -> Event (a, b)
-[ ]   attachWith :: (a -> b -> c) -> Behavior a -> Event b -> Event c
-[ ]   attachDynWith :: (a -> b -> c) -> Dynamic a -> Event b -> Event c
-[ ]   attachWithMaybe :: (a -> b -> Maybe c) -> Behavior a -> Event b -> Event c
-[ ]   attachDynWithMaybe :: (a -> b -> Maybe c) -> Dynamic a -> Event b -> Event c
+[ ]   gate   ::                                 Behavior Bool -> Event a -> Event a
+[ ]   tag    ::                                    Behavior a -> Event b -> Event a
+[ ]   tagDyn ::                                     Dynamic a -> Event b -> Event a
+[ ]   attach ::                                    Behavior a -> Event b -> Event (a, b)
+[ ]   attachDyn ::                                  Dynamic a -> Event b -> Event (a, b)
+[ ]   attachWith ::         (a -> b ->       c) -> Behavior a -> Event b -> Event c
+[ ]   attachDynWith ::      (a -> b ->       c) ->  Dynamic a -> Event b -> Event c
+[ ]   attachWithMaybe ::    (a -> b -> Maybe c) -> Behavior a -> Event b -> Event c
+[ ]   attachDynWithMaybe :: (a -> b -> Maybe c) ->  Dynamic a -> Event b -> Event c
 
 -- Combine multiple Events
 [ ]   <> :: Monoid a => Event a -> Event a -> Event a
@@ -65,18 +65,18 @@ Since MonadWidget depends on MonadHold and MonadHold depends on MonadSample, any
 [ ]   mergeMap :: Ord k => Map k (Event a) -> Event (Map k a)
 
 -- Efficient one-to-many fanout
-[ ]   fan :: GCompare k => Event (DMap k) -> EventSelector k
-[ ]   fanMap :: Ord k => Event (Map k a) -> EventSelector (Const2 k a)
-[ ]   select :: EventSelector k -> k a -> Event a
+[ ]   fanMap ::      Ord k => Event (Map k a) -> EventSelector (Const2 k a)
+[ ]   fan    :: GCompare k => Event  (DMap k) -> EventSelector k
+[ ]   select ::                                  EventSelector k -> k a -> Event a
 
 -- Event to Event via monadic function
-[ ]   push :: (a -> m (Maybe b)) -> Event a -> Event b
-[ ]   pushAlways :: (a -> m b) -> Event a -> Event b
+[ ]   push       :: (a -> m (Maybe b)) -> Event a -> Event b
+[ ]   pushAlways :: (a -> m        b ) -> Event a -> Event b
       -- Note supplied function operates in [H] context
 
 -- Event to monadic Event
-[H]   headE :: Event a -> m (Event a)
-[H]   tailE :: Event a -> m (Event a)
+[H]   headE     :: Event a -> m (Event a)
+[H]   tailE     :: Event a -> m (Event a)
 [H]   headTailE :: Event a -> m (Event a, Event a)
 ```
 
@@ -86,63 +86,69 @@ These functions flatten Event-of-Event, Behavior-of-Event, or Dynamic-of-Event i
 
 ```haskell
 -- Flatten Event-of-Event to monadic Event.  New Event is used immediately.
-[H]   switchPromptly :: Event a -> Event (Event a) -> m (Event a)
+[H]   switchPromptly    ::       Event a ->    Event (Event a)  -> m (Event a)
 
 -- Flatten Behavior-of-Event to Event.  Old Event is used during switchover.
-[ ]   switch :: Behavior (Event a) -> Event a
+[ ]   switch            ::                  Behavior (Event a)  ->    Event a
 
 -- Flatten Dyanmic-of-Event to Event.  New Event is used immediately.
-[ ]   switchPromptlyDyn :: Dynamic (Event a) -> Event a
+[ ]   switchPromptlyDyn ::                   Dynamic (Event a)  ->    Event a
 
 -- Flatten Event-of-Event to Event that fires when both wrapper and new Event fire.
-[ ]   coincidence :: Event (Event a) -> Event a
+[ ]   coincidence       ::                     Event (Event a)  ->    Event a
+
+-- Flatten Dynamic-of-Dynamic to Dynamic.  New Dynamic is used immediately.
+-- Output updated whenever inner or outer Dynamic updates. 
+[ ]   joinDyn           ::          Dynamic        (Dynamic a)  ->  Dynamic a
+[ ]   joinDynThroughMap :: Ord k => Dynamic (Map k (Dynamic a)) ->  Dynamic (Map k a)
+
+-- Flatten Event-of-Behavior to monadic Behavior
+[H]   switcher          :: Behavior a -> Event (Behavior a) -> m (Behavior a)
 ```
 
 ### Functions producing Behavior
 
 ```haskell
 -- Trivial Behavior
-[ ]   constant :: a -> Behavior a
+[ ]   constant ::              a ->    Behavior a
 
 -- Extract Behavior from Dynamic
-[ ]   current :: Dynamic a -> Behavior a
+[ ]   current  ::      Dynamic a ->    Behavior a
+
+-- Event to monadic Behavior
+[H]   hold     :: a ->   Event a -> m (Behavior a)
 
 -- Transform Behavior to Behavior using function
-[ ]   fmap :: (a -> b) -> Behavior a -> Behavior b
-[ ]   ffor :: Behavior a -> (a -> b) -> Behavior b
+[ ]   fmap ::   (a -> b) -> Behavior a -> Behavior b
+[ ]   ffor :: Behavior a ->   (a -> b) -> Behavior b
 [ ]   <*> :: Behavior (a -> b) -> Behavior a -> Behavior b
 [ ]   >>= :: Behavior a -> (a -> Behavior b) -> Behavior b
 [ ]   <> :: Monoid a => Behavior a -> Behavior a -> Behavior a
+-- ... plus many more due to typeclass membership
 
 -- Behavior to Behavior via monadic value
 [S]   sample :: Behavior a -> m a
-[ ]   pull :: m a -> Behavior a
+[ ]   pull   ::               m a -> Behavior a
       -- Note supplied value is in [S] context
-
--- Event to monadic Behavior
-[H]   hold :: a -> Event a -> m (Behavior a)
-
--- Flatten Event-of-Behavior to monadic Behavior
-[H]   switcher :: Behavior a -> Event (Behavior a) -> m (Behavior a)
 ```
 
 ### Functions producing Dynamic
 
 ```haskell
 -- Trivial Dynamic
-[ ]   constDyn :: a -> Dynamic a
+[ ]   constDyn ::                     a            ->    Dynamic a
 
 -- Construct Dynamic from Event
-[H]   holdDyn :: a -> Event a -> m (Dynamic a)
-[H]   foldDyn :: (a -> b -> b) -> b -> Event a -> m (Dynamic b)
+[H]   holdDyn  ::                     a -> Event a -> m (Dynamic a)
+[H]   foldDyn  :: (a -> b ->    b) -> b -> Event a -> m (Dynamic b)
 [H]   foldDynM :: (a -> b -> m' b) -> b -> Event a -> m (Dynamic b)
       -- Note supplied function operates in [H] context
 [H]   count :: Num b => Event a -> m (Dynamic b)
 [H]   toggle :: Bool -> Event a -> m (Dynamic Bool)
 
 -- Transform Dynamic to Dynamic using function
-[H]   mapDyn :: (a -> b) -> Dynamic a -> m (Dynamic b)
-[H]   forDyn :: Dynamic a -> (a -> b) -> m (Dynamic b)
+[H]   forDyn  ::   Dynamic a ->  (a -> b) -> m (Dynamic b)
+[H]   mapDyn  :: (a ->    b) -> Dynamic a -> m (Dynamic b)
 [H]   mapDynM :: (a -> m' b) -> Dynamic a -> m (Dynamic b)
       -- Note supplied function runs in [S] context
 [H]   splitDyn :: Dynamic (a, b) -> m (Dynamic a, Dynamic b)
@@ -153,20 +159,15 @@ These functions flatten Event-of-Event, Behavior-of-Event, or Dynamic-of-Event i
 [H]   combineDyn :: (a -> b -> c) -> Dynamic a -> Dynamic b -> m (Dynamic c)
 
 -- Efficient one-to-many fanout
-[ ]   demux :: Ord k => Dynamic k -> Demux k
-[H]   getDemuxed :: Eq k => Demux k -> k -> m (Dynamic Bool)
+[ ]   demux      :: Ord k => Dynamic k -> Demux k
+[H]   getDemuxed ::  Eq k =>              Demux k -> k -> m (Dynamic Bool)
 
 -- Dynamic to Dynamic, removing updates w/o value change
 [ ]   nubDyn :: Eq a => Dynamic a -> Dynamic a
 
 -- Dynamic to identical Dynamic with debug trace.
-[ ]   traceDyn :: Show a => String -> Dynamic a -> Dynamic a
-[ ]   traceDynWith :: (a -> String) -> Dynamic a -> Dynamic a
-
--- Flatten Dynamic-of-Dynamic to Dynamic.  New Dynamic is used immediately.
--- Output updated whenever inner or outer Dynamic updates. 
-[ ]   joinDyn :: Dynamic (Dynamic a) -> Dynamic a
-[ ]   joinDynThroughMap :: Ord k => Dynamic (Map k (Dynamic a)) -> Dynamic (Map k a)
+[ ]   traceDyn     :: Show a => String -> Dynamic a -> Dynamic a
+[ ]   traceDynWith ::    (a -> String) -> Dynamic a -> Dynamic a
 ```
 
 ## Reflex-Dom
@@ -182,37 +183,37 @@ Widgets may return any type (this is 'a' in many of the functions below).  Often
 ```haskell
 -- Simplest form.  Create a widget of given type containing the given child.
 -- Return whatever the child returns.
-[W]   el :: String -> m a -> m a
+[W]   el         :: String ->                                m a -> m a
 
 -- This version returns the 'El' as well.
-[W]   el' :: String -> m a -> m (El, a)
+[W]   el'        :: String ->                                m a -> m (El, a)
 
--- These two additionaly apply attributes to the element, such as ("class" =: "blah")
-[W]   elAttr :: String -> Map String String -> m a -> m a
-[W]   elAttr' :: String -> Map String String -> m a -> m (El, a)
+-- These two additionally apply attributes to the element, such as ("class" =: "blah")
+[W]   elAttr     :: String ->          Map String String  -> m a -> m a
+[W]   elAttr'    :: String ->          Map String String  -> m a -> m (El, a)
 
 -- As above, but now the attribute map is Dynamic
-[W]   elDynAttr :: String -> Dynamic (Map String String) -> m a -> m a
+[W]   elDynAttr  :: String -> Dynamic (Map String String) -> m a -> m a
 [W]   elDynAttr' :: String -> Dynamic (Map String String) -> m a -> m (El, a)
 
 -- Shortcut for elAttr when you only want to set the "class" attribute.
-[W]   elClass :: String -> String -> m a -> m a
+[W]   elClass    :: String ->                      String -> m a -> m a
 
 -- Even shorter-cut for above when element type is "div".  Create a div of given class.
-[W]   divClass :: String -> m a -> m a
+[W]   divClass   ::                                String -> m a -> m a
 
 -- Create a widget of given type with arbitrary, Dymamic HTML inside.
-[W]   elDynHtml' :: String -> Dynamic String -> m El
+[W]   elDynHtml'     :: String ->                      Dynamic String -> m El
 [W]   elDynHtmlAttr' :: String -> Map String String -> Dynamic String -> m El
 
 -- Shortcut for elDynHtml' where the type is "div" and you don't need the 'El'.
-[W]   dynHtml :: Dynamic String -> m ()
+[W]   dynHtml        ::                                Dynamic String -> m ()
 
 -- Create a static text element
-[W]   text :: String -> m ()
+[W]   text    ::              String -> m ()
 
 -- Create a dynamic text element
-[W]   dynText :: Dynamic String -> m ()
+[W]   dynText ::      Dynamic String -> m ()
 [W]   display :: Show a => Dynamic a -> m ()
 
 -- Create a "button" element with given label, return onClick Event
@@ -229,37 +230,46 @@ In the Dynamic cases above, the *content* of a widget is dynamic but the *defini
 Note the "list" functions do not imply particular HTML tags (ul, li, etc), though the widgets they create can have those tags if you construct them appropriately.
 
 ```haskell
--- Given a Dynamic of widget-creating actions, create a widget that is redefined whenever the Dynamic updates.
--- The returned Event of widget results occurs when the Dynamic does.  Note that if type 'a' is an Event, the
--- return value is an Event-of-Events that would typically be flattened.
-[W]   dyn :: Dynamic (m a) -> m (Event a)
+-- Given a Dynamic of widget-creating actions, create a widget that is redefined
+-- whenever the Dynamic updates. The returned Event of widget results occurs when
+-- the Dynamic does.  Note that if type 'a' is an Event, the return value is an
+-- Event-of-Events that would typically be flattened.
+[W]   dyn        ::        Dynamic (m a) -> m (Event a)
 
 -- Same as dyn, but takes initial value and an update Event instead of a Dynamic.
-[W]   widgetHold :: m a -> Event (m a) -> m (Dynamic a)
+[W]   widgetHold :: m a ->   Event (m a) -> m (Dynamic a)
 
 -- Given a Dynamic key/value map and a function to create a widget for a given
 -- key & Dynamic value, create a bunch of widgets.  Widgets will be created,
 -- destroyed, and updated appropriately as the map changes.  Returns Dynamic map
 -- from keys to widget results.
-[W]   listWithKey :: Ord k => Dynamic (Map k v) -> (k -> Dynamic v -> m a) -> m (Dynamic (Map k a))
+[W]   listWithKey :: Ord k =>
+          Dynamic (Map k v) -> (k -> Dynamic v -> m        a ) -> m (Dynamic (Map k a))
 
 -- Same as above where the widget constructor doesn't care about the key.
-[W]   list :: Ord k => Dynamic (Map k v) -> (Dynamic v -> m a) -> m (Dynamic (Map k a))
+[W]   list        :: Ord k =>
+          Dynamic (Map k v) -> (     Dynamic v -> m        a ) -> m (Dynamic (Map k a))
 
 -- Even simpler version where there are no keys and we just use a list.
-[W]   simpleList :: Dynamic [v] -> (Dynamic v -> m a) -> m (Dynamic [a])
+[W]   simpleList  ::
+          Dynamic       [v] -> (     Dynamic v -> m        a ) -> m (Dynamic       [a])
+
+-- Like listWithKey specialized for widgets returning (Event a).  listWithKey would
+-- return 'Dynamic (Map k (Event a))' in this scenario, but listViewWithKey flattens
+-- this to 'Event (Map k a)' via 'switch'.
+[W]   listViewWithKey :: Ord k =>
+          Dynamic (Map k v) -> (k -> Dynamic v -> m (Event a)) -> m (Event   (Map k a))
+
+-- As above, but there is a "current key", and the widget constructor gets a
+-- Dynamic Bool indicating if that widget is currently selected.  The returned
+-- Event fires when any of the widgets' returned Events fire, and returns the key
+-- of an arbitrary firing widget.
+[W]   selectViewListWithKey_ :: Ord k => Dynamic k ->
+          Dynamic (Map k v) -> (k -> Dynamic v -> Dynamic Bool -> m (Event a)) -> m (Event k)
 
 -- Same as listWithKey, but takes initial values and an updates Event instead of a Dynamic.
-[W]   listWithKey' :: Ord k => Map k v -> Event (Map k (Maybe v)) -> (k -> v -> Event v -> m a) -> m (Dynamic (Map k a))
-
--- Like listWithKey specialized for widgets returning (Event a).  listWithKey would return 'Dynamic (Map k (Event a))'
--- in this scenario, but listViewWithKey flattens this to 'Event (Map k a)' via 'switch'.
-[W]   listViewWithKey :: Ord k => Dynamic (Map k v) -> (k -> Dynamic v -> m (Event a)) -> m (Event (Map k a))
-
--- As above, but there is a "current key", and the widget constructor gets a Dynamic Bool indicating if that widget
--- is currently selected.  The returned Event fires when any of the widgets' returned Events fire, and returns the key
--- of an arbitrary firing widget.
-[W]   selectViewListWithKey_ :: Ord k => Dynamic k -> Dynamic (Map k v) -> (k -> Dynamic v -> Dynamic Bool -> m (Event a)) -> m (Event k)
+[W]   listWithKey' :: Ord k =>
+          Map k v -> Event (Map k (Maybe v)) -> (k -> v -> Event v -> m a) -> m (Dynamic (Map k a))
 
 -- tableDynAttr
 -- tabDisplay
@@ -272,32 +282,39 @@ Note the "list" functions do not imply particular HTML tags (ul, li, etc), thoug
 #### Connecting to DOM events
 
 ```haskell
--- Extract the specified Event from an 'El'.  The allowable event names, and their corresponding
--- data types, are listed in Reflex/Dom/Widget/Basic.hs
+-- Extract the specified Event from an 'El'.  The allowable event names, and their
+-- corresponding data types, are listed in Reflex/Dom/Widget/Basic.hs
 [ ]   domEvent :: EventName en -> El -> Event (EventResultType en)
 ```
 
 #### Performing arbitrary I/O in response to Events
 
 ```haskell
--- Run side-effecting actions in Event when it occurs; returned Event contains results.
--- Side effects run in (WidgetHost m) monad, which includes [S] and [H] and can also do I/O via liftIO
-[W]   performEvent :: Event (WidgetHost m a) -> m (Event a)
+-- Run side-effecting actions in Event when it occurs; returned Event contains
+-- results. Side effects run in (WidgetHost m) monad, which includes [S] and [H]
+-- and can also do I/O via liftIO
+[W]   performEvent      :: Event (                WidgetHost m  a) -> m (Event a)
 
 -- Just run side-effects; no return Event
-[W]   performEvent_ :: Event (WidgetHost m ()) -> m ()
+[W]   performEvent_     :: Event (                WidgetHost m ()) -> m ()
 
--- Actions are run asynchronously; each action is given a callback to call when it completes
+-- Actions run asynchronously; actions are given a callback to send return values
 [W]   performEventAsync :: Event ((a -> IO ()) -> WidgetHost m ()) -> m (Event a)
 ```
 
 ### Startup
 
 ```haskell
--- Reflex-Dom entry point.  Takes a monadic widget-building action of lengthy type and turns it into an IO action.
-[I]   mainWidget :: Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
-[I]   mainWidgetWithHead :: Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
-[I]   mainWidgetWithCss :: ByteString -> Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
+-- Reflex-Dom entry point.  Takes a monadic widget-building action of lengthy
+-- type and turns it into an IO action.
+[I]   mainWidget ::
+          Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
+[I]   mainWidgetWithHead ::
+          Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () ->
+          Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
+[I]   mainWidgetWithCss ::
+          ByteString ->
+          Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
 
 -- One-shot Event that is triggered once all initial widgets are built
 [W]   getPostBuild :: m (Event ())
