@@ -2,7 +2,7 @@
 
 ## Typeclasses
 
-Many Reflex functions operate in monadic context `m a`, where the monadic type constructor 'm' supports various additional typeclasses such as MonadWidget, MonadHold, or MonadSample in addition to Monad itself.  The actual 'm' in use will be determined by the top-level entry point of the FRP host (such as Reflex-Dom -- see the bottom of the Reflex-Dom quick reference for details).
+Many Reflex functions operate in monadic context `m a`, where the monad 'm' supports various additional typeclasses such as MonadWidget, MonadHold, or MonadSample in addition to Monad itself.  The actual 'm' in use will be determined by the top-level entry point of the FRP host (such as Reflex-Dom -- see the bottom of the Reflex-Dom quick reference for details).
 
 The function signatures here have been simplified by removing many typeclass constraints and adding simple annotations to each function.  Also the ubiquitous 't' type parameter has been removed.
 
