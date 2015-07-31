@@ -224,9 +224,31 @@ Widgets may return any type (this is 'a' in many of the functions below).  Often
 [W]   blank :: m ()
 ```
 
+#### Input widgets
+
+(These could be implemented entirely using the functions above.)
+
+These widget builders take a configuration record and return a record containing Events or other useful data associated with the created widget (similar to 'El').  The configuration records have default values, so you can just supply 'def'.  See Reflex/Dom/Widget/Input.hs for record fields (Lenses are provided).
+
+look into preventDefault
+
+```haskell
+-- Text input.
+[W]   textInput :: TextInputConfig -> m TextInput
+[ ]   textInputGetEnter :: TextInput -> Event ()
+[W]   textArea :: TextAreaConfig -> m TextArea
+
+-- Checkbox.  The Bool supplies the initial state.
+[W]   checkbox :: Bool -> CheckboxConfig -> m Checkbox
+
+-- Dropdown with Dynamic options.  First argument is initial state.
+[W]   dropdown :: (Ord k, Show k, Read k) =>
+          k -> Dynamic (Map k String) -> DropdownConfig k -> m (Dropdown k)
+```
+
 #### Dynamic widgets
 
-In the Dynamic cases above, the *content* of a widget is dynamic but the *definition* of the widget is static.  The functions below enable the definition and/or structure of the widget itself to change over time.
+In the Dynamic cases so far, the *content* of a widget is dynamic but the *definition* of the widget is static.  The functions below enable the definition and/or structure of the widget itself to change over time.
 
 Note the "list" functions do not imply particular HTML tags (ul, li, etc), though the widgets they create can have those tags if you construct them appropriately.
 
