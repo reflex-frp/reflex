@@ -2,11 +2,7 @@
 
 ## Typeclasses
 
-Many Reflex functions operate in monadic context `X a`, where the monadic type X supports various additional typeclasses such as MonadWidget, MonadHold, or MonadSample in addition to Monad itself.  For Reflex-Dom users, the type X will generally be `Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider))`, from the Reflex-Dom main entry point:
-
-```haskell
-mainWidget :: Widget Spider (Gui Spider (WithWebView SpiderHost) (HostFrame Spider)) () -> IO ()
-```
+Many Reflex functions operate in monadic context `m a`, where the monadic type constructor 'm' supports various additional typeclasses such as MonadWidget, MonadHold, or MonadSample in addition to Monad itself.  The actual 'm' in use will be determined by the top-level entry point of the FRP host (such as Reflex-Dom -- see the bottom of the Reflex-Dom quick reference for details).
 
 The function signatures here have been simplified by removing many typeclass constraints and adding simple annotations to each function.  Also the ubiquitous 't' type parameter has been removed.
 
