@@ -41,7 +41,6 @@ library
     Data.Functor.Misc
 
   other-extensions: TemplateHaskell
-  ghc-prof-options: -fprof-auto
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
 
 test-suite cross-impl
