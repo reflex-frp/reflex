@@ -39,14 +39,14 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   traceEventWith ::    (a -> String) -> Event a -> Event a
 
 -- Transform Event to Event by sampling Behavior or Dynamic
-[ ]   gate   ::                                 Behavior Bool -> Event a -> Event a
-[ ]   tag    ::                                    Behavior a -> Event b -> Event a
-[ ]   tagDyn ::                                     Dynamic a -> Event b -> Event a
-[ ]   attach ::                                    Behavior a -> Event b -> Event (a, b)
-[ ]   attachDyn ::                                  Dynamic a -> Event b -> Event (a, b)
-[ ]   attachWith ::         (a -> b ->       c) -> Behavior a -> Event b -> Event c
-[ ]   attachDynWith ::      (a -> b ->       c) ->  Dynamic a -> Event b -> Event c
-[ ]   attachWithMaybe ::    (a -> b -> Maybe c) -> Behavior a -> Event b -> Event c
+[ ]   gate               ::                     Behavior Bool -> Event a -> Event a
+[ ]   tag                ::                        Behavior a -> Event b -> Event a
+[ ]   tagDyn             ::                         Dynamic a -> Event b -> Event a
+[ ]   attach             ::                        Behavior a -> Event b -> Event (a, b)
+[ ]   attachDyn          ::                         Dynamic a -> Event b -> Event (a, b)
+[ ]   attachWith         :: (a -> b ->       c) -> Behavior a -> Event b -> Event c
+[ ]   attachDynWith      :: (a -> b ->       c) ->  Dynamic a -> Event b -> Event c
+[ ]   attachWithMaybe    :: (a -> b -> Maybe c) -> Behavior a -> Event b -> Event c
 [ ]   attachDynWithMaybe :: (a -> b -> Maybe c) ->  Dynamic a -> Event b -> Event c
 
 -- Combine multiple Events
@@ -103,13 +103,15 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 
 ```haskell
 -- Trivial Dynamic
-[ ]   constDyn ::                     a            ->    Dynamic a
+[ ]   constDyn ::                                  a            ->    Dynamic a
 
 -- Construct Dynamic from Event
-[H]   holdDyn  ::                     a -> Event a -> m (Dynamic a)
-[H]   foldDyn  :: (a -> b ->    b) -> b -> Event a -> m (Dynamic b)
-[H]   foldDynM :: (a -> b -> m' b) -> b -> Event a -> m (Dynamic b)
-      -- Note supplied function operates in [H] context
+[H]   holdDyn       ::                             a -> Event a -> m (Dynamic a)
+[H]   foldDyn       :: (a -> b ->           b ) -> b -> Event a -> m (Dynamic b)
+[H]   foldDynMaybe  :: (a -> b ->     Maybe b ) -> b -> Event a -> m (Dynamic b)
+[H]   foldDynM      :: (a -> b -> m'        b ) -> b -> Event a -> m (Dynamic b)
+[H]   foldDynMaybeM :: (a -> b -> m' (Maybe b)) -> b -> Event a -> m (Dynamic b)
+      -- Note m' supplies [H] context
 [H]   count :: Num b => Event a -> m (Dynamic b)
 [H]   toggle :: Bool -> Event a -> m (Dynamic Bool)
 
@@ -117,7 +119,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [H]   forDyn  ::   Dynamic a ->  (a -> b) -> m (Dynamic b)
 [H]   mapDyn  :: (a ->    b) -> Dynamic a -> m (Dynamic b)
 [H]   mapDynM :: (a -> m' b) -> Dynamic a -> m (Dynamic b)
-      -- Note supplied function runs in [S] context
+      -- Note m' supplies [S] context
 [H]   splitDyn :: Dynamic (a, b) -> m (Dynamic a, Dynamic b)
 
 -- Combine multiple Dynamics
