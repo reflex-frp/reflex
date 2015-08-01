@@ -1,11 +1,14 @@
 {-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase #-}
 module Reflex.Class where
 
-import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
-
+import Control.Applicative
 import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
 import Control.Monad.Reader hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
+import Control.Monad.Trans.Writer (WriterT())
+import Control.Monad.Trans.Except (ExceptT())
+import Control.Monad.Trans.Cont (ContT())
+import Control.Monad.Trans.RWS (RWST())
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.These
 import Data.Align
@@ -17,10 +20,14 @@ import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc
 import Data.Semigroup
+import Data.Traversable
+
+-- Note: must come last to silence warnings due to AMP on GHC < 7.10
+import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
 import Debug.Trace (trace)
 
-class (MonadHold t (PushM t), MonadSample t (PullM t), Functor (Event t), Functor (Behavior t)) => Reflex t where
+class (MonadHold t (PushM t), MonadSample t (PullM t), MonadFix (PushM t), Functor (Event t), Functor (Behavior t)) => Reflex t where
   -- | A container for a value that can change over time.  Behaviors can be sampled at will, but it is not possible to be notified when they change
   data Behavior t :: * -> *
   -- | A stream of occurrences.  During any given frame, an Event is either occurring or not occurring; if it is occurring, it will contain a value of the given type (its "occurrence type")
@@ -39,14 +46,14 @@ class (MonadHold t (PushM t), MonadSample t (PullM t), Functor (Event t), Functo
   type PullM t :: * -> *
   -- | Merge a collection of events; the resulting Event will only occur if at least one input event is occuring, and will contain all of the input keys that are occurring simultaneously
   merge :: GCompare k => DMap (WrapArg (Event t) k) -> Event t (DMap k) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
-  -- | Efficiently fan-out an event to many destinations.  This function should be partially applied, and then the result applied repeatedly to create child events 
+  -- | Efficiently fan-out an event to many destinations.  This function should be partially applied, and then the result applied repeatedly to create child events
   fan :: GCompare k => Event t (DMap k) -> EventSelector t k --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
   -- | Create an Event that will occur whenever the currently-selected input Event occurs
   switch :: Behavior t (Event t a) -> Event t a
   -- | Create an Event that will occur whenever the input event is occurring and its occurrence value, another Event, is also occurring
   coincidence :: Event t (Event t a) -> Event t a
 
-class Monad m => MonadSample t m | m -> t where
+class (Applicative m, Monad m) => MonadSample t m | m -> t where
   -- | Get the current value in the Behavior
   sample :: Behavior t a -> m a
 
@@ -66,6 +73,36 @@ instance MonadSample t m => MonadSample t (ReaderT r m) where
 instance MonadHold t m => MonadHold t (ReaderT r m) where
   hold a0 = lift . hold a0
 
+instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
+  sample = lift . sample
+
+instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
+  hold a0 = lift . hold a0
+
+instance MonadSample t m => MonadSample t (StateT s m) where
+  sample = lift . sample
+
+instance MonadHold t m => MonadHold t (StateT s m) where
+  hold a0 = lift . hold a0
+
+instance MonadSample t m => MonadSample t (ExceptT e m) where
+  sample = lift . sample
+
+instance MonadHold t m => MonadHold t (ExceptT e m) where
+  hold a0 = lift . hold a0
+
+instance (MonadSample t m, Monoid w) => MonadSample t (RWST r w s m) where
+  sample = lift . sample
+
+instance (MonadHold t m, Monoid w) => MonadHold t (RWST r w s m) where
+  hold a0 = lift . hold a0
+
+instance MonadSample t m => MonadSample t (ContT r m) where
+  sample = lift . sample
+
+instance MonadHold t m => MonadHold t (ContT r m) where
+  hold a0 = lift . hold a0
+
 --------------------------------------------------------------------------------
 -- Convenience functions
 --------------------------------------------------------------------------------
@@ -73,7 +110,7 @@ instance MonadHold t m => MonadHold t (ReaderT r m) where
 -- | Create an Event from another Event.
 -- The provided function can sample 'Behavior's and hold 'Event's.
 pushAlways :: Reflex t => (a -> PushM t b) -> Event t a -> Event t b
-pushAlways f e = push (liftM Just . f) e
+pushAlways f = push (liftM Just . f)
 
 -- | Flipped version of 'fmap'.
 ffor :: Functor f => f a -> (a -> b) -> f b
@@ -81,6 +118,28 @@ ffor = flip fmap
 
 instance Reflex t => Functor (Behavior t) where
   fmap f = pull . liftM f . sample
+
+instance Reflex t => Applicative (Behavior t) where
+  pure = constant
+  f <*> x = pull $ sample f `ap` sample x
+  _ *> b = b
+  a <* _ = a
+
+instance Reflex t => Monad (Behavior t) where
+  a >>= f = pull $ sample a >>= sample . f
+  -- Note: it is tempting to write (_ >> b = b); however, this would result in (fail x >> return y) succeeding (returning y), which violates the law that (a >> b = a >>= \_ -> b), since the implementation of (>>=) above actually will fail.  Since we can't examine Behaviors other than by using sample, I don't think it's possible to write (>>) to be more efficient than the (>>=) above.
+  return = constant
+  fail = error "Monad (Behavior t) does not support fail"
+
+instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
+  a <> b = pull $ liftM2 (<>) (sample a) (sample b)
+  sconcat = pull . liftM sconcat . mapM sample
+  times1p n = fmap $ times1p n
+
+instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
+  mempty = constant mempty
+  mappend a b = pull $ liftM2 mappend (sample a) (sample b)
+  mconcat = pull . liftM mconcat . mapM sample
 
 --TODO: See if there's a better class in the standard libraries already
 -- | A class for values that combines filtering and mapping using 'Maybe'.
@@ -239,7 +298,7 @@ dmapToThese m = case (DMap.lookup LeftTag m, DMap.lookup RightTag m) of
 -- 'Event's occurs. If both occur at the same time they are combined
 -- using 'mappend'.
 appendEvents :: (Reflex t, Monoid a) => Event t a -> Event t a -> Event t a
-appendEvents e1 e2 = fmap (mergeThese mappend) $ align e1 e2
+appendEvents e1 e2 = mergeThese mappend <$> align e1 e2
 
 {-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
@@ -299,3 +358,9 @@ instance Reflex t => Align (Event t) where
 -- occurs and the 'Behavior' is true at the time of occurence.
 gate :: Reflex t => Behavior t Bool -> Event t a -> Event t a
 gate = attachWithMaybe $ \allow a -> if allow then Just a else Nothing
+
+-- | Create a new behavior given a starting behavior and switch to a the
+--   behvior carried by the event when it fires.
+switcher :: (Reflex t, MonadHold t m)
+        => Behavior t a -> Event t (Behavior t a) -> m (Behavior t a)
+switcher b eb = pull . (sample <=< sample) <$> hold b eb
