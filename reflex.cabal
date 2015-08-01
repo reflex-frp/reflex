@@ -46,6 +46,8 @@ library
 test-suite cross-impl
   type: exitcode-stdio-1.0
   main-is: Reflex/Test/CrossImpl.hs
+  other-modules:
+    Reflex.Pure
   ghc-options: -O2 -main-is Reflex.Test.CrossImpl.test
   hs-source-dirs: test
   build-depends:
