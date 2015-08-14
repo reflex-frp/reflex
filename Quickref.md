@@ -6,9 +6,7 @@ Many Reflex functions operate in monadic context `m a`, where the monad 'm' supp
 
 The function signatures here have been simplified by removing many typeclass constraints and adding simple annotations to each function.  Also the ubiquitous 't' type parameter has been removed.
 
-Functions annotated with "[ ]" are *pure*:  They operate on Events, Behaviors, or Dynamics uniformly without regard to the "current time".
-
-Other functions must operate in some monadic context, because they produce a result "as of now".  The annotations are:
+Some of these functions are *pure*:  They operate on Events, Behaviors, or Dynamics uniformly without regard to the "current time".  Other functions must operate in some monadic context, because they produce a result "as of now"  (e.g., any function that takes an "initial" value, or returns a "current" value).  Annotations are used to distinguish these cases:
 
 ```haskell
 [ ]   -- Pure function
@@ -34,7 +32,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   ffor      ::        Event a -> (a ->       b) -> Event b
 [ ]   fforMaybe ::        Event a -> (a -> Maybe b) -> Event b
 
--- Event to identical Event with debug trace.
+-- Event to identical Event with debug trace.  (Only prints if Event is ultimately used.)
 [ ]   traceEvent     :: Show a => String -> Event a -> Event a
 [ ]   traceEventWith ::    (a -> String) -> Event a -> Event a
 
@@ -62,12 +60,12 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   fan    :: GCompare k => Event  (DMap k) -> EventSelector k
 [ ]   select ::                                  EventSelector k -> k a -> Event a
 
--- Event to Event via monadic function
+-- Event to Event via function that can sample current values
 [ ]   push       :: (a -> m (Maybe b)) -> Event a -> Event b
 [ ]   pushAlways :: (a -> m        b ) -> Event a -> Event b
       -- Note supplied function operates in [H] context
 
--- Event to monadic Event
+-- Split Event into next occurrence and all other future occurrences, as of now.
 [H]   headE     :: Event a -> m (Event a)
 [H]   tailE     :: Event a -> m (Event a)
 [H]   headTailE :: Event a -> m (Event a, Event a)
@@ -82,7 +80,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 -- Extract Behavior from Dynamic
 [ ]   current  ::      Dynamic a ->    Behavior a
 
--- Event to monadic Behavior
+-- Create Behavior with given initial value, updated when the Event fires.
 [H]   hold     :: a ->   Event a -> m (Behavior a)
 
 -- Transform Behavior to Behavior using function
@@ -93,7 +91,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   <> :: Monoid a => Behavior a -> Behavior a -> Behavior a
 -- ... plus many more due to typeclass membership
 
--- Behavior to Behavior via monadic value
+-- Behavior to Behavior by sampling current values
 [S]   sample :: Behavior a -> m a
 [ ]   pull   ::               m a -> Behavior a
       -- Note supplied value is in [S] context
@@ -105,14 +103,17 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 -- Trivial Dynamic
 [ ]   constDyn ::                                  a            ->    Dynamic a
 
--- Construct Dynamic from Event
+-- Create Dynamic with given initial value, updated (various ways) when the Event fires.
 [H]   holdDyn       ::                             a -> Event a -> m (Dynamic a)
 [H]   foldDyn       :: (a -> b ->           b ) -> b -> Event a -> m (Dynamic b)
 [H]   foldDynMaybe  :: (a -> b ->     Maybe b ) -> b -> Event a -> m (Dynamic b)
 [H]   foldDynM      :: (a -> b -> m'        b ) -> b -> Event a -> m (Dynamic b)
 [H]   foldDynMaybeM :: (a -> b -> m' (Maybe b)) -> b -> Event a -> m (Dynamic b)
       -- Note m' supplies [H] context
+
+-- Initial value is 0; counts Event firings from now.
 [H]   count :: Num b => Event a -> m (Dynamic b)
+-- Initial Bool value is supplied; toggles at each Event firing.
 [H]   toggle :: Bool -> Event a -> m (Dynamic Bool)
 
 -- Transform Dynamic to Dynamic using function
@@ -134,7 +135,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 -- Dynamic to Dynamic, removing updates w/o value change
 [ ]   nubDyn :: Eq a => Dynamic a -> Dynamic a
 
--- Dynamic to identical Dynamic with debug trace.
+-- Dynamic to identical Dynamic with debug trace.  (Only prints if Dynamic is ultimately used.)
 [ ]   traceDyn     :: Show a => String -> Dynamic a -> Dynamic a
 [ ]   traceDynWith ::    (a -> String) -> Dynamic a -> Dynamic a
 ```
@@ -146,9 +147,6 @@ These functions flatten nested types such as Event-of-Event, Behavior-of-Event, 
 For Events, the returned Event fires whenever the latest Event supplied by the wrapper fires.  There are differences in how the functions handle *coincidences* -- situations where the old or new Event fires at the same instant that we switch from old to new.  In some cases, the output Event tracks the old Event at the instant of switchover, while in other cases it tracks the new Event.
 
 ```haskell
--- Flatten Event-of-Event to monadic Event.  New Event is used immediately.
-[H]   switchPromptly    ::       Event a ->    Event (Event a)  -> m (Event a)
-
 -- Flatten Behavior-of-Event to Event.  Old Event is used during switchover.
 [ ]   switch            ::                  Behavior (Event a)  ->    Event a
 
@@ -163,6 +161,11 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 [ ]   joinDyn           ::          Dynamic        (Dynamic a)  ->  Dynamic a
 [ ]   joinDynThroughMap :: Ord k => Dynamic (Map k (Dynamic a)) ->  Dynamic (Map k a)
 
--- Flatten Event-of-Behavior to monadic Behavior
+-- Analogous to 'hold':  Create a Behavior that is initially identical to the
+-- supplied Behavior.  Updated to track a new Behavior whenever the Event fires.
 [H]   switcher          ::    Behavior a -> Event (Behavior a)  -> m (Behavior a)
+
+-- Similar to above, for Events.  Created Event initially tracks the first argument.
+-- At switchover, the output Event immediately tracks the new Event.
+[H]   switchPromptly    ::       Event a ->    Event (Event a)  -> m (Event a)
 ```
