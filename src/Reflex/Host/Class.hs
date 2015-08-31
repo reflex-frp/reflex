@@ -12,6 +12,7 @@ import Control.Monad.Trans.Cont   (ContT())
 import Control.Monad.Trans.Except (ExceptT())
 import Control.Monad.Trans.RWS    (RWST())
 import Control.Monad.Trans.State  (StateT())
+import qualified Control.Monad.Trans.State.Strict as Strict
 import Data.Dependent.Sum (DSum)
 import Data.Monoid
 import Data.GADT.Compare
@@ -152,6 +153,21 @@ instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
   type ReadPhase (StateT s m) = ReadPhase m
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   runHostFrame = lift . runHostFrame
+  
+  
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (Strict.StateT s m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+
+instance MonadSubscribeEvent t m => MonadSubscribeEvent t (Strict.StateT r m) where
+  subscribeEvent = lift . subscribeEvent
+
+instance MonadReflexHost t m => MonadReflexHost t (Strict.StateT s m) where
+  type ReadPhase (Strict.StateT s m) = ReadPhase m
+  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
+  runHostFrame = lift . runHostFrame  
+  
+  
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ContT r m) where
   newEventWithTrigger = lift . newEventWithTrigger
