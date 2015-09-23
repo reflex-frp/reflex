@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase #-}
+{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase, CPP #-}
 module Reflex.Class where
 
 import Control.Applicative
@@ -134,7 +134,11 @@ instance Reflex t => Monad (Behavior t) where
 instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
   a <> b = pull $ liftM2 (<>) (sample a) (sample b)
   sconcat = pull . liftM sconcat . mapM sample
+#if MIN_VERSION_semigroups(0,17,0)
+  stimes n = fmap $ stimes n
+#else
   times1p n = fmap $ times1p n
+#endif
 
 instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
   mempty = constant mempty
