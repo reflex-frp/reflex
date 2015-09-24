@@ -12,4 +12,6 @@ Comprehensive documentation is still a work in progress, but a tutorial for Refl
 
 [reddit/r/reflexfrp](http://www.reddit.com/r/reflexfrp)
 
+[reflex at hackage](https://hackage.haskell.org/package/reflex)
+
 irc.freenode.net #reflex-frp
