@@ -31,6 +31,9 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
                       , Demux
                       , demux
                       , getDemuxed
+                      , MultiDemux
+                      , multiDemux
+                      , getMultiDemuxed
                         -- Things that probably aren't very useful:
                       , HList (..)
                       , FHList (..)
@@ -52,6 +55,8 @@ import Data.Traversable (mapM, forM)
 import Data.Align
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
@@ -388,6 +393,29 @@ getDemuxed :: (Reflex t, MonadHold t m, Eq k) => Demux t k -> k -> m (Dynamic t 
 getDemuxed d k = do
   let e = select (demuxSelector d) (Const2 k)
   bb <- hold (liftM (==k) $ sample $ demuxValue d) $ fmap return e
+  let b = pull $ join $ sample bb
+  return $ Dynamic b e
+
+--------------------------------------------------------------------------------
+-- MultiDemux
+--------------------------------------------------------------------------------
+
+data MultiDemux t k
+   = MultiDemux { multiDemuxValue :: Behavior t (Set k)
+                , multiDemuxSelector :: EventSelector t (Const2 k Bool)
+                }
+
+-- | Demultiplex an input value to a 'Demux' with many outputs.  At any given time, whichever output is indicated by the given 'Dynamic' will be 'True'.
+multiDemux :: (Reflex t, Ord k) => Dynamic t (Set k) -> MultiDemux t k
+multiDemux k = MultiDemux (current k) $ fan $ attachWith (\ks0 ks1 -> DMap.union (DMap.fromList $ map (\k0 -> Const2 k0 :=> False) $ Set.toList $ ks0 `Set.difference` ks1) (DMap.fromList $ map (\k1 -> Const2 k1 :=> True) $ Set.toList $ ks1 `Set.difference` ks0)) (current k) (updated k)
+
+--TODO: The pattern of using hold (sample b0) can be reused in various places as a safe way of building certain kinds of Dynamics; see if we can factor this out
+-- | Select a particular output of the 'Demux'; this is equivalent to (but much faster than)
+-- mapping over the original 'Dynamic' and checking whether it is equal to the given key.
+getMultiDemuxed :: (Reflex t, MonadHold t m, Ord k) => MultiDemux t k -> k -> m (Dynamic t Bool)
+getMultiDemuxed d k = do
+  let e = select (multiDemuxSelector d) (Const2 k)
+  bb <- hold (liftM (k `Set.member`) $ sample $ multiDemuxValue d) $ fmap return e
   let b = pull $ join $ sample bb
   return $ Dynamic b e
 
