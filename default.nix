@@ -4,7 +4,7 @@
 }:
 mkDerivation {
   pname = "reflex";
-  version = "0.3.1";
+  version = "0.3.2";
   src = builtins.filterSource (path: type: baseNameOf path != ".git") ./.;
   buildDepends = [
     dependent-map dependent-sum mtl ref-tf semigroups these exception-transformers
