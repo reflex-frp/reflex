@@ -4,6 +4,7 @@ module Reflex.Host.Class where
 import Reflex.Class
 
 import Control.Applicative
+import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Trans
 import Control.Monad.Trans.Reader (ReaderT())
@@ -13,7 +14,7 @@ import Control.Monad.Trans.Except (ExceptT())
 import Control.Monad.Trans.RWS    (RWST())
 import Control.Monad.Trans.State  (StateT())
 import qualified Control.Monad.Trans.State.Strict as Strict
-import Data.Dependent.Sum (DSum)
+import Data.Dependent.Sum (DSum (..))
 import Data.Monoid
 import Data.GADT.Compare
 import Control.Monad.Ref
@@ -113,6 +114,25 @@ newEventWithTriggerRef = do
     return $ writeRef rt Nothing
   return (e, rt)
 {-# INLINE newEventWithTriggerRef #-}
+
+fireEventRef :: (MonadReflexHost t m, MonadRef m, Ref m ~ Ref IO) => Ref m (Maybe (EventTrigger t a)) -> a -> m ()
+fireEventRef mtRef input = do
+  mt <- readRef mtRef
+  case mt of
+    Nothing -> return ()
+    Just trigger -> fireEvents [trigger :=> input]
+
+fireEventRefAndRead :: (MonadReflexHost t m, MonadRef m, Ref m ~ Ref IO) => Ref m (Maybe (EventTrigger t a)) -> a -> EventHandle t b -> m (Maybe b)
+fireEventRefAndRead mtRef input e = do
+  mt <- readRef mtRef
+  case mt of
+    Nothing -> return Nothing -- Since we aren't firing the input, the output can't fire
+    Just trigger -> fireEventsAndRead [trigger :=> input] $ do
+      mGetValue <- readEvent e
+      case mGetValue of
+        Nothing -> return Nothing
+        Just getValue -> liftM Just getValue
+
 
 --------------------------------------------------------------------------------
 -- Instances
