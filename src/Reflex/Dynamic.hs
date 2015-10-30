@@ -17,6 +17,8 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
                       , mapDynM
                       , foldDyn
                       , foldDynM
+                      , foldDynMaybe
+                      , foldDynMaybeM
                       , combineDyn
                       , collectDyn
                       , mconcatDyn

@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.3
+Version: 0.3.1
 Synopsis: Higher-order Functional Reactive Programming
 Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system
 License: BSD3
@@ -28,7 +28,10 @@ library
     ref-tf == 0.4.*,
     exception-transformers == 0.4.*,
     transformers >= 0.2,
-    transformers-compat >= 0.3
+    transformers-compat >= 0.3,
+    haskell-src-exts == 1.16.*,
+    haskell-src-meta == 0.6.*,
+    syb == 0.5.*
 
   exposed-modules:
     Reflex,
