@@ -7,6 +7,8 @@ Reflex is an fully-deterministic, higher-order Functional Reactive Programming (
 
 Comprehensive documentation is still a work in progress, but a tutorial for Reflex and Reflex-DOM is available at https://github.com/ryantrinkle/try-reflex and an introductory talk given at the New York Haskell Meetup is available here: [Part 1](https://www.youtube.com/watch?v=mYvkcskJbc4) / [Part 2](https://www.youtube.com/watch?v=3qfc9XFVo2c).
 
+A summary of Reflex functions is available in the [quick reference](Quickref.md).
+
 ### Additional resources
 [try reflex](https://github.com/ryantrinkle/try-reflex)
 
