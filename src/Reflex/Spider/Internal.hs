@@ -9,7 +9,7 @@ import System.Mem.Weak
 import Data.Foldable
 import Data.Traversable
 import Control.Monad hiding (mapM, mapM_, forM_, forM, sequence)
-import Control.Monad.Identity
+import Control.Monad.Identity hiding  (mapM, mapM_, forM_, forM, sequence)
 import Control.Monad.Reader hiding (mapM, mapM_, forM_, forM, sequence)
 import GHC.Exts
 import Control.Applicative -- Unconditionally import, because otherwise it breaks on GHC 7.10.1RC2
