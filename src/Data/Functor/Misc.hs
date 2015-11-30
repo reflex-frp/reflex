@@ -8,7 +8,7 @@ import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Typeable hiding (Refl)
 import Data.These
-import Data.Maybe
+import Data.Functor.Identity
 
 data WrapArg :: (k -> *) -> (k -> *) -> * -> * where
   WrapArg :: f a -> WrapArg g f (g a)
@@ -39,37 +39,38 @@ instance Ord k => GCompare (Const2 k v) where
     GT -> GGT
 
 {-# INLINE sequenceDmap #-}
-sequenceDmap :: (Monad m, GCompare f) => DMap (WrapArg m f) -> m (DMap f)
-sequenceDmap = DMap.foldrWithKey (\(WrapArg k) mv mx -> mx >>= \x -> mv >>= \v -> return $ DMap.insert k v x) (return DMap.empty)
+sequenceDmap :: (Monad m, GCompare f) => DMap f m -> m (DMap f Identity)
+sequenceDmap = DMap.foldrWithKey (\k mv mx -> mx >>= \x -> mv >>= \v -> return $ DMap.insert k (Identity v) x)
+                                 (return DMap.empty)
 
 {-# INLINE combineDMapsWithKey #-}
-combineDMapsWithKey :: forall f g h i. GCompare f => (forall a. f a -> These (g a) (h a) -> i a) -> DMap (WrapArg g f) -> DMap (WrapArg h f) -> DMap (WrapArg i f)
+combineDMapsWithKey :: forall f g h i. GCompare f => (forall (a :: *). f a -> These (g a) (h a) -> i a) -> DMap f g -> DMap f h -> DMap f i
 combineDMapsWithKey f mg mh = DMap.fromList $ go (DMap.toList mg) (DMap.toList mh)
-  where go :: [DSum (WrapArg g f)] -> [DSum (WrapArg h f)] -> [DSum (WrapArg i f)]
-        go [] hs = map (\(WrapArg hk :=> hv) -> WrapArg hk :=> f hk (That hv)) hs
-        go gs [] = map (\(WrapArg gk :=> gv) -> WrapArg gk :=> f gk (This gv)) gs
-        go gs@((WrapArg gk :=> gv) : gs') hs@((WrapArg hk :=> hv) : hs') = case gk `gcompare` hk of
-          GLT -> (WrapArg gk :=> f gk (This gv)) : go gs' hs
-          GEQ -> (WrapArg gk :=> f gk (These gv hv)) : go gs' hs'
-          GGT -> (WrapArg hk :=> f hk (That hv)) : go gs hs'
+  where go :: [DSum f g] -> [DSum f h] -> [DSum f i]
+        go [] hs = map (\(hk :=> hv) -> hk :=> f hk (That hv)) hs
+        go gs [] = map (\(gk :=> gv) -> gk :=> f gk (This gv)) gs
+        go gs@((gk :=> gv) : gs') hs@((hk :=> hv) : hs') = case gk `gcompare` hk of
+          GLT -> (gk :=> f gk (This gv)) : go gs' hs
+          GEQ -> (gk :=> f gk (These gv hv)) : go gs' hs'
+          GGT -> (hk :=> f hk (That hv)) : go gs hs'
 
-wrapDMap :: (forall a. a -> f a) -> DMap k -> DMap (WrapArg f k)
-wrapDMap f = DMap.fromDistinctAscList . map (\(k :=> v) -> WrapArg k :=> f v) . DMap.toAscList
+wrapDMap :: (forall a. a -> f a) -> DMap k Identity -> DMap k f
+wrapDMap f = DMap.fromDistinctAscList . map (\(k :=> Identity v) -> k :=> f v) . DMap.toAscList
 
-rewrapDMap :: (forall a. f a -> g a) -> DMap (WrapArg f k) -> DMap (WrapArg g k)
-rewrapDMap f = DMap.fromDistinctAscList . map (\(WrapArg k :=> v) -> WrapArg k :=> f v) . DMap.toAscList
+rewrapDMap :: (forall (a :: *). f a -> g a) -> DMap k f -> DMap k g
+rewrapDMap f = DMap.fromDistinctAscList . map (\(k :=> v) -> k :=> f v) . DMap.toAscList
 
-unwrapDMap :: (forall a. f a -> a) -> DMap (WrapArg f k) -> DMap k
-unwrapDMap f = DMap.fromDistinctAscList . map (\(WrapArg k :=> v) -> k :=> f v) . DMap.toAscList
+unwrapDMap :: (forall a. f a -> a) -> DMap k f -> DMap k Identity 
+unwrapDMap f = DMap.fromDistinctAscList . map (\(k :=> v) -> k :=> Identity (f v)) . DMap.toAscList
 
-unwrapDMapMaybe :: (forall a. f a -> Maybe a) -> DMap (WrapArg f k) -> DMap k
-unwrapDMapMaybe f = DMap.fromDistinctAscList . catMaybes . map (\(WrapArg k :=> v) -> fmap (k :=>) $ f v) . DMap.toAscList
+unwrapDMapMaybe :: (forall a. f a -> Maybe a) -> DMap k f -> DMap k Identity
+unwrapDMapMaybe f m = DMap.fromDistinctAscList [k :=> Identity w | (k :=> v) <- DMap.toAscList m, Just w <- [f v]]
 
-mapToDMap :: Map k v -> DMap (Const2 k v)
-mapToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> v) . Map.toAscList
+mapToDMap :: Map k v -> DMap (Const2 k v) Identity
+mapToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> Identity v) . Map.toAscList
 
-mapWithFunctorToDMap :: Map k (f v) -> DMap (WrapArg f (Const2 k v))
-mapWithFunctorToDMap = DMap.fromDistinctAscList . map (\(k, v) -> WrapArg (Const2 k) :=> v) . Map.toAscList
+mapWithFunctorToDMap :: Map k (f v) -> DMap (Const2 k v) f
+mapWithFunctorToDMap = DMap.fromDistinctAscList . map (\(k, v) -> (Const2 k) :=> v) . Map.toAscList
 
-dmapToMap :: DMap (Const2 k v) -> Map k v
-dmapToMap = Map.fromDistinctAscList . map (\(Const2 k :=> v) -> (k, v)) . DMap.toAscList
+dmapToMap :: DMap (Const2 k v) Identity -> Map k v
+dmapToMap = Map.fromDistinctAscList . map (\(Const2 k :=> Identity v) -> (k, v)) . DMap.toAscList

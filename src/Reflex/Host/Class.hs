@@ -15,6 +15,7 @@ import Control.Monad.Trans.RWS    (RWST())
 import Control.Monad.Trans.State  (StateT())
 import qualified Control.Monad.Trans.State.Strict as Strict
 import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Identity
 import Data.Monoid
 import Data.GADT.Compare
 import Control.Monad.Ref
@@ -84,7 +85,7 @@ class (ReflexHost t, MonadReflexCreateTrigger t m, MonadSubscribeEvent t m, Mona
   -- The main loop waits for external events to happen (such as keyboard input or a mouse click)
   -- and then fires the corresponding events using this function. The read callback can be used
   -- to read output events and perform a corresponding response action to the external event.
-  fireEventsAndRead :: [DSum (EventTrigger t)] -> (ReadPhase m a) -> m a
+  fireEventsAndRead :: [DSum (EventTrigger t) Identity] -> (ReadPhase m a) -> m a
 
   -- | Run a frame without any events firing.
   --
@@ -96,7 +97,7 @@ class (ReflexHost t, MonadReflexCreateTrigger t m, MonadSubscribeEvent t m, Mona
   runHostFrame :: HostFrame t a -> m a
 
 -- | Like 'fireEventsAndRead', but without reading any events.
-fireEvents :: MonadReflexHost t m => [DSum (EventTrigger t)] -> m ()
+fireEvents :: MonadReflexHost t m => [DSum (EventTrigger t) Identity] -> m ()
 fireEvents dm = fireEventsAndRead dm $ return ()
 {-# INLINE fireEvents #-}
 
@@ -120,14 +121,14 @@ fireEventRef mtRef input = do
   mt <- readRef mtRef
   case mt of
     Nothing -> return ()
-    Just trigger -> fireEvents [trigger :=> input]
+    Just trigger -> fireEvents [trigger :=> Identity input]
 
 fireEventRefAndRead :: (MonadReflexHost t m, MonadRef m, Ref m ~ Ref IO) => Ref m (Maybe (EventTrigger t a)) -> a -> EventHandle t b -> m (Maybe b)
 fireEventRefAndRead mtRef input e = do
   mt <- readRef mtRef
   case mt of
     Nothing -> return Nothing -- Since we aren't firing the input, the output can't fire
-    Just trigger -> fireEventsAndRead [trigger :=> input] $ do
+    Just trigger -> fireEventsAndRead [trigger :=> Identity input] $ do
       mGetValue <- readEvent e
       case mGetValue of
         Nothing -> return Nothing

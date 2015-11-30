@@ -9,7 +9,7 @@ module Reflex.Pure where
 
 import Reflex.Class
 import Data.Functor.Misc
-
+import Data.Functor.Identity
 import Control.Monad
 import Data.MemoTrie
 import Data.Dependent.Map (DMap, GCompare)
@@ -40,15 +40,15 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   pull :: PullM (Pure t) a -> Behavior (Pure t) a
   pull = Behavior . memo
 
-  merge :: GCompare k => DMap (WrapArg (Event (Pure t)) k) -> Event (Pure t) (DMap k)
+  merge :: GCompare k => DMap k (Event (Pure t)) -> Event (Pure t) (DMap k Identity)
   merge events = Event $ memo $ \t ->
     let currentOccurrences = unwrapDMapMaybe (($ t) . unEvent) events
     in if DMap.null currentOccurrences
        then Nothing
        else Just currentOccurrences
 
-  fan :: GCompare k => Event (Pure t) (DMap k) -> EventSelector (Pure t) k
-  fan e = EventSelector $ \k -> Event $ \t -> unEvent e t >>= DMap.lookup k
+  fan :: GCompare k => Event (Pure t) (DMap k Identity) -> EventSelector (Pure t) k
+  fan e = EventSelector $ \k -> Event $ \t -> unEvent e t >>= fmap runIdentity . DMap.lookup k
 
   switch :: Behavior (Pure t) (Event (Pure t) a) -> Event (Pure t) a
   switch b = Event $ memo $ \t -> unEvent (unBehavior b t) t
