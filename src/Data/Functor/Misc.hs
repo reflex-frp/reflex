@@ -8,7 +8,7 @@ import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Typeable hiding (Refl)
 import Data.These
-import Data.Functor.Identity
+import Control.Monad.Identity
 
 data WrapArg :: (k -> *) -> (k -> *) -> * -> * where
   WrapArg :: f a -> WrapArg g f (g a)

@@ -9,13 +9,13 @@ import System.Mem.Weak
 import Data.Foldable
 import Data.Traversable
 import Control.Monad hiding (mapM, mapM_, forM_, forM, sequence)
+import Control.Monad.Identity
 import Control.Monad.Reader hiding (mapM, mapM_, forM_, forM, sequence)
 import GHC.Exts
 import Control.Applicative -- Unconditionally import, because otherwise it breaks on GHC 7.10.1RC2
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.GADT.Compare
-import Data.Functor.Identity
 import Data.Maybe
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap

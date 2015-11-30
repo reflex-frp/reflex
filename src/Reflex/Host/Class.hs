@@ -6,6 +6,7 @@ import Reflex.Class
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Fix
+import Control.Monad.Identity
 import Control.Monad.Trans
 import Control.Monad.Trans.Reader (ReaderT())
 import Control.Monad.Trans.Writer (WriterT())
@@ -15,7 +16,6 @@ import Control.Monad.Trans.RWS    (RWST())
 import Control.Monad.Trans.State  (StateT())
 import qualified Control.Monad.Trans.State.Strict as Strict
 import Data.Dependent.Sum (DSum (..))
-import Data.Functor.Identity
 import Data.Monoid
 import Data.GADT.Compare
 import Control.Monad.Ref

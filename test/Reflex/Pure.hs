@@ -9,7 +9,7 @@ module Reflex.Pure where
 
 import Reflex.Class
 import Data.Functor.Misc
-import Data.Functor.Identity
+import Control.Monad.Identity
 import Control.Monad
 import Data.MemoTrie
 import Data.Dependent.Map (DMap, GCompare)
