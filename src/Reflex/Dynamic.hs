@@ -222,26 +222,26 @@ splitDyn d = liftM2 (,) (mapDyn fst d) (mapDyn snd d)
 -- | Merge the 'Dynamic' values using their 'Monoid' instance.
 mconcatDyn :: forall t m a. (Reflex t, MonadHold t m, Monoid a) => [Dynamic t a] -> m (Dynamic t a)
 mconcatDyn es = do
-  ddm :: Dynamic t (DMap (Const2 Int a)) <- distributeDMapOverDyn $ DMap.fromList $ map (\(k, v) -> WrapArg (Const2 k) :=> v) $ zip [0 :: Int ..] es
-  mapDyn (mconcat . map (\(Const2 _ :=> v) -> v) . DMap.toList) ddm
+  ddm :: Dynamic t (DMap (Const2 Int a) Identity) <- distributeDMapOverDyn . DMap.fromList . map (\(k, v) -> Const2 k :=> v) $ zip [0 :: Int ..] es
+  mapDyn (mconcat . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) ddm
 
 -- | Create a 'Dynamic' with a 'DMap' of values out of a 'DMap' of
 -- Dynamic values.
-distributeDMapOverDyn :: forall t m k. (Reflex t, MonadHold t m, GCompare k) => DMap (WrapArg (Dynamic t) k) -> m (Dynamic t (DMap k))
+distributeDMapOverDyn :: forall t m k. (Reflex t, MonadHold t m, GCompare k) => DMap k (Dynamic t) -> m (Dynamic t (DMap k Identity))
 distributeDMapOverDyn dm = case DMap.toList dm of
   [] -> return $ constDyn DMap.empty
-  [WrapArg k :=> v] -> mapDyn (DMap.singleton k) v
+  [k :=> v] -> mapDyn (DMap.singleton k . Identity) v
   _ -> do
     let edmPre = merge $ rewrapDMap updated dm
-        edm :: Event t (DMap k) = flip push edmPre $ \o -> return . Just =<< do
+        edm :: Event t (DMap k Identity) = flip push edmPre $ \o -> return . Just =<< do
           let f _ = \case
                 This origDyn -> sample $ current origDyn
                 That _ -> error "distributeDMapOverDyn: should be impossible to have an event occurring that is not present in the original DMap"
                 These _ (Identity newVal) -> return newVal
           sequenceDmap $ combineDMapsWithKey f dm (wrapDMap Identity o)
-        dm0 :: Behavior t (DMap k) = pull $ do
-          liftM DMap.fromList $ forM (DMap.toList dm) $ \(WrapArg k :=> dv) -> liftM (k :=>) $ sample $ current dv
-    bbdm :: Behavior t (Behavior t (DMap k)) <- hold dm0 $ fmap constant edm
+        dm0 :: Behavior t (DMap k Identity) = pull $ do
+          liftM DMap.fromList . forM (DMap.toList dm) $ \(k :=> dv) -> liftM ((k :=>) . Identity) . sample $ current dv
+    bbdm :: Behavior t (Behavior t (DMap k Identity)) <- hold dm0 $ fmap constant edm
     let bdm = pull $ sample =<< sample bbdm
     return $ Dynamic bdm edm
 
@@ -379,7 +379,12 @@ data Demux t k = Demux { demuxValue :: Behavior t k
 
 -- | Demultiplex an input value to a 'Demux' with many outputs.  At any given time, whichever output is indicated by the given 'Dynamic' will be 'True'.
 demux :: (Reflex t, Ord k) => Dynamic t k -> Demux t k
-demux k = Demux (current k) (fan $ attachWith (\k0 k1 -> if k0 == k1 then DMap.empty else DMap.fromList [Const2 k0 :=> False, Const2 k1 :=> True]) (current k) (updated k))
+demux k = Demux (current k)
+                (fan $ attachWith (\k0 k1 -> if k0 == k1        
+                                                then DMap.empty
+                                                else DMap.fromList [Const2 k0 :=> Identity False,
+                                                                    Const2 k1 :=> Identity True])
+                                  (current k) (updated k))
 
 --TODO: The pattern of using hold (sample b0) can be reused in various places as a safe way of building certain kinds of Dynamics; see if we can factor this out
 -- | Select a particular output of the 'Demux'; this is equivalent to (but much faster than)
@@ -417,16 +422,16 @@ data HListPtr l a where
   HHeadPtr :: HListPtr (h ': t) h
   HTailPtr :: HListPtr t a -> HListPtr (h ': t) a
 
-fhlistToDMap :: forall f l. FHList f l -> DMap (WrapArg f (HListPtr l))
+fhlistToDMap :: forall (f :: * -> *) l. FHList f l -> DMap (HListPtr l) f
 fhlistToDMap = DMap.fromList . go
-  where go :: forall l'. FHList f l' -> [DSum (WrapArg f (HListPtr l'))]
+  where go :: forall l'. FHList f l' -> [DSum (HListPtr l') f]
         go = \case
           FHNil -> []
-          FHCons h t -> (WrapArg HHeadPtr :=> h) : map (\(WrapArg p :=> v) -> WrapArg (HTailPtr p) :=> v) (go t)
+          FHCons h t -> (HHeadPtr :=> h) : map (\(p :=> v) -> (HTailPtr p) :=> v) (go t)
 
 class RebuildSortedHList l where
-  rebuildSortedFHList :: [DSum (WrapArg f (HListPtr l))] -> FHList f l
-  rebuildSortedHList :: [DSum (HListPtr l)] -> HList l
+  rebuildSortedFHList :: [DSum (HListPtr l) f] -> FHList f l
+  rebuildSortedHList :: [DSum (HListPtr l) Identity] -> HList l
 
 instance RebuildSortedHList '[] where
   rebuildSortedFHList l = case l of
@@ -438,13 +443,13 @@ instance RebuildSortedHList '[] where
 
 instance RebuildSortedHList t => RebuildSortedHList (h ': t) where
   rebuildSortedFHList l = case l of
-    ((WrapArg HHeadPtr :=> h) : t) -> FHCons h $ rebuildSortedFHList $ map (\(WrapArg (HTailPtr p) :=> v) -> WrapArg p :=> v) t
+    ((HHeadPtr :=> h) : t) -> FHCons h . rebuildSortedFHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
     _ -> error "rebuildSortedFHList{h':t}: non-empty list with HHeadPtr expected"
   rebuildSortedHList l = case l of
-    ((HHeadPtr :=> h) : t) -> HCons h $ rebuildSortedHList $ map (\(HTailPtr p :=> v) -> p :=> v) t
+    ((HHeadPtr :=> Identity h) : t) -> HCons h . rebuildSortedHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
     _ -> error "rebuildSortedHList{h':t}: non-empty list with HHeadPtr expected"
 
-dmapToHList :: forall l. RebuildSortedHList l => DMap (HListPtr l) -> HList l
+dmapToHList :: forall l. RebuildSortedHList l => DMap (HListPtr l) Identity -> HList l
 dmapToHList = rebuildSortedHList . DMap.toList
 
 distributeFHListOverDyn :: forall t m l. (Reflex t, MonadHold t m, RebuildSortedHList l) => FHList (Dynamic t) l -> m (Dynamic t (HList l))

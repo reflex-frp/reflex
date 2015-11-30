@@ -71,12 +71,12 @@ testSpider builder (bMap, eMap) = unsafePerformIO $ S.runSpiderHost $ do
   let times = relevantTestingTimes (bMap, eMap)
   liftIO performGC
   outputs <- forM times $ \t -> do
-    forM_ (Map.lookup t bMap) $ \val -> mapM_ (\ rbt -> fireEvents [rbt :=> val]) =<< readRef rbTrigger
+    forM_ (Map.lookup t bMap) $ \val -> mapM_ (\ rbt -> fireEvents [rbt :=> Identity val]) =<< readRef rbTrigger
     bOutput <- sample b'
     eOutput <- liftM join $ forM (Map.lookup t eMap) $ \val -> do
       mret <- readRef reTrigger
       let firing = case mret of
-            Just ret -> [ret :=> val]
+            Just ret -> [ret :=> Identity val]
             Nothing -> []
       fireEventsAndRead firing $ sequence =<< readEvent e'Handle
     liftIO performGC
