@@ -22,7 +22,7 @@ qDyn qe = do
         Just (Refl :: d :~: Exp)
           | AppE (VarE m) eInner <- d
           , m == 'unqMarker
-          -> do n <- lift $ newName "dyn"
+          -> do n <- lift $ newName "dynamicQuotedExpressionVariable"
                 modify ((n, eInner):)
                 return $ VarE n
         _ -> gmapM f d
