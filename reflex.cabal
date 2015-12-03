@@ -39,6 +39,7 @@ library
     Reflex.Spider.Internal,
     Reflex.Class,
     Reflex.Dynamic,
+    Reflex.Dynamic.Combinators,
     Reflex.Dynamic.TH,
     Reflex.Host.Class,
     Data.Functor.Misc
