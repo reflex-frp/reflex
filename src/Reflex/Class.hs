@@ -58,7 +58,7 @@ class (Applicative m, Monad m) => MonadSample t m | m -> t where
   sample :: Behavior t a -> m a
 
 class MonadSample t m => MonadHold t m where
-  -- | Create a new Behavior whose value will initially be equal to the given value and will be updated whenever the given Event occurs
+  -- | Create a new Behavior whose value will initially be equal to the given value and will be updated whenever the given Event occurs.  The update takes effect immediately after the Event occurs; if the occurrence that sets the Behavior (or one that is simultaneous with it) is used to sample the Behavior, it will see the *old* value of the Behavior, not the new one.
   hold :: a -> Event t a -> m (Behavior t a)
 
 newtype EventSelector t k = EventSelector { select :: forall a. k a -> Event t a }
