@@ -22,6 +22,7 @@ import qualified Data.IntMap as IntMap
 import Control.Monad.Ref
 import Control.Monad.Exception
 import Data.Monoid ((<>))
+import Data.Coerce
 
 import System.IO.Unsafe
 import Unsafe.Coerce
@@ -599,7 +600,7 @@ traverseAndCleanWeakList_ deRef ws f = go ws
 propagate :: a -> [WeakSubscriber a] -> EventM [WeakSubscriber a]
 propagate a subscribers = do
   traverseAndCleanWeakList_ (liftIO . deRefWeakSubscriber) subscribers $ \s -> case s of
-    SubscriberPush compute subscribed -> do
+    SubscriberPush compute subscribed -> {-# SCC "pg->SubscriberPush" #-} do
       when debugPropagate $ liftIO $ putStrLn $ "SubscriberPush" <> showNodeId subscribed
       occ <- compute a
       case occ of
@@ -608,17 +609,17 @@ propagate a subscribers = do
           liftIO $ writeIORef (pushSubscribedOccurrence subscribed) occ
           scheduleClear $ pushSubscribedOccurrence subscribed
           liftIO . writeIORef (pushSubscribedSubscribers subscribed) =<< propagate o =<< liftIO (readIORef (pushSubscribedSubscribers subscribed))
-    SubscriberMerge k subscribed -> do
+    SubscriberMerge k subscribed -> {-# SCC "pg->SubscriberMerge" #-} do
       when debugPropagate $ liftIO $ putStrLn $ "SubscriberMerge" <> showNodeId subscribed
       oldM <- liftIO $ readIORef $ mergeSubscribedAccum subscribed
-      liftIO $ writeIORef (mergeSubscribedAccum subscribed) $ DMap.insertWith (error "Same key fired multiple times for") k (Identity a) oldM
+      liftIO $ writeIORef (mergeSubscribedAccum subscribed) $ {-# SCC "pg->sm->insertWith" #-} DMap.insertWith (error "Same key fired multiple times for") k (Identity a) oldM
       when (DMap.null oldM) $ do -- Only schedule the firing once
         height <- liftIO $ readIORef $ mergeSubscribedHeight subscribed
         --TODO: assertions about height
-        currentHeight <- getCurrentHeight
+        currentHeight <- {-# SCC "getCurrentHeight" #-} getCurrentHeight
         when (height <= currentHeight) $ error $ "Height (" ++ show height ++ ") is not greater than current height (" ++ show currentHeight ++ ")"
-        scheduleMerge height subscribed
-    SubscriberFan subscribed -> do
+        {-# SCC "scheduleMerge" #-} scheduleMerge height subscribed
+    SubscriberFan subscribed -> {-# SCC "pg->SubscriberFan" #-} do
       subs <- liftIO $ readIORef $ fanSubscribedSubscribers subscribed
       when debugPropagate $ liftIO $ putStrLn $ "SubscriberFan" <> showNodeId subscribed <> ": " ++ show (DMap.size subs) ++ " keys subscribed, " ++ show (DMap.size a) ++ " keys firing"
       --TODO: We need a better DMap intersection; here, we are assuming that the number of firing keys is small and the number of subscribers is large
@@ -636,18 +637,18 @@ propagate a subscribers = do
                     then Nothing
                     else Just $ FanSubscriberKey k :=> Identity subsubs') :: DSum (FanSubscriberKey k) Identity -> IO (Maybe (DSum (FanSubscriberKey k) Identity)))
       liftIO $ writeIORef (fanSubscribedSubscribers subscribed) $ DMap.fromDistinctAscList $ catMaybes subs'
-    SubscriberHold h -> do
+    SubscriberHold h -> {-# SCC "pg->SubscriberHold" #-} do
       invalidators <- liftIO $ readIORef $ holdInvalidators h
       when debugPropagate $ liftIO $ putStrLn $ "SubscriberHold" <> showNodeId h <> ": " ++ show (length invalidators)
       toAssignRef <- askToAssignRef
       liftIO $ modifyIORef' toAssignRef (SomeAssignment h a :)
-    SubscriberSwitch subscribed -> do
+    SubscriberSwitch subscribed -> {-# SCC "pg->SubscriberSwitch" #-} do
       when debugPropagate $ liftIO $ putStrLn $ "SubscriberSwitch" <> showNodeId subscribed
       liftIO $ writeIORef (switchSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ switchSubscribedOccurrence subscribed
       subs <- liftIO $ readIORef $ switchSubscribedSubscribers subscribed
       liftIO . writeIORef (switchSubscribedSubscribers subscribed) =<< propagate a subs
-    SubscriberCoincidenceOuter subscribed -> do
+    SubscriberCoincidenceOuter subscribed -> {-# SCC "pg->SubscriberCoincidenceOuter" #-} do
       when debugPropagate $ liftIO $ putStrLn $ "SubscriberCoincidenceOuter" <> showNodeId subscribed
       outerHeight <- liftIO $ readIORef $ coincidenceSubscribedHeight subscribed
       when debugPropagate $ liftIO $ putStrLn $ "  outerHeight = " <> show outerHeight
@@ -666,7 +667,7 @@ propagate a subscribers = do
           liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) occ
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
           liftIO . writeIORef (coincidenceSubscribedSubscribers subscribed) =<< propagate o =<< liftIO (readIORef (coincidenceSubscribedSubscribers subscribed))
-    SubscriberCoincidenceInner subscribed -> do
+    SubscriberCoincidenceInner subscribed -> {-# SCC "pg->SubscriberCoincidenceInner" #-}  do
       when debugPropagate $ liftIO $ putStrLn $ "SubscriberCoincidenceInner" <> showNodeId subscribed
       liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ coincidenceSubscribedOccurrence subscribed
@@ -733,7 +734,7 @@ readBehaviorTracked b = case b of
 
 readEvent :: Event a -> ResultM (Maybe a)
 readEvent e = case e of
-  EventRoot k r -> liftIO . liftM (fmap runIdentity . DMap.lookup k) . readIORef $ rootOccurrence r
+  EventRoot k r -> liftIO . liftM (coerce . DMap.lookup k) . readIORef $ rootOccurrence r
   EventNever -> return Nothing
   EventPush p -> do
     subscribed <- getPushSubscribed p
@@ -749,7 +750,7 @@ readEvent e = case e of
       return result
   EventFan k f -> do
     parentOcc <- readEvent $ fanParent f
-    return . fmap runIdentity $ DMap.lookup k =<< parentOcc
+    return . coerce $ DMap.lookup k =<< parentOcc
   EventSwitch s -> do
     subscribed <- getSwitchSubscribed s
     liftIO $ do
@@ -814,7 +815,7 @@ getEventSubscribedOcc es = case es of
   EventSubscribedPush subscribed -> readIORef $ pushSubscribedOccurrence subscribed
   EventSubscribedFan k subscribed -> do
     parentOcc <- getEventSubscribedOcc $ fanSubscribedParent subscribed
-    let occ = fmap runIdentity $ DMap.lookup k =<< parentOcc
+    let occ = coerce $ DMap.lookup k =<< parentOcc
     return occ
   EventSubscribedMerge subscribed -> readIORef $ mergeSubscribedOccurrence subscribed
   EventSubscribedSwitch subscribed -> readIORef $ switchSubscribedOccurrence subscribed
@@ -847,7 +848,7 @@ getRootSubscribed k r = do
     Just subscribed -> return subscribed
     Nothing -> liftIO $ do
       subscribersRef <- newIORef []
-      subscribed <- newRootSubscribed (liftM (fmap runIdentity . DMap.lookup k) $ readIORef $ rootOccurrence r) subscribersRef
+      subscribed <- newRootSubscribed (liftM (coerce . DMap.lookup k) $ readIORef $ rootOccurrence r) subscribersRef
       -- Strangely, init needs the same stuff as a RootSubscribed has, but it must not be the same as the one that everyone's subscribing to, or it'll leak memory
       uninit <- rootInit r k $ RootTrigger (subscribersRef, rootOccurrence r, k)
       addFinalizer subscribed $ do
@@ -900,7 +901,7 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
         parentSubd <- {-# SCC "getMergeSubscribed.a.parentSubd" #-} subscribe e $ WeakSubscriberMerge k ws
         parentOcc <- {-# SCC "getMergeSubscribed.a.parentOcc" #-} liftIO $ getEventSubscribedOcc parentSubd
         height <- {-# SCC "getMergeSubscribed.a.height" #-} liftIO $ readIORef $ eventSubscribedHeightRef parentSubd
-        return $ {-# SCC "getMergeSubscribed.a.returnVal" #-} (unsafeCoerce s :: Any, fmap ((k :=>) . Identity) parentOcc, height, k :=> parentSubd)
+        return $ {-# SCC "getMergeSubscribed.a.returnVal" #-} (unsafeCoerce s :: Any, fmap (\x -> k :=> Identity x) parentOcc, height, k :=> parentSubd)
       let dm = DMap.fromDistinctAscList $ catMaybes $ map (\(_, x, _, _) -> x) subscribers
           subscriberHeights = map (\(_, _, x, _) -> x) subscribers
           myHeight =
