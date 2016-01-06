@@ -93,6 +93,11 @@ instance HBuild' (a ': l) r
 -- | A container for a value that can change over time and allows notifications on changes.
 -- Basically a combination of a 'Behavior' and an 'Event', with a rule that the Behavior will
 -- change if and only if the Event fires.
+--
+-- Although @Dynamic@ logically has a 'Functor' instance, currently it can\'t
+-- be implemented without potentially requiring the mapped function to be
+-- evaluated twice. Instead, you can use 'mapDyn', which runs in a 'MonadHold'
+-- instance, to achieve the same result.
 data Dynamic t a
   = Dynamic (Behavior t a) (Event t a)
 
