@@ -322,7 +322,7 @@ instance (Semigroup a, Reflex t) => Monoid (Event t a) where
 mergeWith :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
 mergeWith f es = fmap (Prelude.foldl1 f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList)
                . merge
-               . DMap.fromAscList
+               . DMap.fromDistinctAscList
                . map (\(k, v) -> (Const2 k) :=> v)
                $ zip [0 :: Int ..] es
 

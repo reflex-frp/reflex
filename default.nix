@@ -1,6 +1,6 @@
 { mkDerivation, dependent-map, dependent-sum
 , mtl, ref-tf, semigroups, these, MemoTrie, exception-transformers
-, haskell-src-exts, haskell-src-meta
+, haskell-src-exts, haskell-src-meta, criterion, split
 }:
 mkDerivation {
   pname = "reflex";
@@ -11,7 +11,7 @@ mkDerivation {
     haskell-src-exts haskell-src-meta
   ];
   testDepends = [
-    MemoTrie
+    MemoTrie criterion split
   ];
   license = null;
 }
