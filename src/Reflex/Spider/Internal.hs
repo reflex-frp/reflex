@@ -5,6 +5,7 @@ import qualified Reflex.Class as R
 import qualified Reflex.Host.Class as R
 
 import Data.IORef
+import Data.IORef.Maybe
 import System.Mem.Weak
 import Data.Foldable
 import Data.Traversable
@@ -134,7 +135,7 @@ putCurrentHeight h = EventM $ do
   heightRef <- asks eventEnvCurrentHeight
   liftIO $ writeIORef heightRef h
 
-scheduleClear :: IORef (Maybe a) -> EventM ()
+scheduleClear :: IORefMaybe a -> EventM ()
 scheduleClear r = EventM $ do
   clears <- asks eventEnvClears
   liftIO $ modifyIORef' clears (SomeMaybeIORef r :)
@@ -209,7 +210,7 @@ data PullSubscribed a
 
 --type role Pull representational
 data Pull a
-   = Pull { pullValue :: !(IORef (Maybe (PullSubscribed a)))
+   = Pull { pullValue :: !(IORefMaybe (PullSubscribed a))
           , pullCompute :: !(BehaviorM a)
           }
 
@@ -234,7 +235,7 @@ data SomeHoldInit = forall a. SomeHoldInit (Event a) (Hold a)
 newtype EventM a = EventM { unEventM :: ReaderT EventEnv IO a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException) -- The environment should be Nothing if we are not in a frame, and Just if we are - in which case it is a list of assignments to be done after the frame is over
 
 data PushSubscribed a b
-   = PushSubscribed { pushSubscribedOccurrence :: !(IORef (Maybe b)) -- If the current height is less than our height, this should always be Nothing; during our height, this will get filled in at some point, always before our children are notified; after our height, this will be filled in with the correct value (Nothing if we are not firing, Just if we are)
+   = PushSubscribed { pushSubscribedOccurrence :: !(IORefMaybe b) -- If the current height is less than our height, this should always be Nothing; during our height, this will get filled in at some point, always before our children are notified; after our height, this will be filled in with the correct value (Nothing if we are not firing, Just if we are)
                     , pushSubscribedHeight :: !(IORef Int)
                     , pushSubscribedSubscribers :: !(IORef [WeakSubscriber b])
                     , pushSubscribedSelf :: !(Subscriber a) -- Hold this in memory to ensure our WeakReferences don't die
@@ -247,11 +248,11 @@ data PushSubscribed a b
 data Push a b
    = Push { pushCompute :: !(a -> EventM (Maybe b)) -- Compute the current firing value; assumes that its parent has been computed
           , pushParent :: !(Event a)
-          , pushSubscribed :: !(IORef (Maybe (PushSubscribed a b))) --TODO: Can we replace this with an unsafePerformIO thunk?
+          , pushSubscribed :: !(IORefMaybe (PushSubscribed a b)) --TODO: Can we replace this with an unsafePerformIO thunk?
           }
 
 data MergeSubscribed k
-   = MergeSubscribed { mergeSubscribedOccurrence :: !(IORef (Maybe (DMap k)))
+   = MergeSubscribed { mergeSubscribedOccurrence :: !(IORefMaybe (DMap k))
                      , mergeSubscribedAccum :: !(IORef (DMap k)) -- This will accumulate occurrences until our height is reached, at which point it will be transferred to mergeSubscribedOccurrence
                      , mergeSubscribedHeight :: !(IORef Int)
                      , mergeSubscribedSubscribers :: !(IORef [WeakSubscriber (DMap k)])
@@ -265,7 +266,7 @@ data MergeSubscribed k
 --TODO: DMap sucks; we should really write something better (with a functor for the value as well as the key)
 data Merge k
    = Merge { mergeParents :: !(DMap (WrapArg Event k))
-           , mergeSubscribed :: !(IORef (Maybe (MergeSubscribed k))) --TODO: Can we replace this with an unsafePerformIO thunk?
+           , mergeSubscribed :: !(IORefMaybe (MergeSubscribed k)) --TODO: Can we replace this with an unsafePerformIO thunk?
            }
 
 data FanSubscriberKey k a where
@@ -293,11 +294,11 @@ data FanSubscribed k
 
 data Fan k
    = Fan { fanParent :: !(Event (DMap k))
-         , fanSubscribed :: !(IORef (Maybe (FanSubscribed k)))
+         , fanSubscribed :: !(IORefMaybe (FanSubscribed k))
          }
 
 data SwitchSubscribed a
-   = SwitchSubscribed { switchSubscribedOccurrence :: !(IORef (Maybe a))
+   = SwitchSubscribed { switchSubscribedOccurrence :: !(IORefMaybe a)
                       , switchSubscribedHeight :: !(IORef Int)
                       , switchSubscribedSubscribers :: !(IORef [WeakSubscriber a])
                       , switchSubscribedSelf :: {-# NOUNPACK #-} (Subscriber a)
@@ -314,16 +315,16 @@ data SwitchSubscribed a
 
 data Switch a
    = Switch { switchParent :: !(Behavior (Event a))
-            , switchSubscribed :: !(IORef (Maybe (SwitchSubscribed a)))
+            , switchSubscribed :: !(IORefMaybe (SwitchSubscribed a))
             }
 
 data CoincidenceSubscribed a
-   = CoincidenceSubscribed { coincidenceSubscribedOccurrence :: !(IORef (Maybe a))
+   = CoincidenceSubscribed { coincidenceSubscribedOccurrence :: !(IORefMaybe a)
                            , coincidenceSubscribedSubscribers :: !(IORef [WeakSubscriber a])
                            , coincidenceSubscribedHeight :: !(IORef Int)
                            , coincidenceSubscribedOuter :: {-# NOUNPACK #-} (Subscriber (Event a))
                            , coincidenceSubscribedOuterParent :: !(EventSubscribed (Event a))
-                           , coincidenceSubscribedInnerParent :: !(IORef (Maybe (EventSubscribed a)))
+                           , coincidenceSubscribedInnerParent :: !(IORefMaybe (EventSubscribed a))
 #ifdef DEBUG_NODEIDS
                            , coincidenceSubscribedNodeId :: Int
 #endif
@@ -331,7 +332,7 @@ data CoincidenceSubscribed a
 
 data Coincidence a
    = Coincidence { coincidenceParent :: !(Event (Event a))
-                 , coincidenceSubscribed :: !(IORef (Maybe (CoincidenceSubscribed a)))
+                 , coincidenceSubscribed :: !(IORefMaybe (CoincidenceSubscribed a))
                  }
 
 data Box a = Box { unBox :: a }
@@ -464,6 +465,10 @@ type ResultM = EventM
 unsafeNewIORef :: a -> b -> IORef b
 unsafeNewIORef _ b = unsafePerformIO $ newIORef b
 
+{-# NOINLINE unsafeNewIORefMaybe #-}
+unsafeNewIORefMaybe :: a -> Maybe b -> IORefMaybe b
+unsafeNewIORefMaybe _ mb = unsafePerformIO $ newIORefMaybe mb
+
 instance Functor Event where
   fmap f = push $ return . Just . f
 
@@ -475,7 +480,7 @@ push :: (a -> EventM (Maybe b)) -> Event a -> Event b
 push f e = EventPush $ Push
   { pushCompute = f
   , pushParent = e
-  , pushSubscribed = unsafeNewIORef (f, e) Nothing --TODO: Does the use of the tuple here create unnecessary overhead?
+  , pushSubscribed = unsafeNewIORefMaybe (f, e) Nothing --TODO: Does the use of the tuple here create unnecessary overhead?
   }
 {-# RULES "push/push" forall f g e. push f (push g e) = push (maybe (return Nothing) f <=< g) e #-}
 
@@ -483,7 +488,7 @@ push f e = EventPush $ Push
 pull :: BehaviorM a -> Behavior a
 pull a = BehaviorPull $ Pull
   { pullCompute = a
-  , pullValue = unsafeNewIORef a Nothing
+  , pullValue = unsafeNewIORefMaybe a Nothing
   }
 {-# RULES "pull/pull" forall a. pull (readBehaviorTracked (pull a)) = pull a #-}
 
@@ -491,14 +496,14 @@ pull a = BehaviorPull $ Pull
 switch :: Behavior (Event a) -> Event a
 switch a = EventSwitch $ Switch
   { switchParent = a
-  , switchSubscribed = unsafeNewIORef a Nothing
+  , switchSubscribed = unsafeNewIORefMaybe a Nothing
   }
 {-# RULES "switch/constB" forall e. switch (BehaviorConst e) = e #-}
 
 coincidence :: Event (Event a) -> Event a
 coincidence a = EventCoincidence $ Coincidence
   { coincidenceParent = a
-  , coincidenceSubscribed = unsafeNewIORef a Nothing
+  , coincidenceSubscribed = unsafeNewIORefMaybe a Nothing
   }
 
 newRoot :: IO (Root k)
@@ -553,7 +558,7 @@ run roots after = do
                       m <- liftIO $ readIORef $ mergeSubscribedAccum subscribed
                       liftIO $ writeIORef (mergeSubscribedAccum subscribed) DMap.empty
                       --TODO: Assert that m is not empty
-                      liftIO $ writeIORef (mergeSubscribedOccurrence subscribed) $ Just m
+                      liftIO $ writeIORefMaybe (mergeSubscribedOccurrence subscribed) $ Just m
                       scheduleClear $ mergeSubscribedOccurrence subscribed
                       propagateAndUpdateSubscribersRef (mergeSubscribedSubscribers subscribed) m
               go
@@ -563,7 +568,7 @@ run roots after = do
   when debugPropagate $ putStrLn "Done running an event frame"
   return result
 
-data SomeMaybeIORef = forall a. SomeMaybeIORef (IORef (Maybe a))
+data SomeMaybeIORef = forall a. SomeMaybeIORef (IORefMaybe a)
 
 data SomeDMapIORef = forall k. SomeDMapIORef (IORef (DMap k))
 
@@ -605,7 +610,7 @@ propagate a subscribers = do
       case occ of
         Nothing -> return () -- No need to write a Nothing back into the Ref
         Just o -> do
-          liftIO $ writeIORef (pushSubscribedOccurrence subscribed) occ
+          liftIO $ writeIORefMaybe (pushSubscribedOccurrence subscribed) occ
           scheduleClear $ pushSubscribedOccurrence subscribed
           liftIO . writeIORef (pushSubscribedSubscribers subscribed) =<< propagate o =<< liftIO (readIORef (pushSubscribedSubscribers subscribed))
     SubscriberMerge k subscribed -> do
@@ -641,7 +646,7 @@ propagate a subscribers = do
       liftIO $ modifyIORef' toAssignRef (SomeAssignment h a :)
     SubscriberSwitch subscribed -> do
       when debugPropagate $ liftIO $ putStrLn $ "SubscriberSwitch" <> showNodeId subscribed
-      liftIO $ writeIORef (switchSubscribedOccurrence subscribed) $ Just a
+      liftIO $ writeIORefMaybe (switchSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ switchSubscribedOccurrence subscribed
       subs <- liftIO $ readIORef $ switchSubscribedSubscribers subscribed
       liftIO . writeIORef (switchSubscribedSubscribers subscribed) =<< propagate a subs
@@ -652,7 +657,7 @@ propagate a subscribers = do
       (occ, innerHeight, innerSubd) <- subscribeCoincidenceInner a outerHeight subscribed
       when debugPropagate $ liftIO $ putStrLn $ "  isJust occ = " <> show (isJust occ)
       when debugPropagate $ liftIO $ putStrLn $ "  innerHeight = " <> show innerHeight
-      liftIO $ writeIORef (coincidenceSubscribedInnerParent subscribed) $ Just innerSubd
+      liftIO $ writeIORefMaybe (coincidenceSubscribedInnerParent subscribed) $ Just innerSubd
       scheduleClear $ coincidenceSubscribedInnerParent subscribed
       case occ of
         Nothing -> do
@@ -661,12 +666,12 @@ propagate a subscribers = do
             mapM_ invalidateSubscriberHeight =<< readIORef (coincidenceSubscribedSubscribers subscribed)
             mapM_ recalculateSubscriberHeight =<< readIORef (coincidenceSubscribedSubscribers subscribed)
         Just o -> do -- Since it's already firing, no need to adjust height
-          liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) occ
+          liftIO $ writeIORefMaybe (coincidenceSubscribedOccurrence subscribed) occ
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
           liftIO . writeIORef (coincidenceSubscribedSubscribers subscribed) =<< propagate o =<< liftIO (readIORef (coincidenceSubscribedSubscribers subscribed))
     SubscriberCoincidenceInner subscribed -> do
       when debugPropagate $ liftIO $ putStrLn $ "SubscriberCoincidenceInner" <> showNodeId subscribed
-      liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) $ Just a
+      liftIO $ writeIORefMaybe (coincidenceSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ coincidenceSubscribedOccurrence subscribed
       liftIO . writeIORef (coincidenceSubscribedSubscribers subscribed) =<< propagate a =<< liftIO (readIORef (coincidenceSubscribedSubscribers subscribed))
 
@@ -705,7 +710,7 @@ readBehaviorTracked b = case b of
     return result
   BehaviorConst a -> return a
   BehaviorPull p -> do
-    val <- liftIO $ readIORef $ pullValue p
+    val <- liftIO $ readIORefMaybe $ pullValue p
     case val of
       Just subscribed -> do
         askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
@@ -725,7 +730,7 @@ readBehaviorTracked b = case b of
               , pullSubscribedOwnInvalidator = i
               , pullSubscribedParents = parents
               }
-        liftIO $ writeIORef (pullValue p) $ Just subscribed
+        liftIO $ writeIORefMaybe (pullValue p) $ Just subscribed
         askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
         return a
 
@@ -736,13 +741,13 @@ readEvent e = case e of
   EventPush p -> do
     subscribed <- getPushSubscribed p
     liftIO $ do
-      result <- readIORef $ pushSubscribedOccurrence subscribed -- Since ResultM is always called after the final height is reached, this will always be valid
+      result <- readIORefMaybe $ pushSubscribedOccurrence subscribed -- Since ResultM is always called after the final height is reached, this will always be valid
       touch $ pushSubscribedSelf subscribed
       return result
   EventMerge m -> do
     subscribed <- getMergeSubscribed m
     liftIO $ do
-      result <- readIORef $ mergeSubscribedOccurrence subscribed
+      result <- readIORefMaybe $ mergeSubscribedOccurrence subscribed
       touch $ mergeSubscribedSelf subscribed
       return result
   EventFan k f -> do
@@ -751,14 +756,14 @@ readEvent e = case e of
   EventSwitch s -> do
     subscribed <- getSwitchSubscribed s
     liftIO $ do
-      result <- readIORef $ switchSubscribedOccurrence subscribed
+      result <- readIORefMaybe $ switchSubscribedOccurrence subscribed
       touch $ switchSubscribedSelf subscribed
       touch $ switchSubscribedOwnInvalidator subscribed
       return result
   EventCoincidence c -> do
     subscribed <- getCoincidenceSubscribed c
     liftIO $ do
-      result <- readIORef $ coincidenceSubscribedOccurrence subscribed
+      result <- readIORefMaybe $ coincidenceSubscribedOccurrence subscribed
       touch $ coincidenceSubscribedOuter subscribed
       --TODO: do we need to touch the inner subscriber?
       return result
@@ -794,7 +799,7 @@ subscribeEventSubscribed es ws = case es of
     modifyIORef' (pushSubscribedSubscribers subscribed) (ws:)
   EventSubscribedFan k subscribed -> do
     when debugSubscribe $ liftIO $ putStrLn $ "subscribeEventSubscribed Fan"
-    modifyIORef' (fanSubscribedSubscribers subscribed) $ DMap.insertWith (++) (FanSubscriberKey k) [ws]
+    modifyIORef' (fanSubscribedSubscribers subscribed) $ DMap.insertWith (++) (FanSubscriberKey k) [ws] --IMPORTANT: The [ws] is the first argument to (++) and any existing list is the second argument.  If this were not the case, this would be too slow.
   EventSubscribedMerge subscribed -> do
     when debugSubscribe $ liftIO $ putStrLn $ "subscribeEventSubscribed Merge"
     modifyIORef' (mergeSubscribedSubscribers subscribed) (ws:)
@@ -809,14 +814,14 @@ getEventSubscribedOcc :: EventSubscribed a -> IO (Maybe a)
 getEventSubscribedOcc es = case es of
   EventSubscribedRoot r -> rootSubscribedOccurrence r
   EventSubscribedNever -> return Nothing
-  EventSubscribedPush subscribed -> readIORef $ pushSubscribedOccurrence subscribed
+  EventSubscribedPush subscribed -> readIORefMaybe $ pushSubscribedOccurrence subscribed
   EventSubscribedFan k subscribed -> do
     parentOcc <- getEventSubscribedOcc $ fanSubscribedParent subscribed
     let occ = DMap.lookup k =<< parentOcc
     return occ
-  EventSubscribedMerge subscribed -> readIORef $ mergeSubscribedOccurrence subscribed
-  EventSubscribedSwitch subscribed -> readIORef $ switchSubscribedOccurrence subscribed
-  EventSubscribedCoincidence subscribed -> readIORef $ coincidenceSubscribedOccurrence subscribed
+  EventSubscribedMerge subscribed -> readIORefMaybe $ mergeSubscribedOccurrence subscribed
+  EventSubscribedSwitch subscribed -> readIORefMaybe $ switchSubscribedOccurrence subscribed
+  EventSubscribedCoincidence subscribed -> readIORefMaybe $ coincidenceSubscribedOccurrence subscribed
 
 eventSubscribedHeightRef :: EventSubscribed a -> IORef Int
 eventSubscribedHeightRef es = case es of
@@ -858,17 +863,17 @@ getRootSubscribed k r = do
 -- When getPushSubscribed returns, the PushSubscribed returned will have a fully filled-in
 getPushSubscribed :: Push a b -> EventM (PushSubscribed a b)
 getPushSubscribed p = do
-  mSubscribed <- liftIO $ readIORef $ pushSubscribed p
+  mSubscribed <- liftIO $ readIORefMaybe $ pushSubscribed p
   case mSubscribed of
     Just subscribed -> return subscribed
     Nothing -> do -- Not yet subscribed
-      subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ liftM fromJust $ readIORef $ pushSubscribed p
+      subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ liftM fromJust $ readIORefMaybe $ pushSubscribed p
       s <- liftIO $ newSubscriberPush (pushCompute p) subscribedUnsafe
       ws <- liftIO $ mkWeakPtrWithDebug s "SubscriberPush"
       subd <- subscribe (pushParent p) $ WeakSubscriberSimple ws
       parentOcc <- liftIO $ getEventSubscribedOcc subd
       occ <- liftM join $ mapM (pushCompute p) parentOcc
-      occRef <- liftIO $ newIORef occ
+      occRef <- liftIO $ newIORefMaybe occ
       when (isJust occ) $ scheduleClear occRef
       subscribersRef <- liftIO $ newIORef []
       let subscribed = PushSubscribed
@@ -881,12 +886,12 @@ getPushSubscribed p = do
             , pushSubscribedNodeId = unsafeNodeId p
 #endif
             }
-      liftIO $ writeIORef (pushSubscribed p) $ Just subscribed
+      liftIO $ writeIORefMaybe (pushSubscribed p) $ Just subscribed
       return subscribed
 
 getMergeSubscribed :: forall k. GCompare k => Merge k -> EventM (MergeSubscribed k)
 getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
-  mSubscribed <- liftIO $ readIORef $ mergeSubscribed m
+  mSubscribed <- liftIO $ readIORefMaybe $ mergeSubscribed m
   case mSubscribed of
     Just subscribed -> return subscribed
     Nothing -> if DMap.null $ mergeParents m then emptyMergeSubscribed else do
@@ -911,7 +916,7 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
                          else (Nothing, dm)
       when (not $ DMap.null accum) $ do
         scheduleMerge myHeight subscribedUnsafe
-      occRef <- liftIO $ newIORef occ
+      occRef <- liftIO $ newIORefMaybe occ
       when (isJust occ) $ scheduleClear occRef
       accumRef <- liftIO $ newIORef accum
       heightRef <- liftIO $ newIORef myHeight
@@ -930,7 +935,7 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
       liftIO $ writeIORef subscribedRef subscribed
       return subscribed
   where emptyMergeSubscribed = do --TODO: This should never happen
-          occRef <- liftIO $ newIORef Nothing
+          occRef <- liftIO $ newIORefMaybe Nothing
           accumRef <- liftIO $ newIORef DMap.empty
           subsRef <- liftIO $ newIORef []
           return $ MergeSubscribed
@@ -947,11 +952,11 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
 
 getFanSubscribed :: GCompare k => Fan k -> EventM (FanSubscribed k)
 getFanSubscribed f = do
-  mSubscribed <- liftIO $ readIORef $ fanSubscribed f
+  mSubscribed <- liftIO $ readIORefMaybe $ fanSubscribed f
   case mSubscribed of
     Just subscribed -> return subscribed
     Nothing -> do
-      subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ liftM fromJust $ readIORef $ fanSubscribed f
+      subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ liftM fromJust $ readIORefMaybe $ fanSubscribed f
       sub <- liftIO $ newSubscriberFan subscribedUnsafe
       wsub <- liftIO $ mkWeakPtrWithDebug sub "SubscriberFan"
       subd <- subscribe (fanParent f) $ WeakSubscriberSimple wsub
@@ -964,12 +969,12 @@ getFanSubscribed f = do
             , fanSubscribedNodeId = unsafeNodeId f
 #endif
             }
-      liftIO $ writeIORef (fanSubscribed f) $ Just subscribed
+      liftIO $ writeIORefMaybe (fanSubscribed f) $ Just subscribed
       return subscribed
 
 getSwitchSubscribed :: Switch a -> EventM (SwitchSubscribed a)
 getSwitchSubscribed s = do
-  mSubscribed <- liftIO $ readIORef $ switchSubscribed s
+  mSubscribed <- liftIO $ readIORefMaybe $ switchSubscribed s
   case mSubscribed of
     Just subscribed -> return subscribed
     Nothing -> do
@@ -986,7 +991,7 @@ getSwitchSubscribed s = do
       subd <- subscribe e $ WeakSubscriberSimple wsub
       subdRef <- liftIO $ newIORef subd
       parentOcc <- liftIO $ getEventSubscribedOcc subd
-      occRef <- liftIO $ newIORef parentOcc
+      occRef <- liftIO $ newIORefMaybe parentOcc
       when (isJust parentOcc) $ scheduleClear occRef
       heightRef <- liftIO $ newIORef =<< readIORef (eventSubscribedHeightRef subd)
       subscribersRef <- liftIO $ newIORef []
@@ -1006,12 +1011,12 @@ getSwitchSubscribed s = do
 #endif
             }
       liftIO $ writeIORef subscribedRef subscribed
-      liftIO $ writeIORef (switchSubscribed s) $ Just subscribed
+      liftIO $ writeIORefMaybe (switchSubscribed s) $ Just subscribed
       return subscribed
 
 getCoincidenceSubscribed :: forall a. Coincidence a -> EventM (CoincidenceSubscribed a)
 getCoincidenceSubscribed c = do
-  mSubscribed <- liftIO $ readIORef $ coincidenceSubscribed c
+  mSubscribed <- liftIO $ readIORefMaybe $ coincidenceSubscribed c
   case mSubscribed of
     Just subscribed -> return subscribed
     Nothing -> do
@@ -1027,10 +1032,10 @@ getCoincidenceSubscribed c = do
         Just o -> do
           (occ, height, innerSubd) <- subscribeCoincidenceInner o outerHeight subscribedUnsafe
           return (occ, height, Just innerSubd)
-      occRef <- liftIO $ newIORef occ
+      occRef <- liftIO $ newIORefMaybe occ
       when (isJust occ) $ scheduleClear occRef
       heightRef <- liftIO $ newIORef height
-      innerSubdRef <- liftIO $ newIORef mInnerSubd
+      innerSubdRef <- liftIO $ newIORefMaybe mInnerSubd
       scheduleClear innerSubdRef
       subscribersRef <- liftIO $ newIORef []
       let subscribed = CoincidenceSubscribed
@@ -1045,13 +1050,13 @@ getCoincidenceSubscribed c = do
 #endif
             }
       liftIO $ writeIORef subscribedRef subscribed
-      liftIO $ writeIORef (coincidenceSubscribed c) $ Just subscribed
+      liftIO $ writeIORefMaybe (coincidenceSubscribed c) $ Just subscribed
       return subscribed
 
 merge :: GCompare k => DMap (WrapArg Event k) -> Event (DMap k)
 merge m = EventMerge $ Merge
   { mergeParents = m
-  , mergeSubscribed = unsafeNewIORef m Nothing
+  , mergeSubscribed = unsafeNewIORefMaybe m Nothing
   }
 
 newtype EventSelector k = EventSelector { select :: forall a. k a -> Event a }
@@ -1060,7 +1065,7 @@ fan :: GCompare k => Event (DMap k) -> EventSelector k
 fan e =
   let f = Fan
         { fanParent = e
-        , fanSubscribed = unsafeNewIORef e Nothing
+        , fanSubscribed = unsafeNewIORefMaybe e Nothing
         }
   in EventSelector $ \k -> EventFan k f
 
@@ -1085,7 +1090,7 @@ runFrame a = do
     runHoldInits -- This must happen before doing the assignments, in case subscribing a Hold causes existing Holds to be read by the newly-propagated events
     return result
   toClear <- readIORef toClearRef
-  forM_ toClear $ \(SomeMaybeIORef ref) -> writeIORef ref Nothing
+  forM_ toClear $ \(SomeMaybeIORef ref) -> writeIORefMaybe ref Nothing
   toClearRoot <- readIORef toClearRootRef
   forM_ toClearRoot $ \(SomeDMapIORef ref) -> writeIORef ref DMap.empty
   toAssign <- readIORef toAssignRef
@@ -1247,7 +1252,7 @@ calculateSwitchHeight subscribed = readIORef . eventSubscribedHeightRef =<< read
 calculateCoincidenceHeight :: CoincidenceSubscribed a -> IO Int
 calculateCoincidenceHeight subscribed = do
   outerHeight <- readIORef $ eventSubscribedHeightRef $ coincidenceSubscribedOuterParent subscribed
-  innerHeight <- maybe (return 0) (readIORef . eventSubscribedHeightRef) =<< readIORef (coincidenceSubscribedInnerParent subscribed)
+  innerHeight <- maybe (return 0) (readIORef . eventSubscribedHeightRef) =<< readIORefMaybe (coincidenceSubscribedInnerParent subscribed)
   return $ if outerHeight == invalidHeight || innerHeight == invalidHeight then invalidHeight else max outerHeight innerHeight
 
 {-
@@ -1290,9 +1295,9 @@ invalidate toReconnectRef wis = do
         case i of
           InvalidatorPull p -> do
             when debugInvalidate $ liftIO $ putStrLn "invalidate Pull"
-            mVal <- readIORef $ pullValue p
+            mVal <- readIORefMaybe $ pullValue p
             forM_ mVal $ \val -> do
-              writeIORef (pullValue p) Nothing
+              writeIORefMaybe (pullValue p) Nothing
               writeIORef (pullSubscribedInvalidators val) =<< invalidate toReconnectRef =<< readIORef (pullSubscribedInvalidators val)
           InvalidatorSwitch subscribed -> do
             when debugInvalidate $ liftIO $ putStrLn "invalidate Switch"

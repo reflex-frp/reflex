@@ -31,7 +31,8 @@ library
     transformers-compat >= 0.3,
     haskell-src-exts == 1.16.*,
     haskell-src-meta == 0.6.*,
-    syb == 0.5.*
+    syb == 0.5.*,
+    ghc-prim == 0.4.*
 
   exposed-modules:
     Reflex,
@@ -41,6 +42,7 @@ library
     Reflex.Dynamic,
     Reflex.Dynamic.TH,
     Reflex.Host.Class,
+    Data.IORef.Maybe,
     Data.Functor.Misc
 
   other-extensions: TemplateHaskell
