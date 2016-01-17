@@ -32,7 +32,7 @@ library
     haskell-src-exts == 1.16.*,
     haskell-src-meta == 0.6.*,
     syb == 0.5.*,
-    ghc-prim == 0.4.*
+    ghc-prim >= 0.3 && < 0.5
 
   exposed-modules:
     Reflex,
