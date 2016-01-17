@@ -22,6 +22,7 @@ import qualified Data.IntMap as IntMap
 import Control.Monad.Ref
 import Control.Monad.Exception
 import Data.Monoid ((<>))
+import Data.Coerce
 
 import System.IO.Unsafe
 import Unsafe.Coerce
@@ -733,7 +734,7 @@ readBehaviorTracked b = case b of
 
 readEvent :: Event a -> ResultM (Maybe a)
 readEvent e = case e of
-  EventRoot k r -> liftIO . liftM (fmap runIdentity . DMap.lookup k) . readIORef $ rootOccurrence r
+  EventRoot k r -> liftIO . liftM (coerce . DMap.lookup k) . readIORef $ rootOccurrence r
   EventNever -> return Nothing
   EventPush p -> do
     subscribed <- getPushSubscribed p
@@ -749,7 +750,7 @@ readEvent e = case e of
       return result
   EventFan k f -> do
     parentOcc <- readEvent $ fanParent f
-    return . fmap runIdentity $ DMap.lookup k =<< parentOcc
+    return . coerce $ DMap.lookup k =<< parentOcc
   EventSwitch s -> do
     subscribed <- getSwitchSubscribed s
     liftIO $ do
@@ -814,7 +815,7 @@ getEventSubscribedOcc es = case es of
   EventSubscribedPush subscribed -> readIORef $ pushSubscribedOccurrence subscribed
   EventSubscribedFan k subscribed -> do
     parentOcc <- getEventSubscribedOcc $ fanSubscribedParent subscribed
-    let occ = fmap runIdentity $ DMap.lookup k =<< parentOcc
+    let occ = coerce $ DMap.lookup k =<< parentOcc
     return occ
   EventSubscribedMerge subscribed -> readIORef $ mergeSubscribedOccurrence subscribed
   EventSubscribedSwitch subscribed -> readIORef $ switchSubscribedOccurrence subscribed
@@ -847,7 +848,7 @@ getRootSubscribed k r = do
     Just subscribed -> return subscribed
     Nothing -> liftIO $ do
       subscribersRef <- newIORef []
-      subscribed <- newRootSubscribed (liftM (fmap runIdentity . DMap.lookup k) $ readIORef $ rootOccurrence r) subscribersRef
+      subscribed <- newRootSubscribed (liftM (coerce . DMap.lookup k) $ readIORef $ rootOccurrence r) subscribersRef
       -- Strangely, init needs the same stuff as a RootSubscribed has, but it must not be the same as the one that everyone's subscribing to, or it'll leak memory
       uninit <- rootInit r k $ RootTrigger (subscribersRef, rootOccurrence r, k)
       addFinalizer subscribed $ do
@@ -900,7 +901,7 @@ getMergeSubscribed m = {-# SCC "getMergeSubscribed.entire" #-} do
         parentSubd <- {-# SCC "getMergeSubscribed.a.parentSubd" #-} subscribe e $ WeakSubscriberMerge k ws
         parentOcc <- {-# SCC "getMergeSubscribed.a.parentOcc" #-} liftIO $ getEventSubscribedOcc parentSubd
         height <- {-# SCC "getMergeSubscribed.a.height" #-} liftIO $ readIORef $ eventSubscribedHeightRef parentSubd
-        return $ {-# SCC "getMergeSubscribed.a.returnVal" #-} (unsafeCoerce s :: Any, fmap ((k :=>) . Identity) parentOcc, height, k :=> parentSubd)
+        return $ {-# SCC "getMergeSubscribed.a.returnVal" #-} (unsafeCoerce s :: Any, fmap (\x -> k :=> Identity x) parentOcc, height, k :=> parentSubd)
       let dm = DMap.fromDistinctAscList $ catMaybes $ map (\(_, x, _, _) -> x) subscribers
           subscriberHeights = map (\(_, _, x, _) -> x) subscribers
           myHeight =
