@@ -19,7 +19,7 @@ library
     base >= 4.7 && < 4.9,
     dependent-sum == 0.3.*,
     dependent-map == 0.2.*,
-    semigroups >= 0.16 && < 0.18,
+    semigroups >= 0.16 && < 0.19,
     mtl >= 2.1 && < 2.3,
     containers == 0.5.*,
     these >= 0.4 && < 0.7,
