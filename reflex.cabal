@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.3.2
+Version: 0.4.0
 Synopsis: Higher-order Functional Reactive Programming
 Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system
 License: BSD3
@@ -17,8 +17,8 @@ library
   hs-source-dirs: src
   build-depends:
     base >= 4.7 && < 4.9,
-    dependent-sum == 0.2.*,
-    dependent-map == 0.1.*,
+    dependent-sum == 0.3.*,
+    dependent-map == 0.2.*,
     semigroups >= 0.16 && < 0.18,
     mtl >= 2.1 && < 2.3,
     containers == 0.5.*,
