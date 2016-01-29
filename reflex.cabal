@@ -29,9 +29,9 @@ library
     exception-transformers == 0.4.*,
     transformers >= 0.2,
     transformers-compat >= 0.3,
-    haskell-src-exts == 1.16.*,
+    haskell-src-exts >= 1.16 && < 1.18,
     haskell-src-meta == 0.6.*,
-    syb == 0.5.*
+    syb >= 0.5 && < 0.7
 
   exposed-modules:
     Reflex,
