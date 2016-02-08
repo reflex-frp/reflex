@@ -61,6 +61,7 @@ test-suite all
     dependent-map,
     dependent-sum,
     MemoTrie == 0.6.*,
+    bifunctors,
     split
 
 
