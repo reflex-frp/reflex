@@ -13,9 +13,6 @@ module Reflex.TestPlan
 import Reflex.Class
 import Control.Monad.Fix
 
-import qualified Data.IntMap as IntMap
-import Data.IntMap
-
 import Prelude
 
 class (Reflex t, MonadHold t m, MonadFix m) => TestPlan t m where
