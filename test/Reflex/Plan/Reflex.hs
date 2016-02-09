@@ -29,7 +29,7 @@ import Control.Monad.State.Strict
 
 import Data.Dependent.Sum (DSum (..))
 import Data.Monoid
-import Data.Traversable (traverse, sequence)
+import Data.Traversable (traverse, sequenceA)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Ref
@@ -40,7 +40,7 @@ import Data.IORef
 import System.Mem
 
 -- Note: this import must come last to silence warnings from AMP
-import Prelude hiding (sequence)
+import Prelude
 
 type MonadIORef m = (MonadIO m, MonadRef m, Ref m ~ Ref IO)
 
@@ -104,7 +104,7 @@ triggerFrame readResult _ occs =  do
 
 
 readEvent' :: MonadReadEvent t m => EventHandle t a -> m (Maybe a)
-readEvent' = readEvent >=> sequence
+readEvent' = readEvent >=> sequenceA
 
 
 -- Convenience functions for running tests producing Events/Behaviors
