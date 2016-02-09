@@ -29,7 +29,7 @@ import Control.Monad.State.Strict
 
 import Data.Dependent.Sum (DSum (..))
 import Data.Monoid
-import Data.Traversable
+import Data.Traversable (traverse)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Ref
