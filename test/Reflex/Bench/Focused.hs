@@ -23,7 +23,11 @@ import Data.Tuple
 import Data.List
 import Data.List.Split
 
-import Prelude
+import Data.Word
+import Data.Monoid
+
+
+import Prelude hiding (sum, concat, forM)
 
 
 mergeTree :: Num a => (Monoid (f [a]), Functor f) => Int -> [f a] -> f a
