@@ -60,6 +60,7 @@ test-suite all
     containers,
     dependent-map,
     dependent-sum,
+    transformers >= 0.3 && < 0.5,
     MemoTrie == 0.6.*,
     bifunctors,
     split
