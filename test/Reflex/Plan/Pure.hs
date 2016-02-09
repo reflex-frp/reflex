@@ -6,6 +6,7 @@ import Reflex
 import Reflex.Pure
 import Reflex.TestPlan
 
+import Control.Applicative
 import Control.Monad.Fix
 import Control.Monad.State
 import Data.IntMap (IntMap)
