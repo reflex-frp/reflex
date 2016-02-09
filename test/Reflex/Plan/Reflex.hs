@@ -29,7 +29,7 @@ import Control.Monad.State.Strict
 
 import Data.Dependent.Sum (DSum (..))
 import Data.Monoid
-import Data.Traversable (traverse)
+import Data.Traversable (traverse, sequence)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Ref
@@ -40,7 +40,7 @@ import Data.IORef
 import System.Mem
 
 -- Note: this import must come last to silence warnings from AMP
-import Prelude
+import Prelude hiding (sequence)
 
 type MonadIORef m = (MonadIO m, MonadRef m, Ref m ~ Ref IO)
 
