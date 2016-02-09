@@ -5,6 +5,7 @@ module Reflex.Test.Micro (testCases) where
 import Reflex
 import Reflex.TestPlan
 
+import Data.Word
 import Control.Monad
 import Control.Applicative
 import Data.Char
