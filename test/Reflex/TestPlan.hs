@@ -12,6 +12,8 @@ module Reflex.TestPlan
 
 import Reflex.Class
 import Control.Monad.Fix
+import Data.Word
+
 
 import Prelude
 
