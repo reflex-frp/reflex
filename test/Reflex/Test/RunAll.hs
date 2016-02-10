@@ -6,6 +6,7 @@ import Reflex.Test
 
 import qualified Reflex.Bench.Focused as Focused
 import qualified Reflex.Test.Micro as Micro
+import Data.Functor
 import Data.Bifunctor
 import Data.List
 

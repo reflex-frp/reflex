@@ -21,7 +21,7 @@ import Data.Monoid
 
 import Data.IntMap (IntMap)
 
-import Data.Foldable
+--import Data.Foldable
 import System.Exit
 
 import Prelude

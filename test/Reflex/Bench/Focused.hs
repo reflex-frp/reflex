@@ -9,8 +9,8 @@ import Control.Monad.Fix
 import Control.Monad
 import Control.Monad.Identity
 import Control.Applicative
-import Data.Foldable
-import Data.Traversable
+--import Data.Foldable
+import Data.Traversable (traverse, for)
 
 import Data.Maybe
 import Data.Map (Map)
@@ -27,7 +27,7 @@ import Data.Word
 import Data.Monoid
 
 
-import Prelude hiding (sum, concat, forM)
+import Prelude hiding (sum, concat)
 
 
 mergeTree :: Num a => (Monoid (f [a]), Functor f) => Int -> [f a] -> f a
@@ -284,7 +284,7 @@ fans n =
   , testE "fanMerge " $ fanMerge n <$> events n
 
   , testE "fmapFanMerge " $ fmapFanMerge n <$> events n
-  , testE "triggerMerge" $ leftmost <$> forM [1..n] (\i -> plan [(i, i)])
+  , testE "triggerMerge" $ leftmost <$> for [1..n] (\i -> plan [(i, i)])
 
   ]
   where
