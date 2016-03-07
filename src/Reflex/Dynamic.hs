@@ -20,6 +20,7 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
                       , foldDynMaybe
                       , foldDynMaybeM
                       , combineDyn
+                      , apDyn
                       , collectDyn
                       , mconcatDyn
                       , distributeDMapOverDyn
@@ -270,6 +271,21 @@ combineDyn f da db = do
   bbc :: Behavior t (Behavior t c) <- hold c0 $ fmap constant ec
   let bc :: Behavior t c = pull $ sample =<< sample bbc
   return $ Dynamic bc ec
+
+-- | A psuedo applicative version of ap for 'Dynamic'. Example useage:
+--
+-- > do
+-- >    person <- Person `mapDyn` dynFirstName
+-- >                     `apDyn` dynListName
+-- >                     `apDyn` dynAge
+-- >                     `apDyn` dynAddress
+apDyn :: forall t m a b. (Reflex t, MonadHold t m)
+      => m (Dynamic t (a -> b))
+      -> Dynamic t a
+      -> m (Dynamic t b)
+apDyn m a = do
+  r <- m
+  combineDyn (\f c -> f c) r a
 
 {-
 tagInnerDyn :: Reflex t => Event t (Dynamic t a) -> Event t a
