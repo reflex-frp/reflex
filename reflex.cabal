@@ -46,12 +46,11 @@ library
   other-extensions: TemplateHaskell
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
 
-test-suite cross-impl
+
+test-suite all
   type: exitcode-stdio-1.0
-  main-is: Reflex/Test/CrossImpl.hs
-  other-modules:
-    Reflex.Pure
-  ghc-options: -O2 -main-is Reflex.Test.CrossImpl.test
+  main-is: Reflex/Test/RunAll.hs
+  ghc-options: -O2 -Wall
   hs-source-dirs: test
   build-depends:
     base,
@@ -60,7 +59,12 @@ test-suite cross-impl
     mtl,
     containers,
     dependent-map,
-    MemoTrie == 0.6.*
+    dependent-sum,
+    transformers >= 0.3 && < 0.5,
+    MemoTrie == 0.6.*,
+    bifunctors,
+    split
+
 
 benchmark spider-bench
   type: exitcode-stdio-1.0

@@ -12,9 +12,8 @@ module Reflex.TestPlan
 
 import Reflex.Class
 import Control.Monad.Fix
+import Data.Word
 
-import qualified Data.IntMap as IntMap
-import Data.IntMap
 
 import Prelude
 

@@ -24,10 +24,12 @@ import Reflex.TestPlan
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Identity
 import Control.Monad.State.Strict
 
 import Data.Dependent.Sum (DSum (..))
 import Data.Monoid
+import Data.Traversable (traverse, sequenceA)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Ref
@@ -71,8 +73,8 @@ instance (ReflexHost t, MonadRef (HostFrame t), Ref (HostFrame t) ~ Ref IO) => T
       makeFiring ref (t, a) = (fromIntegral t, [Firing ref a])
 
 
-firingTrigger :: (MonadReflexHost t m, MonadIORef m) => Firing t -> m (Maybe (DSum (EventTrigger t)))
-firingTrigger (Firing ref a) = fmap (:=> a) <$> readRef ref
+firingTrigger :: (MonadReflexHost t m, MonadIORef m) => Firing t -> m (Maybe (DSum  (EventTrigger t) Identity))
+firingTrigger (Firing ref a) = fmap (:=> Identity a) <$> readRef ref
 
 runPlan :: (MonadReflexHost t m, MonadIORef m) => Plan t a -> m (a, Schedule t)
 runPlan (Plan p) = runHostFrame $ runStateT p mempty
@@ -97,12 +99,12 @@ readSchedule schedule readResult = IntMap.traverseWithKey (triggerFrame readResu
 
 triggerFrame :: (MonadReflexHost t m, MonadIORef m) => ReadPhase m a -> Int -> [Firing t] -> m a
 triggerFrame readResult _ occs =  do
-    triggers <- {-# SCC "catMaybes/traverse" #-} catMaybes <$> traverse firingTrigger occs
-    {-# SCC fireEventsAndRead #-} fireEventsAndRead triggers readResult
+    triggers <- catMaybes <$> traverse firingTrigger occs
+    fireEventsAndRead triggers readResult
 
 
 readEvent' :: MonadReadEvent t m => EventHandle t a -> m (Maybe a)
-readEvent' = readEvent >=> sequence
+readEvent' = readEvent >=> sequenceA
 
 
 -- Convenience functions for running tests producing Events/Behaviors
