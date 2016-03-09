@@ -9,6 +9,7 @@ import Control.Monad.Trans.Writer (WriterT())
 import Control.Monad.Trans.Except (ExceptT())
 import Control.Monad.Trans.Cont (ContT())
 import Control.Monad.Trans.RWS (RWST())
+import Data.Filtrable
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.These
 import Data.Align
@@ -23,7 +24,7 @@ import Data.Semigroup
 import Data.Traversable
 
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
-import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
+import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl, filter)
 
 import Debug.Trace (trace)
 
@@ -145,26 +146,23 @@ instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
   mappend a b = pull $ liftM2 mappend (sample a) (sample b)
   mconcat = pull . liftM mconcat . mapM sample
 
---TODO: See if there's a better class in the standard libraries already
--- | A class for values that combines filtering and mapping using 'Maybe'.
-class FunctorMaybe f where
-  -- | Combined mapping and filtering function.
-  fmapMaybe :: (a -> Maybe b) -> f a -> f b
+-- | Combined mapping and filtering function.
+fmapMaybe :: Filtrable f => (a -> Maybe b) -> f a -> f b
+fmapMaybe = mapMaybe
 
 -- | Flipped version of 'fmapMaybe'.
-fforMaybe :: FunctorMaybe f => f a -> (a -> Maybe b) -> f b
-fforMaybe = flip fmapMaybe
+fforMaybe :: Filtrable f => f a -> (a -> Maybe b) -> f b
+fforMaybe = flip mapMaybe
 
 -- | Filter 'f a' using the provided predicate.
--- Relies on 'fforMaybe'.
-ffilter :: FunctorMaybe f => (a -> Bool) -> f a -> f a
-ffilter f = fmapMaybe $ \x -> if f x then Just x else Nothing
+ffilter :: Filtrable f => (a -> Bool) -> f a -> f a
+ffilter = filter
 
-instance Reflex t => FunctorMaybe (Event t) where
-  fmapMaybe f = push $ return . f
+instance Reflex t => Filtrable (Event t) where
+  mapMaybe f = push $ return . f
 
 instance Reflex t => Functor (Event t) where
-  fmap f = fmapMaybe $ Just . f
+  fmap f = mapMaybe $ Just . f
 
 -- | Create a new 'Event' by combining each occurence with the next value
 -- of the list using the supplied function. If the list runs out of items,
