@@ -5,6 +5,7 @@ import qualified Reflex.Class as R
 import qualified Reflex.Host.Class as R
 
 import Data.IORef
+import Data.ReverseLivenessBag
 import System.Mem.Weak
 import Data.Foldable
 import Data.Traversable
@@ -97,7 +98,7 @@ unsafeNodeId a = unsafePerformIO $ do
 --type role Hold representational
 data Hold a
    = Hold { holdValue :: !(IORef a)
-          , holdInvalidators :: !(IORef [Weak Invalidator])
+          , holdInvalidators :: !(ReverseLivenessBag SomeBehaviorSubscribed Invalidator)
             -- We need to use 'Any' for the next two things, because otherwise Hold inherits a nominal role for its 'a' parameter, and we want to be able to use 'coerce'
           , holdSubscriber :: !(IORef Any) -- Keeps its subscription alive; for some reason, a regular (or strict) reference to the Subscriber itself wasn't working, so had to use an IORef
           , holdParent :: !(IORef Any) -- Keeps its parent alive (will be undefined until the hold is initialized --TODO: Probably shouldn't be an IORef
@@ -161,7 +162,8 @@ hold v0 e = do
   holdInitRef <- askHoldInitRef
   liftIO $ do
     valRef <- newIORef v0
-    invsRef <- newIORef []
+    hRef <- newIORef $ error "hold not yet initialized (h)"
+    invsRef <- newEmptyReverseLivenessBag $ SomeBehaviorSubscribed $ BehaviorSubscribedHold $ unsafeDupablePerformIO $ readIORef hRef
     parentRef <- newIORef $ error "hold not yet initialized (parent)"
     subscriberRef <- newIORef $ error "hold not yet initialized (subscriber)"
     let h = Hold
@@ -173,6 +175,7 @@ hold v0 e = do
           , holdNodeId = unsafeNodeId (v0, e)
 #endif
           }
+    writeIORef hRef h
     s <- newSubscriberHold h
     writeIORef subscriberRef $ unsafeCoerce s
     modifyIORef' holdInitRef (SomeHoldInit e h :)
@@ -192,7 +195,7 @@ subscribeHold e h = do
 
 --type role BehaviorM representational
 -- BehaviorM can sample behaviors
-newtype BehaviorM a = BehaviorM { unBehaviorM :: ReaderT (Maybe (Weak Invalidator, IORef [SomeBehaviorSubscribed])) IO a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
+newtype BehaviorM a = BehaviorM { unBehaviorM :: ReaderT (Maybe (ReverseLivenessBagMember SomeBehaviorSubscribed Invalidator)) IO a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadReader (Maybe (ReverseLivenessBagMember SomeBehaviorSubscribed Invalidator)))
 
 data BehaviorSubscribed a
    = BehaviorSubscribedHold (Hold a)
@@ -203,9 +206,8 @@ data SomeBehaviorSubscribed = forall a. SomeBehaviorSubscribed (BehaviorSubscrib
 --type role PullSubscribed representational
 data PullSubscribed a
    = PullSubscribed { pullSubscribedValue :: !a
-                    , pullSubscribedInvalidators :: !(IORef [Weak Invalidator])
-                    , pullSubscribedOwnInvalidator :: !Invalidator
-                    , pullSubscribedParents :: ![SomeBehaviorSubscribed] -- Need to keep parent behaviors alive, or they won't let us know when they're invalidated
+                    , pullSubscribedInvalidators :: !(ReverseLivenessBag SomeBehaviorSubscribed Invalidator)
+                    , pullSubscribedOwnInvalidator :: !(ReverseLivenessBagMember SomeBehaviorSubscribed Invalidator)
                     }
 
 --type role Pull representational
@@ -303,9 +305,7 @@ data SwitchSubscribed a
                       , switchSubscribedSubscribers :: !(IORef [WeakSubscriber a])
                       , switchSubscribedSelf :: {-# NOUNPACK #-} (Subscriber a)
                       , switchSubscribedSelfWeak :: !(IORef (Weak (Subscriber a)))
-                      , switchSubscribedOwnInvalidator :: {-# NOUNPACK #-} Invalidator
-                      , switchSubscribedOwnWeakInvalidator :: !(IORef (Weak Invalidator))
-                      , switchSubscribedBehaviorParents :: !(IORef [SomeBehaviorSubscribed])
+                      , switchSubscribedOwnInvalidator :: !(ReverseLivenessBagMember SomeBehaviorSubscribed Invalidator)
                       , switchSubscribedParent :: !(Behavior (Event a))
                       , switchSubscribedCurrentParent :: !(IORef (EventSubscribed a))
 #ifdef DEBUG_NODEIDS
@@ -583,19 +583,6 @@ mkWeakPtrWithDebug x debugNote = mkWeakPtr x $
 
 type WeakList a = [Weak a]
 
---TODO: Is it faster to clean up every time, or to occasionally go through and clean up as needed?
-traverseAndCleanWeakList_ :: Monad m => (wa -> m (Maybe a)) -> [wa] -> (a -> m ()) -> m [wa]
-traverseAndCleanWeakList_ deRef ws f = go ws
-  where go [] = return []
-        go (h:t) = do
-          ma <- deRef h
-          case ma of
-            Just a -> do
-              f a
-              t' <- go t
-              return $ h : t'
-            Nothing -> go t
-
 -- | Propagate everything at the current height
 propagate :: a -> [WeakSubscriber a] -> EventM [WeakSubscriber a]
 propagate a subscribers = do
@@ -638,8 +625,7 @@ propagate a subscribers = do
                     else Just $ FanSubscriberKey k :=> Identity subsubs') :: DSum (FanSubscriberKey k) Identity -> IO (Maybe (DSum (FanSubscriberKey k) Identity)))
       liftIO $ writeIORef (fanSubscribedSubscribers subscribed) $ DMap.fromDistinctAscList $ catMaybes subs'
     SubscriberHold h -> do
-      invalidators <- liftIO $ readIORef $ holdInvalidators h
-      when debugPropagate $ liftIO $ putStrLn $ "SubscriberHold" <> showNodeId h <> ": " ++ show (length invalidators)
+      when debugPropagate $ liftIO $ putStrLn $ "SubscriberHold" <> showNodeId h
       toAssignRef <- askToAssignRef
       liftIO $ modifyIORef' toAssignRef (SomeAssignment h a :)
     SubscriberSwitch subscribed -> do
@@ -689,21 +675,14 @@ subscribeCoincidenceInner o outerHeight subscribedUnsafe = do
 readBehavior :: Behavior a -> IO a
 readBehavior b = runBehaviorM (readBehaviorTracked b) Nothing --TODO: Specialize readBehaviorTracked to the Nothing and Just cases
 
-runBehaviorM :: BehaviorM a -> Maybe (Weak Invalidator, IORef [SomeBehaviorSubscribed]) -> IO a
+runBehaviorM :: BehaviorM a -> Maybe (ReverseLivenessBagMember SomeBehaviorSubscribed Invalidator) -> IO a
 runBehaviorM a mwi = runReaderT (unBehaviorM a) mwi
-
-askInvalidator :: BehaviorM (Maybe (Weak Invalidator))
-askInvalidator = liftM (fmap fst) $ BehaviorM ask
-
-askParentsRef :: BehaviorM (Maybe (IORef [SomeBehaviorSubscribed]))
-askParentsRef = liftM (fmap snd) $ BehaviorM ask
 
 readBehaviorTracked :: Behavior a -> BehaviorM a
 readBehaviorTracked b = case b of
   BehaviorHold h -> do
     result <- liftIO $ readIORef $ holdValue h
-    askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (holdInvalidators h) (wi:))
-    askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedHold h) :))
+    ask >>= mapM_ (\wi -> liftIO $ insertReverseLivenessBag (holdInvalidators h) wi)
     liftIO $ touch $ holdSubscriber h
     return result
   BehaviorConst a -> return a
@@ -711,25 +690,22 @@ readBehaviorTracked b = case b of
     val <- liftIO $ readIORef $ pullValue p
     case val of
       Just subscribed -> do
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
-        askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (pullSubscribedInvalidators subscribed) (wi:))
+        ask >>= mapM_ (\wi -> liftIO $ insertReverseLivenessBag (pullSubscribedInvalidators subscribed) wi)
         liftIO $ touch $ pullSubscribedOwnInvalidator subscribed
         return $ pullSubscribedValue subscribed
       Nothing -> do
         i <- liftIO $ newInvalidatorPull p
-        wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorPull"
-        parentsRef <- liftIO $ newIORef []
-        a <- liftIO $ runReaderT (unBehaviorM $ pullCompute p) $ Just (wi, parentsRef)
-        invsRef <- liftIO . newIORef . maybeToList =<< askInvalidator
-        parents <- liftIO $ readIORef parentsRef
+        wi <- liftIO $ newReverseLivenessBagMember i
+        a <- liftIO $ runReaderT (unBehaviorM $ pullCompute p) $ Just wi
+        subscribedRef <- liftIO $ newIORef $ error "PullSubscribed not yet initialized"
+        invsRef <- liftIO . newReverseLivenessBag (SomeBehaviorSubscribed $ BehaviorSubscribedPull $ unsafeDupablePerformIO $ readIORef subscribedRef) . maybeToList =<< ask
         let subscribed = PullSubscribed
               { pullSubscribedValue = a
               , pullSubscribedInvalidators = invsRef
-              , pullSubscribedOwnInvalidator = i
-              , pullSubscribedParents = parents
+              , pullSubscribedOwnInvalidator = wi
               }
+        liftIO $ writeIORef subscribedRef subscribed
         liftIO $ writeIORef (pullValue p) $ Just subscribed
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
         return a
 
 readEvent :: Event a -> ResultM (Maybe a)
@@ -970,6 +946,21 @@ getFanSubscribed f = do
       liftIO $ writeIORef (fanSubscribed f) $ Just subscribed
       return subscribed
 
+{-
+data InvalidationSource p t
+   = InvalidationSource { invalidationSource :: 
+                        }
+
+data InvalidationTarget p t
+   = InvalidationTarget { invalidationTargetSelf :: {-# NOUNPACK #-} Invalidator
+                        , invalidationTargetWeakSelf :: !(IORef (Weak Invalidator))
+                        , invalidationTargetParents :: !(IORef [InvalidationSource p t]) -- ^ Things that can invalidate us; we need to keep these alive so they can invalidate us
+                        }
+
+newInvalidator :: Invalidator -> IO (InvalidationTarget p)
+newInvalidator i = InvalidationTarget <$> pure i <*> (newIORef =<< mkWeakPtrWithDebug i "newInvalidator'") <*> newIORef []
+-}
+
 getSwitchSubscribed :: Switch a -> EventM (SwitchSubscribed a)
 getSwitchSubscribed s = do
   mSubscribed <- liftIO $ readIORef $ switchSubscribed s
@@ -980,12 +971,10 @@ getSwitchSubscribed s = do
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
       i <- liftIO $ newInvalidatorSwitch subscribedUnsafe
       sub <- liftIO $ newSubscriberSwitch subscribedUnsafe
-      wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorSwitch"
-      wiRef <- liftIO $ newIORef wi
+      wi <- liftIO $ newReverseLivenessBagMember i
       wsub <- liftIO $ mkWeakPtrWithDebug sub "SubscriberSwitch"
       selfWeakRef <- liftIO $ newIORef wsub
-      parentsRef <- liftIO $ newIORef [] --TODO: This should be unnecessary, because it will always be filled with just the single parent behavior
-      e <- liftIO $ runBehaviorM (readBehaviorTracked (switchParent s)) $ Just (wi, parentsRef)
+      e <- liftIO $ runBehaviorM (readBehaviorTracked (switchParent s)) $ Just wi
       subd <- subscribe e $ WeakSubscriberSimple wsub
       subdRef <- liftIO $ newIORef subd
       parentOcc <- liftIO $ getEventSubscribedOcc subd
@@ -999,9 +988,7 @@ getSwitchSubscribed s = do
             , switchSubscribedSubscribers = subscribersRef
             , switchSubscribedSelf = sub
             , switchSubscribedSelfWeak = selfWeakRef
-            , switchSubscribedOwnInvalidator = i
-            , switchSubscribedOwnWeakInvalidator = wiRef
-            , switchSubscribedBehaviorParents = parentsRef
+            , switchSubscribedOwnInvalidator = wi
             , switchSubscribedParent = switchParent s
             , switchSubscribedCurrentParent = subdRef
 #ifdef DEBUG_NODEIDS
@@ -1095,7 +1082,7 @@ runFrame a = do
   toReconnectRef <- newIORef []
   forM_ toAssign $ \(SomeAssignment h v) -> do
     writeIORef (holdValue h) v
-    writeIORef (holdInvalidators h) =<< invalidate toReconnectRef =<< readIORef (holdInvalidators h)
+    invalidate toReconnectRef =<< dumpAndResetReverseLivenessBag (holdInvalidators h)
   coincidenceInfos <- readIORef coincidenceInfosRef
   forM_ coincidenceInfos $ \(SomeCoincidenceInfo wsubInner subInner mcs) -> do
     touch subInner
@@ -1105,12 +1092,9 @@ runFrame a = do
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> do
     wsub <- readIORef $ switchSubscribedSelfWeak subscribed
     finalize wsub
-    wi <- readIORef $ switchSubscribedOwnWeakInvalidator subscribed
-    finalize wi
-    let !i = switchSubscribedOwnInvalidator subscribed
-    wi' <- mkWeakPtrWithDebug i "wi'"
-    writeIORef (switchSubscribedBehaviorParents subscribed) []
-    e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi', switchSubscribedBehaviorParents subscribed))
+    let wi = switchSubscribedOwnInvalidator subscribed
+    resetReverseLivenessBagMember wi
+    e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just wi)
     --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
     let !sub = switchSubscribedSelf subscribed -- Must be done strictly, or the weak pointer will refer to a useless thunk
     wsub' <- mkWeakPtrWithDebug sub "wsub'"
@@ -1280,27 +1264,19 @@ data SomeSwitchSubscribed = forall a. SomeSwitchSubscribed (SwitchSubscribed a)
 debugInvalidate :: Bool
 debugInvalidate = False
 
-invalidate :: IORef [SomeSwitchSubscribed] -> WeakList Invalidator -> IO (WeakList Invalidator)
-invalidate toReconnectRef wis = do
-  forM_ wis $ \wi -> do
-    mi <- deRefWeak wi
-    case mi of
-      Nothing -> do
-        when debugInvalidate $ liftIO $ putStrLn "invalidate Dead"
-        return () --TODO: Should we clean this up here?
-      Just i -> do
-        finalize wi -- Once something's invalidated, it doesn't need to hang around; this will change when some things are strict
-        case i of
-          InvalidatorPull p -> do
-            when debugInvalidate $ liftIO $ putStrLn "invalidate Pull"
-            mVal <- readIORef $ pullValue p
-            forM_ mVal $ \val -> do
-              writeIORef (pullValue p) Nothing
-              writeIORef (pullSubscribedInvalidators val) =<< invalidate toReconnectRef =<< readIORef (pullSubscribedInvalidators val)
-          InvalidatorSwitch subscribed -> do
-            when debugInvalidate $ liftIO $ putStrLn "invalidate Switch"
-            modifyIORef' toReconnectRef (SomeSwitchSubscribed subscribed :)
-  return [] -- Since we always finalize everything, always return an empty list --TODO: There are some things that will need to be re-subscribed every time; we should try to avoid finalizing them
+invalidate :: IORef [SomeSwitchSubscribed] -> [Invalidator] -> IO ()
+invalidate toReconnectRef is = do
+  forM_ is $ \i -> case i of
+    InvalidatorPull p -> do
+      when debugInvalidate $ liftIO $ putStrLn "invalidate Pull"
+      mVal <- readIORef $ pullValue p
+      forM_ mVal $ \val -> do
+        writeIORef (pullValue p) Nothing
+        invalidate toReconnectRef =<< dumpAndResetReverseLivenessBag (pullSubscribedInvalidators val) --TODO: There are some things that will need to be re-subscribed every time; we should try to avoid finalizing them (here and anywhere else we use dumpAndResetReverseLivenessBag)
+    InvalidatorSwitch subscribed -> do
+      when debugInvalidate $ liftIO $ putStrLn "invalidate Switch"
+      modifyIORef' toReconnectRef (SomeSwitchSubscribed subscribed :)
+  return ()
 
 --------------------------------------------------------------------------------
 -- Reflex integration
