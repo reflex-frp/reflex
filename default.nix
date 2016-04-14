@@ -2,7 +2,7 @@
 , exception-transformers, haskell-src-exts, haskell-src-meta
 , MemoTrie, mtl, primitive, ref-tf, semigroups, stdenv, syb
 , template-haskell, these, transformers, transformers-compat
-, criterion, deepseq, split, stm
+, criterion, deepseq, split, stm, loch-th
 }:
 mkDerivation {
   pname = "reflex";
@@ -16,7 +16,7 @@ mkDerivation {
   testHaskellDepends = [
     base containers dependent-map MemoTrie mtl ref-tf
     # Benchmark dependencies
-    criterion deepseq split stm
+    criterion deepseq split stm loch-th
   ];
   homepage = "https://github.com/reflex-frp/reflex";
   description = "Higher-order Functional Reactive Programming";

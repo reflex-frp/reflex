@@ -86,8 +86,9 @@ benchmark spider-bench
 benchmark saulzar-bench
   type: exitcode-stdio-1.0
   hs-source-dirs: bench test
+  c-sources: bench-cbits/checkCapability.c
   main-is: RunAll.hs
-  ghc-options: -O2 -rtsopts
+  ghc-options: -O2 -rtsopts -threaded
   build-depends:
     base,
     containers == 0.5.*,
@@ -101,7 +102,10 @@ benchmark saulzar-bench
     primitive,
     criterion == 1.1.*,
     split,
-    reflex
+    reflex,
+    time,
+    loch-th,
+    process
 
 source-repository head
   type: git

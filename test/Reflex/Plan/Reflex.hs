@@ -2,7 +2,7 @@
 module Reflex.Plan.Reflex
   ( TestPlan(..)
   , runPlan
-  , Plan
+  , Plan (..)
   , Schedule
   , Firing (..)
   , MonadIORef
@@ -33,7 +33,6 @@ import Data.Traversable (traverse, sequenceA)
 import Data.Maybe
 import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Ref
-
 
 import Data.IntMap.Strict (IntMap)
 import Data.IORef

@@ -10,7 +10,7 @@ import Control.Monad
 import Control.Monad.Identity
 import Control.Applicative
 --import Data.Foldable
-import Data.Traversable (traverse, for)
+import Data.Traversable (for)
 
 import Data.Maybe
 import Data.Map (Map)
@@ -334,10 +334,10 @@ firing n =
   , testB "pullChain"                 $ fmapChain n . current <$> (count =<< events 4)
   , testB "pullChain2"                $ do
     es <- events 4
-    e <- plan [(0, ())]
+    e' <- plan [(0, ())]
 
     b <- hold (constant 0) $
-      pushAlways (const $ fmapChain n <$> hold 0 es) e
+      pushAlways (const $ fmapChain n <$> hold 0 es) e'
 
     return (join b)
   , testB "counters/pullTree" $ mergeTree 8 <$> counters
