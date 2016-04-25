@@ -23,6 +23,7 @@ import Control.Monad.Ref
 import Control.Monad.Exception
 import Data.Monoid ((<>))
 import Data.Coerce
+import Control.Exception
 
 import System.IO.Unsafe
 import Unsafe.Coerce
@@ -1107,12 +1108,12 @@ runFrame a = do
     finalize wsub
     wi <- readIORef $ switchSubscribedOwnWeakInvalidator subscribed
     finalize wi
-    let !i = switchSubscribedOwnInvalidator subscribed
+    i <- evaluate $ switchSubscribedOwnInvalidator subscribed
     wi' <- mkWeakPtrWithDebug i "wi'"
     writeIORef (switchSubscribedBehaviorParents subscribed) []
     e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi', switchSubscribedBehaviorParents subscribed))
     --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
-    let !sub = switchSubscribedSelf subscribed -- Must be done strictly, or the weak pointer will refer to a useless thunk
+    sub <- evaluate $ switchSubscribedSelf subscribed -- Must be done strictly, or the weak pointer will refer to a useless thunk
     wsub' <- mkWeakPtrWithDebug sub "wsub'"
     writeIORef (switchSubscribedSelfWeak subscribed) wsub'
     subd' <- runFrame $ subscribe e $ WeakSubscriberSimple wsub' --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
