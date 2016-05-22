@@ -156,8 +156,10 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 -- Flatten Event-of-Event to Event that fires when both wrapper AND new Event fire.
 [ ]   coincidence       ::                     Event (Event a)  ->    Event a
 
--- Flatten Behavior-of-Behavior to Behavior. Because Behavior is an instance of
--- Monad, we use the standard 'join' function from 'Control.Monad'.
+-- Flatten Behavior-of-Behavior to Behavior. Behavior is an instance of Monad,
+-- so the 'join' function from 'Control.Monad' suffices. The output of 'join' is
+-- a Behavior whose value is equal to the current value of the current value of
+-- the input.
 [ ]   join              ::                Behavior (Behavior a) ->    Behavior a
 
 
