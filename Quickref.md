@@ -156,8 +156,13 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 -- Flatten Event-of-Event to Event that fires when both wrapper AND new Event fire.
 [ ]   coincidence       ::                     Event (Event a)  ->    Event a
 
+-- Flatten Behavior-of-Behavior to Behavior. Because Behavior is an instance of
+-- Monad, we use the standard 'join' function from 'Control.Monad'.
+[ ]   join              ::                Behavior (Behavior a) ->    Behavior a
+
+
 -- Flatten Dynamic-of-Dynamic to Dynamic.  New Dynamic is used immediately.
--- Output updated whenever inner OR outer Dynamic updates. 
+-- Output updated whenever inner OR outer Dynamic updates.
 [ ]   joinDyn           ::          Dynamic        (Dynamic a)  ->  Dynamic a
 [ ]   joinDynThroughMap :: Ord k => Dynamic (Map k (Dynamic a)) ->  Dynamic (Map k a)
 
