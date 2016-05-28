@@ -26,6 +26,7 @@ import Data.List.Split
 import Data.Word
 import Data.Monoid
 
+import Control.DeepSeq
 
 import Prelude hiding (sum, concat)
 
@@ -244,7 +245,7 @@ subscribing n frames =
   ]
 
   where
-    testSub :: (Eq a, Show a) => String -> (forall t n. (Reflex t, MonadHold t n, MonadFix n) => Event t Word -> n (Event t a)) -> (String, TestCase)
+    testSub :: (Eq a, Show a, NFData a) => String -> (forall t n. (Reflex t, MonadHold t n, MonadFix n) => Event t Word -> n (Event t a)) -> (String, TestCase)
     testSub name test = testE name (switches frames test)
 
 -- Set of benchmark to test specifically merging dynamic collections

@@ -32,7 +32,6 @@ import Data.Monoid
 import Control.Arrow
 import Control.Monad
 import Data.Bool
-import qualified GHC.Event as GHC
 import Control.Concurrent.STM
 import Data.Int
 import Control.Exception
@@ -80,10 +79,10 @@ benchFiring runHost tc n = runHost $ do
   case tc of
     TestE p -> do
       (h, s) <- setupFiring p
-      runIterations $ readSchedule s $ readEvent' h
+      runIterations $ readSchedule_ s $ readEvent' h
     TestB p -> do
       (b, s) <- runPlan p
-      runIterations $ readSchedule (makeDense s) $ sample b
+      runIterations $ readSchedule_ (makeDense s) $ sample b
 
 waitForFinalizers :: IO ()
 waitForFinalizers = do

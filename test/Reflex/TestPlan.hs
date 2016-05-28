@@ -13,6 +13,7 @@ module Reflex.TestPlan
 import Reflex.Class
 import Control.Monad.Fix
 import Data.Word
+import Control.DeepSeq
 
 
 import Prelude
@@ -32,13 +33,13 @@ type TestE a = forall t m. TestPlan t m => m (Event t a)
 type TestB a = forall t m. TestPlan t m => m (Behavior t a)
 
 data TestCase  where
-  TestE  :: (Show a, Eq a) => TestE a -> TestCase
-  TestB  :: (Show a, Eq a) => TestB a -> TestCase
+  TestE  :: (Show a, Eq a, NFData a) => TestE a -> TestCase
+  TestB  :: (Show a, Eq a, NFData a) => TestB a -> TestCase
 
 -- Helpers to declare test cases
-testE :: (Eq a, Show a) => String -> TestE a -> (String, TestCase)
+testE :: (Eq a, Show a, NFData a) => String -> TestE a -> (String, TestCase)
 testE name test = (name, TestE test)
 
-testB :: (Eq a, Show a) => String -> TestB a -> (String, TestCase)
+testB :: (Eq a, Show a, NFData a) => String -> TestB a -> (String, TestCase)
 testB name test = (name, TestB test)
 

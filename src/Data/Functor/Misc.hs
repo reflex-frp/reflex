@@ -1,10 +1,12 @@
-{-# LANGUAGE KindSignatures, GADTs, DeriveDataTypeable, RankNTypes, ScopedTypeVariables, PolyKinds #-}
+{-# LANGUAGE KindSignatures, GADTs, DeriveDataTypeable, RankNTypes, ScopedTypeVariables, PolyKinds, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, StandaloneDeriving #-}
 module Data.Functor.Misc where
 
 import Data.GADT.Compare
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.GADT.Show
+import Data.Dependent.Sum
+import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Typeable hiding (Refl)
 import Data.These
@@ -25,6 +27,14 @@ instance GCompare f => GCompare (WrapArg g f) where
 data Const2 :: * -> * -> * -> * where
   Const2 :: k -> Const2 k v v
   deriving (Typeable)
+
+deriving instance Show k => Show (Const2 k v v)
+
+instance Show k => GShow (Const2 k v) where
+  gshowsPrec n x@(Const2 _) = showsPrec n x
+
+instance (Show k, Show (f v)) => ShowTag (Const2 k v) f where
+  showTaggedPrec (Const2 _) = showsPrec
 
 instance Eq k => GEq (Const2 k v) where
   geq (Const2 a) (Const2 b) =
@@ -55,13 +65,13 @@ combineDMapsWithKey f mg mh = DMap.fromList $ go (DMap.toList mg) (DMap.toList m
           GGT -> (hk :=> f hk (That hv)) : go gs hs'
 
 wrapDMap :: (forall a. a -> f a) -> DMap k Identity -> DMap k f
-wrapDMap f = DMap.fromDistinctAscList . map (\(k :=> Identity v) -> k :=> f v) . DMap.toAscList
+wrapDMap f = DMap.mapWithKey $ \_ -> f . runIdentity
 
 rewrapDMap :: (forall (a :: *). f a -> g a) -> DMap k f -> DMap k g
-rewrapDMap f = DMap.fromDistinctAscList . map (\(k :=> v) -> k :=> f v) . DMap.toAscList
+rewrapDMap f = DMap.mapWithKey $ \_ -> f
 
 unwrapDMap :: (forall a. f a -> a) -> DMap k f -> DMap k Identity 
-unwrapDMap f = DMap.fromDistinctAscList . map (\(k :=> v) -> k :=> Identity (f v)) . DMap.toAscList
+unwrapDMap f = DMap.mapWithKey $ \_ -> Identity . f
 
 unwrapDMapMaybe :: (forall a. f a -> Maybe a) -> DMap k f -> DMap k Identity
 unwrapDMapMaybe f m = DMap.fromDistinctAscList [k :=> Identity w | (k :=> v) <- DMap.toAscList m, Just w <- [f v]]
@@ -70,7 +80,10 @@ mapToDMap :: Map k v -> DMap (Const2 k v) Identity
 mapToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> Identity v) . Map.toAscList
 
 mapWithFunctorToDMap :: Map k (f v) -> DMap (Const2 k v) f
-mapWithFunctorToDMap = DMap.fromDistinctAscList . map (\(k, v) -> (Const2 k) :=> v) . Map.toAscList
+mapWithFunctorToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> v) . Map.toAscList
+
+extractFunctorDMap :: DMap (Const2 k (f v)) Identity -> DMap (Const2 k v) f
+extractFunctorDMap = DMap.fromDistinctAscList . map (\(Const2 k :=> Identity v) -> Const2 k :=> v) . DMap.toAscList
 
 dmapToMap :: DMap (Const2 k v) Identity -> Map k v
 dmapToMap = Map.fromDistinctAscList . map (\(Const2 k :=> Identity v) -> (k, v)) . DMap.toAscList

@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase, DataKinds, PolyKinds #-}
+{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase, DataKinds, PolyKinds #-}
 module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the current value is always equal to the most recent update
                       , current
                       , updated
@@ -14,7 +14,6 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
                       , attachDynWithMaybe
                       , mapDyn
                       , forDyn
-                      , mapDynM
                       , foldDyn
                       , foldDynM
                       , foldDynMaybe
@@ -29,6 +28,7 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
                       , traceDyn
                       , traceDynWith
                       , splitDyn
+                      , splitDynPure
                       , Demux
                       , demux
                       , getDemuxed
@@ -49,16 +49,15 @@ import Control.Monad hiding (mapM, mapM_, forM, forM_)
 import Control.Monad.Fix
 import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_)
 import Data.These
-import Data.Traversable (mapM, forM)
 import Data.Align
 import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare (GCompare (..), GEq (..), (:~:) (..), GOrdering (..))
 import Data.Monoid
---import Data.HList (HList (..), hBuild)
+
+import Debug.Trace
 
 data HList (l::[*]) where
     HNil  :: HList '[]
@@ -91,45 +90,12 @@ instance HBuild' (a ': l) r
       => HBuild' l (a->r) where
   hBuild' l x = hBuild' (HCons x l)
 
--- | A container for a value that can change over time and allows notifications on changes.
--- Basically a combination of a 'Behavior' and an 'Event', with a rule that the Behavior will
--- change if and only if the Event fires.
---
--- Although @Dynamic@ logically has a 'Functor' instance, currently it can\'t
--- be implemented without potentially requiring the mapped function to be
--- evaluated twice. Instead, you can use 'mapDyn', which runs in a 'MonadHold'
--- instance, to achieve the same result.
-data Dynamic t a
-  = Dynamic (Behavior t a) (Event t a)
-
-unsafeDynamic :: Behavior t a -> Event t a -> Dynamic t a
-unsafeDynamic = Dynamic
-
--- | Extract the 'Behavior' of a 'Dynamic'.
-current :: Dynamic t a -> Behavior t a
-current (Dynamic b _) = b
-
--- | Extract the 'Event' of the 'Dynamic'.
-updated :: Dynamic t a -> Event t a
-updated (Dynamic _ e) = e
-
--- | 'Dynamic' with the constant supplied value.
-constDyn :: Reflex t => a -> Dynamic t a
-constDyn x = Dynamic (constant x) never
-
--- | Create a 'Dynamic' using the initial value that changes every
--- time the 'Event' occurs.
-holdDyn :: MonadHold t m => a -> Event t a -> m (Dynamic t a)
-holdDyn v0 e = do
-  b <- hold v0 e
-  return $ Dynamic b e
-
 -- | Create a new 'Dynamic' that only signals changes if the values
 -- actually changed.
 nubDyn :: (Reflex t, Eq a) => Dynamic t a -> Dynamic t a
 nubDyn d =
   let e' = attachWithMaybe (\x x' -> if x' == x then Nothing else Just x') (current d) (updated d)
-  in Dynamic (current d) e' --TODO: Avoid invalidating the outgoing Behavior
+  in unsafeDynamic (current d) e' --TODO: Avoid invalidating the outgoing Behavior
 
 {-
 instance Reflex t => Functor (Dynamic t) where
@@ -141,24 +107,12 @@ instance Reflex t => Functor (Dynamic t) where
 -}      
 
 -- | Map a function over a 'Dynamic'.
-mapDyn :: (Reflex t, MonadHold t m) => (a -> b) -> Dynamic t a -> m (Dynamic t b)
-mapDyn f = mapDynM $ return . f
+mapDyn :: (Reflex t, Monad m) => (a -> b) -> Dynamic t a -> m (Dynamic t b)
+mapDyn f = return . fmap f
 
 -- | Flipped version of 'mapDyn'.
-forDyn :: (Reflex t, MonadHold t m) => Dynamic t a -> (a -> b) -> m (Dynamic t b)
+forDyn :: (Reflex t, Monad m) => Dynamic t a -> (a -> b) -> m (Dynamic t b)
 forDyn = flip mapDyn
-
--- | Map a monadic function over a 'Dynamic'.  The only monadic action that the given function can
--- perform is 'sample'.
-{-# INLINE mapDynM #-}
-mapDynM :: forall t m a b. (Reflex t, MonadHold t m) => (forall m'. MonadSample t m' => a -> m' b) -> Dynamic t a -> m (Dynamic t b)
-mapDynM f d = do
-  let e' = push (liftM Just . f :: a -> PushM t (Maybe b)) $ updated d
-      eb' = fmap constant e'
-      v0 = pull $ f =<< sample (current d)
-  bb' :: Behavior t (Behavior t b) <- hold v0 eb'
-  let b' = pull $ sample =<< sample bb'
-  return $ Dynamic b' e'
 
 -- | Create a 'Dynamic' using the initial value and change it each
 -- time the 'Event' occurs using a folding function on the previous
@@ -178,10 +132,10 @@ foldDynMaybe f = foldDynMaybeM $ \o v -> return $ f o v
 foldDynMaybeM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe b)) -> b -> Event t a -> m (Dynamic t b)
 foldDynMaybeM f z e = do
   rec let e' = flip push e $ \o -> do
-            v <- sample b'
+            v <- sample $ current d'
             f o v
-      b' <- hold z e'
-  return $ Dynamic b' e'
+      d' <- holdDyn z e'
+  return d'
 
 -- | Create a new 'Dynamic' that counts the occurences of the 'Event'.
 count :: (Reflex t, MonadHold t m, MonadFix m, Num b) => Event t a -> m (Dynamic t b)
@@ -222,55 +176,29 @@ mconcatE = concatEventsWith mappend
 
 -- | Split the 'Dynamic' into two 'Dynamic's, each taking the
 -- respective value of the tuple.
-splitDyn :: (Reflex t, MonadHold t m) => Dynamic t (a, b) -> m (Dynamic t a, Dynamic t b)
-splitDyn d = liftM2 (,) (mapDyn fst d) (mapDyn snd d)
+splitDyn :: (Reflex t, Monad m) => Dynamic t (a, b) -> m (Dynamic t a, Dynamic t b)
+splitDyn = return . splitDynPure
+
+splitDynPure :: Reflex t => Dynamic t (a, b) -> (Dynamic t a, Dynamic t b)
+splitDynPure d = (fmap fst d, fmap snd d)
 
 -- | Merge the 'Dynamic' values using their 'Monoid' instance.
-mconcatDyn :: forall t m a. (Reflex t, MonadHold t m, Monoid a) => [Dynamic t a] -> m (Dynamic t a)
-mconcatDyn es = do
-  ddm :: Dynamic t (DMap (Const2 Int a) Identity) <- distributeDMapOverDyn . DMap.fromList . map (\(k, v) -> Const2 k :=> v) $ zip [0 :: Int ..] es
-  mapDyn (mconcat . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) ddm
+mconcatDyn :: forall t m a. (Reflex t, Monad m, Monoid a) => [Dynamic t a] -> m (Dynamic t a)
+mconcatDyn = return . mconcat
 
 -- | Create a 'Dynamic' with a 'DMap' of values out of a 'DMap' of
 -- Dynamic values.
-distributeDMapOverDyn :: forall t m k. (Reflex t, MonadHold t m, GCompare k) => DMap k (Dynamic t) -> m (Dynamic t (DMap k Identity))
-distributeDMapOverDyn dm = case DMap.toList dm of
-  [] -> return $ constDyn DMap.empty
-  [k :=> v] -> mapDyn (DMap.singleton k . Identity) v
-  _ -> do
-    let edmPre = merge $ rewrapDMap updated dm
-        edm :: Event t (DMap k Identity) = flip push edmPre $ \o -> return . Just =<< do
-          let f _ = \case
-                This origDyn -> sample $ current origDyn
-                That _ -> error "distributeDMapOverDyn: should be impossible to have an event occurring that is not present in the original DMap"
-                These _ (Identity newVal) -> return newVal
-          sequenceDmap $ combineDMapsWithKey f dm (wrapDMap Identity o)
-        dm0 :: Behavior t (DMap k Identity) = pull $ do
-          liftM DMap.fromList . forM (DMap.toList dm) $ \(k :=> dv) -> liftM ((k :=>) . Identity) . sample $ current dv
-    bbdm :: Behavior t (Behavior t (DMap k Identity)) <- hold dm0 $ fmap constant edm
-    let bdm = pull $ sample =<< sample bbdm
-    return $ Dynamic bdm edm
+distributeDMapOverDyn :: (Reflex t, Monad m, GCompare k) => DMap k (Dynamic t) -> m (Dynamic t (DMap k Identity))
+distributeDMapOverDyn = return . distributeDMapOverDynPure
+
+distributeMapOverDynPure :: (Reflex t, Ord k) => Map k (Dynamic t v) -> Dynamic t (Map k v)
+distributeMapOverDynPure = fmap dmapToMap . distributeDMapOverDynPure . mapWithFunctorToDMap
 
 -- | Merge two 'Dynamic's into a new one using the provided
 -- function. The new 'Dynamic' changes its value each time one of the
 -- original 'Dynamic's changes its value.
-combineDyn :: forall t m a b c. (Reflex t, MonadHold t m) => (a -> b -> c) -> Dynamic t a -> Dynamic t b -> m (Dynamic t c)
-combineDyn f da db = do
-  let eab = align (updated da) (updated db)
-      ec = flip push eab $ \o -> do
-        (a, b) <- case o of
-          This a -> do
-            b <- sample $ current db
-            return (a, b)
-          That b -> do
-            a <- sample $ current da
-            return (a, b)
-          These a b -> return (a, b)
-        return $ Just $ f a b
-      c0 :: Behavior t c = pull $ liftM2 f (sample $ current da) (sample $ current db)
-  bbc :: Behavior t (Behavior t c) <- hold c0 $ fmap constant ec
-  let bc :: Behavior t c = pull $ sample =<< sample bbc
-  return $ Dynamic bc ec
+combineDyn :: forall t m a b c. (Reflex t, Monad m) => (a -> b -> c) -> Dynamic t a -> Dynamic t b -> m (Dynamic t c)
+combineDyn f da db = return $ zipDynWith f da db
 
 -- | A psuedo applicative version of ap for 'Dynamic'. Example useage:
 --
@@ -279,49 +207,22 @@ combineDyn f da db = do
 -- >                     `apDyn` dynListName
 -- >                     `apDyn` dynAge
 -- >                     `apDyn` dynAddress
-apDyn :: forall t m a b. (Reflex t, MonadHold t m)
+apDyn :: forall t m a b. (Reflex t, Monad m)
       => m (Dynamic t (a -> b))
       -> Dynamic t a
       -> m (Dynamic t b)
 apDyn m a = do
   r <- m
-  combineDyn (\f c -> f c) r a
+  return $ r <*> a
 
-{-
-tagInnerDyn :: Reflex t => Event t (Dynamic t a) -> Event t a
-tagInnerDyn e =
-  let eSlow = push (liftM Just . sample . current) e
-      eFast = coincidence $ fmap updated e
-  in leftmost [eFast, eSlow]
--}
-
--- | Join a nested 'Dynamic' into a new 'Dynamic' that has the value
--- of the inner 'Dynamic'.
-joinDyn :: forall t a. (Reflex t) => Dynamic t (Dynamic t a) -> Dynamic t a
-joinDyn dd =
-  let b' = pull $ sample . current =<< sample (current dd)
-      eOuter :: Event t a = pushAlways (sample . current) $ updated dd
-      eInner :: Event t a = switch $ fmap updated (current dd)
-      eBoth :: Event t a = coincidence $ fmap updated (updated dd)
-      e' = leftmost [eBoth, eOuter, eInner]
-  in Dynamic b' e'
+joinDyn :: Reflex t => Dynamic t (Dynamic t a) -> Dynamic t a
+joinDyn = join
 
 --TODO: Generalize this to functors other than Maps
 -- | Combine a 'Dynamic' of a 'Map' of 'Dynamic's into a 'Dynamic'
 -- with the current values of the 'Dynamic's in a map.
 joinDynThroughMap :: forall t k a. (Reflex t, Ord k) => Dynamic t (Map k (Dynamic t a)) -> Dynamic t (Map k a)
-joinDynThroughMap dd =
-  let b' = pull $ mapM (sample . current) =<< sample (current dd)
-      eOuter :: Event t (Map k a) = pushAlways (mapM (sample . current)) $ updated dd
-      eInner :: Event t (Map k a) = attachWith (flip Map.union) b' $ switch $ fmap (mergeMap . fmap updated) (current dd) --Note: the flip is important because Map.union is left-biased
-      readNonFiring :: MonadSample t m => These (Dynamic t a) a -> m a
-      readNonFiring = \case
-        This d -> sample $ current d
-        That a -> return a
-        These _ a -> return a
-      eBoth :: Event t (Map k a) = coincidence $ fmap (\m -> pushAlways (mapM readNonFiring . align m) $ mergeMap $ fmap updated m) (updated dd)
-      e' = leftmost [eBoth, eOuter, eInner]
-  in Dynamic b' e'
+joinDynThroughMap = joinDyn . fmap distributeMapOverDynPure
 
 -- | Print the value of the 'Dynamic' on each change and prefix it
 -- with the provided string. This should /only/ be used for debugging.
@@ -340,7 +241,10 @@ traceDyn s = traceDynWith $ \x -> s <> ": " <> show x
 traceDynWith :: Reflex t => (a -> String) -> Dynamic t a -> Dynamic t a
 traceDynWith f d =
   let e' = traceEventWith f $ updated d
-  in Dynamic (current d) e'
+      getV0 = do
+        x <- sample $ current d
+        trace (f x) $ return x
+  in unsafeBuildDynamic getV0 e'
 
 -- | Replace the value of the 'Event' with the current value of the 'Dynamic'
 -- each time the 'Event' occurs.
@@ -410,12 +314,13 @@ demux k = Demux (current k)
 --TODO: The pattern of using hold (sample b0) can be reused in various places as a safe way of building certain kinds of Dynamics; see if we can factor this out
 -- | Select a particular output of the 'Demux'; this is equivalent to (but much faster than)
 -- mapping over the original 'Dynamic' and checking whether it is equal to the given key.
-getDemuxed :: (Reflex t, MonadHold t m, Eq k) => Demux t k -> k -> m (Dynamic t Bool)
-getDemuxed d k = do
+getDemuxed :: (Reflex t, Monad m, Eq k) => Demux t k -> k -> m (Dynamic t Bool)
+getDemuxed d k = return $ demuxed d k
+
+demuxed :: (Reflex t, Eq k) => Demux t k -> k -> Dynamic t Bool
+demuxed d k =
   let e = select (demuxSelector d) (Const2 k)
-  bb <- hold (liftM (==k) $ sample $ demuxValue d) $ fmap return e
-  let b = pull $ join $ sample bb
-  return $ Dynamic b e
+  in unsafeBuildDynamic (liftM (==k) $ sample $ demuxValue d) e
 
 --------------------------------------------------------------------------------
 -- collectDyn
@@ -473,16 +378,11 @@ instance RebuildSortedHList t => RebuildSortedHList (h ': t) where
 dmapToHList :: forall l. RebuildSortedHList l => DMap (HListPtr l) Identity -> HList l
 dmapToHList = rebuildSortedHList . DMap.toList
 
-distributeFHListOverDyn :: forall t m l. (Reflex t, MonadHold t m, RebuildSortedHList l) => FHList (Dynamic t) l -> m (Dynamic t (HList l))
-distributeFHListOverDyn l = mapDyn dmapToHList =<< distributeDMapOverDyn (fhlistToDMap l)
-{-
-distributeFHListOverDyn l = do
-  let ec = undefined
-      c0 = pull $ sequenceFHList $ natMap (sample . current) l
-  bbc <- hold c0 $ fmap constant ec
-  let bc = pull $ sample =<< sample bbc
-  return $ Dynamic bc ec
--}
+distributeFHListOverDyn :: forall t m l. (Reflex t, Monad m, RebuildSortedHList l) => FHList (Dynamic t) l -> m (Dynamic t (HList l))
+distributeFHListOverDyn = return . distributeFHListOverDynPure
+
+distributeFHListOverDynPure :: (Reflex t, RebuildSortedHList l) => FHList (Dynamic t) l -> Dynamic t (HList l)
+distributeFHListOverDynPure l = fmap dmapToHList $ distributeDMapOverDynPure $ fhlistToDMap l
 
 class AllAreFunctors (f :: a -> *) (l :: [a]) where
   type FunctorList f l :: [*]
@@ -493,24 +393,35 @@ instance AllAreFunctors f '[] where
   type FunctorList f '[] = '[]
   toFHList l = case l of
     HNil -> FHNil
+#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
     _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
+#endif
   fromFHList FHNil = HNil
 
 instance AllAreFunctors f t => AllAreFunctors f (h ': t) where
   type FunctorList f (h ': t) = f h ': FunctorList f t
   toFHList l = case l of
     a `HCons` b -> a `FHCons` toFHList b
+#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
     _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
+#endif
   fromFHList (a `FHCons` b) = a `HCons` fromFHList b
 
 collectDyn :: ( RebuildSortedHList (HListElems b)
               , IsHList a, IsHList b
               , AllAreFunctors (Dynamic t) (HListElems b)
-              , Reflex t, MonadHold t m
+              , Reflex t, Monad m
               , HListElems a ~ FunctorList (Dynamic t) (HListElems b)
               ) => a -> m (Dynamic t b)
-collectDyn ds =
-  mapDyn fromHList =<< distributeFHListOverDyn (toFHList $ toHList ds)
+collectDyn = return . collectDynPure
+
+collectDynPure :: ( RebuildSortedHList (HListElems b)
+                  , IsHList a, IsHList b
+                  , AllAreFunctors (Dynamic t) (HListElems b)
+                  , Reflex t
+                  , HListElems a ~ FunctorList (Dynamic t) (HListElems b)
+                  ) => a -> Dynamic t b
+collectDynPure ds = fmap fromHList $ distributeFHListOverDynPure $ toFHList $ toHList ds
 
 -- Poor man's Generic
 class IsHList a where
@@ -523,18 +434,24 @@ instance IsHList (a, b) where
   toHList (a, b) = hBuild a b
   fromHList l = case l of
     a `HCons` b `HCons` HNil -> (a, b)
+#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
     _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
+#endif
 
 instance IsHList (a, b, c, d) where
   type HListElems (a, b, c, d) = [a, b, c, d]
   toHList (a, b, c, d) = hBuild a b c d
   fromHList l = case l of
     a `HCons` b `HCons` c `HCons` d `HCons` HNil -> (a, b, c, d)
+#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
     _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
+#endif
 
 instance IsHList (a, b, c, d, e, f) where
   type HListElems (a, b, c, d, e, f) = [a, b, c, d, e, f]
   toHList (a, b, c, d, e, f) = hBuild a b c d e f
   fromHList l = case l of
     a `HCons` b `HCons` c `HCons` d `HCons` e `HCons` f `HCons` HNil -> (a, b, c, d, e, f)
+#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
     _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
+#endif

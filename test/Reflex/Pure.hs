@@ -4,7 +4,13 @@ of Reflex should produce the same results as this implementation, although perfo
 and laziness/strictness may differ.
 -}
 
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, EmptyDataDecls, InstanceSigs #-}
+{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, EmptyDataDecls, InstanceSigs, FlexibleInstances, ScopedTypeVariables #-}
+
+-- There are two expected orphan instances in this module:
+--   * MonadSample (Pure t) ((->) t)
+--   * MonadHold (Pure t) ((->) t)
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Reflex.Pure where
 
 import Reflex.Class
@@ -13,6 +19,8 @@ import Data.Functor.Identity
 import Data.MemoTrie
 import Data.Dependent.Map (DMap, GCompare)
 import qualified Data.Dependent.Map as DMap
+import Control.Monad
+import Data.Monoid
 
 data Pure t
 
@@ -22,7 +30,9 @@ data Pure t
 instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
 
   newtype Behavior (Pure t) a = Behavior { unBehavior :: t -> a }
-  newtype Event (Pure t) a    = Event { unEvent :: t -> Maybe a }
+  newtype Event (Pure t) a = Event { unEvent :: t -> Maybe a }
+  newtype Dynamic (Pure t) a = Dynamic { unDynamic :: t -> (a, Maybe a) }
+  newtype Incremental (Pure t) p a = Incremental { unIncremental :: t -> (a, Maybe (p a)) }
 
   type PushM (Pure t) = (->) t
   type PullM (Pure t) = (->) t
@@ -39,7 +49,8 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   pull :: PullM (Pure t) a -> Behavior (Pure t) a
   pull = Behavior . memo
 
-  merge :: GCompare k => DMap k (Event (Pure t)) -> Event (Pure t) (DMap k Identity)
+  -- [UNUSED_CONSTRAINT]: The following type signature for merge will produce a warning because the GCompare instance is not used; however, removing the GCompare instance produces a different warning, due to that constraint being present in the original class definition
+  --merge :: GCompare k => DMap k (Event (Pure t)) -> Event (Pure t) (DMap k Identity)
   merge events = Event $ memo $ \t ->
     let currentOccurrences = unwrapDMapMaybe (($ t) . unEvent) events
     in if DMap.null currentOccurrences
@@ -55,7 +66,56 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   coincidence :: Event (Pure t) (Event (Pure t) a) -> Event (Pure t) a
   coincidence e = Event $ memo $ \t -> unEvent e t >>= \o -> unEvent o t
 
-instance Ord t => MonadSample (Pure t) ((->) t) where
+  current :: Dynamic (Pure t) a -> Behavior (Pure t) a
+  current d = Behavior $ \t -> fst $ unDynamic d t
+
+  updated :: Dynamic (Pure t) a -> Event (Pure t) a
+  updated d = Event $ \t -> snd $ unDynamic d t
+
+  unsafeBuildDynamic :: PullM (Pure t) a -> Event (Pure t) a -> Dynamic (Pure t) a
+  unsafeBuildDynamic readV0 v' = Dynamic $ \t -> (readV0 t, unEvent v' t)
+
+  -- See UNUSED_CONSTRAINT, above.
+  --unsafeBuildIncremental :: Patch p => PullM (Pure t) a -> Event (Pure t) (p a) -> Incremental (Pure t) p a
+  unsafeBuildIncremental readV0 p = Incremental $ \t -> (readV0 t, unEvent p t)
+
+  mergeIncremental (Incremental f) = Event $ \t ->
+    let results = DMap.mapMaybeWithKey (\_ (Event e) -> Identity <$> e t) $ fst $ f t
+    in if DMap.null results
+       then Nothing
+       else Just results
+
+  currentIncremental (Incremental f) = Behavior $ \t -> fst $ f t
+
+  updatedIncremental (Incremental f) = Event $ \t -> snd $ f t
+
+  incrementalToDynamic (Incremental f) = Dynamic $ \t ->
+    let (old, mPatch) = f t
+        e = case mPatch of
+          Nothing -> Nothing
+          Just patch -> apply patch old
+    in (old, e)
+
+instance Functor (Dynamic (Pure t)) where
+  fmap f d = Dynamic $ \t -> let (cur, upd) = unDynamic d t
+                             in (f cur, fmap f upd)
+
+instance Applicative (Dynamic (Pure t)) where
+  pure a = Dynamic $ \_ -> (a, Nothing)
+  (<*>) = ap
+
+instance Monad (Dynamic (Pure t)) where
+  return = pure
+  (x :: Dynamic (Pure t) a) >>= (f :: a -> Dynamic (Pure t) b) = Dynamic $ \t ->
+    let (curX :: a, updX :: Maybe a) = unDynamic x t
+        (cur :: b, updOuter :: Maybe b) = unDynamic (f curX) t
+        (updInner :: Maybe b, updBoth :: Maybe b) = case updX of
+          Nothing -> (Nothing, Nothing)
+          Just nextX -> let (c, u) = unDynamic (f nextX) t
+                        in (Just c, u)
+    in (cur, getFirst $ mconcat $ map First [updBoth, updOuter, updInner])
+
+instance MonadSample (Pure t) ((->) t) where
 
   sample :: Behavior (Pure t) a -> (t -> a)
   sample = unBehavior
@@ -72,4 +132,24 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
             else let lastTime = pred sampleTime
                  in case unEvent e lastTime of
                    Nothing -> f lastTime
-                   Just x  -> x
+                   Just x -> x
+
+  holdDyn :: a -> Event (Pure t) a -> (t -> (Dynamic (Pure t) a))
+  holdDyn initialValue e initialTime =
+    let Behavior f = hold initialValue e initialTime
+    in Dynamic $ \t -> (f t, unEvent e t)
+
+  holdIncremental :: Patch p => a -> Event (Pure t) (p a) -> (t -> (Incremental (Pure t) p a))
+  holdIncremental initialValue e initialTime = Incremental $ \t -> (f t, unEvent e t)
+    where f = memo $ \sampleTime ->
+            -- Really, the sampleTime should never be prior to the initialTime,
+            -- because that would mean the Behavior is being sampled before being created.
+            if sampleTime <= initialTime
+            then initialValue
+            else let lastTime = pred sampleTime
+                     lastValue = f lastTime
+                 in case unEvent e lastTime of
+                   Nothing -> lastValue
+                   Just x -> case apply x lastValue of
+                     Nothing -> lastValue
+                     Just v' -> v'

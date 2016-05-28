@@ -19,19 +19,31 @@ import Data.Map (Map)
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc
-import Data.Semigroup
+import Data.Semigroup (Semigroup, (<>), sconcat, stimes, stimesIdempotentMonoid)
 import Data.Traversable
+import Data.Functor.Compose
+import Data.Functor.Constant
+import Data.Foldable
+import Data.Maybe
 
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
 import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
 
 import Debug.Trace (trace)
 
-class (MonadHold t (PushM t), MonadSample t (PullM t), MonadFix (PushM t), Functor (Event t), Functor (Behavior t)) => Reflex t where
+class (MonadHold t (PushM t), MonadSample t (PullM t), MonadFix (PushM t), Functor (Event t), Functor (Behavior t), Functor (Dynamic t), Monad (Dynamic t)) => Reflex t where
   -- | A container for a value that can change over time.  Behaviors can be sampled at will, but it is not possible to be notified when they change
   data Behavior t :: * -> *
   -- | A stream of occurrences.  During any given frame, an Event is either occurring or not occurring; if it is occurring, it will contain a value of the given type (its "occurrence type")
   data Event t :: * -> *
+  -- | A container for a value that can change over time and allows notifications on changes.
+  -- Basically a combination of a 'Behavior' and an 'Event', with a rule that the Behavior will
+  -- change if and only if the Event fires.
+  data Dynamic t :: * -> *
+  -- | A container for a value that can change over time and allows notifications on changes.
+  -- Basically a combination of a 'Behavior' and an 'Event', with a rule that the Behavior will
+  -- change if and only if the Event fires.
+  data Incremental t :: (* -> *) -> * -> *
   -- | An Event with no occurrences
   never :: Event t a
   -- | Create a Behavior that always has the given value
@@ -52,6 +64,61 @@ class (MonadHold t (PushM t), MonadSample t (PullM t), MonadFix (PushM t), Funct
   switch :: Behavior t (Event t a) -> Event t a
   -- | Create an Event that will occur whenever the input event is occurring and its occurrence value, another Event, is also occurring
   coincidence :: Event t (Event t a) -> Event t a
+  -- | Extract the 'Behavior' of a 'Dynamic'.
+  current :: Dynamic t a -> Behavior t a
+  -- | Extract the 'Event' of the 'Dynamic'.
+  updated :: Dynamic t a -> Event t a
+  -- | Create a new 'Dynamic'.  The given PullM must always return the most recent firing of the given Event, if any.
+  unsafeBuildDynamic :: PullM t a -> Event t a -> Dynamic t a
+  -- | Create a new 'Incremental'.  The given PullM's value must always change in the same way that the accumulated application of patches would change that value.
+  unsafeBuildIncremental :: Patch p => PullM t a -> Event t (p a) -> Incremental t p a
+  -- | Create a merge whose parents can change over time
+  mergeIncremental :: GCompare k => Incremental t PatchDMap (DMap k (Event t)) -> Event t (DMap k Identity)
+  -- | Extract the 'Behavior' component of an 'Incremental'
+  currentIncremental :: Patch p => Incremental t p a -> Behavior t a
+  -- | Extract the 'Event' component of an 'Incremental'
+  updatedIncremental :: Patch p => Incremental t p a -> Event t (p a)
+  -- | Convert an 'Incremental' to a 'Dynamic'
+  incrementalToDynamic :: Patch p => Incremental t p a -> Dynamic t a
+
+class Patch p where
+  apply :: p a -> a -> Maybe a -- Return Nothing if no change is necessary
+
+instance Patch Identity where
+  apply (Identity a) _ = Just a
+
+data PatchDMap a where
+  PatchDMap :: GCompare k => DMap k (Compose Maybe v) -> PatchDMap (DMap k v)
+
+instance GCompare k => Semigroup (PatchDMap (DMap k v)) where
+  PatchDMap a <> PatchDMap b = PatchDMap $ a `mappend` b --TODO: Add a semigroup instance for DMap
+  -- PatchDMap is idempotent, so stimes n is id for every n
+#if MIN_VERSION_semigroups(0,17,0)
+  stimes = stimesIdempotentMonoid
+#else
+  times1p n x = case compare n 0 of
+    LT -> error "stimesIdempotentMonoid: negative multiplier"
+    EQ -> mempty
+    GT -> x
+#endif
+
+instance GCompare k => Monoid (PatchDMap (DMap k v)) where
+  mempty = PatchDMap mempty
+  mappend = (<>)
+
+instance Patch PatchDMap where
+  apply (PatchDMap diff) old = Just $! insertions `DMap.union` (old `DMap.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
+    where insertions = DMap.mapMaybeWithKey (const $ id . getCompose) diff
+          deletions = DMap.mapMaybeWithKey (const $ nothingToJust . getCompose) diff
+          nothingToJust = \case
+            Nothing -> Just $ Constant ()
+            Just _ -> Nothing
+
+unsafeDynamic :: Reflex t => Behavior t a -> Event t a -> Dynamic t a
+unsafeDynamic = unsafeBuildDynamic . sample
+
+constDyn :: Reflex t => a -> Dynamic t a
+constDyn = pure
 
 class (Applicative m, Monad m) => MonadSample t m | m -> t where
   -- | Get the current value in the Behavior
@@ -60,6 +127,12 @@ class (Applicative m, Monad m) => MonadSample t m | m -> t where
 class MonadSample t m => MonadHold t m where
   -- | Create a new Behavior whose value will initially be equal to the given value and will be updated whenever the given Event occurs.  The update takes effect immediately after the Event occurs; if the occurrence that sets the Behavior (or one that is simultaneous with it) is used to sample the Behavior, it will see the *old* value of the Behavior, not the new one.
   hold :: a -> Event t a -> m (Behavior t a)
+  -- | Create a 'Dynamic' value using the given initial value that changes every
+  -- time the 'Event' occurs.
+  holdDyn :: a -> Event t a -> m (Dynamic t a)
+  -- | Create an 'Incremental' value using the given initial value that changes every
+  -- time the 'Event' occurs.
+  holdIncremental :: Patch p => a -> Event t (p a) -> m (Incremental t p a)
 
 newtype EventSelector t k = EventSelector { select :: forall a. k a -> Event t a }
 
@@ -72,36 +145,48 @@ instance MonadSample t m => MonadSample t (ReaderT r m) where
 
 instance MonadHold t m => MonadHold t (ReaderT r m) where
   hold a0 = lift . hold a0
+  holdDyn a0 = lift . holdDyn a0
+  holdIncremental a0 = lift . holdIncremental a0
 
 instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
   sample = lift . sample
 
 instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
   hold a0 = lift . hold a0
+  holdDyn a0 = lift . holdDyn a0
+  holdIncremental a0 = lift . holdIncremental a0
 
 instance MonadSample t m => MonadSample t (StateT s m) where
   sample = lift . sample
 
 instance MonadHold t m => MonadHold t (StateT s m) where
   hold a0 = lift . hold a0
+  holdDyn a0 = lift . holdDyn a0
+  holdIncremental a0 = lift . holdIncremental a0
 
 instance MonadSample t m => MonadSample t (ExceptT e m) where
   sample = lift . sample
 
 instance MonadHold t m => MonadHold t (ExceptT e m) where
   hold a0 = lift . hold a0
+  holdDyn a0 = lift . holdDyn a0
+  holdIncremental a0 = lift . holdIncremental a0
 
 instance (MonadSample t m, Monoid w) => MonadSample t (RWST r w s m) where
   sample = lift . sample
 
 instance (MonadHold t m, Monoid w) => MonadHold t (RWST r w s m) where
   hold a0 = lift . hold a0
+  holdDyn a0 = lift . holdDyn a0
+  holdIncremental a0 = lift . holdIncremental a0
 
 instance MonadSample t m => MonadSample t (ContT r m) where
   sample = lift . sample
 
 instance MonadHold t m => MonadHold t (ContT r m) where
   hold a0 = lift . hold a0
+  holdDyn a0 = lift . holdDyn a0
+  holdIncremental a0 = lift . holdIncremental a0
 
 --------------------------------------------------------------------------------
 -- Convenience functions
@@ -150,6 +235,9 @@ instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
 class FunctorMaybe f where
   -- | Combined mapping and filtering function.
   fmapMaybe :: (a -> Maybe b) -> f a -> f b
+
+instance FunctorMaybe [] where
+  fmapMaybe f = catMaybes . fmap f
 
 -- | Flipped version of 'fmapMaybe'.
 fforMaybe :: FunctorMaybe f => f a -> (a -> Maybe b) -> f b
@@ -311,9 +399,18 @@ sequenceThese t = case t of
   These ma mb -> liftM2 These ma mb
   That mb -> liftM That mb
 
+instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
+  (<>) = alignWith (mergeThese (<>))
+  sconcat = fmap sconcat . mergeList . toList
+#if MIN_VERSION_semigroups(0,17,0)
+  stimes n = fmap $ stimes n
+#else
+  times1p n = fmap $ times1p n
+#endif
+
 instance (Semigroup a, Reflex t) => Monoid (Event t a) where
   mempty = never
-  mappend a b = mconcat [a, b]
+  mappend = (<>)
   mconcat = fmap sconcat . mergeList
 
 -- | Create a new 'Event' that occurs if at least one of the 'Event's
@@ -372,3 +469,35 @@ gate = attachWithMaybe $ \allow a -> if allow then Just a else Nothing
 switcher :: (Reflex t, MonadHold t m)
         => Behavior t a -> Event t (Behavior t a) -> m (Behavior t a)
 switcher b eb = pull . (sample <=< sample) <$> hold b eb
+
+zipDynWith :: Reflex t => (a -> b -> c) -> Dynamic t a -> Dynamic t b -> Dynamic t c
+zipDynWith f da db =
+  let eab = align (updated da) (updated db)
+      ec = flip push eab $ \o -> do
+        (a, b) <- case o of
+          This a -> do
+            b <- sample $ current db
+            return (a, b)
+          That b -> do
+            a <- sample $ current da
+            return (a, b)
+          These a b -> return (a, b)
+        return $ Just $ f a b
+  in unsafeBuildDynamic (f <$> sample (current da) <*> sample (current db)) ec
+
+instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
+  mconcat = fmap (mconcat . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..]
+  mempty = constDyn mempty
+  mappend = zipDynWith mappend
+
+distributeDMapOverDynPure :: forall t k. (Reflex t, GCompare k) => DMap k (Dynamic t) -> Dynamic t (DMap k Identity)
+distributeDMapOverDynPure dm = case DMap.toList dm of
+  [] -> constDyn DMap.empty
+  [k :=> v] -> fmap (DMap.singleton k . Identity) v
+  _ ->
+    let getInitial = DMap.traverseWithKey (\_ -> fmap Identity . sample . current) dm
+        edmPre = merge $ rewrapDMap updated dm
+        result = unsafeBuildDynamic getInitial $ flip pushAlways edmPre $ \news -> do
+          olds <- sample $ current result
+          return $ DMap.unionWithKey (\_ _ new -> new) olds news
+    in result

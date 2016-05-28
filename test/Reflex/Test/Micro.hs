@@ -5,7 +5,6 @@ module Reflex.Test.Micro (testCases) where
 import Reflex
 import Reflex.TestPlan
 
-import Data.Word
 import Control.Monad
 import Control.Applicative
 import Data.Char
@@ -14,7 +13,6 @@ import Data.Functor.Misc
 
 import Data.Foldable
 
-import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Prelude
@@ -22,14 +20,14 @@ import Prelude
 testCases :: [(String, TestCase)]
 testCases =
   [ testB "hold"  $ hold "0" =<< events1
+
   , testB "count" $ do
-    b <- current <$> (count =<< events2)
-    return $ (+ (0::Int)) <$> b
+      b <- current <$> (count =<< events2)
+      return $ (+ (0::Int)) <$> b
 
   , testB "pull-1"  $ do
       b <- hold "0" =<< events1
       return (id <$> id <$> b)
-
 
   , testB "pull-2" $ do
       b1 <- behavior1
@@ -41,13 +39,11 @@ testCases =
       return (id <$> pull $ liftA2 (<>) (sample b1) (sample b2))
 
   , testB "pull-4" $ do
-    es <- planList ["a", "b", "c"]
-    e <- plan [(0, ())]
-
-    b <- hold (constant "") $
-      pushAlways (const $ hold "z" es) e
-
-    return (join b)
+      es <- planList ["a", "b", "c"]
+      e <- plan [(0, ())]
+      b <- hold (constant "") $
+        pushAlways (const $ hold "z" es) e
+      return (join b)
 
   , testE "tag-1" $ do
       b1 <- behavior1
@@ -67,8 +63,8 @@ testCases =
   , testE "leftmost" $ liftA2 leftmost2 events1 events2
 
   , testE "appendEvents-1" $ liftA2 appendEvents events1 events2
-  , testE "appendEvents-2" $ liftA2 appendEvents events3 events2
 
+  , testE "appendEvents-2" $ liftA2 appendEvents events3 events2
 
   , testE "merge-1" $ do
       e <- events1
@@ -77,7 +73,6 @@ testCases =
   , testE "merge-2" $ do
       e <- events1
       let m = mergeMap $ Map.fromList [(1::Int, "y" <$ e), (2, "z" <$ e)]
-
       let ee = flip pushAlways e $ const $ return m
       return $ coincidence ee
 
@@ -85,12 +80,10 @@ testCases =
       e <- events1
       onceE $ leftmost [e, e]
 
-
   , testE "onceE-2" $ do
       e <- events1
       b <- hold never (e <$ e)
       onceE $ switch b
-
 
   , testE "switch-1" $ do
       e <- events1
@@ -111,7 +104,6 @@ testCases =
       e <- events1
       switch <$> hold (deep e) (e <$ e)
 
-
   , testE "switch-5" $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $ const $
@@ -121,7 +113,6 @@ testCases =
       e <- events1
       return $ coincidence $ flip pushAlways e $ const $ do
             switch <$> hold ("x" <$ e) (e <$ e)
-
 
   , testE "switchPromptly-1" $ do
       e <- events1
@@ -246,20 +237,6 @@ testCases =
       f <- fanMap <$> fmap toMap <$> events1
       return $ toList <$> mergeList [ select f (Const2 'b'), select f (Const2 'b'), select f (Const2 'e'), select f (Const2 'e') ]
 
-  -- , testE "switchMerge-1" $ switchMergeMap mempty =<< increasing
-
-  -- , testE "switchMerge-2" $ do
-  --     e <- eventsFrom 0
-  --     switchMergeMap (Map.singleton 0 e) =<< increasing
-
-  -- , testE "switchMerge-3" $ do
-  --     es <- eventsMany
-  --     switchMergeMap es =<< increasing
-
-  -- , testE "switchMerge-4" $ do
-  --     es <- eventsMany
-  --     switchMergeMap es =<< decreasing
-
   ] where
 
     events1, events2, events3 ::  TestPlan t m => m (Event t String)
@@ -268,26 +245,8 @@ testCases =
 
     events3 = liftA2 appendEvents events1 events2
 
-    eventsFrom ::  TestPlan t m => Word -> m (Event t Int)
-    eventsFrom n = plan $ zip [n..8] [1..8]
-
-    increasing :: TestPlan t m => m (Event t (Map Int (Event t Int)))
-    increasing = do
-      es <- mapM eventsFrom [1..8]
-      planList $ zipWith Map.singleton [1..8] es
-
-    decreasing :: TestPlan t m => m (Event t (Map Int (Event t Int)))
-    decreasing = planList $ zipWith Map.singleton [1..8] (repeat never)
-
-    eventsMany :: TestPlan t m => m (Map Int (Event t Int))
-    eventsMany = do
-      es <- mapM eventsFrom [8,7..1]
-      return $ Map.fromList $ zip [1..8] es
-
-
     values = "abcde"
     toMap str = Map.fromList $ map (\c -> (c, c)) str
-
 
     behavior1, behavior2 :: forall t m. TestPlan t m => m (Behavior t String)
     behavior1 =  hold "1" =<< events1

@@ -1,5 +1,8 @@
 module Reflex.Spider ( Spider
-                     , SpiderHost (..) --Temporary, until Widget no longer uses unsafePerformIO
+                     , SpiderEnv
+                     , Global
+                     , SpiderHost
+                     , runSpiderHost
                      ) where
 
 import Reflex.Spider.Internal
