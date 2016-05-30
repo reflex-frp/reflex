@@ -101,7 +101,7 @@ nubDyn d =
 instance Reflex t => Functor (Dynamic t) where
   fmap f d =
     let e' = fmap f $ updated d
-        eb' = push (\b' -> liftM Just $ constant b') e'
+        eb' = push (\b' -> fmap Just $ constant b') e'
         b0 = fmap f $ current d
     
 -}      
@@ -124,7 +124,7 @@ foldDyn f = foldDynMaybe $ \o v -> Just $ f o v
 -- time the 'Event' occurs using a monadic folding function on the
 -- previous value and the value of the 'Event'.
 foldDynM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t b) -> b -> Event t a -> m (Dynamic t b)
-foldDynM f = foldDynMaybeM $ \o v -> liftM Just $ f o v
+foldDynM f = foldDynMaybeM $ \o v -> fmap Just $ f o v
 
 foldDynMaybe :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> Maybe b) -> b -> Event t a -> m (Dynamic t b)
 foldDynMaybe f = foldDynMaybeM $ \o v -> return $ f o v
@@ -167,7 +167,7 @@ firstE (h:t) = mergeEventsLeftBiased h =<< firstE t
 concatEventsWith :: (Reflex t m) => (a -> a -> a) -> [Event t a] -> m (Event t a)
 concatEventsWith _ [] = return never
 concatEventsWith _ [e] = return e
-concatEventsWith f es = mapEM (liftM (foldl1 f . map (\(Const2 _ :=> v) -> v) . DMap.toList) . sequenceDmap) <=< mergeEventDMap $ DMap.fromList $ map (\(k, v) -> WrapArg (Const2 k) :=> v) $ zip [0 :: Int ..] es
+concatEventsWith f es = mapEM (fmap (foldl1 f . map (\(Const2 _ :=> v) -> v) . DMap.toList) . sequenceDmap) <=< mergeEventDMap $ DMap.fromList $ map (\(k, v) -> WrapArg (Const2 k) :=> v) $ zip [0 :: Int ..] es
 --concatEventsWith f (h:t) = mergeEventsWith f h =<< concatEventsWith f t
 
 mconcatE :: (Reflex t m, Monoid a) => [Event t a] -> m (Event t a)
@@ -320,7 +320,7 @@ getDemuxed d k = return $ demuxed d k
 demuxed :: (Reflex t, Eq k) => Demux t k -> k -> Dynamic t Bool
 demuxed d k =
   let e = select (demuxSelector d) (Const2 k)
-  in unsafeBuildDynamic (liftM (==k) $ sample $ demuxValue d) e
+  in unsafeBuildDynamic (fmap (==k) $ sample $ demuxValue d) e
 
 --------------------------------------------------------------------------------
 -- collectDyn
