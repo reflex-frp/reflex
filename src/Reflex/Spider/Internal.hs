@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, ExistentialQuantification, GADTs, ScopedTypeVariables, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, RankNTypes, BangPatterns, UndecidableInstances, EmptyDataDecls, RecursiveDo, RoleAnnotations, LambdaCase, TypeOperators, FlexibleContexts, ConstraintKinds, MagicHash, UnboxedTuples, FunctionalDependencies #-}
+{-# LANGUAGE CPP, ExistentialQuantification, GADTs, ScopedTypeVariables, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, RankNTypes, BangPatterns, UndecidableInstances, EmptyDataDecls, RecursiveDo, RoleAnnotations, LambdaCase, TypeOperators, FlexibleContexts, ConstraintKinds, MagicHash, UnboxedTuples, FunctionalDependencies, MultiWayIf #-}
 module Reflex.Spider.Internal (Spider, SpiderEnv (..), Global, SpiderHost, runSpiderHost, SpiderEventHandle (..), showSubscriberType, showEventType, ComputeM (..), MergeSubscribedParent (..), HasSpiderEnv (..), newSpiderEnv, SpiderPullM (..), SpiderPushM (..), ReadPhase (..)) where
 
 import qualified Reflex.Class as R
@@ -22,8 +22,8 @@ import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.GADT.Compare
 import Data.Maybe
-import Data.IntMap (IntMap)
-import qualified Data.IntMap as IntMap
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Ref
 import Control.Monad.Exception
 import Data.Monoid ((<>))
@@ -287,7 +287,7 @@ getHoldEventSubscription h = do
                             2) Have a finalizer on every SubscriberListNode that only runs if its parent is still alive, and does a normal unsubscribe if so; this would seem to double the number of weakRefs we use, but perhaps not the weakDepth, so maybe it's OK; we will probably need to move the regular call to unsubscribe into the finalizer and then use finalize instead of that call; we can have a strong reference to the SubscriberListNode, which means we just need a single weak reference to each EventSubscribed, which we can reuse in all of the finalizers that need to (potentially) unsubscribe from it
 -}
       -}
-      subscription@(_, subd) <- subscribe e =<< liftIO (newSubscriberHold h)
+      subscription@(EventSubscription _ subd) <- subscribe e =<< liftIO (newSubscriberHold h)
       liftIO $ writeIORef subscriptionRef subscription
       occ <- liftIO $ readEventSubscribed subd
       case occ of
@@ -409,11 +409,54 @@ data MergeSubscribedParent k a
                            , mergeSubscribedParentSubscriber :: !(Subscriber a)
                            }
 
+data HeightBag = HeightBag
+  { _heightBag_size :: {-# UNPACK #-} !Int
+  , _heightBag_contents :: !(IntMap Word) -- Number of excess in each bucket
+  }
+  deriving (Show, Read, Eq, Ord)
+
+heightBagEmpty :: HeightBag
+heightBagEmpty = heightBagVerify $ HeightBag 0 IntMap.empty
+
+heightBagSize :: HeightBag -> Int
+heightBagSize = _heightBag_size
+
+heightBagFromList :: [Height] -> HeightBag
+heightBagFromList heights = heightBagVerify $ foldl' (flip heightBagAdd) heightBagEmpty heights
+
+heightBagAdd :: Height -> HeightBag -> HeightBag
+heightBagAdd (Height h) (HeightBag s c) = heightBagVerify $ HeightBag (succ s) $ IntMap.insertWithKey (\_ _ old -> succ old) h 0 c
+
+heightBagRemove :: Height -> HeightBag -> HeightBag
+heightBagRemove (Height h) b@(HeightBag s c) = heightBagVerify $ case IntMap.lookup h c of
+  Nothing -> error $ "heightBagRemove: Height " <> show h <> " not present in bag " <> show b
+  Just old -> HeightBag (pred s) $ case old of
+    0 -> IntMap.delete h c
+    _ -> IntMap.insert h (pred old) c
+
+heightBagMax :: HeightBag -> Height
+heightBagMax (HeightBag _ c) = case IntMap.maxViewWithKey c of
+  Just ((h, _), _) -> Height h
+  Nothing -> zeroHeight
+
+heightBagVerify :: HeightBag -> HeightBag
+#ifdef DEBUG
+heightBagVerify b@(HeightBag s c) = if
+  | s /= IntMap.size c + fromIntegral (sum (IntMap.elems c))
+    -> error $ "heightBagVerify: size doesn't match: " <> show b
+  | unHeight invalidHeight `IntMap.member` c
+    -> error $ "heightBagVerify: contains invalid height: " <> show b
+  | otherwise -> b
+#else
+heightBagVerify = id
+#endif
+
 data MergeSubscribed k
    = MergeSubscribed { mergeSubscribedCachedSubscribed :: !(IORef (Maybe (MergeSubscribed k))) -- From the original merge
                      , mergeSubscribedOccurrence :: !(IORef (Maybe (DMap k Identity)))
                      , mergeSubscribedAccum :: !(IORef (DMap k Identity)) -- This will accumulate occurrences until our height is reached, at which point it will be transferred to mergeSubscribedOccurrence
                      , mergeSubscribedHeight :: !(IORef Height)
+                     , mergeSubscribedHeightBag :: !(IORef HeightBag)
                      , mergeSubscribedSubscribers :: !(SubscriberList (DMap k Identity))
                      , mergeSubscribedChange :: !(IORef (Subscriber (R.PatchDMap (DMap k Event)), EventSubscribed (R.PatchDMap (DMap k Event))))
                      , mergeSubscribedParents :: !(IORef (DMap k (MergeSubscribedParent k)))
@@ -540,7 +583,10 @@ showEventType = \case
   EventHoldIdentity _ -> "EventHoldIdentity"
   EventDynIdentity _ -> "EventDynIdentity"
 
-type EventSubscription a = (Maybe (SubscriberListTicket a), EventSubscribed a)
+data EventSubscription a = EventSubscription
+  { _eventSubscription_ticket :: !(Maybe (SubscriberListTicket a))
+  , _eventSubscription_subscribed :: !(EventSubscribed a)
+  }
 
 data EventSubscribed a
    = EventSubscribedRoot {-# NOUNPACK #-} (RootSubscribed a)
@@ -552,7 +598,7 @@ data EventSubscribed a
    | EventSubscribedCoincidence !(CoincidenceSubscribed a)
 
 unsubscribe :: EventSubscription a -> IO ()
-unsubscribe (msln, _) = forM_ msln $ \sln -> WeakBag.remove sln
+unsubscribe (EventSubscription msln _) = forM_ msln $ \sln -> WeakBag.remove sln
 
 -- These function are constructor functions that are marked NOINLINE so they are
 -- opaque to GHC. If we do not do this, then GHC will sometimes fuse the constructor away
@@ -970,8 +1016,8 @@ propagate a subscribers = withIncreasedDepth $ do
         Nothing -> do
           when (innerHeight > outerHeight) $ liftIO $ do -- If the event fires, it will fire at a later height
             writeIORef (coincidenceSubscribedHeight subscribed) innerHeight
-            WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) invalidateSubscriberHeight
-            WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) recalculateSubscriberHeight
+            WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) $ invalidateSubscriberHeight outerHeight
+            WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight innerHeight
         Just o -> do -- Since it's already firing, no need to adjust height
           liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) occ
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
@@ -1008,7 +1054,7 @@ data SomeResetCoincidence = forall a. SomeResetCoincidence !(EventSubscription a
 subscribeCoincidenceInner :: CanSubscribe x m => Event a -> Height -> CoincidenceSubscribed a -> m (Maybe a, Height, EventSubscribed a)
 subscribeCoincidenceInner o outerHeight subscribedUnsafe = do
   subInner <- liftIO $ newSubscriberCoincidenceInner subscribedUnsafe
-  subscription@(_, innerSubd) <- subscribe o subInner
+  subscription@(EventSubscription _ innerSubd) <- subscribe o subInner
   innerOcc <- liftIO $ readEventSubscribed innerSubd
   innerHeight <- liftIO $ readIORef $ eventSubscribedHeightRef innerSubd
   let height = max innerHeight outerHeight
@@ -1141,7 +1187,7 @@ readMergeSubscribed subscribed = do
 
 readFanSubscribed :: GCompare k => k a -> FanSubscribed k -> IO (Maybe a)
 readFanSubscribed k fs = do
-  parentOcc <- readEventSubscribed $ snd $ fanSubscribedParent fs
+  parentOcc <- readEventSubscribed $ _eventSubscription_subscribed $ fanSubscribedParent fs
   return $ coerce $ DMap.lookup k =<< parentOcc
 
 readSwitchSubscribed :: SwitchSubscribed a -> IO (Maybe a)
@@ -1162,11 +1208,11 @@ readCoincidenceSubscribed subscribed = do
 zeroRef :: IORef Height
 zeroRef = unsafePerformIO $ newIORef zeroHeight
 
-{-# SPECIALIZE getEventSubscribed :: Event a -> Subscriber a -> EventM x (EventSubscription a) #-}
-getEventSubscribed :: forall x m a. CanSubscribe x m => Event a -> Subscriber a -> m (EventSubscription a)
-getEventSubscribed e sub = case e of
+{-# SPECIALIZE subscribe :: Event a -> Subscriber a -> EventM x (EventSubscription a) #-}
+subscribe :: forall x m a. CanSubscribe x m => Event a -> Subscriber a -> m (EventSubscription a)
+subscribe e sub = case e of
   EventRoot k r -> wrap EventSubscribedRoot $ liftIO . getRootSubscribed k r
-  EventNever -> return (Nothing, EventSubscribedNever)
+  EventNever -> return $ EventSubscription Nothing EventSubscribedNever
   EventPush p -> wrap EventSubscribedPush $ getPushSubscribed p
   EventFan k f -> wrap (EventSubscribedFan k) $ getFanSubscribed k f
   EventMerge m -> wrap EventSubscribedMerge $ getMergeSubscribed m
@@ -1180,14 +1226,14 @@ getEventSubscribed e sub = case e of
     wrap :: (t -> EventSubscribed a) -> (Subscriber a -> m (SubscriberListTicket a, t)) -> m (EventSubscription a)
     wrap tag getSpecificSubscribed = do
       (sln, subd) <- getSpecificSubscribed sub
-      return (Just sln, tag subd)
+      return $ EventSubscription (Just sln) $ tag subd
 
 {-# INLINE subscribeHoldEvent #-}
 subscribeHoldEvent :: (CanSubscribe x m, R.Patch p) => Hold p a -> Subscriber (p a) -> m (EventSubscription (p a))
 subscribeHoldEvent h sub = do
-  (_, subd) <- getHoldEventSubscription h
+  EventSubscription _ subd <- getHoldEventSubscription h
   sln <- liftIO $ subscribeEventSubscribed subd sub
-  return (sln, subd)
+  return $ EventSubscription sln subd
 
 {-# INLINE debugSubscribe #-}
 debugSubscribe :: Bool
@@ -1224,7 +1270,7 @@ eventSubscribedHeightRef = \case
   EventSubscribedRoot _ -> zeroRef
   EventSubscribedNever -> zeroRef
   EventSubscribedPush subscribed -> pushSubscribedHeight subscribed
-  EventSubscribedFan _ subscribed -> eventSubscribedHeightRef $ snd $ fanSubscribedParent subscribed
+  EventSubscribedFan _ subscribed -> eventSubscribedHeightRef $ _eventSubscription_subscribed $ fanSubscribedParent subscribed
   EventSubscribedMerge subscribed -> mergeSubscribedHeight subscribed
   EventSubscribedSwitch subscribed -> switchSubscribedHeight subscribed
   EventSubscribedCoincidence subscribed -> coincidenceSubscribedHeight subscribed
@@ -1245,17 +1291,17 @@ eventSubscribedGetParents :: EventSubscribed a -> IO [Some EventSubscribed]
 eventSubscribedGetParents = \case
   EventSubscribedRoot _ -> return []
   EventSubscribedNever -> return []
-  EventSubscribedPush subscribed -> return [Some.This $ snd $ pushSubscribedParent subscribed]
-  EventSubscribedFan _ subscribed -> return [Some.This $ snd $ fanSubscribedParent subscribed]
+  EventSubscribedPush subscribed -> return [Some.This $ _eventSubscription_subscribed $ pushSubscribedParent subscribed]
+  EventSubscribedFan _ subscribed -> return [Some.This $ _eventSubscription_subscribed $ fanSubscribedParent subscribed]
   EventSubscribedMerge subscribed -> do
     ps <- readIORef $ mergeSubscribedParents subscribed
-    return $ fmap (\(_ :=> v) -> Some.This $ snd $ mergeSubscribedParentSubscription v) $ DMap.toList ps
+    return $ fmap (\(_ :=> v) -> Some.This $ _eventSubscription_subscribed $ mergeSubscribedParentSubscription v) $ DMap.toList ps
   EventSubscribedSwitch subscribed -> do
     s <- readIORef $ switchSubscribedCurrentParent subscribed
-    return [Some.This $ snd s]
+    return [Some.This $ _eventSubscription_subscribed s]
   EventSubscribedCoincidence subscribed -> do
     innerSubscription <- readIORef $ coincidenceSubscribedInnerParent subscribed
-    let outerParent = Some.This $ snd $ coincidenceSubscribedOuterParent subscribed
+    let outerParent = Some.This $ _eventSubscription_subscribed $ coincidenceSubscribedOuterParent subscribed
         innerParents = maybeToList $ fmap Some.This innerSubscription
     return $ outerParent : innerParents
 
@@ -1267,10 +1313,6 @@ type CanSubscribe x m =
   , Defer SomeAssignment m -- Updating state
   , Defer SomeResetCoincidence m
   )
-
-{-# INLINE subscribe #-}
-subscribe :: CanSubscribe x m => Event a -> Subscriber a -> m (EventSubscription a)
-subscribe = getEventSubscribed
 
 getRootSubscribed :: GCompare k => k a -> Root k -> Subscriber a -> IO (SubscriberListTicket a, RootSubscribed a)
 getRootSubscribed k r sub = do
@@ -1299,7 +1341,7 @@ getRootSubscribed k r sub = do
 #endif
             }
       writeIORef weakSelf =<< mkWeakPtrWithDebug subscribed "RootSubscribed"
-      modifyIORef' (rootSubscribed r) $ DMap.insertWith (error $ "getRootSubscribed: duplicate key inserted into Root" <> showNodeId r) k subscribed --TODO: I think we can just write back mSubscribed rather than re-reading it
+      modifyIORef' (rootSubscribed r) $ DMap.insertWith (error $ "getRootSubscribed: duplicate key inserted into Root") k subscribed --TODO: I think we can just write back mSubscribed rather than re-reading it
       return (sln, subscribed)
 
 cleanupRootSubscribed :: RootSubscribed a -> IO ()
@@ -1324,7 +1366,7 @@ getPushSubscribed p sub = do
       subscribedRef <- liftIO $ newIORef $ error "getPushSubscribed: subscribed not yet intialized"
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
       s <- liftIO $ newSubscriberPush (pushCompute p) subscribedUnsafe
-      subscription@(_, subd) <- subscribe (pushParent p) s
+      subscription@(EventSubscription _ subd) <- subscribe (pushParent p) s
       parentOcc <- liftIO $ readEventSubscribed subd
       occ <- runComputeM $ liftM join $ mapM (pushCompute p) parentOcc
       occRef <- liftIO $ newIORef occ
@@ -1372,13 +1414,16 @@ getMergeSubscribed m sub = do
       initialParents <- readBehaviorUntracked $ current $ mergeParents m
       subscribers :: [(Maybe (DSum k Identity), Height, DSum k (MergeSubscribedParent k))] <- forM (DMap.toList initialParents) $ \(k :=> e) -> do
         s <- liftIO $ newSubscriberMerge k subscribedUnsafe
-        subscription@(_, parentSubd) <- subscribe e s
+        subscription@(EventSubscription _ parentSubd) <- subscribe e s
         parentOcc <- liftIO $ readEventSubscribed parentSubd
         height <- liftIO $ readIORef $ eventSubscribedHeightRef parentSubd
         return $ (fmap (\x -> k :=> Identity x) parentOcc, height, k :=> (MergeSubscribedParent subscription s))
       let dm = DMap.fromDistinctAscList $ catMaybes $ map (\(x, _, _) -> x) subscribers
-          subscriberHeights = map (\(_, x, _) -> x) subscribers
-          myHeight = succHeight $ foldr maxHeight zeroHeight subscriberHeights
+          heights = fmap (\(_, h, _) -> h) subscribers --TODO: Assert that there's no invalidHeight in here
+          myHeightBag = heightBagFromList $ filter (/= invalidHeight) heights
+          myHeight = if any (== invalidHeight) heights
+                     then invalidHeight
+                     else succHeight $ heightBagMax myHeightBag
       currentHeight <- getCurrentHeight
       let (occ, accum) = if currentHeight >= myHeight -- If we should have fired by now
                          then (if DMap.null dm then Nothing else Just dm, DMap.empty)
@@ -1389,6 +1434,7 @@ getMergeSubscribed m sub = do
       when (isJust occ) $ scheduleClear occRef
       accumRef <- liftIO $ newIORef accum
       heightRef <- liftIO $ newIORef myHeight
+      heightMapRef <- liftIO $ newIORef myHeightBag
       weakSelf <- liftIO $ newIORef $ error "getMergeSubscribed: weakSelf not yet initialized"
       (subs, sln) <- liftIO $ WeakBag.singleton sub weakSelf cleanupMergeSubscribed
       changeSubdRef <- liftIO $ newIORef $ error "getMergeSubscribed: changeSubdRef not yet initialized"
@@ -1398,6 +1444,7 @@ getMergeSubscribed m sub = do
             , mergeSubscribedOccurrence = occRef
             , mergeSubscribedAccum = accumRef
             , mergeSubscribedHeight = heightRef
+            , mergeSubscribedHeightBag = heightMapRef
             , mergeSubscribedSubscribers = subs
             , mergeSubscribedChange = changeSubdRef
             , mergeSubscribedParents = parentsRef
@@ -1493,7 +1540,7 @@ getSwitchSubscribed s sub = do
       parentsRef <- liftIO $ newIORef [] --TODO: This should be unnecessary, because it will always be filled with just the single parent behavior
       holdInits <- getDeferralQueue
       e <- liftIO $ runBehaviorM (readBehaviorTracked (switchParent s)) (Just (wi, parentsRef)) holdInits
-      subscription@(_, subd) <- subscribe e mySub
+      subscription@(EventSubscription _ subd) <- subscribe e mySub
       subscriptionRef <- liftIO $ newIORef subscription
       parentOcc <- liftIO $ readEventSubscribed subd
       occRef <- liftIO $ newIORef parentOcc
@@ -1543,7 +1590,7 @@ getCoincidenceSubscribed c sub = do
       subscribedRef <- liftIO $ newIORef $ error "getCoincidenceSubscribed: subscribed has not yet been created"
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
       subOuter <- liftIO $ newSubscriberCoincidenceOuter subscribedUnsafe
-      outerSubscription@(_, outerSubd) <- subscribe (coincidenceParent c) subOuter
+      outerSubscription@(EventSubscription _ outerSubd) <- subscribe (coincidenceParent c) subOuter
       outerOcc <- liftIO $ readEventSubscribed outerSubd
       outerHeight <- liftIO $ readIORef $ eventSubscribedHeightRef outerSubd
       (occ, height, mInnerSubd) <- case outerOcc of
@@ -1625,7 +1672,7 @@ initHold (SomeHoldInit h) = void $ getHoldEventSubscription h
 initMerge :: SomeMergeInit -> EventM x ()
 initMerge (SomeMergeInit subscribed changed) = do
   changeSub <- liftIO $ newSubscriberMergeChange subscribed
-  (_, changeSubd) <- subscribe changed changeSub
+  EventSubscription _ changeSubd <- subscribe changed changeSub
   change <- liftIO $ readEventSubscribed changeSubd
   forM_ change $ \c -> defer $ SomeMergeUpdate c subscribed
   liftIO $ writeIORef (mergeSubscribedChange subscribed) (changeSub, changeSubd)
@@ -1665,20 +1712,25 @@ runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
   mergeUpdates <- readIORef mergeUpdateRef
   writeIORef mergeUpdateRef []
   let updateMerge :: SomeMergeUpdate -> IO [SomeEventSubscription]
-      updateMerge (SomeMergeUpdate (R.PatchDMap p) m) = do
+      updateMerge (SomeMergeUpdate (R.PatchDMap p :: R.PatchDMap (DMap k Event)) m) = do
         oldParents <- readIORef $ mergeSubscribedParents m
         let f (subscriptionsToKill, ps) (k :=> Compose me) = do
               (mOldSubd, newPs) <- case me of
                 Nothing -> return $ DMap.updateLookupWithKey (\_ _ -> Nothing) k ps
                 Just e -> do
                   s <- liftIO $ newSubscriberMerge k m
-                  subscription <- subscribe e s
+                  subscription@(EventSubscription _ subd) <- subscribe e s
                   let newParent = MergeSubscribedParent subscription s
+                  newParentHeight <- liftIO $ getEventSubscribedHeight subd
+                  liftIO $ addMergeHeight newParentHeight m
                   return $ DMap.insertLookupWithKey' (\_ new _ -> new) k newParent ps
-              liftIO $ invalidateMergeHeight k m
+              forM_ mOldSubd $ \oldSubd -> do
+                oldHeight <- liftIO $ readIORef $ eventSubscribedHeightRef $ _eventSubscription_subscribed $ mergeSubscribedParentSubscription oldSubd
+                liftIO $ removeMergeHeight oldHeight m
               return (maybeToList (SomeEventSubscription . mergeSubscribedParentSubscription <$> mOldSubd) ++ subscriptionsToKill, newPs)
         (subscriptionsToKill, newParents) <- flip runEventM env $ foldM f ([], oldParents) $ DMap.toList p --TODO: I think this runEventM is OK, since no events are firing at this time, but it might not be
         writeIORef (mergeSubscribedParents m) $! newParents
+        invalidateMergeHeight m
         return subscriptionsToKill
   mergeSubscriptionsToKill <- concat <$> mapM updateMerge mergeUpdates
   toReconnect <- readIORef toReconnectRef
@@ -1696,7 +1748,7 @@ runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
     runEventM (runHoldInits holdInitRef mergeInitRef) env --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
     --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
     sub <- newSubscriberSwitch subscribed
-    subscription@(_, subd') <- runReaderT (unSpiderHost (runFrame ({-# SCC "subscribeSwitch" #-} subscribe e sub))) spiderEnv --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
+    subscription@(EventSubscription _ subd') <- runReaderT (unSpiderHost (runFrame ({-# SCC "subscribeSwitch" #-} subscribe e sub))) spiderEnv --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
     {-
     stackTrace <- liftIO $ liftM renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
     liftIO $ putStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
@@ -1708,8 +1760,8 @@ runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
     parentHeight <- readIORef $ eventSubscribedHeightRef subd'
     myHeight <- readIORef $ switchSubscribedHeight subscribed
     when (parentHeight /= myHeight) $ do
-      writeIORef (switchSubscribedHeight subscribed) parentHeight
-      WeakBag.traverse (switchSubscribedSubscribers subscribed) invalidateSubscriberHeight
+      writeIORef (switchSubscribedHeight subscribed) invalidHeight
+      WeakBag.traverse (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight myHeight
     return $ SomeEventSubscription oldSubscription
   forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mcs) -> do
     unsubscribe subscription
@@ -1717,9 +1769,10 @@ runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
   forM_ mergeSubscriptionsToKill $ \(SomeEventSubscription oldSubscription) -> liftIO $ unsubscribe oldSubscription
   forM_ switchSubscriptionsToKill $ \(SomeEventSubscription oldSubscription) -> liftIO $ unsubscribe oldSubscription
   forM_ coincidenceInfos $ \(SomeResetCoincidence _ mcs) -> mapM_ recalculateCoincidenceHeight mcs
-  forM_ mergeUpdates $ \(SomeMergeUpdate _ m) -> recalculateMergeHeight m
+  forM_ mergeUpdates $ \(SomeMergeUpdate _ m) -> revalidateMergeHeight m
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> do
-    WeakBag.traverse (switchSubscribedSubscribers subscribed) recalculateSubscriberHeight
+    height <- calculateSwitchHeight subscribed
+    updateSwitchHeight height subscribed
   return result
 
 newtype Height = Height { unHeight :: Int } deriving (Show, Read, Eq, Ord, Bounded)
@@ -1744,29 +1797,22 @@ succHeight h@(Height a) =
   then invalidHeight
   else Height $ succ a
 
--- Get the maximum height; if either of the inputs is invalid, the output will also be invalid
-{-# INLINE maxHeight #-}
-maxHeight :: Height -> Height -> Height
-maxHeight ha@(Height a) hb@(Height b) =
-  if ha == invalidHeight || hb == invalidHeight
-  then invalidHeight
-  else Height $ max a b
-
-invalidateSubscriberHeight :: Subscriber a -> IO ()
-invalidateSubscriberHeight s = case s of
+invalidateSubscriberHeight :: Height -> Subscriber a -> IO ()
+invalidateSubscriberHeight old s = case s of
   SubscriberPush _ subscribed -> do
     when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberPush" <> showNodeId subscribed
-    WeakBag.traverse (pushSubscribedSubscribers subscribed) invalidateSubscriberHeight
+    WeakBag.traverse (pushSubscribedSubscribers subscribed) $ invalidateSubscriberHeight old
     when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberPush" <> showNodeId subscribed <> " done"
-  SubscriberMerge k subscribed -> do
+  SubscriberMerge _ subscribed -> do
     when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberMerge" <> showNodeId subscribed
-    invalidateMergeHeight k subscribed
+    removeMergeHeight old subscribed
+    invalidateMergeHeight subscribed
     when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberMerge" <> showNodeId subscribed <> " done"
   SubscriberMergeChange _ -> return () -- Doesn't affect the height of the merge, because its changes are delayed
   SubscriberFan subscribed -> do
     when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberFan" <> showNodeId subscribed
     subscribers <- readIORef $ fanSubscribedSubscribers subscribed
-    forM_ (DMap.toList subscribers) $ \(_ :=> v) -> WeakBag.traverse (_fanSubscribedChildren_list v) invalidateSubscriberHeight
+    forM_ (DMap.toList subscribers) $ \(_ :=> v) -> WeakBag.traverse (_fanSubscribedChildren_list v) $ invalidateSubscriberHeight old
     when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberFan" <> showNodeId subscribed <> " done"
   SubscriberHold _ -> return ()
   SubscriberHoldIdentity _ -> return ()
@@ -1775,7 +1821,7 @@ invalidateSubscriberHeight s = case s of
     oldHeight <- readIORef $ switchSubscribedHeight subscribed
     when (oldHeight /= invalidHeight) $ do
       writeIORef (switchSubscribedHeight subscribed) invalidHeight
-      WeakBag.traverse (switchSubscribedSubscribers subscribed) invalidateSubscriberHeight
+      WeakBag.traverse (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight oldHeight
     when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberSwitch" <> showNodeId subscribed <> " done"
   SubscriberCoincidenceOuter subscribed -> do
     when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberCoincidenceOuter" <> showNodeId subscribed
@@ -1787,59 +1833,69 @@ invalidateSubscriberHeight s = case s of
     when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberCoincidenceInner" <> showNodeId subscribed <> " done"
   SubscriberHandle -> return ()
 
---TODO: Actually use the key
-invalidateMergeHeight :: k a -> MergeSubscribed k -> IO ()
-invalidateMergeHeight _ subscribed = do
+removeMergeHeight :: Height -> MergeSubscribed k -> IO ()
+removeMergeHeight oldParentHeight subscribed = do
+  oldHeights <- readIORef $ mergeSubscribedHeightBag subscribed
+  let newHeights = heightBagRemove oldParentHeight oldHeights
+  putStrLn $ "removeMergeHeight " <> showNodeId subscribed <> ": " <> show oldHeights <> " => " <> show newHeights
+  writeIORef (mergeSubscribedHeightBag subscribed) newHeights
+
+invalidateMergeHeight :: MergeSubscribed k -> IO ()
+invalidateMergeHeight subscribed = do
   oldHeight <- readIORef $ mergeSubscribedHeight subscribed
+  -- If the height used to be valid, it must be invalid now; we should never have *more* heights than we have parents
   when (oldHeight /= invalidHeight) $ do
     writeIORef (mergeSubscribedHeight subscribed) invalidHeight
-    WeakBag.traverse (mergeSubscribedSubscribers subscribed) invalidateSubscriberHeight
+    WeakBag.traverse (mergeSubscribedSubscribers subscribed) $ invalidateSubscriberHeight oldHeight
 
-recalculateMergeHeight :: MergeSubscribed k -> IO ()
-recalculateMergeHeight subscribed = do
-  oldHeight <- readIORef $ mergeSubscribedHeight subscribed
-  when (oldHeight == invalidHeight) $ do
-    height <- calculateMergeHeight subscribed
+addMergeHeight :: Height -> MergeSubscribed k -> IO ()
+addMergeHeight newParentHeight subscribed = do
+  oldHeights <- readIORef $ mergeSubscribedHeightBag subscribed
+  let newHeights = heightBagAdd newParentHeight oldHeights
+  putStrLn $ "addMergeHeight " <> showNodeId subscribed <> ": " <> show oldHeights <> " => " <> show newHeights
+  writeIORef (mergeSubscribedHeightBag subscribed) newHeights
+
+revalidateMergeHeight :: MergeSubscribed k -> IO ()
+revalidateMergeHeight subscribed = do
+  heights <- readIORef $ mergeSubscribedHeightBag subscribed
+  parents <- readIORef $ mergeSubscribedParents subscribed
+  putStrLn $ "revalidateMergeHeight " <> showNodeId subscribed <> ": " <> show (heightBagSize heights, DMap.size parents)
+  -- When the number of heights in the bag reaches the number of parents, we should have a valid height
+  when (heightBagSize heights == DMap.size parents) $ do
+    let height = succHeight $ heightBagMax heights
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: height: " <> show height
-    when (height /= invalidHeight) $ do -- If height == invalidHeight, that means some of the prereqs have not yet been recomputed; when they do recompute, they'll catch this node again --TODO: this is O(n*m), where n is the number of children of this noe and m is the number that have been invalidated
-      writeIORef (mergeSubscribedHeight subscribed) height
-      WeakBag.traverse (mergeSubscribedSubscribers subscribed) recalculateSubscriberHeight
+    writeIORef (mergeSubscribedHeight subscribed) height
+    WeakBag.traverse (mergeSubscribedSubscribers subscribed) $ recalculateSubscriberHeight height
 
 invalidateCoincidenceHeight :: CoincidenceSubscribed a -> IO ()
 invalidateCoincidenceHeight subscribed = do
   oldHeight <- readIORef $ coincidenceSubscribedHeight subscribed
   when (oldHeight /= invalidHeight) $ do
     writeIORef (coincidenceSubscribedHeight subscribed) invalidHeight
-    WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) invalidateSubscriberHeight
+    WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) $ invalidateSubscriberHeight oldHeight
 
---TODO: The recalculation algorithm seems a bit funky; make sure it doesn't miss stuff or hit stuff twice; also, it should probably be lazy
-
-recalculateSubscriberHeight :: Subscriber a -> IO ()
-recalculateSubscriberHeight s = case s of
+recalculateSubscriberHeight :: Height -> Subscriber a -> IO ()
+recalculateSubscriberHeight new s = case s of
   SubscriberPush _ subscribed -> do
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberPush" <> showNodeId subscribed
-    WeakBag.traverse (pushSubscribedSubscribers subscribed) recalculateSubscriberHeight
+    WeakBag.traverse (pushSubscribedSubscribers subscribed) $ recalculateSubscriberHeight new
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberPush" <> showNodeId subscribed <> " done"
   SubscriberMerge _ subscribed -> do
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberMerge" <> showNodeId subscribed
-    recalculateMergeHeight subscribed
+    addMergeHeight new subscribed
+    revalidateMergeHeight subscribed
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberMerge" <> showNodeId subscribed <> " done"
   SubscriberMergeChange _ -> return ()
   SubscriberFan subscribed -> do
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberFan" <> showNodeId subscribed
     subscribers <- readIORef $ fanSubscribedSubscribers subscribed
-    forM_ (DMap.toList subscribers) $ \(_ :=> v) -> WeakBag.traverse (_fanSubscribedChildren_list v) recalculateSubscriberHeight
+    forM_ (DMap.toList subscribers) $ \(_ :=> v) -> WeakBag.traverse (_fanSubscribedChildren_list v) $ recalculateSubscriberHeight new
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberFan" <> showNodeId subscribed <> " done"
   SubscriberHold _ -> return ()
   SubscriberHoldIdentity _ -> return ()
   SubscriberSwitch subscribed -> do
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberSwitch" <> showNodeId subscribed
-    oldHeight <- readIORef $ switchSubscribedHeight subscribed
-    when (oldHeight == invalidHeight) $ do
-      height <- calculateSwitchHeight subscribed
-      when (height /= invalidHeight) $ do
-        writeIORef (switchSubscribedHeight subscribed) height
-        WeakBag.traverse (switchSubscribedSubscribers subscribed) recalculateSubscriberHeight
+    updateSwitchHeight new subscribed
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberSwitch" <> showNodeId subscribed <> " done"
   SubscriberCoincidenceOuter subscribed -> do
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberCoincidenceOuter" <> showNodeId subscribed
@@ -1851,29 +1907,32 @@ recalculateSubscriberHeight s = case s of
     when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberCoincidenceInner" <> showNodeId subscribed <> " done"
   SubscriberHandle -> return ()
 
+updateSwitchHeight :: Height -> SwitchSubscribed a -> IO ()
+updateSwitchHeight new subscribed = do
+  oldHeight <- readIORef $ switchSubscribedHeight subscribed
+  when (oldHeight == invalidHeight) $ do --TODO: This 'when' should probably be an assertion
+    when (new /= invalidHeight) $ do --TODO: This 'when' should probably be an assertion
+      writeIORef (switchSubscribedHeight subscribed) new
+      WeakBag.traverse (switchSubscribedSubscribers subscribed) $ recalculateSubscriberHeight new
+
 recalculateCoincidenceHeight :: CoincidenceSubscribed a -> IO ()
 recalculateCoincidenceHeight subscribed = do
   oldHeight <- readIORef $ coincidenceSubscribedHeight subscribed
-  when (oldHeight == invalidHeight) $ do
+  when (oldHeight == invalidHeight) $ do --TODO: This 'when' should probably be an assertion
     height <- calculateCoincidenceHeight subscribed
     when (height /= invalidHeight) $ do
       writeIORef (coincidenceSubscribedHeight subscribed) height
-      WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) recalculateSubscriberHeight --TODO: This should probably be mandatory, just like with the merge and switch ones
+      WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight height
 
-calculateMergeHeight :: MergeSubscribed k -> IO Height
-calculateMergeHeight subscribed = do
-  parents <- readIORef $ mergeSubscribedParents subscribed
-  if DMap.null parents then return zeroHeight else do
-    heights <- forM (DMap.toList parents) $ \(_ :=> es) -> do
-      readIORef $ eventSubscribedHeightRef $ snd $ mergeSubscribedParentSubscription es
-    return $ succHeight $ foldr maxHeight zeroHeight heights
+getEventSubscribedHeight :: EventSubscribed a -> IO Height
+getEventSubscribedHeight es = readIORef $ eventSubscribedHeightRef es
 
 calculateSwitchHeight :: SwitchSubscribed a -> IO Height
-calculateSwitchHeight subscribed = readIORef . eventSubscribedHeightRef . snd =<< readIORef (switchSubscribedCurrentParent subscribed)
+calculateSwitchHeight subscribed = readIORef . eventSubscribedHeightRef . _eventSubscription_subscribed =<< readIORef (switchSubscribedCurrentParent subscribed)
 
 calculateCoincidenceHeight :: CoincidenceSubscribed a -> IO Height
 calculateCoincidenceHeight subscribed = do
-  outerHeight <- readIORef $ eventSubscribedHeightRef $ snd $ coincidenceSubscribedOuterParent subscribed
+  outerHeight <- readIORef $ eventSubscribedHeightRef $ _eventSubscription_subscribed $ coincidenceSubscribedOuterParent subscribed
   innerHeight <- maybe (return zeroHeight) (readIORef . eventSubscribedHeightRef) =<< readIORef (coincidenceSubscribedInnerParent subscribed)
   return $ if outerHeight == invalidHeight || innerHeight == invalidHeight then invalidHeight else max outerHeight innerHeight
 
@@ -2060,7 +2119,7 @@ instance R.ReflexHost (SpiderEnv x) where
 instance R.MonadReadEvent (SpiderEnv x) (ReadPhase x) where
   {-# INLINABLE readEvent #-}
   readEvent h = ReadPhase $ liftM (fmap return) $ liftIO $ do
-    let (sln, subscribed) = unSpiderEventHandle h
+    let EventSubscription sln subscribed = unSpiderEventHandle h
     result <- readEventSubscribed subscribed
     touch sln
     return result
@@ -2154,7 +2213,7 @@ instance R.MonadSubscribeEvent (SpiderEnv x) (SpiderHost x) where
 
 subscribeEventSpiderHost :: R.Event (SpiderEnv x) a -> SpiderHost x (R.EventHandle (SpiderEnv x) a)
 subscribeEventSpiderHost e = do
-  subscription <- runFrame $ getEventSubscribed (unSpiderEvent e) SubscriberHandle --TODO: Unsubscribe eventually (manually and/or with weak ref)
+  subscription <- runFrame $ subscribe (unSpiderEvent e) SubscriberHandle --TODO: Unsubscribe eventually (manually and/or with weak ref)
   return $ SpiderEventHandle subscription
 
 newtype ReadPhase x a = ReadPhase { runReadPhase :: ResultM x a } deriving (Functor, Applicative, Monad, MonadFix)
