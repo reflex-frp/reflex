@@ -1,18 +1,14 @@
-{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE MagicHash, FlexibleInstances, MultiParamTypeClasses #-}
 module Reflex.Dynamic.Nub
        ( NubDynamic
        , nubDynamic
        , fromNubDynamic
-       , foldNubDyn
-       , foldNubDynM
-       , foldNubDynMaybe
-       , foldNubDynMaybeM
+       , alreadyNubbedDynamic
        ) where
 
 import Reflex.Class
 import Reflex.Dynamic
 
-import Control.Monad.Fix
 import GHC.Exts
 
 newtype NubDynamic t a = NubDynamic { unNubDynamic :: Dynamic t a }
@@ -25,29 +21,29 @@ nubDynamic d = NubDynamic $ unsafeBuildDynamic (sample $ current d) $ flip push 
 fromNubDynamic :: (Reflex t, Eq a) => NubDynamic t a -> Dynamic t a
 fromNubDynamic (NubDynamic d) = nubDyn d
 
+-- | Create a NubDynamic without nubbing it on creation
+-- This will be slightly faster than nubDynamic when used with a Dynamic whose values are always (or nearly always) different from its previous values; if used with a Dynamic whose values do not change frequently, it may be much slower than nubDynamic
+alreadyNubbedDynamic :: Dynamic t a -> NubDynamic t a
+alreadyNubbedDynamic = NubDynamic
+
 unsafeJustChanged :: a -> a -> Maybe a
 unsafeJustChanged old new = case old `seq` new `seq` reallyUnsafePtrEquality# old new of
   0# -> Just new
   _ -> Nothing
 
-foldNubDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> b) -> b -> Event t a -> m (NubDynamic t b)
-foldNubDyn f = foldNubDynMaybe $ \o v -> Just $ f o v
-
-foldNubDynM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t b) -> b -> Event t a -> m (NubDynamic t b)
-foldNubDynM f = foldNubDynMaybeM $ \o v -> fmap Just $ f o v
-
-foldNubDynMaybe :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> Maybe b) -> b -> Event t a -> m (NubDynamic t b)
-foldNubDynMaybe f = foldNubDynMaybeM $ \o v -> return $ f o v
-
-foldNubDynMaybeM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe b)) -> b -> Event t a -> m (NubDynamic t b)
-foldNubDynMaybeM f z e = do
-  let f' change old = do
-        x <- f change old
-        return $ case x of
-          Nothing -> Nothing
-          Just new -> unsafeJustChanged old new
-  d <- foldDynMaybeM f' z e
-  return $ NubDynamic d
+instance Reflex t => Accumulator t (NubDynamic t) where
+  accumMaybeM f z e = do
+    let f' old change = do
+          mNew <- f old change
+          return $ unsafeJustChanged old =<< mNew
+    d <- accumMaybeM f' z e
+    return $ NubDynamic d
+  mapAccumMaybeM f z e = do
+    let f' old change = do
+          (mNew, output) <- f old change
+          return (unsafeJustChanged old =<< mNew, output)
+    (d, out) <- mapAccumMaybeM f' z e
+    return (NubDynamic d, out)
 
 instance Reflex t => Functor (NubDynamic t) where
   fmap f (NubDynamic d) = nubDynamic $ fmap f d

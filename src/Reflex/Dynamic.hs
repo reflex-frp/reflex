@@ -97,15 +97,6 @@ nubDyn d =
   let e' = attachWithMaybe (\x x' -> if x' == x then Nothing else Just x') (current d) (updated d)
   in unsafeDynamic (current d) e' --TODO: Avoid invalidating the outgoing Behavior
 
-{-
-instance Reflex t => Functor (Dynamic t) where
-  fmap f d =
-    let e' = fmap f $ updated d
-        eb' = push (\b' -> fmap Just $ constant b') e'
-        b0 = fmap f $ current d
-    
--}      
-
 -- | Map a function over a 'Dynamic'.
 mapDyn :: (Reflex t, Monad m) => (a -> b) -> Dynamic t a -> m (Dynamic t b)
 mapDyn f = return . fmap f
@@ -118,24 +109,19 @@ forDyn = flip mapDyn
 -- time the 'Event' occurs using a folding function on the previous
 -- value and the value of the 'Event'.
 foldDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> b) -> b -> Event t a -> m (Dynamic t b)
-foldDyn f = foldDynMaybe $ \o v -> Just $ f o v
+foldDyn = accum . flip
 
 -- | Create a 'Dynamic' using the initial value and change it each
 -- time the 'Event' occurs using a monadic folding function on the
 -- previous value and the value of the 'Event'.
 foldDynM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t b) -> b -> Event t a -> m (Dynamic t b)
-foldDynM f = foldDynMaybeM $ \o v -> fmap Just $ f o v
+foldDynM = accumM . flip
 
 foldDynMaybe :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> Maybe b) -> b -> Event t a -> m (Dynamic t b)
-foldDynMaybe f = foldDynMaybeM $ \o v -> return $ f o v
+foldDynMaybe = accumMaybe . flip
 
 foldDynMaybeM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe b)) -> b -> Event t a -> m (Dynamic t b)
-foldDynMaybeM f z e = do
-  rec let e' = flip push e $ \o -> do
-            v <- sample $ current d'
-            f o v
-      d' <- holdDyn z e'
-  return d'
+foldDynMaybeM = accumMaybeM . flip
 
 -- | Create a new 'Dynamic' that counts the occurences of the 'Event'.
 count :: (Reflex t, MonadHold t m, MonadFix m, Num b) => Event t a -> m (Dynamic t b)
