@@ -1837,7 +1837,6 @@ removeMergeHeight :: Height -> MergeSubscribed k -> IO ()
 removeMergeHeight oldParentHeight subscribed = do
   oldHeights <- readIORef $ mergeSubscribedHeightBag subscribed
   let newHeights = heightBagRemove oldParentHeight oldHeights
-  putStrLn $ "removeMergeHeight " <> showNodeId subscribed <> ": " <> show oldHeights <> " => " <> show newHeights
   writeIORef (mergeSubscribedHeightBag subscribed) $! newHeights
 
 invalidateMergeHeight :: MergeSubscribed k -> IO ()
@@ -1852,14 +1851,12 @@ addMergeHeight :: Height -> MergeSubscribed k -> IO ()
 addMergeHeight newParentHeight subscribed = do
   oldHeights <- readIORef $ mergeSubscribedHeightBag subscribed
   let newHeights = heightBagAdd newParentHeight oldHeights
-  putStrLn $ "addMergeHeight " <> showNodeId subscribed <> ": " <> show oldHeights <> " => " <> show newHeights
   writeIORef (mergeSubscribedHeightBag subscribed) $! newHeights
 
 revalidateMergeHeight :: MergeSubscribed k -> IO ()
 revalidateMergeHeight subscribed = do
   heights <- readIORef $ mergeSubscribedHeightBag subscribed
   parents <- readIORef $ mergeSubscribedParents subscribed
-  putStrLn $ "revalidateMergeHeight " <> showNodeId subscribed <> ": " <> show (heightBagSize heights, DMap.size parents)
   -- When the number of heights in the bag reaches the number of parents, we should have a valid height
   when (heightBagSize heights == DMap.size parents) $ do
     let height = succHeight $ heightBagMax heights
