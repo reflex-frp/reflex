@@ -17,6 +17,7 @@ library
   hs-source-dirs: src
   build-depends:
     base >= 4.7 && < 4.10,
+    bifunctors == 5.3.*,
     dependent-sum == 0.3.*,
     dependent-map >= 0.2.2 && < 0.3,
     semigroups >= 0.16 && < 0.19,
