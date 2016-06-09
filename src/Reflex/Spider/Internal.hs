@@ -1730,9 +1730,10 @@ runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
               return (maybeToList (SomeEventSubscription . mergeSubscribedParentSubscription <$> mOldSubd) ++ subscriptionsToKill, newPs)
         (subscriptionsToKill, newParents) <- flip runEventM env $ foldM f ([], oldParents) $ DMap.toList p --TODO: I think this runEventM is OK, since no events are firing at this time, but it might not be
         writeIORef (mergeSubscribedParents m) $! newParents
-        invalidateMergeHeight m
         return subscriptionsToKill
+  when debugPropagate $ putStrLn "Updating merges"
   mergeSubscriptionsToKill <- concat <$> mapM updateMerge mergeUpdates
+  when debugPropagate $ putStrLn "Updating merges done"
   toReconnect <- readIORef toReconnectRef
   switchSubscriptionsToKill <- forM toReconnect $ \(SomeSwitchSubscribed subscribed) -> {-# SCC "switchSubscribed" #-} do
     oldSubscription <- readIORef $ switchSubscribedCurrentParent subscribed
@@ -1748,7 +1749,7 @@ runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
     runEventM (runHoldInits holdInitRef mergeInitRef) env --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
     --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
     sub <- newSubscriberSwitch subscribed
-    subscription@(EventSubscription _ subd') <- runReaderT (unSpiderHost (runFrame ({-# SCC "subscribeSwitch" #-} subscribe e sub))) spiderEnv --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
+    subscription <- runReaderT (unSpiderHost (runFrame ({-# SCC "subscribeSwitch" #-} subscribe e sub))) spiderEnv --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
     {-
     stackTrace <- liftIO $ liftM renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
     liftIO $ putStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
@@ -1757,17 +1758,21 @@ runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
       _ -> "something else"
     -}
     writeIORef (switchSubscribedCurrentParent subscribed) $! subscription
+    return $ SomeEventSubscription oldSubscription
+  forM_ mergeSubscriptionsToKill $ \(SomeEventSubscription oldSubscription) -> liftIO $ unsubscribe oldSubscription
+  forM_ switchSubscriptionsToKill $ \(SomeEventSubscription oldSubscription) -> liftIO $ unsubscribe oldSubscription
+  forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> {-# SCC "switchSubscribed" #-} do
+    EventSubscription _ subd' <- readIORef $ switchSubscribedCurrentParent subscribed
     parentHeight <- readIORef $ eventSubscribedHeightRef subd'
     myHeight <- readIORef $ switchSubscribedHeight subscribed
     when (parentHeight /= myHeight) $ do
       writeIORef (switchSubscribedHeight subscribed) $! invalidHeight
       WeakBag.traverse (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight myHeight
-    return $ SomeEventSubscription oldSubscription
+  forM_ mergeUpdates $ \(SomeMergeUpdate _ m) -> do
+    invalidateMergeHeight m --TODO: In addition to when the patch is completely empty, we should also not run this if it has some Nothing values, but none of them have actually had any effect; potentially, we could even check for Just values with no effect (e.g. by comparing their IORefs and ignoring them if they are unchanged); actually, we could just check if the new height is different
   forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mcs) -> do
     unsubscribe subscription
     mapM_ invalidateCoincidenceHeight mcs
-  forM_ mergeSubscriptionsToKill $ \(SomeEventSubscription oldSubscription) -> liftIO $ unsubscribe oldSubscription
-  forM_ switchSubscriptionsToKill $ \(SomeEventSubscription oldSubscription) -> liftIO $ unsubscribe oldSubscription
   forM_ coincidenceInfos $ \(SomeResetCoincidence _ mcs) -> mapM_ recalculateCoincidenceHeight mcs
   forM_ mergeUpdates $ \(SomeMergeUpdate _ m) -> revalidateMergeHeight m
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> do
@@ -1835,6 +1840,7 @@ invalidateSubscriberHeight old s = case s of
 
 removeMergeHeight :: Height -> MergeSubscribed k -> IO ()
 removeMergeHeight oldParentHeight subscribed = do
+  when debugInvalidateHeight $ putStrLn $ "removeMergeHeight: " <> show oldParentHeight <> " Merge" <> showNodeId subscribed
   oldHeights <- readIORef $ mergeSubscribedHeightBag subscribed
   let newHeights = heightBagRemove oldParentHeight oldHeights
   writeIORef (mergeSubscribedHeightBag subscribed) $! newHeights
@@ -1849,20 +1855,26 @@ invalidateMergeHeight subscribed = do
 
 addMergeHeight :: Height -> MergeSubscribed k -> IO ()
 addMergeHeight newParentHeight subscribed = do
+  when debugInvalidateHeight $ putStrLn $ "addMergeHeight: " <> show newParentHeight <> " Merge" <> showNodeId subscribed
   oldHeights <- readIORef $ mergeSubscribedHeightBag subscribed
   let newHeights = heightBagAdd newParentHeight oldHeights
   writeIORef (mergeSubscribedHeightBag subscribed) $! newHeights
 
 revalidateMergeHeight :: MergeSubscribed k -> IO ()
 revalidateMergeHeight subscribed = do
-  heights <- readIORef $ mergeSubscribedHeightBag subscribed
-  parents <- readIORef $ mergeSubscribedParents subscribed
-  -- When the number of heights in the bag reaches the number of parents, we should have a valid height
-  when (heightBagSize heights == DMap.size parents) $ do
-    let height = succHeight $ heightBagMax heights
-    when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: height: " <> show height
-    writeIORef (mergeSubscribedHeight subscribed) $! height
-    WeakBag.traverse (mergeSubscribedSubscribers subscribed) $ recalculateSubscriberHeight height
+  currentHeight <- readIORef $ mergeSubscribedHeight subscribed
+  when (currentHeight == invalidHeight) $ do -- revalidateMergeHeight may be called multiple times; perhaps the's a way to finesse it to avoid this check
+    heights <- readIORef $ mergeSubscribedHeightBag subscribed
+    parents <- readIORef $ mergeSubscribedParents subscribed
+    -- When the number of heights in the bag reaches the number of parents, we should have a valid height
+    case heightBagSize heights `compare` DMap.size parents of
+      LT -> return ()
+      EQ -> do
+        let height = succHeight $ heightBagMax heights
+        when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: height: " <> show height
+        writeIORef (mergeSubscribedHeight subscribed) $! height
+        WeakBag.traverse (mergeSubscribedSubscribers subscribed) $ recalculateSubscriberHeight height
+      GT -> error $ "revalidateMergeHeight: more heights than parents for Merge" <> showNodeId subscribed
 
 invalidateCoincidenceHeight :: CoincidenceSubscribed a -> IO ()
 invalidateCoincidenceHeight subscribed = do
