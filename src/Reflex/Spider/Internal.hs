@@ -474,6 +474,7 @@ data Merge k
 
 data FanSubscribedChildren k a = FanSubscribedChildren
   { _fanSubscribedChildren_list :: !(SubscriberList a)
+  , _fanSubscribedChildren_self :: {-# NOUNPACK #-} !(k a, FanSubscribed k)
   , _fanSubscribedChildren_weakSelf :: !(IORef (Weak (k a, FanSubscribed k)))
   }
 
@@ -1485,7 +1486,7 @@ getFanSubscribed k f sub = do
       subscription <- subscribe (fanParent f) s
       weakSelf <- liftIO $ newIORef $ error "getFanSubscribed: weakSelf not yet initialized"
       (subsForK, slnForSub) <- liftIO $ WeakBag.singleton sub weakSelf cleanupFanSubscribed
-      subscribersRef <- liftIO $ newIORef $ DMap.singleton k $ FanSubscribedChildren subsForK weakSelf
+      subscribersRef <- liftIO $ newIORef $ error "getFanSubscribed: subscribersRef not yet initialized"
       let subscribed = FanSubscribed
             { fanSubscribedCachedSubscribed = fanSubscribed f
             , fanSubscribedParent = subscription
@@ -1494,7 +1495,9 @@ getFanSubscribed k f sub = do
             , fanSubscribedNodeId = unsafeNodeId f
 #endif
             }
-      liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug (k, subscribed) "FanSubscribed"
+      let !self = (k, subscribed)
+      liftIO $ writeIORef subscribersRef $! DMap.singleton k $ FanSubscribedChildren subsForK self weakSelf
+      liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug self "FanSubscribed"
       liftIO $ writeIORef subscribedRef $! subscribed
       liftIO $ writeIORef (fanSubscribed f) $! Just subscribed
       return (slnForSub, subscribed)
@@ -1515,12 +1518,13 @@ subscribeFanSubscribed :: GCompare k => k a -> FanSubscribed k -> Subscriber a -
 subscribeFanSubscribed k subscribed sub = do
   subscribers <- readIORef $ fanSubscribedSubscribers subscribed
   case DMap.lookup k subscribers of
-    Nothing -> do
-      weakSelf <- newIORef =<< mkWeakPtrWithDebug (k, subscribed) "FanSubscribed"
+    Nothing -> {-# SCC "missSubscribeFanSubscribed" #-} do
+      let !self = (k, subscribed)
+      weakSelf <- newIORef =<< mkWeakPtrWithDebug self "FanSubscribed"
       (list, sln) <- WeakBag.singleton sub weakSelf cleanupFanSubscribed
-      writeIORef (fanSubscribedSubscribers subscribed) $! DMap.insertWith (error "subscribeEventSubscribed: key that we just failed to find is present - should be impossible") k (FanSubscribedChildren list weakSelf) subscribers
+      writeIORef (fanSubscribedSubscribers subscribed) $! DMap.insertWith (error "subscribeEventSubscribed: key that we just failed to find is present - should be impossible") k (FanSubscribedChildren list self weakSelf) subscribers
       return sln
-    Just (FanSubscribedChildren list weakSelf) -> WeakBag.insert sub list weakSelf cleanupFanSubscribed
+    Just (FanSubscribedChildren list _ weakSelf) -> {-# SCC "hitSubscribeFanSubscribed" #-} WeakBag.insert sub list weakSelf cleanupFanSubscribed
 
 {-# SPECIALIZE getSwitchSubscribed :: Switch a -> Subscriber a -> EventM x (SubscriberListTicket a, SwitchSubscribed a) #-}
 getSwitchSubscribed :: (Defer SomeHoldInit m, Defer SomeAssignment m, Defer SomeMergeInit m, Defer SomeClear m, Defer SomeResetCoincidence m, HasCurrentHeight m, HasSpiderEnv x m) => Switch a -> Subscriber a -> m (SubscriberListTicket a, SwitchSubscribed a)

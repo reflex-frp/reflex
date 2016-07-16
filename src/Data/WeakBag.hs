@@ -33,7 +33,7 @@ insert a (WeakBag nextId children) wbRef finalizer = do
         wb <- readIORef wbRef'
         mb <- deRefWeak wb
         forM_ mb $ \b -> do
-          isLastNode <- atomically $ do
+          isLastNode <- atomically $ do --TODO: Should this run even when mb is Nothing?
             cs <- readTVar children
             let csWithoutMe = IntMap.delete myId cs
             writeTVar children $! csWithoutMe
