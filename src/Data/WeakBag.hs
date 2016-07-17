@@ -3,8 +3,9 @@ module Data.WeakBag (WeakBag, WeakBagTicket, empty, singleton, insert, Data.Weak
 
 import Control.Concurrent.STM
 import Control.Exception
-import Control.Monad
+import Control.Monad hiding (forM_, mapM_)
 import Control.Monad.IO.Class
+import Data.Foldable (forM_, mapM_)
 import Data.IORef
 import System.Mem.Weak
 import Data.IntMap.Strict (IntMap)
