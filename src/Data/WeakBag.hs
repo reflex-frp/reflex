@@ -6,10 +6,10 @@ import Control.Exception
 import Control.Monad hiding (forM_, mapM_)
 import Control.Monad.IO.Class
 import Data.Foldable (forM_, mapM_)
-import Data.IORef
-import System.Mem.Weak
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import Data.IORef
+import System.Mem.Weak
 
 data WeakBag a = WeakBag
   { _weakBag_nextId :: {-# UNPACK #-} !(TVar Int) --TODO: what if this wraps around?

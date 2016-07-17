@@ -1,17 +1,22 @@
-{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, TypeOperators, GADTs, EmptyDataDecls, PatternGuards #-}
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeOperators #-}
 module Reflex.Dynamic.TH (qDyn, unqDyn, mkDyn) where
 
 import Reflex.Dynamic
 
-import Language.Haskell.TH
-import qualified Language.Haskell.TH.Syntax as TH
-import Language.Haskell.TH.Quote
-import Data.Data
 import Control.Monad.State
+import Data.Data
+import Data.Generics
+import Data.Monoid
 import qualified Language.Haskell.Exts as Hs
 import qualified Language.Haskell.Meta.Syntax.Translate as Hs
-import Data.Monoid
-import Data.Generics
+import Language.Haskell.TH
+import Language.Haskell.TH.Quote
+import qualified Language.Haskell.TH.Syntax as TH
 
 -- | Quote a Dynamic expression.  Within the quoted expression, you can use '$(unqDyn [| x |])' to refer to any expression 'x' of type 'Dynamic t a'; the unquoted result will be of type 'a'
 qDyn :: Q Exp -> Q Exp

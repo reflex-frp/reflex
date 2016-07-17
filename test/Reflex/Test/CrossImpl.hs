@@ -1,27 +1,47 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase, BangPatterns, ConstraintKinds #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Reflex.Test.CrossImpl (test) where
 
-import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl, and)
+import Prelude hiding (and, foldl, mapM, mapM_, sequence, sequence_)
 
-import Reflex.Class
-import Reflex.Host.Class
-import Reflex.Dynamic
-import qualified Reflex.Spider.Internal as S
-import qualified Reflex.Pure as P
 import Control.Monad.Ref
+import Reflex.Class
+import Reflex.Dynamic
+import Reflex.Host.Class
+import qualified Reflex.Pure as P
+import qualified Reflex.Spider.Internal as S
 
-import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import qualified Data.Set as Set
+import Control.Arrow (second, (&&&))
+import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.Writer hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Data.Dependent.Map (DSum (..))
+import Data.Foldable
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Control.Arrow (second, (&&&))
+import qualified Data.Set as Set
 import Data.Traversable
-import Data.Foldable
-import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import Control.Monad.Writer hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import Data.Dependent.Map (DSum (..))
-import System.Mem
 import System.Exit
+import System.Mem
 
 import System.IO.Unsafe
 
@@ -81,7 +101,7 @@ testSpider builder (bMap, eMap) = unsafePerformIO $ S.runSpiderHost $ do
       fireEventsAndRead firing $ sequence =<< readEvent e'Handle
     liftIO performGC
     return (t, (bOutput, eOutput))
-  return (Map.fromList $ map (second fst) outputs, Map.mapMaybe id $ Map.fromList $ map (second snd) outputs) 
+  return (Map.fromList $ map (second fst) outputs, Map.mapMaybe id $ Map.fromList $ map (second snd) outputs)
 
 tracePerf :: Show a => a -> b -> b
 tracePerf = flip const

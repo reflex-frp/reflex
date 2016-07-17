@@ -1,34 +1,44 @@
-{-# LANGUAGE  RecursiveDo, ConstraintKinds, TypeSynonymInstances, BangPatterns, ScopedTypeVariables, TupleSections, GADTs, RankNTypes, FlexibleInstances, FlexibleContexts, MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Reflex.Bench.Focused where
 
 import Reflex
 import Reflex.TestPlan
 
-import Control.Monad.Fix
-import Control.Monad
-import Control.Monad.Identity
 import Control.Applicative
+import Control.Monad
+import Control.Monad.Fix
+import Control.Monad.Identity
 --import Data.Foldable
 import Data.Traversable (for)
 
-import Data.Maybe
+import qualified Data.Dependent.Map as DMap
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Dependent.Map as DMap
+import Data.Maybe
 
 import Data.Functor.Misc
 
-import Data.Tuple
 import Data.List
 import Data.List.Split
+import Data.Tuple
 
-import Data.Word
 import Data.Monoid
+import Data.Word
 
 import Control.DeepSeq
 
-import Prelude hiding (sum, concat)
+import Prelude hiding (concat, sum)
 
 
 mergeTree :: Num a => (Monoid (f [a]), Functor f) => Int -> [f a] -> f a

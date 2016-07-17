@@ -1,54 +1,75 @@
-{-# LANGUAGE CPP, ExistentialQuantification, GADTs, ScopedTypeVariables, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, RankNTypes, BangPatterns, UndecidableInstances, EmptyDataDecls, RecursiveDo, RoleAnnotations, LambdaCase, TypeOperators, FlexibleContexts, ConstraintKinds, MagicHash, UnboxedTuples, FunctionalDependencies, MultiWayIf #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE RoleAnnotations #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UnboxedTuples #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Reflex.Spider.Internal (Spider, SpiderEnv (..), Global, SpiderHost, runSpiderHost, SpiderEventHandle (..), showSubscriberType, showEventType, ComputeM (..), MergeSubscribedParent (..), HasSpiderEnv (..), newSpiderEnv, SpiderPullM (..), SpiderPushM (..), ReadPhase (..)) where
 
-import qualified Reflex.Class as R
-import qualified Reflex.Host.Class as R
 import Data.WeakBag (WeakBag, WeakBagTicket)
 import qualified Data.WeakBag as WeakBag
+import qualified Reflex.Class as R
+import qualified Reflex.Host.Class as R
 
-import Data.List
-import Data.IORef
-import System.Mem.Weak
-import Data.Foldable
-import Data.Traversable
-import Control.Monad hiding (mapM, mapM_, forM_, forM, sequence)
-import Control.Monad.Identity hiding  (mapM, mapM_, forM_, forM, sequence)
-import Control.Monad.Reader hiding (mapM, mapM_, forM_, forM, sequence)
-import Control.Monad.State hiding (mapM, mapM_, forM_, forM, sequence)
-import Control.Applicative -- Unconditionally import, because otherwise it breaks on GHC 7.10.1RC2
-import Data.Some (Some)
-import qualified Data.Some as Some
+import Control.Applicative
+import Control.Concurrent
+import Control.Exception
+import Control.Monad hiding (forM, forM_, mapM, mapM_, sequence)
+import Control.Monad.Exception
+import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence)
+import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_, sequence)
+import Control.Monad.Ref
+import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
+import Data.Align
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
+import Data.Foldable
+import Data.Function
+import Data.Functor.Compose
 import Data.GADT.Compare
-import Data.Maybe
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import Control.Monad.Ref
-import Control.Monad.Exception
+import Data.IORef
+import Data.List
+import Data.Maybe
 import Data.Monoid ((<>))
-import Data.Functor.Compose
-import Control.Exception
-import Control.Concurrent
-import Data.Function
+import Data.Some (Some)
+import qualified Data.Some as Some
 import Data.These
-import Data.Align
+import Data.Traversable
+import System.Mem.Weak
 
-import GHC.IORef (IORef (..))
 import GHC.Base (IO (..))
+import GHC.IORef (IORef (..))
 import GHC.Stack
 
+import Control.Monad.Primitive
+import Data.Coerce
 import System.IO.Unsafe
 import Unsafe.Coerce
-import Data.Coerce
-import Control.Monad.Primitive
 
-import qualified Data.List.NonEmpty as NonEmpty
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
-import Data.Tree (Tree (..), Forest, drawForest)
+import qualified Data.List.NonEmpty as NonEmpty
+import Data.Tree (Forest, Tree (..), drawForest)
 
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
-import Prelude hiding (mapM, mapM_, any, sequence, concat)
+import Prelude hiding (any, concat, mapM, mapM_, sequence)
 
 type SubscriberList a = WeakBag (Subscriber a)
 type SubscriberListTicket a = WeakBagTicket (Subscriber a)

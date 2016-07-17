@@ -1,4 +1,25 @@
-{-# LANGUAGE CPP, TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase, DataKinds, PolyKinds #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the current value is always equal to the most recent update
                       , current
                       , updated
@@ -42,20 +63,20 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
 
 import Prelude hiding (mapM, mapM_)
 
-import Reflex.Class
 import Data.Functor.Misc
+import Reflex.Class
 
-import Control.Monad hiding (mapM, mapM_, forM, forM_)
+import Control.Monad hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Fix
-import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_)
-import Data.These
+import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_)
 import Data.Align
-import Data.Map (Map)
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
-import Data.GADT.Compare (GCompare (..), GEq (..), (:~:) (..), GOrdering (..))
+import Data.GADT.Compare ((:~:) (..), GCompare (..), GEq (..), GOrdering (..))
+import Data.Map (Map)
 import Data.Monoid
+import Data.These
 
 import Debug.Trace
 
@@ -291,7 +312,7 @@ data Demux t k = Demux { demuxValue :: Behavior t k
 -- | Demultiplex an input value to a 'Demux' with many outputs.  At any given time, whichever output is indicated by the given 'Dynamic' will be 'True'.
 demux :: (Reflex t, Ord k) => Dynamic t k -> Demux t k
 demux k = Demux (current k)
-                (fan $ attachWith (\k0 k1 -> if k0 == k1        
+                (fan $ attachWith (\k0 k1 -> if k0 == k1
                                                 then DMap.empty
                                                 else DMap.fromList [Const2 k0 :=> Identity False,
                                                                     Const2 k1 :=> Identity True])

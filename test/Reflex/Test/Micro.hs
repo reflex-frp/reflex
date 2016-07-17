@@ -1,15 +1,21 @@
-{-# LANGUAGE ConstraintKinds, GADTs, RankNTypes, FlexibleInstances, FlexibleContexts, MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Reflex.Test.Micro (testCases) where
 
 import Reflex
 import Reflex.TestPlan
 
-import Control.Monad
 import Control.Applicative
+import Control.Monad
 import Data.Char
-import Data.Monoid
 import Data.Functor.Misc
+import Data.Monoid
 
 import Data.Foldable
 

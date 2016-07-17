@@ -1,34 +1,53 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase, CPP #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Reflex.Class where
 
 import Control.Applicative
-import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import Control.Monad.Reader hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import Control.Monad.Trans.Writer (WriterT())
-import Control.Monad.Trans.Except (ExceptT())
-import Control.Monad.Trans.Cont (ContT())
-import Control.Monad.Trans.RWS (RWST())
-import Data.List.NonEmpty (NonEmpty (..))
-import Data.These
+import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.Trans.Cont (ContT ())
+import Control.Monad.Trans.Except (ExceptT ())
+import Control.Monad.Trans.RWS (RWST ())
+import Control.Monad.Trans.Writer (WriterT ())
 import Data.Align
-import Data.GADT.Compare (GEq (..), (:~:) (..))
-import Data.GADT.Show (GShow (..))
-import Data.Dependent.Sum (ShowTag (..))
-import Data.Map (Map)
+import Data.Bifunctor
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
-import Data.Functor.Misc
-import Data.Semigroup (Semigroup, (<>), sconcat, stimes, stimesIdempotentMonoid)
-import Data.Traversable
+import Data.Dependent.Sum (ShowTag (..))
+import Data.Foldable
 import Data.Functor.Compose
 import Data.Functor.Constant
-import Data.Foldable
+import Data.Functor.Misc
+import Data.GADT.Compare ((:~:) (..), GEq (..))
+import Data.GADT.Show (GShow (..))
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.Map (Map)
 import Data.Maybe
-import Data.Bifunctor
+import Data.Semigroup (Semigroup, sconcat, stimes, stimesIdempotentMonoid, (<>))
+import Data.These
+import Data.Traversable
 
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
-import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
+import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
 
 import Debug.Trace (trace)
 

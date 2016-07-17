@@ -1,7 +1,7 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- The instance for NFData (TVar a) is an orphan, but necessary here
@@ -9,19 +9,19 @@
 
 module Main where
 
-import Data.Functor.Misc
-import Control.Monad.IO.Class
-import Control.Monad.Identity
-import Data.Dependent.Sum
 import Control.Concurrent.STM
-import Data.IORef
 import Control.DeepSeq
 import Control.Exception (evaluate)
-import Reflex
-import Reflex.Host.Class
+import Control.Monad.Identity
+import Control.Monad.IO.Class
 import Criterion.Main
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum
+import Data.Functor.Misc
+import Data.IORef
+import Reflex
+import Reflex.Host.Class
 
 main :: IO ()
 main = defaultMain

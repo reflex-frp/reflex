@@ -1,4 +1,17 @@
-{-# LANGUAGE ExistentialQuantification, GADTs, ScopedTypeVariables, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, RankNTypes, BangPatterns, UndecidableInstances, EmptyDataDecls, RecursiveDo, RoleAnnotations, FunctionalDependencies, FlexibleContexts #-}
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE RoleAnnotations #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Reflex.Host.Class where
 
 import Reflex.Class
@@ -7,21 +20,21 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity
-import Control.Monad.Trans
-import Control.Monad.Trans.Reader (ReaderT())
-import Control.Monad.Trans.Writer (WriterT())
-import Control.Monad.Trans.Cont   (ContT())
-import Control.Monad.Trans.Except (ExceptT())
-import Control.Monad.Trans.RWS    (RWST())
-import Control.Monad.Trans.State  (StateT())
-import qualified Control.Monad.Trans.State.Strict as Strict
-import Data.Dependent.Sum (DSum (..))
-import Data.Monoid
-import Data.GADT.Compare
 import Control.Monad.Ref
+import Control.Monad.Trans
+import Control.Monad.Trans.Cont (ContT ())
+import Control.Monad.Trans.Except (ExceptT ())
+import Control.Monad.Trans.Reader (ReaderT ())
+import Control.Monad.Trans.RWS (RWST ())
+import Control.Monad.Trans.State (StateT ())
+import qualified Control.Monad.Trans.State.Strict as Strict
+import Control.Monad.Trans.Writer (WriterT ())
+import Data.Dependent.Sum (DSum (..))
+import Data.GADT.Compare
+import Data.Monoid
 
 -- Note: this import must come last to silence warnings from AMP
-import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl)
+import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
 
 -- | Framework implementation support class for the reflex implementation represented by @t@.
 class (Reflex t, MonadReflexCreateTrigger t (HostFrame t), MonadSample t (HostFrame t), MonadHold t (HostFrame t), MonadFix (HostFrame t), MonadSubscribeEvent t (HostFrame t)) => ReflexHost t where
@@ -174,8 +187,8 @@ instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
   type ReadPhase (StateT s m) = ReadPhase m
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   runHostFrame = lift . runHostFrame
-  
-  
+
+
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (Strict.StateT s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
@@ -186,9 +199,9 @@ instance MonadSubscribeEvent t m => MonadSubscribeEvent t (Strict.StateT r m) wh
 instance MonadReflexHost t m => MonadReflexHost t (Strict.StateT s m) where
   type ReadPhase (Strict.StateT s m) = ReadPhase m
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
-  runHostFrame = lift . runHostFrame  
-  
-  
+  runHostFrame = lift . runHostFrame
+
+
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ContT r m) where
   newEventWithTrigger = lift . newEventWithTrigger

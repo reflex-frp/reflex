@@ -1,16 +1,25 @@
-{-# LANGUAGE KindSignatures, GADTs, DeriveDataTypeable, RankNTypes, ScopedTypeVariables, PolyKinds, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts, StandaloneDeriving #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Data.Functor.Misc where
 
-import Data.GADT.Compare
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.GADT.Show
-import Data.Dependent.Sum
+import Control.Monad.Identity
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
-import Data.Typeable hiding (Refl)
+import Data.Dependent.Sum
+import Data.GADT.Compare
+import Data.GADT.Show
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.These
-import Control.Monad.Identity
+import Data.Typeable hiding (Refl)
 
 data WrapArg :: (k -> *) -> (k -> *) -> * -> * where
   WrapArg :: f a -> WrapArg g f (g a)
@@ -70,7 +79,7 @@ wrapDMap f = DMap.mapWithKey $ \_ -> f . runIdentity
 rewrapDMap :: (forall (a :: *). f a -> g a) -> DMap k f -> DMap k g
 rewrapDMap f = DMap.mapWithKey $ \_ -> f
 
-unwrapDMap :: (forall a. f a -> a) -> DMap k f -> DMap k Identity 
+unwrapDMap :: (forall a. f a -> a) -> DMap k f -> DMap k Identity
 unwrapDMap f = DMap.mapWithKey $ \_ -> Identity . f
 
 unwrapDMapMaybe :: (forall a. f a -> Maybe a) -> DMap k f -> DMap k Identity

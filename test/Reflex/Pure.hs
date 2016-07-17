@@ -4,7 +4,12 @@ of Reflex should produce the same results as this implementation, although perfo
 and laziness/strictness may differ.
 -}
 
-{-# LANGUAGE TypeFamilies, MultiParamTypeClasses, EmptyDataDecls, InstanceSigs, FlexibleInstances, ScopedTypeVariables #-}
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- There are two expected orphan instances in this module:
 --   * MonadSample (Pure t) ((->) t)
@@ -13,14 +18,14 @@ and laziness/strictness may differ.
 
 module Reflex.Pure where
 
-import Reflex.Class
-import Data.Functor.Misc
-import Data.Functor.Identity
-import Data.MemoTrie
+import Control.Monad
 import Data.Dependent.Map (DMap, GCompare)
 import qualified Data.Dependent.Map as DMap
-import Control.Monad
+import Data.Functor.Identity
+import Data.Functor.Misc
+import Data.MemoTrie
 import Data.Monoid
+import Reflex.Class
 
 data Pure t
 

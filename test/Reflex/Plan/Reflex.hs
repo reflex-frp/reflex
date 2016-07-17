@@ -1,4 +1,15 @@
-{-# LANGUAGE FunctionalDependencies, BangPatterns, UndecidableInstances, ConstraintKinds, GADTs, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, RankNTypes, RecursiveDo, FlexibleContexts, StandaloneDeriving #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Reflex.Plan.Reflex
   ( TestPlan(..)
   , runPlan
@@ -28,18 +39,18 @@ import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.State.Strict
 
-import Data.Dependent.Sum (DSum (..))
-import Data.Monoid
-import Data.Traversable (traverse, sequenceA)
-import Data.Maybe
-import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Ref
+import Data.Dependent.Sum (DSum (..))
+import qualified Data.IntMap.Strict as IntMap
+import Data.Maybe
+import Data.Monoid
+import Data.Traversable (sequenceA, traverse)
 
+import Control.DeepSeq
+import Control.Exception
 import Data.IntMap.Strict (IntMap)
 import Data.IORef
 import System.Mem
-import Control.Exception
-import Control.DeepSeq
 
 -- Note: this import must come last to silence warnings from AMP
 import Prelude

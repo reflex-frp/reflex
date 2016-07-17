@@ -1,4 +1,18 @@
-{-# LANGUAGE ConstraintKinds, TypeSynonymInstances, BangPatterns, ScopedTypeVariables, TupleSections, GADTs, RankNTypes, FlexibleInstances, FlexibleContexts, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ForeignFunctionInterface, ViewPatterns, TemplateHaskell, PatternSynonyms #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Main where
@@ -9,37 +23,37 @@ import Criterion.Types
 import Reflex
 import Reflex.Host.Class
 
-import Reflex.TestPlan
 import Reflex.Plan.Reflex
+import Reflex.TestPlan
 
-import Reflex.Spider.Internal (SpiderEventHandle)
 import qualified Reflex.Bench.Focused as Focused
+import Reflex.Spider.Internal (SpiderEventHandle)
 
 import Control.Applicative
 import Control.DeepSeq (NFData (..))
 
+import Prelude
 import System.IO
 import System.Mem
-import Prelude
 
-import Data.IORef
-import System.Mem.Weak
-import Data.Function
-import Control.Concurrent
-import Data.Time.Clock
-import GHC.Stats
-import Data.Monoid
 import Control.Arrow
-import Control.Monad
-import Data.Bool
+import Control.Concurrent
 import Control.Concurrent.STM
-import Data.Int
 import Control.Exception
-import Text.Read
-import System.Environment
-import Debug.Trace.LocationTH
+import Control.Monad
 import Control.Monad.Trans
+import Data.Bool
+import Data.Function
+import Data.Int
+import Data.IORef
+import Data.Monoid
+import Data.Time.Clock
+import Debug.Trace.LocationTH
+import GHC.Stats
+import System.Environment
+import System.Mem.Weak
 import System.Process
+import Text.Read
 
 import Unsafe.Coerce
 

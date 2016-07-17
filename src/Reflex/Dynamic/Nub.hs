@@ -1,4 +1,6 @@
-{-# LANGUAGE MagicHash, FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Reflex.Dynamic.Nub
        ( NubDynamic
        , nubDynamic
