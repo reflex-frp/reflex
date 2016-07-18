@@ -10,6 +10,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 module Data.Functor.Misc where
 
+import Control.Applicative ((<$>))
 import Control.Monad.Identity
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
