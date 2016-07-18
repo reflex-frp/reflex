@@ -58,6 +58,7 @@ import Prelude hiding (mapM, mapM_)
 import Data.Functor.Misc
 import Reflex.Class
 
+import Control.Applicative ((<*>))
 import Control.Monad hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Fix
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_)
