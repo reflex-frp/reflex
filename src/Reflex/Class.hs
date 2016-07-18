@@ -1,3 +1,4 @@
+
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -12,6 +13,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+
 module Reflex.Class where
 
 import Control.Applicative
@@ -28,16 +30,20 @@ import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (ShowTag (..))
 import Data.Foldable
+import qualified Data.Functor.Bind as Bind
+import Data.Functor.Bind hiding (join)
 import Data.Functor.Compose
 import Data.Functor.Constant
 import Data.Functor.Misc
+import Data.Functor.Plus
 import Data.GADT.Compare ((:~:) (..), GEq (..))
 import Data.GADT.Show (GShow (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Maybe
-import Data.Monoid hiding ((<>))
+import Data.Monoid hiding (Alt, (<>))
 import Data.Semigroup (Semigroup, sconcat, stimes, stimesIdempotentMonoid, (<>))
+import Data.String
 import Data.These
 import Data.Traversable
 
@@ -224,20 +230,48 @@ pushAlways f = push (fmap Just . f)
 ffor :: Functor f => f a -> (a -> b) -> f b
 ffor = flip fmap
 
-instance Reflex t => Functor (Behavior t) where
-  fmap f = pull . fmap f . sample
-
 instance Reflex t => Applicative (Behavior t) where
   pure = constant
   f <*> x = pull $ sample f `ap` sample x
   _ *> b = b
   a <* _ = a
 
+instance Reflex t => Apply (Behavior t) where
+  (<.>) = (<*>)
+
+instance Reflex t => Bind (Behavior t) where
+  (>>-) = (>>=)
+
+instance (Reflex t, Fractional a) => Fractional (Behavior t a) where
+  (/) = liftA2 (/)
+  fromRational = pure . fromRational
+  recip = fmap recip
+
+instance Reflex t => Functor (Behavior t) where
+  fmap f = pull . fmap f . sample
+
+instance (Reflex t, IsString a) => IsString (Behavior t a) where
+  fromString = pure . fromString
+
 instance Reflex t => Monad (Behavior t) where
   a >>= f = pull $ sample a >>= sample . f
   -- Note: it is tempting to write (_ >> b = b); however, this would result in (fail x >> return y) succeeding (returning y), which violates the law that (a >> b = a >>= \_ -> b), since the implementation of (>>=) above actually will fail.  Since we can't examine Behaviors other than by using sample, I don't think it's possible to write (>>) to be more efficient than the (>>=) above.
   return = constant
   fail = error "Monad (Behavior t) does not support fail"
+
+instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
+  mempty = constant mempty
+  mappend a b = pull $ liftM2 mappend (sample a) (sample b)
+  mconcat = pull . fmap mconcat . mapM sample
+
+instance (Reflex t, Num a) => Num (Behavior t a) where
+  (+) = liftA2 (+)
+  (-) = liftA2 (-)
+  (*) = liftA2 (*)
+  abs = fmap abs
+  fromInteger = pure . fromInteger
+  negate = fmap negate
+  signum = fmap signum
 
 instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
   a <> b = pull $ liftM2 (<>) (sample a) (sample b)
@@ -247,11 +281,6 @@ instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
 #else
   times1p n = fmap $ times1p n
 #endif
-
-instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
-  mempty = constant mempty
-  mappend a b = pull $ liftM2 mappend (sample a) (sample b)
-  mconcat = pull . fmap mconcat . mapM sample
 
 --TODO: See if there's a better class in the standard libraries already
 -- | A class for values that combines filtering and mapping using 'Maybe'.
@@ -271,11 +300,26 @@ fforMaybe = flip fmapMaybe
 ffilter :: FunctorMaybe f => (a -> Bool) -> f a -> f a
 ffilter f = fmapMaybe $ \x -> if f x then Just x else Nothing
 
-instance Reflex t => FunctorMaybe (Event t) where
-  fmapMaybe f = push $ return . f
+-- | Left-biased event union (prefers left event on simultaneous
+-- occurrence).
+instance Reflex t => Alt (Event t) where
+  ev1 <!> ev2 = leftmost [ev1, ev2]
+
+instance Reflex t => Apply (Event t) where
+  evf <.> evx = coincidence (fmap (<$> evx) evf)
+
+instance Reflex t => Bind (Event t) where
+  evx >>- f = coincidence (f <$> evx)
+  join = coincidence
 
 instance Reflex t => Functor (Event t) where
   fmap f = fmapMaybe $ Just . f
+
+instance Reflex t => FunctorMaybe (Event t) where
+  fmapMaybe f = push $ return . f
+
+instance Reflex t => Plus (Event t) where
+  zero = never
 
 -- | Replace each occurrence value of the 'Event' with the value of the
 -- 'Behavior' at the time of that occurrence.
