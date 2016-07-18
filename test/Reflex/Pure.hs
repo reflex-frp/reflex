@@ -18,6 +18,7 @@ and laziness/strictness may differ.
 
 module Reflex.Pure where
 
+import Control.Applicative -- Necessary for GHC 7.8
 import Control.Monad
 import Data.Dependent.Map (DMap, GCompare)
 import qualified Data.Dependent.Map as DMap
