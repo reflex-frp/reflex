@@ -16,15 +16,15 @@ bug-reports: https://github.com/reflex-frp/reflex/issues
 library
   hs-source-dirs: src
   build-depends:
-    base >= 4.7 && < 4.9,
+    base >= 4.7 && < 4.10,
     dependent-sum == 0.3.*,
     dependent-map == 0.2.*,
     semigroups >= 0.16 && < 0.19,
     mtl >= 2.1 && < 2.3,
     containers == 0.5.*,
-    these >= 0.4 && < 0.7,
+    these >= 0.4 && < 0.8,
     primitive >= 0.5 && < 0.7,
-    template-haskell >= 2.9 && < 2.11,
+    template-haskell >= 2.9 && < 2.12,
     ref-tf == 0.4.*,
     exception-transformers == 0.4.*,
     transformers >= 0.2,
