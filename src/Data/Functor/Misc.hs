@@ -25,7 +25,7 @@ data WrapArg :: (k -> *) -> (k -> *) -> * -> * where
   WrapArg :: f a -> WrapArg g f (g a)
 
 instance GEq f => GEq (WrapArg g f) where
-  geq (WrapArg a) (WrapArg b) = fmap (\Refl -> Refl) $ geq a b
+  geq (WrapArg a) (WrapArg b) = (\Refl -> Refl) <$> geq a b
 
 instance GCompare f => GCompare (WrapArg g f) where
   gcompare (WrapArg a) (WrapArg b) = case gcompare a b of

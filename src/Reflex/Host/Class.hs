@@ -1,13 +1,10 @@
-{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -98,7 +95,7 @@ class (ReflexHost t, MonadReflexCreateTrigger t m, MonadSubscribeEvent t m, Mona
   -- The main loop waits for external events to happen (such as keyboard input or a mouse click)
   -- and then fires the corresponding events using this function. The read callback can be used
   -- to read output events and perform a corresponding response action to the external event.
-  fireEventsAndRead :: [DSum (EventTrigger t) Identity] -> (ReadPhase m a) -> m a
+  fireEventsAndRead :: [DSum (EventTrigger t) Identity] -> ReadPhase m a -> m a
 
   -- | Run a frame without any events firing.
   --
@@ -145,7 +142,7 @@ fireEventRefAndRead mtRef input e = do
       mGetValue <- readEvent e
       case mGetValue of
         Nothing -> return Nothing
-        Just getValue -> liftM Just getValue
+        Just getValue -> fmap Just getValue
 
 
 --------------------------------------------------------------------------------

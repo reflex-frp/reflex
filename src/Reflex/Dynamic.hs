@@ -1,22 +1,14 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -105,7 +97,7 @@ class HBuild' l r where
 
 instance (l' ~ HRevApp l '[])
       => HBuild' l (HList l') where
-  hBuild' l = hReverse l
+  hBuild' = hReverse
 
 instance HBuild' (a ': l) r
       => HBuild' l (a->r) where
@@ -360,7 +352,7 @@ fhlistToDMap = DMap.fromList . go
   where go :: forall l'. FHList f l' -> [DSum (HListPtr l') f]
         go = \case
           FHNil -> []
-          FHCons h t -> (HHeadPtr :=> h) : map (\(p :=> v) -> (HTailPtr p) :=> v) (go t)
+          FHCons h t -> (HHeadPtr :=> h) : map (\(p :=> v) -> HTailPtr p :=> v) (go t)
 
 class RebuildSortedHList l where
   rebuildSortedFHList :: [DSum (HListPtr l) f] -> FHList f l

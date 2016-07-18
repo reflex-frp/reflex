@@ -81,7 +81,7 @@ instance NFData (Behavior t a) where
   rnf !_ = ()
 
 instance NFData (Firing t) where
-  rnf !(Firing _ _) = ()
+  rnf !_ = ()
 
 -- Measure the running time
 benchFiring :: forall t m. (MonadReflexHost' t m, MonadSample t m) => (forall a. m a -> IO a) -> TestCase -> Int -> IO ()
@@ -107,7 +107,7 @@ waitForFinalizers = do
   performGC
   fix $ \loop -> do
     f <- readIORef isFinalized
-    if f then return () else do
+    unless f $ do
       threadDelay 1
       loop
 

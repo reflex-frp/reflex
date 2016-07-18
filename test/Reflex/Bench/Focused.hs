@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
@@ -104,7 +103,7 @@ fanMerge n e =  leftmost $ s <$> [0..n - 1] where
 -- Dumb version of the above using simple fmapMaybe to filter
 fmapFanMerge :: Reflex t => Word -> Event t Word -> Event t Word
 fmapFanMerge n e =  leftmost $ s <$> [0..n - 1] where
-  s k = flip fmapMaybe e $ \j -> if (k == j `mod` n)
+  s k = flip fmapMaybe e $ \j -> if k == j `mod` n
     then Just k
     else Nothing
 
@@ -181,7 +180,7 @@ switchMergeEvents mapChanges = switch . fmap mergeMap  <$> holdMap mapChanges
 -- switchMergeMaybe (UpdatedMap initial changes) = switchMergeMap initial (fmap (fromMaybe never) <$> changes)
 
 switchMergeBehaviors  :: forall a t m k. (MonadFix m, MonadHold t m, Reflex t, Ord k) =>  UpdatedMap t k (Behavior t a)  -> m (Behavior t (Map k a))
-switchMergeBehaviors mapChanges = pull <$> joinMap <$> holdMap mapChanges
+switchMergeBehaviors mapChanges = pull . joinMap <$> holdMap mapChanges
   where joinMap m = traverse sample =<< sample m
 
 -- | Turn an UpdatedMap into a Dynamic by applying the differences to the initial value

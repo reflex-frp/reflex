@@ -1,20 +1,14 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -128,7 +122,7 @@ instance GCompare k => Monoid (PatchDMap (DMap k v)) where
 
 instance Patch PatchDMap where
   apply (PatchDMap diff) old = Just $! insertions `DMap.union` (old `DMap.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
-    where insertions = DMap.mapMaybeWithKey (const $ id . getCompose) diff
+    where insertions = DMap.mapMaybeWithKey (const $ getCompose) diff
           deletions = DMap.mapMaybeWithKey (const $ nothingToJust . getCompose) diff
           nothingToJust = \case
             Nothing -> Just $ Constant ()
@@ -215,14 +209,14 @@ instance MonadHold t m => MonadHold t (ContT r m) where
 -- | Create an Event from another Event.
 -- The provided function can sample 'Behavior's and hold 'Event's.
 pushAlways :: Reflex t => (a -> PushM t b) -> Event t a -> Event t b
-pushAlways f = push (liftM Just . f)
+pushAlways f = push (fmap Just . f)
 
 -- | Flipped version of 'fmap'.
 ffor :: Functor f => f a -> (a -> b) -> f b
 ffor = flip fmap
 
 instance Reflex t => Functor (Behavior t) where
-  fmap f = pull . liftM f . sample
+  fmap f = pull . fmap f . sample
 
 instance Reflex t => Applicative (Behavior t) where
   pure = constant
@@ -238,7 +232,7 @@ instance Reflex t => Monad (Behavior t) where
 
 instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
   a <> b = pull $ liftM2 (<>) (sample a) (sample b)
-  sconcat = pull . liftM sconcat . mapM sample
+  sconcat = pull . fmap sconcat . mapM sample
 #if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
 #else
@@ -248,7 +242,7 @@ instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
 instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
   mempty = constant mempty
   mappend a b = pull $ liftM2 mappend (sample a) (sample b)
-  mconcat = pull . liftM mconcat . mapM sample
+  mconcat = pull . fmap mconcat . mapM sample
 
 --TODO: See if there's a better class in the standard libraries already
 -- | A class for values that combines filtering and mapping using 'Maybe'.
@@ -293,7 +287,7 @@ attachWith f = attachWithMaybe $ \a b -> Just $ f a b
 -- value of the 'Behavior'. The occurrence is discarded if the combining function
 -- returns Nothing
 attachWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Behavior t a -> Event t b -> Event t c
-attachWithMaybe f b e = flip push e $ \o -> liftM (flip f o) $ sample b
+attachWithMaybe f b e = flip push e $ \o -> (`f` o) <$> sample b
 
 -- | Alias for 'headE'
 onceE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
@@ -311,7 +305,7 @@ headE e = do
 -- | Create a new 'Event' that occurs on all but the first occurence
 -- of the supplied 'Event'.
 tailE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
-tailE e = liftM snd $ headTailE e
+tailE e = snd <$> headTailE e
 
 -- | Create a tuple of two 'Event's with the first one occuring only
 -- the first time the supplied 'Event' occurs and the second occuring
@@ -400,9 +394,9 @@ appendEvents e1 e2 = mergeThese mappend <$> align e1 e2
 {-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
 sequenceThese t = case t of
-  This ma -> liftM This ma
+  This ma -> fmap This ma
   These ma mb -> liftM2 These ma mb
-  That mb -> liftM That mb
+  That mb -> fmap That mb
 
 instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
   (<>) = alignWith (mergeThese (<>))
@@ -425,7 +419,7 @@ mergeWith :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
 mergeWith f es = fmap (Prelude.foldl1 f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList)
                . merge
                . DMap.fromDistinctAscList
-               . map (\(k, v) -> (Const2 k) :=> v)
+               . map (\(k, v) -> Const2 k :=> v)
                $ zip [0 :: Int ..] es
 
 -- | Create a new 'Event' that occurs if at least one of the 'Event's

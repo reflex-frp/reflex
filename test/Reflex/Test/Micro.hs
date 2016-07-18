@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 
@@ -33,16 +32,16 @@ testCases =
 
   , testB "pull-1"  $ do
       b <- hold "0" =<< events1
-      return (id <$> id <$> b)
+      return (pull $ sample $ pull $ sample b)
 
   , testB "pull-2" $ do
       b1 <- behavior1
-      return (id <$> pull $ liftA2 (<>) (sample b1) (sample b1))
+      return (pull $ liftA2 (<>) (sample b1) (sample b1))
 
   , testB "pull-3" $ do
       b1 <- behavior1
       b2 <- behavior2
-      return (id <$> pull $ liftA2 (<>) (sample b1) (sample b2))
+      return (pull $ liftA2 (<>) (sample b1) (sample b2))
 
   , testB "pull-4" $ do
       es <- planList ["a", "b", "c"]
@@ -154,7 +153,7 @@ testCases =
   , testE "coincidence-1" $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $
-        const $ return (id <$> e)
+        const $ return e
 
   , testE "coincidence-2" $ do
       e <- events1
@@ -228,7 +227,7 @@ testCases =
       return (mergeList es)
 
   , testE "fan-3" $ do
-      f <- fanMap <$> fmap toMap <$> events3
+      f <- fanMap . fmap toMap <$> events3
       return $  select f (Const2 'c')
 
   , testE "fan-4" $ do
@@ -240,7 +239,7 @@ testCases =
       return $ toUpper <$> select (fanMap e) (Const2 'c')
 
   , testE "fan-6" $ do
-      f <- fanMap <$> fmap toMap <$> events1
+      f <- fanMap . fmap toMap <$> events1
       return $ toList <$> mergeList [ select f (Const2 'b'), select f (Const2 'b'), select f (Const2 'e'), select f (Const2 'e') ]
 
   ] where

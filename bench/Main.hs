@@ -96,7 +96,7 @@ setupMerge :: Int
                                 )
 setupMerge num = do
   (evs, triggers) <- unzip <$> replicateM num newEventWithTriggerRef
-  let !m = DMap.fromList [(Const2 i) :=> v | (i,v) <- zip [0..] evs]
+  let !m = DMap.fromList [Const2 i :=> v | (i,v) <- zip [0..] evs]
   pure (merge m, triggers)
 
 subscribePair :: (Event (SpiderEnv Global) a, b) -> SpiderHost Global (EventHandle (SpiderEnv Global) a, b)

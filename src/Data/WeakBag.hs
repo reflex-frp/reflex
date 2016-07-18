@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 module Data.WeakBag (WeakBag, WeakBagTicket, empty, singleton, insert, Data.WeakBag.traverse, remove) where
 
 import Control.Concurrent.STM

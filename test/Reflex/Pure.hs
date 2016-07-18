@@ -23,6 +23,7 @@ import Data.Dependent.Map (DMap, GCompare)
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Identity
 import Data.Functor.Misc
+import Data.Maybe
 import Data.MemoTrie
 import Data.Monoid
 import Reflex.Class
@@ -127,7 +128,7 @@ instance MonadSample (Pure t) ((->) t) where
 
 instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
 
-  hold :: a -> Event (Pure t) a -> (t -> (Behavior (Pure t) a))
+  hold :: a -> Event (Pure t) a -> t -> Behavior (Pure t) a
   hold initialValue e initialTime = Behavior f
     where f = memo $ \sampleTime ->
             -- Really, the sampleTime should never be prior to the initialTime,
@@ -135,16 +136,14 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
             if sampleTime <= initialTime
             then initialValue
             else let lastTime = pred sampleTime
-                 in case unEvent e lastTime of
-                   Nothing -> f lastTime
-                   Just x -> x
+                 in fromMaybe (f lastTime) $ unEvent e lastTime
 
-  holdDyn :: a -> Event (Pure t) a -> (t -> (Dynamic (Pure t) a))
+  holdDyn :: a -> Event (Pure t) a -> t -> Dynamic (Pure t) a
   holdDyn initialValue e initialTime =
     let Behavior f = hold initialValue e initialTime
     in Dynamic $ \t -> (f t, unEvent e t)
 
-  holdIncremental :: Patch p => a -> Event (Pure t) (p a) -> (t -> (Incremental (Pure t) p a))
+  holdIncremental :: Patch p => a -> Event (Pure t) (p a) -> t -> Incremental (Pure t) p a
   holdIncremental initialValue e initialTime = Incremental $ \t -> (f t, unEvent e t)
     where f = memo $ \sampleTime ->
             -- Really, the sampleTime should never be prior to the initialTime,
@@ -155,6 +154,4 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
                      lastValue = f lastTime
                  in case unEvent e lastTime of
                    Nothing -> lastValue
-                   Just x -> case apply x lastValue of
-                     Nothing -> lastValue
-                     Just v' -> v'
+                   Just x -> fromMaybe lastValue $ apply x lastValue
