@@ -36,7 +36,7 @@ import Data.GADT.Show (GShow (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Maybe
-import Data.Monoid
+import Data.Monoid hiding ((<>))
 import Data.Semigroup (Semigroup, sconcat, stimes, stimesIdempotentMonoid, (<>))
 import Data.These
 import Data.Traversable
