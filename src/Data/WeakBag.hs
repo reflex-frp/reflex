@@ -10,6 +10,8 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
 import System.Mem.Weak
 
+import Prelude hiding (mapM_)
+
 data WeakBag a = WeakBag
   { _weakBag_nextId :: {-# UNPACK #-} !(TVar Int) --TODO: what if this wraps around?
   , _weakBag_children :: {-# UNPACK #-} !(TVar (IntMap (Weak a)))
