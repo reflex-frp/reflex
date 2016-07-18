@@ -305,9 +305,11 @@ ffilter f = fmapMaybe $ \x -> if f x then Just x else Nothing
 instance Reflex t => Alt (Event t) where
   ev1 <!> ev2 = leftmost [ev1, ev2]
 
+-- | Event intersection (convenient interface to 'coincidence').
 instance Reflex t => Apply (Event t) where
   evf <.> evx = coincidence (fmap (<$> evx) evf)
 
+-- | Event intersection (convenient interface to 'coincidence').
 instance Reflex t => Bind (Event t) where
   evx >>- f = coincidence (f <$> evx)
   join = coincidence
@@ -318,6 +320,7 @@ instance Reflex t => Functor (Event t) where
 instance Reflex t => FunctorMaybe (Event t) where
   fmapMaybe f = push $ return . f
 
+-- | Never: @'zero' = 'never'@.
 instance Reflex t => Plus (Event t) where
   zero = never
 
