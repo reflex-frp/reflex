@@ -6,7 +6,7 @@ install:
   - travis_retry cabal-$CABALVER install --only-dependencies -j --enable-tests
 script:
   - cabal-$CABALVER configure -v2 --enable-tests
-  - cabal-$CABALVER build
+  - travis_wait cabal-$CABALVER build
   - cabal-$CABALVER test
   - cabal-$CABALVER sdist   # tests that a source-distribution can be generated
 # Check that the resulting source distribution can be built & installed.
