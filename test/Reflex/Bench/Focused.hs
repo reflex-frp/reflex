@@ -18,8 +18,7 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity
---import Data.Foldable
-import Data.Traversable (for)
+import Data.Traversable (for, Traverse)
 
 import qualified Data.Dependent.Map as DMap
 import Data.Map (Map)
