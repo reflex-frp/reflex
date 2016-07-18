@@ -52,7 +52,7 @@ class ( MonadHold t (PushM t)
       , Functor (Event t)
       , Functor (Behavior t)
       , Functor (Dynamic t)
-      , Applicative (Dynamic t) -- ^ Necessary for GHC <=7.8
+      , Applicative (Dynamic t) -- Necessary for GHC <=7.8
       , Monad (Dynamic t)
       ) => Reflex t where
   -- | A container for a value that can change over time.  Behaviors can be sampled at will, but it is not possible to be notified when they change
