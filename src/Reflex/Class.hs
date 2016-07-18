@@ -46,7 +46,15 @@ import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
 
 import Debug.Trace (trace)
 
-class (MonadHold t (PushM t), MonadSample t (PullM t), MonadFix (PushM t), Functor (Event t), Functor (Behavior t), Functor (Dynamic t), Monad (Dynamic t)) => Reflex t where
+class ( MonadHold t (PushM t)
+      , MonadSample t (PullM t)
+      , MonadFix (PushM t)
+      , Functor (Event t)
+      , Functor (Behavior t)
+      , Functor (Dynamic t)
+      , Applicative (Dynamic t) -- ^ Necessary for GHC <=7.8
+      , Monad (Dynamic t)
+      ) => Reflex t where
   -- | A container for a value that can change over time.  Behaviors can be sampled at will, but it is not possible to be notified when they change
   data Behavior t :: * -> *
   -- | A stream of occurrences.  During any given frame, an Event is either occurring or not occurring; if it is occurring, it will contain a value of the given type (its "occurrence type")
@@ -393,11 +401,12 @@ appendEvents :: (Reflex t, Monoid a) => Event t a -> Event t a -> Event t a
 appendEvents e1 e2 = mergeThese mappend <$> align e1 e2
 
 {-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
+{-# ANN sequenceThese "HLint: ignore Use fmap" #-}
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
 sequenceThese t = case t of
-  This ma -> fmap This ma
+  This ma -> liftM This ma
   These ma mb -> liftM2 These ma mb
-  That mb -> fmap That mb
+  That mb -> liftM That mb
 
 instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
   (<>) = alignWith (mergeThese (<>))
