@@ -8,10 +8,10 @@ module Reflex.Dynamic.Nub
        , alreadyNubbedDynamic
        ) where
 
+import Control.Applicative (Applicative (..))
+import GHC.Exts
 import Reflex.Class
 import Reflex.Dynamic
-
-import GHC.Exts
 
 newtype NubDynamic t a = NubDynamic { unNubDynamic :: Dynamic t a }
 

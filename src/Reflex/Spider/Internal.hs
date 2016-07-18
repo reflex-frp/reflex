@@ -20,11 +20,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Reflex.Spider.Internal (Spider, SpiderEnv (..), Global, SpiderHost, runSpiderHost, SpiderEventHandle (..), showSubscriberType, showEventType, ComputeM (..), MergeSubscribedParent (..), HasSpiderEnv (..), newSpiderEnv, SpiderPullM (..), SpiderPushM (..), ReadPhase (..)) where
 
-import Data.WeakBag (WeakBag, WeakBagTicket)
-import qualified Data.WeakBag as WeakBag
-import qualified Reflex.Class as R
-import qualified Reflex.Host.Class as R
-
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
@@ -37,34 +32,36 @@ import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
 import Data.Align
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
-import Data.Foldable
+import Data.Foldable hiding (elem, sequence_, concat)
 import Data.Function
 import Data.Functor.Compose
 import Data.GADT.Compare
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
-import Data.List
+import Data.List hiding (foldl')
 import Data.Maybe
-import Data.Monoid ((<>))
+import Data.Monoid (mempty, (<>))
 import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.These
 import Data.Traversable
+import Data.Word
 import System.Mem.Weak
-
-import GHC.Base (IO (..))
 import GHC.IORef (IORef (..))
 import GHC.Stack
-
 import Control.Monad.Primitive
 import Data.Coerce
 import System.IO.Unsafe
 import Unsafe.Coerce
-
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Tree (Forest, Tree (..), drawForest)
+
+import Data.WeakBag (WeakBag, WeakBagTicket)
+import qualified Data.WeakBag as WeakBag
+import qualified Reflex.Class as R
+import qualified Reflex.Host.Class as R
 
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
 import Prelude hiding (any, concat, mapM, mapM_, sequence)
