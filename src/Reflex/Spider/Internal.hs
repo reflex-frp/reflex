@@ -26,13 +26,15 @@ import Control.Exception
 import Control.Monad hiding (forM, forM_, mapM, mapM_, sequence)
 import Control.Monad.Exception
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence)
+import Control.Monad.Primitive
 import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_, sequence)
 import Control.Monad.Ref
 import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
 import Data.Align
+import Data.Coerce
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
-import Data.Foldable hiding (elem, sequence_, concat)
+import Data.Foldable hiding (concat, elem, sequence_)
 import Data.Function
 import Data.Functor.Compose
 import Data.GADT.Compare
@@ -40,23 +42,21 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
 import Data.List hiding (foldl')
+import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Maybe
 import Data.Monoid (mempty, (<>))
 import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.These
 import Data.Traversable
+import Data.Tree (Forest, Tree (..), drawForest)
 import Data.Word
-import System.Mem.Weak
 import GHC.IORef (IORef (..))
 import GHC.Stack
-import Control.Monad.Primitive
-import Data.Coerce
 import System.IO.Unsafe
+import System.Mem.Weak
 import Unsafe.Coerce
-import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
-import qualified Data.List.NonEmpty as NonEmpty
-import Data.Tree (Forest, Tree (..), drawForest)
 
 import Data.WeakBag (WeakBag, WeakBagTicket)
 import qualified Data.WeakBag as WeakBag
