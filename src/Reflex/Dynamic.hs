@@ -5,6 +5,7 @@ module Reflex.Dynamic ( Dynamic -- Abstract so we can preserve the law that the 
                       , constDyn
                       , holdDyn
                       , nubDyn
+                      , nubDynBy
                       , count
                       , toggle
                       , switchPromptlyDyn
@@ -127,8 +128,12 @@ holdDyn v0 e = do
 -- | Create a new 'Dynamic' that only signals changes if the values
 -- actually changed.
 nubDyn :: (Reflex t, Eq a) => Dynamic t a -> Dynamic t a
-nubDyn d =
-  let e' = attachWithMaybe (\x x' -> if x' == x then Nothing else Just x') (current d) (updated d)
+nubDyn = nubDynBy (==)
+
+-- | Like 'nubDyn', but with a user-supplied equality function.
+nubDynBy :: Reflex t => (a -> a -> Bool) -> Dynamic t a -> Dynamic t a
+nubDynBy eq d =
+  let e' = attachWithMaybe (\x x' -> if x' `eq` x then Nothing else Just x') (current d) (updated d)
   in Dynamic (current d) e' --TODO: Avoid invalidating the outgoing Behavior
 
 {-
