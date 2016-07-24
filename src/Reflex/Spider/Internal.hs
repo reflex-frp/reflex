@@ -1090,13 +1090,23 @@ runBehaviorM :: BehaviorM a -> Maybe (Weak Invalidator, IORef [SomeBehaviorSubsc
 runBehaviorM a mwi holdInits = runReaderT (unBehaviorM a) (mwi, holdInits)
 
 askInvalidator :: BehaviorM (Maybe (Weak Invalidator))
-askInvalidator = fmap fst . fst <$> BehaviorM ask
+askInvalidator = do
+  (!m, _) <- BehaviorM ask
+  case m of
+    Nothing -> return Nothing
+    Just (!wi, _) -> return $ Just wi
 
 askParentsRef :: BehaviorM (Maybe (IORef [SomeBehaviorSubscribed]))
-askParentsRef = fmap snd . fst <$> BehaviorM ask
+askParentsRef = do
+  (!m, _) <- BehaviorM ask
+  case m of
+    Nothing -> return Nothing
+    Just (_, !p) -> return $ Just p
 
 askBehaviorHoldInits :: BehaviorM (IORef [SomeHoldInit])
-askBehaviorHoldInits = snd <$> BehaviorM ask
+askBehaviorHoldInits = do
+  (_, !his) <- BehaviorM ask
+  return his
 
 readBehaviorTracked :: Behavior a -> BehaviorM a
 readBehaviorTracked b = case b of
