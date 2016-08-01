@@ -42,7 +42,7 @@ library
     Reflex.Spider.Internal,
     Reflex.Class,
     Reflex.Dynamic,
-    Reflex.Dynamic.Nub,
+    Reflex.Dynamic.Uniq,
     Reflex.Dynamic.TH,
     Reflex.Host.Class,
     Data.Functor.Misc,
