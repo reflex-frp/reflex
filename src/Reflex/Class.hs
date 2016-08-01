@@ -75,8 +75,9 @@ module Reflex.Class
          -- * Miscellaneous convenience functions
        , ffor
          -- * Deprecated functions
-       , onceE
        , appendEvents
+       , onceE
+       , sequenceThese
        ) where
 
 import Control.Applicative
@@ -554,14 +555,6 @@ dmapToThese m = case (DMap.lookup LeftTag m, DMap.lookup RightTag m) of
   (Nothing, Just (Identity b)) -> Just $ That b
   (Just (Identity a), Just (Identity b)) -> Just $ These a b
 
-{-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
-{-# ANN sequenceThese "HLint: ignore Use fmap" #-}
-sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
-sequenceThese t = case t of
-  This ma -> liftM This ma
-  These ma mb -> liftM2 These ma mb
-  That mb -> liftM That mb
-
 instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
   (<>) = alignWith (mergeThese (<>))
   sconcat = fmap sconcat . mergeList . toList
@@ -776,3 +769,11 @@ appendEvents = alignWith $ mergeThese mappend
 {-# DEPRECATED onceE "Use 'headE' instead" #-}
 onceE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
 onceE = headE
+
+{-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
+{-# ANN sequenceThese "HLint: ignore Use fmap" #-}
+sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
+sequenceThese t = case t of
+  This ma -> liftM This ma
+  These ma mb -> liftM2 These ma mb
+  That mb -> liftM That mb
