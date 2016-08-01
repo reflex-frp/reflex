@@ -1,10 +1,9 @@
-module Reflex ( module Reflex.Class
-              , module Reflex.Dynamic
-              , module Reflex.Dynamic.TH
-              , module Reflex.Spider
-              ) where
+-- | This module exports all of the commonly-used functionality of Reflex; if
+-- you are just getting started with Reflex, this is probably what you want.
+module Reflex (module X) where
 
-import Reflex.Class
-import Reflex.Dynamic
-import Reflex.Dynamic.TH
-import Reflex.Spider
+import Reflex.Class as X
+import Reflex.Dynamic as X
+import Reflex.Dynamic.Uniq as X
+import Reflex.Dynamic.TH as X
+import Reflex.Spider as X

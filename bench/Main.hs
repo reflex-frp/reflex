@@ -1,38 +1,36 @@
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
+
+-- The instance for NFData (TVar a) is an orphan, but necessary here
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Main where
 
-import Data.Functor.Misc
-import Control.Monad.Primitive
-import Control.Monad.IO.Class
-import Control.Monad.Identity
-import Data.Dependent.Sum
 import Control.Concurrent.STM
-import Control.Applicative
-import System.IO.Unsafe
-import Data.IORef
 import Control.DeepSeq
 import Control.Exception (evaluate)
-import Control.Monad
+import Control.Monad.Identity
+import Control.Monad.IO.Class
+import Criterion.Main
+import Data.Dependent.Map (DMap)
+import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum
+import Data.Functor.Misc
+import Data.IORef
 import Reflex
 import Reflex.Host.Class
-import System.Mem
-import System.IO
-import Criterion.Main
-
-import qualified Data.Traversable as T
-
-import qualified Data.Dependent.Map as DM
-
 
 main :: IO ()
 main = defaultMain
   [ bgroup "micro" micros ]
 
+#if !(MIN_VERSION_deepseq(1,4,2))
 instance NFData (IORef a) where
   rnf x = seq x ()
+#endif
 
 instance NFData (TVar a) where
   rnf x = seq x ()
@@ -41,14 +39,13 @@ newtype WHNF a = WHNF a
 instance NFData (WHNF a) where
   rnf (WHNF a) = seq a ()
 
-withSetup :: NFData b => String -> SpiderHost a -> (a -> SpiderHost b) -> Benchmark
+withSetup :: NFData b => String -> SpiderHost Global a -> (a -> SpiderHost Global b) -> Benchmark
 withSetup name setup action = env (WHNF <$> runSpiderHost setup) $ \ ~(WHNF a) ->
   bench name . nfIO $ runSpiderHost (action a)
 
-withSetupWHNF :: String -> SpiderHost a -> (a -> SpiderHost b) -> Benchmark
+withSetupWHNF :: String -> SpiderHost Global a -> (a -> SpiderHost Global b) -> Benchmark
 withSetupWHNF name setup action = env (WHNF <$> runSpiderHost setup) $ \ ~(WHNF a) ->
   bench name . whnfIO $ runSpiderHost (action a)
-
 
 micros :: [Benchmark]
 micros =
@@ -72,40 +69,41 @@ micros =
     (\(subd, trigger) -> fireAndRead trigger (42 :: Int) subd)
   , withSetupWHNF "fireEventsOnly"
     (newEventWithTriggerRef >>= subscribePair)
-    (\(subd, trigger) -> do
+    (\(_, trigger) -> do
         Just key <- liftIO $ readIORef trigger
         fireEvents [key :=> Identity (42 :: Int)])
   , withSetupWHNF "fireEventsAndRead(head/merge1)"
     (setupMerge 1 >>= subscribePair)
-    (\(subd, t:riggers) -> fireAndRead t (42 :: Int) subd)
+    (\(subd, t:_) -> fireAndRead t (42 :: Int) subd)
   , withSetupWHNF "fireEventsAndRead(head/merge100)"
     (setupMerge 100 >>= subscribePair)
-    (\(subd, t:riggers) -> fireAndRead t (42 :: Int) subd)
+    (\(subd, t:_) -> fireAndRead t (42 :: Int) subd)
   , withSetupWHNF "fireEventsAndRead(head/merge10000)"
       (setupMerge 10000 >>= subscribePair)
-      (\(subd, t:riggers) -> fireAndRead t (42 :: Int) subd)
+      (\(subd, t:_) -> fireAndRead t (42 :: Int) subd)
   , withSetupWHNF "fireEventsOnly(head/merge100)"
     (setupMerge 100 >>= subscribePair)
-    (\(subd, t:riggers) -> do
+    (\(_, t:_) -> do
         Just key <- liftIO $ readIORef t
         fireEvents [key :=> Identity (42 :: Int)])
-  , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev,trigger) -> hold (42 :: Int) ev
+  , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev, _) -> hold (42 :: Int) ev
   , withSetupWHNF "sample" (newEventWithTriggerRef >>= hold (42 :: Int) . fst) sample
   ]
 
 setupMerge :: Int
-           -> SpiderHost (Event Spider (DM.DMap (Const2 Int a) Identity),
-                         [IORef (Maybe (EventTrigger Spider a))])
+           -> SpiderHost Global ( Event (SpiderEnv Global) (DMap (Const2 Int a) Identity)
+                                , [IORef (Maybe (EventTrigger Spider a))]
+                                )
 setupMerge num = do
-  (evs, triggers) <- unzip <$> replicateM 100 newEventWithTriggerRef
-  let !m = DM.fromList [(Const2 i) :=> v | (i,v) <- zip [0..] evs]
+  (evs, triggers) <- unzip <$> replicateM num newEventWithTriggerRef
+  let !m = DMap.fromList [Const2 i :=> v | (i,v) <- zip [0..] evs]
   pure (merge m, triggers)
 
-subscribePair :: (Event Spider a, b) -> SpiderHost (EventHandle Spider a, b)
+subscribePair :: (Event (SpiderEnv Global) a, b) -> SpiderHost Global (EventHandle (SpiderEnv Global) a, b)
 subscribePair (ev, b) = (,b) <$> subscribeEvent ev
 
-fireAndRead :: IORef (Maybe (EventTrigger Spider a)) -> a -> EventHandle Spider b
-            -> SpiderHost (Maybe b)
+fireAndRead :: IORef (Maybe (EventTrigger (SpiderEnv Global) a)) -> a -> EventHandle (SpiderEnv Global) b
+            -> SpiderHost Global (Maybe b)
 fireAndRead trigger val subd = do
   Just key <- liftIO $ readIORef trigger
-  fireEventsAndRead [key :=> Identity val] $ readEvent subd >>= T.sequence
+  fireEventsAndRead [key :=> Identity val] $ readEvent subd >>= sequence

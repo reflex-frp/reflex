@@ -1,27 +1,40 @@
-{-# LANGUAGE TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, RankNTypes, GADTs, ScopedTypeVariables, FunctionalDependencies, RecursiveDo, UndecidableInstances, GeneralizedNewtypeDeriving, StandaloneDeriving, EmptyDataDecls, NoMonomorphismRestriction, TypeOperators, DeriveDataTypeable, PackageImports, TemplateHaskell, LambdaCase, BangPatterns, ConstraintKinds #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Reflex.Test.CrossImpl (test) where
 
-import Prelude hiding (mapM, mapM_, sequence, sequence_, foldl, and)
+import Prelude hiding (and, foldl, mapM, mapM_, sequence, sequence_)
 
-import Reflex.Class
-import Reflex.Host.Class
-import Reflex.Dynamic
-import qualified Reflex.Spider.Internal as S
-import qualified Reflex.Pure as P
 import Control.Monad.Ref
+import Reflex.Class
+import Reflex.Dynamic
+import Reflex.Host.Class
+import qualified Reflex.Pure as P
+import qualified Reflex.Spider.Internal as S
 
-import Control.Monad.Identity hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import qualified Data.Set as Set
+import Control.Arrow (second, (&&&))
+import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.Writer hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Data.Dependent.Map (DSum (..))
+import Data.Foldable
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Control.Arrow (second, (&&&))
+import qualified Data.Set as Set
 import Data.Traversable
-import Data.Foldable
-import Control.Monad.State.Strict hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import Control.Monad.Writer hiding (mapM, mapM_, forM, forM_, sequence, sequence_)
-import Data.Dependent.Map (DSum (..))
-import System.Mem
 import System.Exit
+import System.Mem
 
 import System.IO.Unsafe
 
@@ -73,7 +86,7 @@ testSpider builder (bMap, eMap) = unsafePerformIO $ S.runSpiderHost $ do
   outputs <- forM times $ \t -> do
     forM_ (Map.lookup t bMap) $ \val -> mapM_ (\ rbt -> fireEvents [rbt :=> Identity val]) =<< readRef rbTrigger
     bOutput <- sample b'
-    eOutput <- liftM join $ forM (Map.lookup t eMap) $ \val -> do
+    eOutput <- fmap join $ forM (Map.lookup t eMap) $ \val -> do
       mret <- readRef reTrigger
       let firing = case mret of
             Just ret -> [ret :=> Identity val]
@@ -81,7 +94,7 @@ testSpider builder (bMap, eMap) = unsafePerformIO $ S.runSpiderHost $ do
       fireEventsAndRead firing $ sequence =<< readEvent e'Handle
     liftIO performGC
     return (t, (bOutput, eOutput))
-  return (Map.fromList $ map (second fst) outputs, Map.mapMaybe id $ Map.fromList $ map (second snd) outputs) 
+  return (Map.fromList $ map (second fst) outputs, Map.mapMaybe id $ Map.fromList $ map (second snd) outputs)
 
 tracePerf :: Show a => a -> b -> b
 tracePerf = flip const
@@ -111,7 +124,7 @@ testCases =
        b' <- hold "123" e
        return (b', e)
   , (,) "count" $ TestCase (Map.singleton 0 (), Map.fromList [(1, ()), (2, ()), (3, ())]) $ \(_, e) -> do
-       e' <- liftM updated $ count e
+       e' <- updated <$> count e
        b' <- hold (0 :: Int) e'
        return (b', e')
   , (,) "onceE-1" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
@@ -124,23 +137,19 @@ testCases =
        return (b, e'')
   , (,) "switch-2" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip pushAlways e $ const $ do
-             let ea = fmap (const "a") e
-             let eb = fmap (const "b") e
-             let eab = leftmost [ea, eb]
-             liftM switch $ hold eab never
+             let eab = splitRecombineEvent e
+             switch <$> hold eab never
            e'' = coincidence e'
        return (b, e'')
   , (,) "switch-3" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip pushAlways e $ const $ do
-             let ea = fmap (const "a") e
-             let eb = fmap (const "b") e
-             let eab = leftmost [ea, eb]
-             liftM switch $ hold eab (fmap (const e) e)
+             let eab = splitRecombineEvent e
+             switch <$> hold eab (fmap (const e) e)
            e'' = coincidence e'
        return (b, e'')
   , (,) "switch-4" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = leftmost [e, e]
-       e'' <- liftM switch $ hold e' (fmap (const e) e)
+       e'' <- switch <$> hold e' (fmap (const e) e)
        return (b, e'')
   , (,) "switchPromptly-1" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = fmap (const e) e
@@ -160,11 +169,11 @@ testCases =
        return (b, e'')
   , (,) "switch-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = leftmost [e, e]
-       e'' <- liftM switch $ hold never (fmap (const e') e)
+       e'' <- switch <$> hold never (fmap (const e') e)
        return (b, e'')
   , (,) "switchPromptly-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip push e $ \_ -> do
-             return . Just =<< onceE e
+             Just <$> onceE e
        e'' <- switchPromptly never e'
        return (b, e'')
   , (,) "switchPromptly-6" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
@@ -173,7 +182,7 @@ testCases =
        e'' <- switchPromptly never e'
        return (b, e'')
   , (,) "coincidence-1" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = flip pushAlways e $ \_ -> return $ fmap id e
+       let e' = flip pushAlways e $ \_ -> return e
            e'' = coincidence e'
        return (b, e'')
   , (,) "coincidence-2" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
@@ -212,11 +221,18 @@ testCases =
   , (,) "joinDyn" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        bb <- hold "b" e
        bd <- hold never . fmap (const e) =<< onceE e
-       eOuter <- liftM (pushAlways sample . fmap (const bb)) $ onceE e
+       eOuter <- pushAlways sample . fmap (const bb) <$> onceE e
        let eInner = switch bd
            e' = leftmost [eOuter, eInner]
        return (b, e')
   ]
+
+splitRecombineEvent :: Reflex t => Event t a -> Event t String
+splitRecombineEvent e =
+  let ea = "a" <$ e
+      eb = "b" <$ e
+  in leftmost [ea, eb]
+
 
 test :: IO ()
 test = do

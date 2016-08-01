@@ -1,5 +1,10 @@
+-- | This module exports all of the user-facing functionality of the 'Spider'
+-- 'Reflex' engine
 module Reflex.Spider ( Spider
-                     , SpiderHost (..) --Temporary, until Widget no longer uses unsafePerformIO
+                     , SpiderEnv
+                     , Global
+                     , SpiderHost
+                     , runSpiderHost
                      ) where
 
 import Reflex.Spider.Internal

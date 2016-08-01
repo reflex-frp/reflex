@@ -1,33 +1,42 @@
-{-# LANGUAGE  RecursiveDo, ConstraintKinds, TypeSynonymInstances, BangPatterns, ScopedTypeVariables, TupleSections, GADTs, RankNTypes, FlexibleInstances, FlexibleContexts, MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Reflex.Bench.Focused where
 
 import Reflex
 import Reflex.TestPlan
 
-import Control.Monad.Fix
-import Control.Monad
-import Control.Monad.Identity
 import Control.Applicative
---import Data.Foldable
-import Data.Traversable (for)
+import Control.Monad
+import Control.Monad.Fix
+import Control.Monad.Identity
+import Data.Traversable (for, traverse)
 
-import Data.Maybe
+import qualified Data.Dependent.Map as DMap
 import Data.Map (Map)
 import qualified Data.Map as Map
-import qualified Data.Dependent.Map as DMap
+import Data.Maybe
 
 import Data.Functor.Misc
 
-import Data.Tuple
 import Data.List
 import Data.List.Split
+import Data.Tuple
 
-import Data.Word
 import Data.Monoid
+import Data.Word
 
+import Control.DeepSeq
 
-import Prelude hiding (sum, concat)
+import Prelude hiding (concat, sum)
 
 
 mergeTree :: Num a => (Monoid (f [a]), Functor f) => Int -> [f a] -> f a
@@ -38,15 +47,15 @@ mergeTree n es | length es <= n =  sum' es
     subTrees = map sum' merges
     sum'     = fmap sum . mconcat . fmap (fmap (:[]) )
 
-mergeListDyn :: (Reflex t, MonadHold t m) => [Dynamic t a] -> m (Dynamic t [a])
-mergeListDyn dyns = traverse (mapDyn pure) dyns >>= mconcatDyn
+mergeListDyn :: Reflex t => [Dynamic t a] -> Dynamic t [a]
+mergeListDyn = mconcat . fmap (fmap pure)
 
-mergeTreeDyn :: (Num a, Reflex t, MonadHold t m, MonadFix m) => Int -> [Dynamic t a] -> m (Dynamic t a)
+mergeTreeDyn :: (Num a, Reflex t) => Int -> [Dynamic t a] -> Dynamic t a
 mergeTreeDyn n dyns | length dyns <= n = sumDyns dyns
-                    | otherwise = traverse sumDyns merges >>= mergeTreeDyn n
+                    | otherwise = mergeTreeDyn n $ fmap sumDyns merges
   where
-    merges   = chunksOf n dyns
-    sumDyns ds     =  mergeListDyn ds >>= mapDyn sum
+    merges = chunksOf n dyns
+    sumDyns = fmap sum . mergeListDyn
 
 
 
@@ -93,7 +102,7 @@ fanMerge n e =  leftmost $ s <$> [0..n - 1] where
 -- Dumb version of the above using simple fmapMaybe to filter
 fmapFanMerge :: Reflex t => Word -> Event t Word -> Event t Word
 fmapFanMerge n e =  leftmost $ s <$> [0..n - 1] where
-  s k = flip fmapMaybe e $ \j -> if (k == j `mod` n)
+  s k = flip fmapMaybe e $ \j -> if k == j `mod` n
     then Just k
     else Nothing
 
@@ -116,13 +125,13 @@ fmapChain :: (Functor f) => Word -> f Word -> f Word
 fmapChain = iter (fmap (+1))
 
 mapDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
-mapDynChain = iterM (mapDyn (+1))
+mapDynChain = iterM (return . fmap (+1))
 
 joinDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
-joinDynChain = iterM (\d -> joinDyn <$> mapDyn (const d) d)
+joinDynChain = iterM (\d -> return $ join $ fmap (const d) d)
 
 combineDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
-combineDynChain = iterM (\d -> combineDyn (+) d d)
+combineDynChain = iterM (\d -> return $ zipDynWith (+) d d)
 
 pingPong :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> Event t a -> m (Event t a)
 pingPong e1 e2 = do
@@ -170,7 +179,7 @@ switchMergeEvents mapChanges = switch . fmap mergeMap  <$> holdMap mapChanges
 -- switchMergeMaybe (UpdatedMap initial changes) = switchMergeMap initial (fmap (fromMaybe never) <$> changes)
 
 switchMergeBehaviors  :: forall a t m k. (MonadFix m, MonadHold t m, Reflex t, Ord k) =>  UpdatedMap t k (Behavior t a)  -> m (Behavior t (Map k a))
-switchMergeBehaviors mapChanges = pull <$> joinMap <$> holdMap mapChanges
+switchMergeBehaviors mapChanges = pull . joinMap <$> holdMap mapChanges
   where joinMap m = traverse sample =<< sample m
 
 -- | Turn an UpdatedMap into a Dynamic by applying the differences to the initial value
@@ -244,7 +253,7 @@ subscribing n frames =
   ]
 
   where
-    testSub :: (Eq a, Show a) => String -> (forall t n. (Reflex t, MonadHold t n, MonadFix n) => Event t Word -> n (Event t a)) -> (String, TestCase)
+    testSub :: (Eq a, Show a, NFData a) => String -> (forall t n. (Reflex t, MonadHold t n, MonadFix n) => Event t Word -> n (Event t a)) -> (String, TestCase)
     testSub name test = testE name (switches frames test)
 
 -- Set of benchmark to test specifically merging dynamic collections
@@ -300,9 +309,9 @@ dynamics n =
   [ testE "mapDynChain"         $ fmap updated $ mapDynChain n =<< d
   , testE "joinDynChain"        $ fmap updated $ joinDynChain n =<< d
   , testE "combineDynChain"     $ fmap updated $ combineDynChain n =<< d
-  , testE "dense mergeTree"     $ fmap updated $ mergeTreeDyn 8 =<< dense
-  , testE "sparse mergeTree"    $ fmap updated $ mergeTreeDyn 8 =<< sparse
-  , testE "mergeDyn"            $ fmap updated $ mapDyn sum =<< mergeListDyn =<< sparse
+  , testE "dense mergeTree"     $ fmap (updated . mergeTreeDyn 8) dense
+  , testE "sparse mergeTree"    $ fmap (updated . mergeTreeDyn 8) sparse
+  , testE "mergeDyn"            $ fmap (updated . fmap sum . mergeListDyn) sparse
   ] where
 
     d :: TestPlan t m => m (Dynamic t Word)

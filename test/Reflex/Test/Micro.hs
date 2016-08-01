@@ -1,20 +1,23 @@
-{-# LANGUAGE ConstraintKinds, GADTs, RankNTypes, FlexibleInstances, FlexibleContexts, MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Reflex.Test.Micro (testCases) where
 
 import Reflex
 import Reflex.TestPlan
 
-import Data.Word
-import Control.Monad
 import Control.Applicative
+import Control.Monad
 import Data.Char
-import Data.Monoid
 import Data.Functor.Misc
+import Data.Monoid
 
 import Data.Foldable
 
-import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Prelude
@@ -22,32 +25,30 @@ import Prelude
 testCases :: [(String, TestCase)]
 testCases =
   [ testB "hold"  $ hold "0" =<< events1
+
   , testB "count" $ do
-    b <- current <$> (count =<< events2)
-    return $ (+ (0::Int)) <$> b
+      b <- current <$> (count =<< events2)
+      return $ (+ (0::Int)) <$> b
 
   , testB "pull-1"  $ do
       b <- hold "0" =<< events1
-      return (id <$> id <$> b)
-
+      return (pull $ sample $ pull $ sample b)
 
   , testB "pull-2" $ do
       b1 <- behavior1
-      return (id <$> pull $ liftA2 (<>) (sample b1) (sample b1))
+      return (pull $ liftA2 (<>) (sample b1) (sample b1))
 
   , testB "pull-3" $ do
       b1 <- behavior1
       b2 <- behavior2
-      return (id <$> pull $ liftA2 (<>) (sample b1) (sample b2))
+      return (pull $ liftA2 (<>) (sample b1) (sample b2))
 
   , testB "pull-4" $ do
-    es <- planList ["a", "b", "c"]
-    e <- plan [(0, ())]
-
-    b <- hold (constant "") $
-      pushAlways (const $ hold "z" es) e
-
-    return (join b)
+      es <- planList ["a", "b", "c"]
+      e <- plan [(0, ())]
+      b <- hold (constant "") $
+        pushAlways (const $ hold "z" es) e
+      return (join b)
 
   , testE "tag-1" $ do
       b1 <- behavior1
@@ -66,9 +67,9 @@ testCases =
 
   , testE "leftmost" $ liftA2 leftmost2 events1 events2
 
-  , testE "appendEvents-1" $ liftA2 appendEvents events1 events2
-  , testE "appendEvents-2" $ liftA2 appendEvents events3 events2
+  , testE "appendEvents-1" $ liftA2 mappend events1 events2
 
+  , testE "appendEvents-2" $ liftA2 mappend events3 events2
 
   , testE "merge-1" $ do
       e <- events1
@@ -77,20 +78,17 @@ testCases =
   , testE "merge-2" $ do
       e <- events1
       let m = mergeMap $ Map.fromList [(1::Int, "y" <$ e), (2, "z" <$ e)]
-
       let ee = flip pushAlways e $ const $ return m
       return $ coincidence ee
 
-  , testE "onceE-1" $ do
+  , testE "headE-1" $ do
       e <- events1
-      onceE $ leftmost [e, e]
+      headE $ leftmost [e, e]
 
-
-  , testE "onceE-2" $ do
+  , testE "headE-2" $ do
       e <- events1
       b <- hold never (e <$ e)
-      onceE $ switch b
-
+      headE $ switch b
 
   , testE "switch-1" $ do
       e <- events1
@@ -111,7 +109,6 @@ testCases =
       e <- events1
       switch <$> hold (deep e) (e <$ e)
 
-
   , testE "switch-5" $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $ const $
@@ -121,7 +118,6 @@ testCases =
       e <- events1
       return $ coincidence $ flip pushAlways e $ const $ do
             switch <$> hold ("x" <$ e) (e <$ e)
-
 
   , testE "switchPromptly-1" $ do
       e <- events1
@@ -147,7 +143,7 @@ testCases =
   , testE "switchPromptly-5" $ do
     e <- events1
     switchPromptly never $ flip push e $
-      const (Just <$> onceE e)
+      const (Just <$> headE e)
 
   , testE "switchPromptly-6" $ do
       e <- events1
@@ -157,7 +153,7 @@ testCases =
   , testE "coincidence-1" $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $
-        const $ return (id <$> e)
+        const $ return e
 
   , testE "coincidence-2" $ do
       e <- events1
@@ -172,7 +168,7 @@ testCases =
   , testE "coincidence-4" $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $
-        const (onceE e)
+        const (headE e)
 
   , testE "coincidence-5" $ do
       e <- events1
@@ -192,16 +188,16 @@ testCases =
 
   , testB "holdWhileFiring" $ do
       e <- events1
-      eo <- onceE e
+      eo <- headE e
       bb <- hold (constant "x") $ pushAlways (const $ hold "a" eo) eo
       return $ pull $ sample =<< sample bb
 
   , testE "joinDyn" $ do
       e <- events1
       bb <- hold "b" e
-      bd <- hold never . fmap (const e) =<< onceE e
+      bd <- hold never . fmap (const e) =<< headE e
 
-      eOuter <- pushAlways sample . fmap (const bb) <$> onceE e
+      eOuter <- pushAlways sample . fmap (const bb) <$> headE e
       let eInner = switch bd
       return $ leftmost [eOuter, eInner]
 
@@ -211,13 +207,13 @@ testCases =
 
   , testB "mapDyn"  $ do
       d <- foldDyn (++) "0" =<< events1
-      current <$> mapDyn (map toUpper) d
+      return $ current $ fmap (map toUpper) d
 
   , testB "combineDyn"  $ do
       d1 <- foldDyn (++) "0" =<< events1
-      d2 <- mapDyn (map toUpper) =<< foldDyn (++) "0" =<< events2
+      d2 <- fmap (fmap (map toUpper)) $ foldDyn (++) "0" =<< events2
 
-      current <$> combineDyn (<>) d1 d2
+      return $ current $ zipDynWith (<>) d1 d2
   , testE "fan-1" $ do
       e <- fmap toMap <$> events1
       let es = select (fanMap e) . Const2 <$> values
@@ -231,7 +227,7 @@ testCases =
       return (mergeList es)
 
   , testE "fan-3" $ do
-      f <- fanMap <$> fmap toMap <$> events3
+      f <- fanMap . fmap toMap <$> events3
       return $  select f (Const2 'c')
 
   , testE "fan-4" $ do
@@ -243,22 +239,8 @@ testCases =
       return $ toUpper <$> select (fanMap e) (Const2 'c')
 
   , testE "fan-6" $ do
-      f <- fanMap <$> fmap toMap <$> events1
+      f <- fanMap . fmap toMap <$> events1
       return $ toList <$> mergeList [ select f (Const2 'b'), select f (Const2 'b'), select f (Const2 'e'), select f (Const2 'e') ]
-
-  -- , testE "switchMerge-1" $ switchMergeMap mempty =<< increasing
-
-  -- , testE "switchMerge-2" $ do
-  --     e <- eventsFrom 0
-  --     switchMergeMap (Map.singleton 0 e) =<< increasing
-
-  -- , testE "switchMerge-3" $ do
-  --     es <- eventsMany
-  --     switchMergeMap es =<< increasing
-
-  -- , testE "switchMerge-4" $ do
-  --     es <- eventsMany
-  --     switchMergeMap es =<< decreasing
 
   ] where
 
@@ -266,28 +248,10 @@ testCases =
     events1 = plan [(1, "a"), (2, "b"), (5, "c"), (7, "d"), (8, "e")]
     events2 = plan [(1, "e"), (3, "d"), (4, "c"), (6, "b"), (7, "a")]
 
-    events3 = liftA2 appendEvents events1 events2
-
-    eventsFrom ::  TestPlan t m => Word -> m (Event t Int)
-    eventsFrom n = plan $ zip [n..8] [1..8]
-
-    increasing :: TestPlan t m => m (Event t (Map Int (Event t Int)))
-    increasing = do
-      es <- mapM eventsFrom [1..8]
-      planList $ zipWith Map.singleton [1..8] es
-
-    decreasing :: TestPlan t m => m (Event t (Map Int (Event t Int)))
-    decreasing = planList $ zipWith Map.singleton [1..8] (repeat never)
-
-    eventsMany :: TestPlan t m => m (Map Int (Event t Int))
-    eventsMany = do
-      es <- mapM eventsFrom [8,7..1]
-      return $ Map.fromList $ zip [1..8] es
-
+    events3 = liftA2 mappend events1 events2
 
     values = "abcde"
     toMap str = Map.fromList $ map (\c -> (c, c)) str
-
 
     behavior1, behavior2 :: forall t m. TestPlan t m => m (Behavior t String)
     behavior1 =  hold "1" =<< events1

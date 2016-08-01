@@ -127,6 +127,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [H]   mconcatDyn :: Monoid a => [Dynamic a] -> m (Dynamic a)
 [H]   distributeDMapOverDyn :: GCompare k => DMap (WrapArg Dynamic k) -> m (Dynamic (DMap k))
 [H]   combineDyn :: (a -> b -> c) -> Dynamic a -> Dynamic b -> m (Dynamic c)
+[ ]   zipDynWith :: (a -> b -> c) -> Dynamic a -> Dynamic b -> Dynamic c
 
 -- Efficient one-to-many fanout
 [ ]   demux      :: Ord k => Dynamic k -> Demux k

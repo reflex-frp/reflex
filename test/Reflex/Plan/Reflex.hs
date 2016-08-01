@@ -1,4 +1,13 @@
-{-# LANGUAGE FunctionalDependencies, BangPatterns, UndecidableInstances, ConstraintKinds, GADTs, ScopedTypeVariables, FlexibleInstances, MultiParamTypeClasses, GeneralizedNewtypeDeriving, RankNTypes, RecursiveDo, FlexibleContexts, StandaloneDeriving #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Reflex.Plan.Reflex
   ( TestPlan(..)
   , runPlan
@@ -9,6 +18,7 @@ module Reflex.Plan.Reflex
 
 
   , readSchedule
+  , readSchedule_
   , testSchedule
   , readEvent'
   , makeDense
@@ -27,13 +37,15 @@ import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.State.Strict
 
-import Data.Dependent.Sum (DSum (..))
-import Data.Monoid
-import Data.Traversable (traverse, sequenceA)
-import Data.Maybe
-import qualified Data.IntMap.Strict as IntMap
 import Control.Monad.Ref
+import Data.Dependent.Sum (DSum (..))
+import qualified Data.IntMap.Strict as IntMap
+import Data.Maybe
+import Data.Monoid
+import Data.Traversable (sequenceA, traverse)
 
+import Control.DeepSeq
+import Control.Exception
 import Data.IntMap.Strict (IntMap)
 import Data.IORef
 import System.Mem
@@ -75,7 +87,7 @@ instance (ReflexHost t, MonadRef (HostFrame t), Ref (HostFrame t) ~ Ref IO) => T
 firingTrigger :: (MonadReflexHost t m, MonadIORef m) => Firing t -> m (Maybe (DSum  (EventTrigger t) Identity))
 firingTrigger (Firing ref a) = fmap (:=> Identity a) <$> readRef ref
 
-runPlan :: (MonadReflexHost t m, MonadIORef m) => Plan t a -> m (a, Schedule t)
+runPlan :: (MonadReflexHost t m) => Plan t a -> m (a, Schedule t)
 runPlan (Plan p) = runHostFrame $ runStateT p mempty
 
 
@@ -90,29 +102,31 @@ makeDense s = fromMaybe (emptyRange 0) $ do
 -- For the purposes of testing, we add in a zero frame and extend one frame (to observe changes to behaviors
 -- after the last event)
 -- performGC is called at each frame to test for GC issues
-testSchedule :: (MonadReflexHost t m, MonadIORef m) => Schedule t -> ReadPhase m a -> m (IntMap a)
+testSchedule :: (MonadReflexHost t m, MonadIORef m, NFData a) => Schedule t -> ReadPhase m a -> m (IntMap a)
 testSchedule schedule readResult = IntMap.traverseWithKey (\t occs -> liftIO performGC *> triggerFrame readResult t occs) (makeDense schedule)
 
-readSchedule :: (MonadReflexHost t m, MonadIORef m) => Schedule t -> ReadPhase m a -> m (IntMap a)
+readSchedule :: (MonadReflexHost t m, MonadIORef m, NFData a) => Schedule t -> ReadPhase m a -> m (IntMap a)
 readSchedule schedule readResult = IntMap.traverseWithKey (triggerFrame readResult) schedule
 
-triggerFrame :: (MonadReflexHost t m, MonadIORef m) => ReadPhase m a -> Int -> [Firing t] -> m a
+readSchedule_ :: (MonadReflexHost t m, MonadIORef m, NFData a) => Schedule t -> ReadPhase m a -> m ()
+readSchedule_ schedule readResult = mapM_ (uncurry $ triggerFrame readResult) $ IntMap.toList schedule
+
+triggerFrame :: (MonadReflexHost t m, MonadIORef m, NFData a) => ReadPhase m a -> Int -> [Firing t] -> m a
 triggerFrame readResult _ occs =  do
     triggers <- catMaybes <$> traverse firingTrigger occs
-    fireEventsAndRead triggers readResult
-
+    liftIO . evaluate . force =<< fireEventsAndRead triggers readResult
 
 readEvent' :: MonadReadEvent t m => EventHandle t a -> m (Maybe a)
 readEvent' = readEvent >=> sequenceA
 
 
 -- Convenience functions for running tests producing Events/Behaviors
-runTestB :: (MonadReflexHost t m, MonadIORef m) => Plan t (Behavior t a) -> m (IntMap a)
+runTestB :: (MonadReflexHost t m, MonadIORef m, NFData a) => Plan t (Behavior t a) -> m (IntMap a)
 runTestB p = do
   (b, s) <- runPlan p
   testSchedule s $ sample b
 
-runTestE :: (MonadReflexHost t m, MonadIORef m) => Plan t (Event t a) -> m (IntMap (Maybe a))
+runTestE :: (MonadReflexHost t m, MonadIORef m, NFData a) => Plan t (Event t a) -> m (IntMap (Maybe a))
 runTestE p = do
   (e, s) <- runPlan p
   h <- subscribeEvent e

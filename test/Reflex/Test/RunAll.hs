@@ -1,17 +1,22 @@
-{-# LANGUAGE ConstraintKinds, GADTs, RankNTypes, FlexibleInstances, FlexibleContexts, MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Main (main) where
 
 import Reflex.Test
 
+import Data.Bifunctor
+import Data.Functor
+import Data.List
 import qualified Reflex.Bench.Focused as Focused
 import qualified Reflex.Test.Micro as Micro
-import Data.Functor
-import Data.Bifunctor
-import Data.List
 
-import System.Exit
 import System.Environment
+import System.Exit
 
 import Prelude
 

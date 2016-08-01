@@ -1,4 +1,18 @@
-{-# LANGUAGE ConstraintKinds, TypeSynonymInstances, BangPatterns, ScopedTypeVariables, TupleSections, GADTs, RankNTypes, FlexibleInstances, FlexibleContexts, MultiParamTypeClasses, GeneralizedNewtypeDeriving, ForeignFunctionInterface, ViewPatterns, TemplateHaskell, PatternSynonyms #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Main where
@@ -9,38 +23,37 @@ import Criterion.Types
 import Reflex
 import Reflex.Host.Class
 
-import Reflex.TestPlan
 import Reflex.Plan.Reflex
+import Reflex.TestPlan
 
-import Reflex.Spider.Internal (SpiderEventHandle)
 import qualified Reflex.Bench.Focused as Focused
+import Reflex.Spider.Internal (SpiderEventHandle)
 
 import Control.Applicative
 import Control.DeepSeq (NFData (..))
 
+import Prelude
 import System.IO
 import System.Mem
-import Prelude
 
-import Data.IORef
-import System.Mem.Weak
-import Data.Function
-import Control.Concurrent
-import Data.Time.Clock
-import GHC.Stats
-import Data.Monoid
 import Control.Arrow
-import Control.Monad
-import Data.Bool
-import qualified GHC.Event as GHC
+import Control.Concurrent
 import Control.Concurrent.STM
-import Data.Int
 import Control.Exception
-import Text.Read
-import System.Environment
-import Debug.Trace.LocationTH
+import Control.Monad
 import Control.Monad.Trans
+import Data.Bool
+import Data.Function
+import Data.Int
+import Data.IORef
+import Data.Monoid
+import Data.Time.Clock
+import Debug.Trace.LocationTH
+import GHC.Stats
+import System.Environment
+import System.Mem.Weak
 import System.Process
+import Text.Read
 
 import Unsafe.Coerce
 
@@ -68,7 +81,7 @@ instance NFData (Behavior t a) where
   rnf !_ = ()
 
 instance NFData (Firing t) where
-  rnf !(Firing _ _) = ()
+  rnf !_ = ()
 
 -- Measure the running time
 benchFiring :: forall t m. (MonadReflexHost' t m, MonadSample t m) => (forall a. m a -> IO a) -> TestCase -> Int -> IO ()
@@ -80,10 +93,10 @@ benchFiring runHost tc n = runHost $ do
   case tc of
     TestE p -> do
       (h, s) <- setupFiring p
-      runIterations $ readSchedule s $ readEvent' h
+      runIterations $ readSchedule_ s $ readEvent' h
     TestB p -> do
       (b, s) <- runPlan p
-      runIterations $ readSchedule (makeDense s) $ sample b
+      runIterations $ readSchedule_ (makeDense s) $ sample b
 
 waitForFinalizers :: IO ()
 waitForFinalizers = do
@@ -94,7 +107,7 @@ waitForFinalizers = do
   performGC
   fix $ \loop -> do
     f <- readIORef isFinalized
-    if f then return () else do
+    unless f $ do
       threadDelay 1
       loop
 
