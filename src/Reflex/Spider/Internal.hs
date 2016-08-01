@@ -1153,32 +1153,6 @@ getDynHold d = do
       liftIO $ writeIORef (unDyn d) $ Right h
       return h
 
-{-
-readEvent :: Event a -> ResultM (Maybe a)
-readEvent e = case e of
-  EventRoot k r -> liftIO . fmap (coerce . DMap.lookup k) . readIORef $ rootOccurrence r
-  EventNever -> return Nothing
-  EventPush p -> do
-    subscribed <- getPushSubscribed p
-    liftIO $ readPushSubscribed subscribed
-  EventMerge m -> do
-    subscribed <- getMergeSubscribed m
-    liftIO $ readMergeSubscribed subscribed
-  EventFan k f -> do
-    subscribed <- getFanSubscribed f
-    liftIO $ readFanSubscribed k subscribed
-  EventSwitch s -> do
-    subscribed <- getSwitchSubscribed s
-    liftIO $ readSwitchSubscribed subscribed
-  EventCoincidence c -> do
-    subscribed <- getCoincidenceSubscribed c
-    liftIO $ readCoincidenceSubscribed subscribed
-  EventHold h -> liftIO . readEventSubscribed =<< getHoldEventSubscription h
-  EventDyn d -> liftIO . readEventSubscribed =<< getHoldEventSubscription =<< getDynHold d
-  EventHoldIdentity h -> liftIO . readEventSubscribed =<< getHoldEventSubscription h
-  EventDynIdentity d -> liftIO . readEventSubscribed =<< getHoldEventSubscription =<< getDynHold d
--}
-
 readEventSubscribed :: EventSubscribed a -> IO (Maybe a)
 readEventSubscribed = \case
   EventSubscribedRoot rs -> readRootSubscribed rs
