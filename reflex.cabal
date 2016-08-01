@@ -16,62 +16,69 @@ bug-reports: https://github.com/reflex-frp/reflex/issues
 library
   hs-source-dirs: src
   build-depends:
+    MemoTrie == 0.6.*,
     base >= 4.7 && < 4.10,
     bifunctors >= 5.2 && < 5.5,
-    dependent-sum == 0.3.*,
-    dependent-map >= 0.2.2 && < 0.3,
-    semigroups >= 0.16 && < 0.19,
-    semigroupoids >= 4.0 && < 6,
-    mtl >= 2.1 && < 2.3,
     containers == 0.5.*,
-    these >= 0.4 && < 0.8,
-    primitive >= 0.5 && < 0.7,
-    template-haskell >= 2.9 && < 2.12,
-    ref-tf == 0.4.*,
+    dependent-map >= 0.2.2 && < 0.3,
+    dependent-sum == 0.3.*,
     exception-transformers == 0.4.*,
-    transformers >= 0.2,
-    transformers-compat >= 0.3,
     haskell-src-exts >= 1.16 && < 1.18,
     haskell-src-meta == 0.6.*,
+    mtl >= 2.1 && < 2.3,
+    primitive >= 0.5 && < 0.7,
+    ref-tf == 0.4.*,
+    semigroupoids >= 4.0 && < 6,
+    semigroups >= 0.16 && < 0.19,
+    stm == 2.4.*,
     syb >= 0.5 && < 0.7,
-    stm == 2.4.*
+    template-haskell >= 2.9 && < 2.12,
+    these >= 0.4 && < 0.8,
+    transformers >= 0.2,
+    transformers-compat >= 0.3
 
   exposed-modules:
+    Data.Functor.Misc,
+    Data.WeakBag,
     Reflex,
-    Reflex.Spider,
-    Reflex.Spider.Internal,
     Reflex.Class,
     Reflex.Dynamic,
-    Reflex.Dynamic.Uniq,
     Reflex.Dynamic.TH,
+    Reflex.Dynamic.Uniq,
     Reflex.Host.Class,
-    Data.Functor.Misc,
-    Data.WeakBag
+    Reflex.Pure,
+    Reflex.Spider,
+    Reflex.Spider.Internal
 
   other-extensions: TemplateHaskell
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
   ghc-prof-options: -auto-all
 
-
-test-suite all
+test-suite semantics
   type: exitcode-stdio-1.0
-  main-is: Reflex/Test/RunAll.hs
-  ghc-options: -O2 -Wall -rtsopts
+  main-is: semantics.hs
   hs-source-dirs: test
+  ghc-options: -O2 -Wall -rtsopts
   build-depends:
     base,
-    reflex,
-    ref-tf,
-    mtl,
+    bifunctors,
     containers,
+    deepseq >= 1.3 && < 1.5,
     dependent-map,
     dependent-sum,
-    transformers >= 0.3,
-    MemoTrie == 0.6.*,
-    deepseq >= 1.3 && < 1.5,
-    bifunctors,
-    split
+    mtl,
+    ref-tf,
+    reflex,
+    split,
+    transformers >= 0.3
 
+test-suite hlint
+  type: exitcode-stdio-1.0
+  main-is: hlint.hs
+  hs-source-dirs: test
+  build-depends: base, hlint == 1.9.*
+  if impl(ghcjs)
+    buildable: False
 
 benchmark spider-bench
   type: exitcode-stdio-1.0
@@ -80,16 +87,15 @@ benchmark spider-bench
   ghc-options: -Wall -O2 -rtsopts
   build-depends:
     base,
-    dependent-sum,
-    dependent-map,
-    transformers >= 0.3,
-    stm,
+    criterion == 1.1.*,
     deepseq >= 1.3 && < 1.5,
+    dependent-map,
+    dependent-sum,
     mtl,
     primitive,
-    criterion == 1.1.*,
-    reflex
-
+    reflex,
+    stm,
+    transformers >= 0.3
 
 benchmark saulzar-bench
   type: exitcode-stdio-1.0
@@ -101,28 +107,20 @@ benchmark saulzar-bench
   build-depends:
     base,
     containers == 0.5.*,
-    ref-tf == 0.4,
-    dependent-sum,
-    dependent-map,
-    transformers >= 0.3,
-    stm,
+    criterion == 1.1.*,
     deepseq >= 1.3 && < 1.5,
+    dependent-map,
+    dependent-sum,
+    loch-th,
     mtl,
     primitive,
-    criterion == 1.1.*,
-    split,
+    process,
+    ref-tf == 0.4,
     reflex,
+    split,
+    stm,
     time,
-    loch-th,
-    process
-
-test-suite hlint
-  build-depends: base, hlint == 1.9.*
-  hs-source-dirs: test
-  main-is: hlint.hs
-  type: exitcode-stdio-1.0
-  if impl(ghcjs)
-    buildable: False
+    transformers >= 0.3
 
 source-repository head
   type: git

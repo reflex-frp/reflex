@@ -1,8 +1,4 @@
--- | This module provides a pure implementation of Reflex, which is intended to
--- serve as a reference for the semantics of the Reflex class.  All
--- implementations of Reflex should produce the same results as this
--- implementation, although performance and laziness/strictness may differ.
-
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE InstanceSigs #-}
@@ -15,9 +11,16 @@
 --   * MonadHold (Pure t) ((->) t)
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
+-- | This module provides a pure implementation of Reflex, which is intended to
+-- serve as a reference for the semantics of the Reflex class.  All
+-- implementations of Reflex should produce the same results as this
+-- implementation, although performance and laziness/strictness may differ.
 module Reflex.Pure where
 
+#if !MIN_VERSION_base(4,8,0)
 import Control.Applicative -- Necessary for GHC 7.8
+#endif
+
 import Control.Monad
 import Data.Dependent.Map (DMap, GCompare)
 import qualified Data.Dependent.Map as DMap
