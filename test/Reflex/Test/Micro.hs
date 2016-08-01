@@ -67,9 +67,9 @@ testCases =
 
   , testE "leftmost" $ liftA2 leftmost2 events1 events2
 
-  , testE "appendEvents-1" $ liftA2 appendEvents events1 events2
+  , testE "appendEvents-1" $ liftA2 mappend events1 events2
 
-  , testE "appendEvents-2" $ liftA2 appendEvents events3 events2
+  , testE "appendEvents-2" $ liftA2 mappend events3 events2
 
   , testE "merge-1" $ do
       e <- events1
@@ -81,14 +81,14 @@ testCases =
       let ee = flip pushAlways e $ const $ return m
       return $ coincidence ee
 
-  , testE "onceE-1" $ do
+  , testE "headE-1" $ do
       e <- events1
-      onceE $ leftmost [e, e]
+      headE $ leftmost [e, e]
 
-  , testE "onceE-2" $ do
+  , testE "headE-2" $ do
       e <- events1
       b <- hold never (e <$ e)
-      onceE $ switch b
+      headE $ switch b
 
   , testE "switch-1" $ do
       e <- events1
@@ -143,7 +143,7 @@ testCases =
   , testE "switchPromptly-5" $ do
     e <- events1
     switchPromptly never $ flip push e $
-      const (Just <$> onceE e)
+      const (Just <$> headE e)
 
   , testE "switchPromptly-6" $ do
       e <- events1
@@ -168,7 +168,7 @@ testCases =
   , testE "coincidence-4" $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $
-        const (onceE e)
+        const (headE e)
 
   , testE "coincidence-5" $ do
       e <- events1
@@ -188,16 +188,16 @@ testCases =
 
   , testB "holdWhileFiring" $ do
       e <- events1
-      eo <- onceE e
+      eo <- headE e
       bb <- hold (constant "x") $ pushAlways (const $ hold "a" eo) eo
       return $ pull $ sample =<< sample bb
 
   , testE "joinDyn" $ do
       e <- events1
       bb <- hold "b" e
-      bd <- hold never . fmap (const e) =<< onceE e
+      bd <- hold never . fmap (const e) =<< headE e
 
-      eOuter <- pushAlways sample . fmap (const bb) <$> onceE e
+      eOuter <- pushAlways sample . fmap (const bb) <$> headE e
       let eInner = switch bd
       return $ leftmost [eOuter, eInner]
 
@@ -207,13 +207,13 @@ testCases =
 
   , testB "mapDyn"  $ do
       d <- foldDyn (++) "0" =<< events1
-      current <$> mapDyn (map toUpper) d
+      return $ current $ fmap (map toUpper) d
 
   , testB "combineDyn"  $ do
       d1 <- foldDyn (++) "0" =<< events1
-      d2 <- mapDyn (map toUpper) =<< foldDyn (++) "0" =<< events2
+      d2 <- fmap (fmap (map toUpper)) $ foldDyn (++) "0" =<< events2
 
-      current <$> combineDyn (<>) d1 d2
+      return $ current $ zipDynWith (<>) d1 d2
   , testE "fan-1" $ do
       e <- fmap toMap <$> events1
       let es = select (fanMap e) . Const2 <$> values
@@ -248,7 +248,7 @@ testCases =
     events1 = plan [(1, "a"), (2, "b"), (5, "c"), (7, "d"), (8, "e")]
     events2 = plan [(1, "e"), (3, "d"), (4, "c"), (6, "b"), (7, "a")]
 
-    events3 = liftA2 appendEvents events1 events2
+    events3 = liftA2 mappend events1 events2
 
     values = "abcde"
     toMap str = Map.fromList $ map (\c -> (c, c)) str

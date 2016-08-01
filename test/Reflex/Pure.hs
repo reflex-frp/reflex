@@ -1,8 +1,7 @@
-{- | This module provides a pure implementation of Reflex, which is intended
-to serve as a reference for the semantics of the Reflex class.  All implementations
-of Reflex should produce the same results as this implementation, although performance
-and laziness/strictness may differ.
--}
+-- | This module provides a pure implementation of Reflex, which is intended to
+-- serve as a reference for the semantics of the Reflex class.  All
+-- implementations of Reflex should produce the same results as this
+-- implementation, although performance and laziness/strictness may differ.
 
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -23,7 +22,6 @@ import Control.Monad
 import Data.Dependent.Map (DMap, GCompare)
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Identity
-import Data.Functor.Misc
 import Data.Maybe
 import Data.MemoTrie
 import Data.Monoid
@@ -32,8 +30,8 @@ import Reflex.Class
 data Pure t
 
 -- | The Enum instance of t must be dense: for all x :: t, there must not exist
---   any y :: t such that pred x < y < x. The HasTrie instance will be used exclusively
---   to memoize functions of t, not for any of its other capabilities.
+-- any y :: t such that pred x < y < x. The HasTrie instance will be used
+-- exclusively to memoize functions of t, not for any of its other capabilities.
 instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
 
   newtype Behavior (Pure t) a = Behavior { unBehavior :: t -> a }
@@ -56,10 +54,14 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   pull :: PullM (Pure t) a -> Behavior (Pure t) a
   pull = Behavior . memo
 
-  -- [UNUSED_CONSTRAINT]: The following type signature for merge will produce a warning because the GCompare instance is not used; however, removing the GCompare instance produces a different warning, due to that constraint being present in the original class definition
+  -- [UNUSED_CONSTRAINT]: The following type signature for merge will produce a
+  -- warning because the GCompare instance is not used; however, removing the
+  -- GCompare instance produces a different warning, due to that constraint
+  -- being present in the original class definition
+
   --merge :: GCompare k => DMap k (Event (Pure t)) -> Event (Pure t) (DMap k Identity)
   merge events = Event $ memo $ \t ->
-    let currentOccurrences = unwrapDMapMaybe (($ t) . unEvent) events
+    let currentOccurrences = DMap.mapMaybeWithKey (\_ (Event a) -> Identity <$> a t) events
     in if DMap.null currentOccurrences
        then Nothing
        else Just currentOccurrences
@@ -83,7 +85,9 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   unsafeBuildDynamic readV0 v' = Dynamic $ \t -> (readV0 t, unEvent v' t)
 
   -- See UNUSED_CONSTRAINT, above.
-  --unsafeBuildIncremental :: Patch p => PullM (Pure t) a -> Event (Pure t) (p a) -> Incremental (Pure t) p a
+
+  --unsafeBuildIncremental :: Patch p => PullM (Pure t) a -> Event (Pure t) (p
+  --a) -> Incremental (Pure t) p a
   unsafeBuildIncremental readV0 p = Incremental $ \t -> (readV0 t, unEvent p t)
 
   mergeIncremental (Incremental f) = Event $ \t ->
@@ -133,7 +137,8 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
   hold initialValue e initialTime = Behavior f
     where f = memo $ \sampleTime ->
             -- Really, the sampleTime should never be prior to the initialTime,
-            -- because that would mean the Behavior is being sampled before being created.
+            -- because that would mean the Behavior is being sampled before
+            -- being created.
             if sampleTime <= initialTime
             then initialValue
             else let lastTime = pred sampleTime
@@ -148,7 +153,8 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
   holdIncremental initialValue e initialTime = Incremental $ \t -> (f t, unEvent e t)
     where f = memo $ \sampleTime ->
             -- Really, the sampleTime should never be prior to the initialTime,
-            -- because that would mean the Behavior is being sampled before being created.
+            -- because that would mean the Behavior is being sampled before
+            -- being created.
             if sampleTime <= initialTime
             then initialValue
             else let lastTime = pred sampleTime

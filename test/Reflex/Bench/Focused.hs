@@ -47,15 +47,15 @@ mergeTree n es | length es <= n =  sum' es
     subTrees = map sum' merges
     sum'     = fmap sum . mconcat . fmap (fmap (:[]) )
 
-mergeListDyn :: (Reflex t, MonadHold t m) => [Dynamic t a] -> m (Dynamic t [a])
-mergeListDyn dyns = traverse (mapDyn pure) dyns >>= mconcatDyn
+mergeListDyn :: Reflex t => [Dynamic t a] -> Dynamic t [a]
+mergeListDyn = mconcat . fmap (fmap pure)
 
-mergeTreeDyn :: (Num a, Reflex t, MonadHold t m, MonadFix m) => Int -> [Dynamic t a] -> m (Dynamic t a)
+mergeTreeDyn :: (Num a, Reflex t) => Int -> [Dynamic t a] -> Dynamic t a
 mergeTreeDyn n dyns | length dyns <= n = sumDyns dyns
-                    | otherwise = traverse sumDyns merges >>= mergeTreeDyn n
+                    | otherwise = mergeTreeDyn n $ fmap sumDyns merges
   where
-    merges   = chunksOf n dyns
-    sumDyns ds     =  mergeListDyn ds >>= mapDyn sum
+    merges = chunksOf n dyns
+    sumDyns = fmap sum . mergeListDyn
 
 
 
@@ -125,13 +125,13 @@ fmapChain :: (Functor f) => Word -> f Word -> f Word
 fmapChain = iter (fmap (+1))
 
 mapDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
-mapDynChain = iterM (mapDyn (+1))
+mapDynChain = iterM (return . fmap (+1))
 
 joinDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
-joinDynChain = iterM (\d -> joinDyn <$> mapDyn (const d) d)
+joinDynChain = iterM (\d -> return $ join $ fmap (const d) d)
 
 combineDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
-combineDynChain = iterM (\d -> combineDyn (+) d d)
+combineDynChain = iterM (\d -> return $ zipDynWith (+) d d)
 
 pingPong :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> Event t a -> m (Event t a)
 pingPong e1 e2 = do
@@ -309,9 +309,9 @@ dynamics n =
   [ testE "mapDynChain"         $ fmap updated $ mapDynChain n =<< d
   , testE "joinDynChain"        $ fmap updated $ joinDynChain n =<< d
   , testE "combineDynChain"     $ fmap updated $ combineDynChain n =<< d
-  , testE "dense mergeTree"     $ fmap updated $ mergeTreeDyn 8 =<< dense
-  , testE "sparse mergeTree"    $ fmap updated $ mergeTreeDyn 8 =<< sparse
-  , testE "mergeDyn"            $ fmap updated $ mapDyn sum =<< mergeListDyn =<< sparse
+  , testE "dense mergeTree"     $ fmap (updated . mergeTreeDyn 8) dense
+  , testE "sparse mergeTree"    $ fmap (updated . mergeTreeDyn 8) sparse
+  , testE "mergeDyn"            $ fmap (updated . fmap sum . mergeListDyn) sparse
   ] where
 
     d :: TestPlan t m => m (Dynamic t Word)

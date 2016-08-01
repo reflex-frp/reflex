@@ -18,7 +18,17 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-module Reflex.Spider.Internal (Spider, SpiderEnv (..), Global, SpiderHost, runSpiderHost, SpiderEventHandle (..), showSubscriberType, showEventType, ComputeM (..), MergeSubscribedParent (..), HasSpiderEnv (..), newSpiderEnv, SpiderPullM (..), SpiderPushM (..), ReadPhase (..)) where
+-- | This module is the implementation of the 'Spider' 'Reflex' engine.  It uses
+-- a graph traversal algorithm to propagate 'Event's and 'Behavior's.
+module Reflex.Spider.Internal
+       ( Spider
+       , SpiderEnv (..)
+       , Global
+       , SpiderHost
+       , runSpiderHost
+       , newSpiderEnv
+       , askSpiderEnv
+       ) where
 
 import Control.Applicative
 import Control.Concurrent
@@ -115,6 +125,33 @@ instance HasNodeId (Pull a) where
 {-# INLINE showNodeId #-}
 showNodeId :: HasNodeId a => a -> String
 showNodeId = ("#"<>) . show . getNodeId
+
+showSubscriberType :: Subscriber a -> String
+showSubscriberType = \case
+  SubscriberPush _ _ -> "SubscriberPush"
+  SubscriberMerge _ _ -> "SubscriberMerge"
+  SubscriberFan _ -> "SubscriberFan"
+  SubscriberMergeChange _ -> "SubscriberMergeChange"
+  SubscriberHold _ -> "SubscriberHold"
+  SubscriberHoldIdentity _ -> "SubscriberHoldIdentity"
+  SubscriberSwitch _ -> "SubscriberSwitch"
+  SubscriberCoincidenceOuter _ -> "SubscriberCoincidenceOuter"
+  SubscriberCoincidenceInner _ -> "SubscriberCoincidenceInner"
+  SubscriberHandle -> "SubscriberHandle"
+
+showEventType :: Event a -> String
+showEventType = \case
+  EventRoot _ _ -> "EventRoot"
+  EventNever -> "EventNever"
+  EventPush _ -> "EventPush"
+  EventMerge _ -> "EventMerge"
+  EventFan _ _ -> "EventFan"
+  EventSwitch _ -> "EventSwitch"
+  EventCoincidence _ -> "EventCoincidence"
+  EventHold _ -> "EventHold"
+  EventDyn _ -> "EventDyn"
+  EventHoldIdentity _ -> "EventHoldIdentity"
+  EventDynIdentity _ -> "EventDynIdentity"
 
 #else
 
@@ -218,6 +255,7 @@ instance HasCurrentHeight (EventM x) where
     liftIO $ modifyIORef' delayedRef $ IntMap.insertWith (++) (unHeight height) [DelayedMerge subscribed]
 
 class HasSpiderEnv x m | m -> x where
+  -- | Retrieve the current SpiderEnv
   askSpiderEnv :: m (SpiderEnv x)
 
 instance HasSpiderEnv x (EventM x) where
@@ -275,12 +313,6 @@ hold v0 e = do
   defer $ SomeHoldInit h
   return h
 
-{-
-mkWeakIORefKey :: IORef a -> b -> IO () -> IO (Weak b)
-mkWeakIORefKey r@(IORef (STRef r#)) b (IO f) = IO $ \s ->
-  case mkWeak# r# b f s of (# s1, w #) -> (# s1, Weak w #)
--}
-
 {-# INLINE getHoldEventSubscription #-}
 getHoldEventSubscription :: forall m p a x. (Defer SomeAssignment m, Defer SomeHoldInit m, Defer SomeClear m, R.Patch p, HasCurrentHeight m, Defer SomeMergeInit m, Defer SomeResetCoincidence m, HasSpiderEnv x m) => Hold p a -> m (EventSubscription (p a))
 getHoldEventSubscription h = do
@@ -289,20 +321,6 @@ getHoldEventSubscription h = do
     Right subd -> return subd
     Left e -> do
       subscriptionRef <- liftIO $ newIORef $ error "getHoldEventSubscription: subdRef uninitialized"
-      {-
-      spiderEnv <- askSpiderEnv
-      weakSubscriptionRef <- liftIO $ mkWeakIORef subscriptionRef $ return ()
-      wh <- liftIO $ mkWeakIORefKey (holdValue h) h $ do
-        msr <- deRefWeak weakSubscriptionRef
-        forM_ msr $ \sr -> do
-          subscription <- readIORef sr
-          atomicModifyIORef (_spiderEnv_toUnsubscribe spiderEnv) $ \x -> (SomeEventSubscription subscription : x, ())
---        return ()
-        {-
-        -- What can we do?  1) Detect GCs at the SpiderEnv level, then go over the tree
-                            2) Have a finalizer on every SubscriberListNode that only runs if its parent is still alive, and does a normal unsubscribe if so; this would seem to double the number of weakRefs we use, but perhaps not the weakDepth, so maybe it's OK; we will probably need to move the regular call to unsubscribe into the finalizer and then use finalize instead of that call; we can have a strong reference to the SubscriberListNode, which means we just need a single weak reference to each EventSubscribed, which we can reuse in all of the finalizers that need to (potentially) unsubscribe from it
--}
-      -}
       subscription@(EventSubscription _ subd) <- subscribe e =<< liftIO (newSubscriberHold h)
       liftIO $ writeIORef subscriptionRef $! subscription
       occ <- liftIO $ readEventSubscribed subd
@@ -405,7 +423,7 @@ data PushSubscribed a b
 #endif
                     }
 
-newtype ComputeM a = ComputeM { unComputeM :: ReaderT (IORef [SomeHoldInit]) IO a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
+newtype ComputeM a = ComputeM (ReaderT (IORef [SomeHoldInit]) IO a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
 instance Defer SomeHoldInit ComputeM where
   getDeferralQueue = ComputeM ask
@@ -420,10 +438,10 @@ data Push a b
           , pushSubscribed :: !(IORef (Maybe (PushSubscribed a b))) --TODO: Can we replace this with an unsafePerformIO thunk?
           }
 
-data MergeSubscribedParent k a
-   = MergeSubscribedParent { mergeSubscribedParentSubscription :: !(EventSubscription a)
-                           , mergeSubscribedParentSubscriber :: !(Subscriber a)
-                           }
+data MergeSubscribedParent k a = MergeSubscribedParent !(EventSubscription a) !(Subscriber a)
+
+mergeSubscribedParentSubscription :: MergeSubscribedParent k a -> EventSubscription a
+mergeSubscribedParentSubscription (MergeSubscribedParent es _) = es
 
 data HeightBag = HeightBag
   { _heightBag_size :: {-# UNPACK #-} !Int
@@ -561,19 +579,6 @@ data Subscriber a
    | SubscriberCoincidenceInner (CoincidenceSubscribed a)
    | SubscriberHandle
 
-showSubscriberType :: Subscriber a -> String
-showSubscriberType = \case
-  SubscriberPush _ _ -> "SubscriberPush"
-  SubscriberMerge _ _ -> "SubscriberMerge"
-  SubscriberFan _ -> "SubscriberFan"
-  SubscriberMergeChange _ -> "SubscriberMergeChange"
-  SubscriberHold _ -> "SubscriberHold"
-  SubscriberHoldIdentity _ -> "SubscriberHoldIdentity"
-  SubscriberSwitch _ -> "SubscriberSwitch"
-  SubscriberCoincidenceOuter _ -> "SubscriberCoincidenceOuter"
-  SubscriberCoincidenceInner _ -> "SubscriberCoincidenceInner"
-  SubscriberHandle -> "SubscriberHandle"
-
 data Event a
    = forall k. GCompare k => EventRoot !(k a) !(Root k)
    | EventNever
@@ -586,20 +591,6 @@ data Event a
    | forall p b. (a ~ p b, R.Patch p) => EventDyn !(Dyn p b)
    | forall b. (a ~ Identity b) => EventHoldIdentity !(Hold Identity b)
    | forall b. (a ~ Identity b) => EventDynIdentity !(Dyn Identity b)
-
-showEventType :: Event a -> String
-showEventType = \case
-  EventRoot _ _ -> "EventRoot"
-  EventNever -> "EventNever"
-  EventPush _ -> "EventPush"
-  EventMerge _ -> "EventMerge"
-  EventFan _ _ -> "EventFan"
-  EventSwitch _ -> "EventSwitch"
-  EventCoincidence _ -> "EventCoincidence"
-  EventHold _ -> "EventHold"
-  EventDyn _ -> "EventDyn"
-  EventHoldIdentity _ -> "EventHoldIdentity"
-  EventDynIdentity _ -> "EventDynIdentity"
 
 data EventSubscription a = EventSubscription
   { _eventSubscription_ticket :: !(Maybe (SubscriberListTicket a))
@@ -1999,15 +1990,18 @@ invalidate toReconnectRef wis = do
 -- Reflex integration
 --------------------------------------------------------------------------------
 
+-- | The default, global Spider environment
 type Spider = SpiderEnv Global
 
+-- | Designates the default, global Spider timeline
 data Global
 
 {-# NOINLINE globalSpiderEnv #-}
 globalSpiderEnv :: SpiderEnv Global
 globalSpiderEnv = unsafePerformIO unsafeNewSpiderEnv
 
-type role SpiderEnv nominal
+-- | Stores all global data relevant to a particular Spider timeline; only one
+-- value should exist for each type @x@
 data SpiderEnv x = SpiderEnv
   { _spiderEnv_toUnsubscribe :: !(IORef [SomeEventSubscription])
   , _spiderEnv_lock :: !(MVar ())
@@ -2016,6 +2010,7 @@ data SpiderEnv x = SpiderEnv
   , _spiderEnv_depth :: !(IORef Int)
 #endif
   }
+type role SpiderEnv nominal
 
 instance GEq SpiderEnv where
   a `geq` b = if _spiderEnv_toUnsubscribe a == _spiderEnv_toUnsubscribe b
@@ -2039,12 +2034,13 @@ unsafeNewSpiderEnv = do
 #endif
     }
 
+-- | Create a new SpiderEnv
 newSpiderEnv :: IO (Some SpiderEnv)
 newSpiderEnv = Some.This <$> unsafeNewSpiderEnv
 
-newtype SpiderPullM x a = SpiderPullM { runSpiderPullM :: BehaviorM a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
+newtype SpiderPullM x a = SpiderPullM (BehaviorM a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
-newtype SpiderPushM x a = SpiderPushM { runSpiderPushM :: ComputeM a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
+newtype SpiderPushM x a = SpiderPushM (ComputeM a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
 instance R.Reflex (SpiderEnv x) where
   newtype Behavior (SpiderEnv x) a = SpiderBehavior { unSpiderBehavior :: Behavior a }
@@ -2172,6 +2168,7 @@ instance MonadAtomicRef (EventM x) where
   {-# INLINABLE atomicModifyRef #-}
   atomicModifyRef r f = liftIO $ atomicModifyRef r f
 
+-- | The monad for actions that manipulate a Spider timeline identified by @x@
 newtype SpiderHost x a = SpiderHost { unSpiderHost :: ReaderT (SpiderEnv x) IO a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 instance Monad (SpiderHost x) where
@@ -2184,6 +2181,8 @@ instance Monad (SpiderHost x) where
   {-# INLINABLE fail #-}
   fail s = SpiderHost $ fail s
 
+-- | Run an action affecting the global Spider timeline; this will be guarded by
+-- a mutex for that timeline
 runSpiderHost :: SpiderHost Global a -> IO a
 runSpiderHost (SpiderHost a) = runReaderT a globalSpiderEnv
 
@@ -2251,7 +2250,7 @@ subscribeEventSpiderHost e = do
   subscription <- runFrame $ subscribe (unSpiderEvent e) SubscriberHandle --TODO: Unsubscribe eventually (manually and/or with weak ref)
   return $ SpiderEventHandle subscription
 
-newtype ReadPhase x a = ReadPhase { runReadPhase :: ResultM x a } deriving (Functor, Applicative, Monad, MonadFix)
+newtype ReadPhase x a = ReadPhase (ResultM x a) deriving (Functor, Applicative, Monad, MonadFix)
 
 instance R.MonadSample (SpiderEnv x) (ReadPhase x) where
   {-# INLINABLE sample #-}
