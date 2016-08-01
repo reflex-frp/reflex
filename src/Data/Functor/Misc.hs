@@ -30,7 +30,7 @@ module Data.Functor.Misc
        , extractFunctorDMap
        ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), Applicative)
 import Control.Monad.Identity
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
