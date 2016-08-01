@@ -94,8 +94,8 @@ import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (ShowTag (..))
 import Data.Foldable
-import qualified Data.Functor.Bind as Bind
 import Data.Functor.Bind hiding (join)
+import qualified Data.Functor.Bind as Bind
 import Data.Functor.Compose
 import Data.Functor.Constant
 import Data.Functor.Misc
