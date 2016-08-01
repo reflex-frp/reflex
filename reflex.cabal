@@ -121,6 +121,8 @@ test-suite hlint
   hs-source-dirs: test
   main-is: hlint.hs
   type: exitcode-stdio-1.0
+  if impl(ghcjs)
+    buildable: False
 
 source-repository head
   type: git
