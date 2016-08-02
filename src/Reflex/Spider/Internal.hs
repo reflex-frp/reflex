@@ -187,38 +187,45 @@ unsafeNodeId a = unsafePerformIO $ do
 -- Event
 --------------------------------------------------------------------------------
 
-data Event a
-   = forall k. GCompare k => EventRoot !(k a) !(Root k)
-   | EventNever
-   | forall b. EventPush !(Push b a)
-   | forall k. (GCompare k, a ~ DMap k Identity) => EventMerge !(Merge k)
-   | forall k. GCompare k => EventFan !(k a) !(Fan k)
-   | EventSwitch !(Switch a)
-   | EventCoincidence !(Coincidence a)
-   | forall p b. (a ~ p b, R.Patch p) => EventHold !(Hold p b)
-   | forall p b. (a ~ p b, R.Patch p) => EventDyn !(Dyn p b)
-   | forall b. (a ~ Identity b) => EventHoldIdentity !(Hold Identity b)
-   | forall b. (a ~ Identity b) => EventDynIdentity !(Dyn Identity b)
+newtype Event a = Event { subscribe :: forall x. Subscriber a -> EventM x (EventSubscription a) }
 
-{-# SPECIALIZE subscribe :: Event a -> Subscriber a -> EventM x (EventSubscription a) #-}
-subscribe :: forall x m a. CanSubscribe x m => Event a -> Subscriber a -> m (EventSubscription a)
-subscribe e sub = case e of
-  EventRoot k r -> wrap EventSubscribedRoot $ liftIO . getRootSubscribed k r
-  EventNever -> return $ EventSubscription Nothing EventSubscribedNever
-  EventPush p -> wrap EventSubscribedPush $ getPushSubscribed p
-  EventFan k f -> wrap (EventSubscribedFan k) $ getFanSubscribed k f
-  EventMerge m -> wrap EventSubscribedMerge $ getMergeSubscribed m
-  EventSwitch s -> wrap EventSubscribedSwitch $ getSwitchSubscribed s
-  EventCoincidence c -> wrap EventSubscribedCoincidence $ getCoincidenceSubscribed c
-  EventHold h -> subscribeHoldEvent h sub
-  EventDyn j -> getDynHold j >>= \h -> subscribeHoldEvent h sub
-  EventHoldIdentity h -> subscribeHoldEvent h sub
-  EventDynIdentity j -> getDynHold j >>= \h -> subscribeHoldEvent h sub
-  where
-    wrap :: (t -> EventSubscribed a) -> (Subscriber a -> m (SubscriberListTicket a, t)) -> m (EventSubscription a)
-    wrap tag getSpecificSubscribed = do
-      (sln, subd) <- getSpecificSubscribed sub
-      return $ EventSubscription (Just sln) $ tag subd
+wrap :: Monad m => (t -> EventSubscribed a) -> (Subscriber a -> m (SubscriberListTicket a, t)) -> Subscriber a -> m (EventSubscription a)
+wrap tag getSpecificSubscribed sub = do
+  (sln, subd) <- getSpecificSubscribed sub
+  return $ EventSubscription (Just sln) $ tag subd
+
+eventRoot :: GCompare k => k a -> Root k -> Event a
+eventRoot !k !r = Event $ wrap EventSubscribedRoot $ liftIO . getRootSubscribed k r
+
+eventNever :: Event a
+eventNever = Event $ \_ -> return $ EventSubscription Nothing EventSubscribedNever
+
+eventPush :: Push b a -> Event a
+eventPush !p = Event $ wrap EventSubscribedPush $ getPushSubscribed p
+
+eventMerge :: (GCompare k, a ~ DMap k Identity) => Merge k -> Event a
+eventMerge !m = Event $ wrap EventSubscribedMerge $ getMergeSubscribed m
+
+eventFan :: GCompare k => k a -> Fan k -> Event a
+eventFan !k !f = Event $ wrap (EventSubscribedFan k) $ getFanSubscribed k f
+
+eventSwitch :: Switch a -> Event a
+eventSwitch !s = Event $ wrap EventSubscribedSwitch $ getSwitchSubscribed s
+
+eventCoincidence :: Coincidence a -> Event a
+eventCoincidence !c = Event $ wrap EventSubscribedCoincidence $ getCoincidenceSubscribed c
+
+eventHold :: (a ~ p b, R.Patch p) => Hold p b -> Event a
+eventHold !h = Event $ subscribeHoldEvent h
+
+eventDyn :: (a ~ p b, R.Patch p) => Dyn p b -> Event a
+eventDyn !j = Event $ \sub -> getDynHold j >>= \h -> subscribeHoldEvent h sub
+
+eventHoldIdentity :: (a ~ Identity b) => Hold Identity b -> Event a
+eventHoldIdentity !h = Event $ subscribeHoldEvent h
+
+eventDynIdentity :: (a ~ Identity b) => Dyn Identity b -> Event a
+eventDynIdentity !j = Event $ \sub -> getDynHold j >>= \h -> subscribeHoldEvent h sub
 
 {-# INLINE subscribeCoincidenceInner #-}
 subscribeCoincidenceInner :: CanSubscribe x m => Event a -> Height -> CoincidenceSubscribed a -> m (Maybe a, Height, EventSubscribed a)
@@ -493,7 +500,7 @@ hold v0 e = do
   return h
 
 {-# INLINE getHoldEventSubscription #-}
-getHoldEventSubscription :: forall m p a x. (Defer SomeAssignment m, Defer SomeHoldInit m, Defer SomeClear m, R.Patch p, HasCurrentHeight m, Defer SomeMergeInit m, Defer SomeResetCoincidence m, HasSpiderEnv x m) => Hold p a -> m (EventSubscription (p a))
+getHoldEventSubscription :: forall m p a x. (Defer SomeAssignment m, Defer SomeHoldInit m, Defer SomeClear m, R.Patch p, HasCurrentHeight m, Defer SomeMergeInit m, Defer SomeResetCoincidence m, HasSpiderEnv x m, m ~ EventM x) => Hold p a -> m (EventSubscription (p a))
 getHoldEventSubscription h = do
   ep <- liftIO $ readIORef $ holdParent h
   case ep of
@@ -835,11 +842,11 @@ current = \case
 {-# INLINE updated #-}
 updated :: R.Patch p => Dynamic p a -> Event (p a)
 updated = \case
-  DynamicHold h -> EventHold h
-  DynamicHoldIdentity h -> EventHoldIdentity h
-  DynamicConst _ -> EventNever
-  DynamicDyn d -> EventDyn d
-  DynamicDynIdentity d -> EventDynIdentity d
+  DynamicHold h -> eventHold h
+  DynamicHoldIdentity h -> eventHoldIdentity h
+  DynamicConst _ -> eventNever
+  DynamicDyn d -> eventDyn d
+  DynamicDynIdentity d -> eventDynIdentity d
 
 newMapDyn :: (a -> b) -> Dynamic Identity a -> Dynamic Identity b
 newMapDyn f d = DynamicDynIdentity $ unsafeDyn (fmap f $ readBehaviorTracked $ current d) (Identity . f . runIdentity <$> updated d)
@@ -857,7 +864,7 @@ instance R.FunctorMaybe Event where
   fmapMaybe f = push $ return . f
 
 instance Align Event where
-  nil = EventNever
+  nil = eventNever
   align ea eb = R.fmapMaybe R.dmapToThese $ merge $ DynamicConst $ DMap.fromList [R.LeftTag :=> ea, R.RightTag :=> eb]
 
 --TODO: Avoid the duplication between this and R.zipDynWith
@@ -925,7 +932,7 @@ instance Functor Behavior where
 
 {-# NOINLINE push #-} --TODO: If this is helpful, we can get rid of the unsafeNewIORef and use unsafePerformIO directly
 push :: forall a b. (a -> ComputeM (Maybe b)) -> Event a -> Event b
-push f e = EventPush $ Push
+push f e = eventPush $ Push
   { pushCompute = f
   , pushParent = e
   , pushSubscribed = unsafeNewIORef (f, e) Nothing --TODO: Does the use of the tuple here create unnecessary overhead?
@@ -944,13 +951,13 @@ pull a = BehaviorPull $ Pull
 
 {-# NOINLINE switch #-}
 switch :: Behavior (Event a) -> Event a
-switch a = EventSwitch $ Switch
+switch a = eventSwitch $ Switch
   { switchParent = a
   , switchSubscribed = unsafeNewIORef a Nothing
   }
 
 coincidence :: Event (Event a) -> Event a
-coincidence a = EventCoincidence $ Coincidence
+coincidence a = eventCoincidence $ Coincidence
   { coincidenceParent = a
   , coincidenceSubscribed = unsafeNewIORef a Nothing
   }
@@ -1327,6 +1334,7 @@ type CanSubscribe x m =
   , Defer SomeClear m -- Wiping out event firings
   , Defer SomeAssignment m -- Updating state
   , Defer SomeResetCoincidence m
+  , m ~ EventM x
   )
 
 getRootSubscribed :: GCompare k => k a -> Root k -> Subscriber a -> IO (SubscriberListTicket a, RootSubscribed a)
@@ -1487,7 +1495,7 @@ subscribeMergeSubscribed :: MergeSubscribed k -> Subscriber (DMap k Identity) ->
 subscribeMergeSubscribed subscribed sub = WeakBag.insert sub (mergeSubscribedSubscribers subscribed) (mergeSubscribedWeakSelf subscribed) cleanupMergeSubscribed
 
 {-# SPECIALIZE getFanSubscribed :: GCompare k => k a -> Fan k -> Subscriber a -> EventM x (SubscriberListTicket a, FanSubscribed k) #-}
-getFanSubscribed :: (Defer SomeAssignment m, Defer SomeHoldInit m, Defer SomeMergeInit m, Defer SomeClear m, HasCurrentHeight m, Defer SomeResetCoincidence m, HasSpiderEnv x m, GCompare k) => k a -> Fan k -> Subscriber a -> m (SubscriberListTicket a, FanSubscribed k)
+getFanSubscribed :: (Defer SomeAssignment m, Defer SomeHoldInit m, Defer SomeMergeInit m, Defer SomeClear m, HasCurrentHeight m, Defer SomeResetCoincidence m, HasSpiderEnv x m, m ~ EventM x, GCompare k) => k a -> Fan k -> Subscriber a -> m (SubscriberListTicket a, FanSubscribed k)
 getFanSubscribed k f sub = do
   mSubscribed <- liftIO $ readIORef $ fanSubscribed f
   case mSubscribed of
@@ -1542,7 +1550,7 @@ subscribeFanSubscribed k subscribed sub = do
     Just (FanSubscribedChildren list _ weakSelf) -> {-# SCC "hitSubscribeFanSubscribed" #-} WeakBag.insert sub list weakSelf cleanupFanSubscribed
 
 {-# SPECIALIZE getSwitchSubscribed :: Switch a -> Subscriber a -> EventM x (SubscriberListTicket a, SwitchSubscribed a) #-}
-getSwitchSubscribed :: (Defer SomeHoldInit m, Defer SomeAssignment m, Defer SomeMergeInit m, Defer SomeClear m, Defer SomeResetCoincidence m, HasCurrentHeight m, HasSpiderEnv x m) => Switch a -> Subscriber a -> m (SubscriberListTicket a, SwitchSubscribed a)
+getSwitchSubscribed :: (Defer SomeHoldInit m, Defer SomeAssignment m, Defer SomeMergeInit m, Defer SomeClear m, Defer SomeResetCoincidence m, HasCurrentHeight m, HasSpiderEnv x m, m ~ EventM x) => Switch a -> Subscriber a -> m (SubscriberListTicket a, SwitchSubscribed a)
 getSwitchSubscribed s sub = do
   mSubscribed <- liftIO $ readIORef $ switchSubscribed s
   case mSubscribed of
@@ -1598,7 +1606,7 @@ subscribeSwitchSubscribed :: SwitchSubscribed a -> Subscriber a -> IO (Subscribe
 subscribeSwitchSubscribed subscribed sub = WeakBag.insert sub (switchSubscribedSubscribers subscribed) (switchSubscribedWeakSelf subscribed) cleanupSwitchSubscribed
 
 {-# SPECIALIZE getCoincidenceSubscribed :: Coincidence a -> Subscriber a -> EventM x (SubscriberListTicket a, CoincidenceSubscribed a) #-}
-getCoincidenceSubscribed :: forall x a m. (Defer SomeAssignment m, Defer SomeHoldInit m, Defer SomeMergeInit m, Defer SomeClear m, HasCurrentHeight m, Defer SomeResetCoincidence m, HasSpiderEnv x m) => Coincidence a -> Subscriber a -> m (SubscriberListTicket a, CoincidenceSubscribed a)
+getCoincidenceSubscribed :: forall x a m. (Defer SomeAssignment m, Defer SomeHoldInit m, Defer SomeMergeInit m, Defer SomeClear m, HasCurrentHeight m, Defer SomeResetCoincidence m, HasSpiderEnv x m, m ~ EventM x) => Coincidence a -> Subscriber a -> m (SubscriberListTicket a, CoincidenceSubscribed a)
 getCoincidenceSubscribed c sub = do
   mSubscribed <- liftIO $ readIORef $ coincidenceSubscribed c
   case mSubscribed of
@@ -1653,7 +1661,7 @@ subscribeCoincidenceSubscribed subscribed sub = WeakBag.insert sub (coincidenceS
 
 {-# INLINE merge #-}
 merge :: GCompare k => Dynamic R.PatchDMap (DMap k Event) -> Event (DMap k Identity)
-merge m = EventMerge $ Merge
+merge m = eventMerge $ Merge
   { mergeParents = m
   , mergeSubscribed = unsafeNewIORef m Nothing
   }
@@ -1666,7 +1674,7 @@ fan e =
         { fanParent = e
         , fanSubscribed = unsafeNewIORef e Nothing
         }
-  in EventSelector $ \k -> EventFan k f
+  in EventSelector $ \k -> eventFan k f
 
 runHoldInits :: IORef [SomeHoldInit] -> IORef [SomeMergeInit] -> EventM x ()
 runHoldInits holdInitRef mergeInitRef = do
@@ -2043,7 +2051,7 @@ instance R.Reflex (SpiderEnv x) where
   type PullM (SpiderEnv x) = SpiderPullM x
   type PushM (SpiderEnv x) = SpiderPushM x
   {-# INLINABLE never #-}
-  never = SpiderEvent EventNever
+  never = SpiderEvent eventNever
   {-# INLINABLE constant #-}
   constant = SpiderBehavior . BehaviorConst
   {-# INLINABLE push #-}
@@ -2220,7 +2228,7 @@ newFanEventWithTriggerIO f = do
         , rootSubscribed = subscribedRef
         , rootInit = f
         }
-  return $ EventSelector $ \k -> EventRoot k r
+  return $ EventSelector $ \k -> eventRoot k r
 
 instance R.MonadReflexCreateTrigger (SpiderEnv x) (SpiderHost x) where
   newEventWithTrigger = SpiderHost . lift . fmap SpiderEvent . newEventWithTriggerIO
