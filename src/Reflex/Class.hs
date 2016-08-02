@@ -58,6 +58,7 @@ module Reflex.Class
        , Accumulator (..)
        , mapAccum_
        , mapAccumM_
+       , mapAccumMaybe_
        , mapAccumMaybeM_
        , zipListWithEvent
        , headE
