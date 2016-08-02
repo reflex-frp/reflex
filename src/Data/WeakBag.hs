@@ -53,7 +53,7 @@ insert :: a -- ^ The item
        -> IO (WeakBagTicket a) -- ^ Returns a 'WeakBagTicket' that ensures the
                                -- item is retained and allows the item to be
                                -- removed.
-insert a (WeakBag nextId children) wbRef finalizer = do
+insert a (WeakBag nextId children) wbRef finalizer = {-# SCC "insert" #-} do
   a' <- evaluate a
   wbRef' <- evaluate wbRef
   myId <- atomically $ do
@@ -82,7 +82,7 @@ insert a (WeakBag nextId children) wbRef finalizer = do
 -- | Create an empty 'WeakBag'.
 {-# INLINE empty #-}
 empty :: IO (WeakBag a)
-empty = do
+empty = {-# SCC "empty" #-} do
   nextId <- newTVarIO 1
   children <- newTVarIO IntMap.empty
   let bag = WeakBag
@@ -95,7 +95,7 @@ empty = do
 -- 'empty', then using 'insert'.
 {-# INLINE singleton #-}
 singleton :: a -> IORef (Weak b) -> (b -> IO ()) -> IO (WeakBag a, WeakBagTicket a)
-singleton a wbRef finalizer = do
+singleton a wbRef finalizer = {-# SCC "singleton" #-} do
   bag <- empty
   ticket <- insert a bag wbRef finalizer
   return (bag, ticket)
@@ -106,7 +106,7 @@ singleton a wbRef finalizer = do
 -- when the traversal began will be visited exactly once; however, no guarantee
 -- is made about the order of the traversal.
 traverse :: MonadIO m => WeakBag a -> (a -> m ()) -> m ()
-traverse (WeakBag _ children) f = do
+traverse (WeakBag _ children) f = {-# SCC "traverse" #-} do
   cs <- liftIO $ readTVarIO children
   forM_ cs $ \c -> do
     ma <- liftIO $ deRefWeak c
@@ -116,5 +116,5 @@ traverse (WeakBag _ children) f = do
 -- on the same 'WeakBagTicket'.
 {-# INLINE remove #-}
 remove :: WeakBagTicket a -> IO ()
-remove = finalize . _weakBagTicket_weakItem
+remove = {-# SCC "remove" #-} finalize . _weakBagTicket_weakItem
 --TODO: Should 'remove' also drop the reference to the item?
