@@ -1482,12 +1482,12 @@ getMergeSubscribed m sub = do
       subscribedRef <- liftIO $ newIORef $ error "getMergeSubscribed: subscribedRef not yet initialized"
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
       initialParents <- readBehaviorUntracked $ current $ mergeParents m
-      subscribers :: [(Maybe (DSum k Identity), Height, DSum k (MergeSubscribedParent x k))] <- forM (DMap.toList initialParents) $ {-# SCC "getMergeSubscribed.a" #-} \(k :=> e) -> do
-        s <- {-# SCC "getMergeSubscribed.a.1" #-} liftIO $ newSubscriberMerge k subscribedUnsafe
-        subscription@(EventSubscription _ parentSubd) <- {-# SCC "getMergeSubscribed.a.2" #-} subscribe e s
-        parentOcc <- {-# SCC "getMergeSubscribed.a.3" #-} liftIO $ readEventSubscribed parentSubd
-        height <- {-# SCC "getMergeSubscribed.a.4" #-} liftIO $ getEventSubscribedHeight parentSubd
-        {-# SCC "getMergeSubscribed.a.5" #-} return $ (fmap (\x -> k :=> Identity x) parentOcc, height, k :=> MergeSubscribedParent subscription s)
+      subscribers :: [(Maybe (DSum k Identity), Height, DSum k (MergeSubscribedParent x k))] <- forM (DMap.toList initialParents) $ \(k :=> e) -> do
+        s <- liftIO $ newSubscriberMerge k subscribedUnsafe
+        subscription@(EventSubscription _ parentSubd) <- subscribe e s
+        parentOcc <- liftIO $ readEventSubscribed parentSubd
+        height <- liftIO $ getEventSubscribedHeight parentSubd
+        return $ (fmap (\x -> k :=> Identity x) parentOcc, height, k :=> MergeSubscribedParent subscription s)
       let dm = DMap.fromDistinctAscList $ mapMaybe (\(x, _, _) -> x) subscribers
           heights = fmap (\(_, h, _) -> h) subscribers --TODO: Assert that there's no invalidHeight in here
           myHeightBag = heightBagFromList $ filter (/= invalidHeight) heights
