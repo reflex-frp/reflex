@@ -76,9 +76,6 @@ import qualified Reflex.Host.Class as R
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
 import Prelude hiding (any, concat, mapM, mapM_, sequence)
 
-type SubscriberList x a = WeakBag (Subscriber x a)
-type SubscriberListTicket x a = WeakBagTicket (Subscriber x a)
-
 debugPropagate :: Bool
 
 debugInvalidateHeight :: Bool
@@ -189,7 +186,7 @@ unsafeNodeId a = unsafePerformIO $ do
 
 newtype Event x a = Event { subscribe :: Subscriber x a -> EventM x (EventSubscription x a) }
 
-wrap :: Monad m => (t -> EventSubscribed x a) -> (Subscriber x a -> m (SubscriberListTicket x a, t)) -> Subscriber x a -> m (EventSubscription x a)
+wrap :: Monad m => (t -> EventSubscribed x a) -> (Subscriber x a -> m (WeakBagTicket (Subscriber x a), t)) -> Subscriber x a -> m (EventSubscription x a)
 wrap tag getSpecificSubscribed sub = do
   (sln, subd) <- getSpecificSubscribed sub
   return $ EventSubscription (Just sln) $ tag subd
@@ -373,7 +370,7 @@ recalculateSubscriberHeight new s = case s of
   SubscriberHandle -> return ()
 
 -- | Propagate everything at the current height
-propagate :: a -> SubscriberList x a -> EventM x ()
+propagate :: a -> WeakBag (Subscriber x a) -> EventM x ()
 propagate a subscribers = withIncreasedDepth $ do
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
@@ -481,7 +478,7 @@ readEventSubscribed = \case
   EventSubscribedCoincidence cs -> readCoincidenceSubscribed cs
 
 {-# INLINE subscribeEventSubscribed #-}
-subscribeEventSubscribed :: EventSubscribed x a -> Subscriber x a -> IO (Maybe (SubscriberListTicket x a))
+subscribeEventSubscribed :: EventSubscribed x a -> Subscriber x a -> IO (Maybe (WeakBagTicket (Subscriber x a)))
 subscribeEventSubscribed es sub = case es of
   EventSubscribedRoot r -> do
     traceSubscribe $ "subscribeEventSubscribed Root"
@@ -582,7 +579,7 @@ subscribeHoldEvent h sub = do
 --------------------------------------------------------------------------------
 
 data EventSubscription x a = EventSubscription
-  { _eventSubscription_ticket :: !(Maybe (SubscriberListTicket x a))
+  { _eventSubscription_ticket :: !(Maybe (WeakBagTicket (Subscriber x a)))
   , _eventSubscription_subscribed :: !(EventSubscribed x a)
   }
 
@@ -796,7 +793,7 @@ data Invalidator x
 data RootSubscribed x a = forall k. GCompare k => RootSubscribed
   { rootSubscribedKey :: !(k a)
   , rootSubscribedCachedSubscribed :: !(IORef (DMap k (RootSubscribed x))) -- From the original Root
-  , rootSubscribedSubscribers :: !(SubscriberList x a)
+  , rootSubscribedSubscribers :: !(WeakBag (Subscriber x a))
   , rootSubscribedOccurrence :: !(IO (Maybe a)) -- Lookup from rootOccurrence
   , rootSubscribedUninit :: IO ()
   , rootSubscribedWeakSelf :: !(IORef (Weak (RootSubscribed x a))) --TODO: Can we make this a lazy non-IORef and then force it manually to avoid an indirection each time we use it?
@@ -826,7 +823,7 @@ data PushSubscribed x a b
    = PushSubscribed { pushSubscribedCachedSubscribed :: !(IORef (Maybe (PushSubscribed x a b)))
                     , pushSubscribedOccurrence :: !(IORef (Maybe b)) -- If the current height is less than our height, this should always be Nothing; during our height, this will get filled in at some point, always before our children are notified; after our height, this will be filled in with the correct value (Nothing if we are not firing, Just if we are)
                     , pushSubscribedHeight :: !(IORef Height)
-                    , pushSubscribedSubscribers :: !(SubscriberList x b)
+                    , pushSubscribedSubscribers :: !(WeakBag (Subscriber x b))
                     , pushSubscribedSelf :: !(Subscriber x a) -- Hold this in memory to ensure our WeakReferences don't die --TODO: Probably unneeded now
                     , pushSubscribedWeakSelf :: !(IORef (Weak (PushSubscribed x a b)))
                     , pushSubscribedParent :: !(EventSubscription x a)
@@ -903,7 +900,7 @@ data MergeSubscribed x k
                      , mergeSubscribedAccum :: !(IORef (DMap k Identity)) -- This will accumulate occurrences until our height is reached, at which point it will be transferred to mergeSubscribedOccurrence
                      , mergeSubscribedHeight :: !(IORef Height)
                      , mergeSubscribedHeightBag :: !(IORef HeightBag)
-                     , mergeSubscribedSubscribers :: !(SubscriberList x (DMap k Identity))
+                     , mergeSubscribedSubscribers :: !(WeakBag (Subscriber x (DMap k Identity)))
                      , mergeSubscribedChange :: !(IORef (Subscriber x (R.PatchDMap (DMap k (Event x))), EventSubscribed x (R.PatchDMap (DMap k (Event x)))))
                      , mergeSubscribedParents :: !(IORef (DMap k (MergeSubscribedParent x k)))
                      , mergeSubscribedWeakSelf :: !(IORef (Weak (MergeSubscribed x k)))
@@ -919,7 +916,7 @@ data Merge x k
            }
 
 data FanSubscribedChildren (x :: *) k a = FanSubscribedChildren
-  { _fanSubscribedChildren_list :: !(SubscriberList x a)
+  { _fanSubscribedChildren_list :: !(WeakBag (Subscriber x a))
   , _fanSubscribedChildren_self :: {-# NOUNPACK #-} !(k a, FanSubscribed x k)
   , _fanSubscribedChildren_weakSelf :: !(IORef (Weak (k a, FanSubscribed x k)))
   }
@@ -942,7 +939,7 @@ data SwitchSubscribed x a
    = SwitchSubscribed { switchSubscribedCachedSubscribed :: !(IORef (Maybe (SwitchSubscribed x a)))
                       , switchSubscribedOccurrence :: !(IORef (Maybe a))
                       , switchSubscribedHeight :: !(IORef Height)
-                      , switchSubscribedSubscribers :: !(SubscriberList x a)
+                      , switchSubscribedSubscribers :: !(WeakBag (Subscriber x a))
                       , switchSubscribedOwnInvalidator :: {-# NOUNPACK #-} !(Invalidator x)
                       , switchSubscribedOwnWeakInvalidator :: !(IORef (Weak (Invalidator x)))
                       , switchSubscribedBehaviorParents :: !(IORef [SomeBehaviorSubscribed x])
@@ -963,7 +960,7 @@ data Switch x a
 data CoincidenceSubscribed x a
    = CoincidenceSubscribed { coincidenceSubscribedCachedSubscribed :: !(IORef (Maybe (CoincidenceSubscribed x a)))
                            , coincidenceSubscribedOccurrence :: !(IORef (Maybe a))
-                           , coincidenceSubscribedSubscribers :: !(SubscriberList x a)
+                           , coincidenceSubscribedSubscribers :: !(WeakBag (Subscriber x a))
                            , coincidenceSubscribedHeight :: !(IORef Height)
                            , coincidenceSubscribedOuter :: {-# NOUNPACK #-} (Subscriber x (Event x a))
                            , coincidenceSubscribedOuterParent :: !(EventSubscription x (Event x a))
@@ -1405,7 +1402,7 @@ type CanSubscribe x m =
   , m ~ EventM x
   )
 
-getRootSubscribed :: GCompare k => k a -> Root x k -> Subscriber x a -> IO (SubscriberListTicket x a, RootSubscribed x a)
+getRootSubscribed :: GCompare k => k a -> Root x k -> Subscriber x a -> IO (WeakBagTicket (Subscriber x a), RootSubscribed x a)
 getRootSubscribed k r sub = do
   mSubscribed <- readIORef $ rootSubscribed r
   case DMap.lookup k mSubscribed of
@@ -1442,12 +1439,12 @@ cleanupRootSubscribed self@(RootSubscribed { rootSubscribedKey = k, rootSubscrib
   modifyIORef' cached $ DMap.delete k
 
 {-# INLINE subscribeRootSubscribed #-}
-subscribeRootSubscribed :: RootSubscribed x a -> Subscriber x a -> IO (SubscriberListTicket x a)
+subscribeRootSubscribed :: RootSubscribed x a -> Subscriber x a -> IO (WeakBagTicket (Subscriber x a))
 subscribeRootSubscribed subscribed sub = WeakBag.insert sub (rootSubscribedSubscribers subscribed) (rootSubscribedWeakSelf subscribed) cleanupRootSubscribed
 
 -- When getPushSubscribed returns, the PushSubscribed returned will have a fully filled-in
-{-# SPECIALIZE getPushSubscribed :: Push x a b -> Subscriber x b -> EventM x (SubscriberListTicket x b, PushSubscribed x a b) #-}
-getPushSubscribed :: CanSubscribe x m => Push x a b -> Subscriber x b -> m (SubscriberListTicket x b, PushSubscribed x a b)
+{-# SPECIALIZE getPushSubscribed :: Push x a b -> Subscriber x b -> EventM x (WeakBagTicket (Subscriber x b), PushSubscribed x a b) #-}
+getPushSubscribed :: CanSubscribe x m => Push x a b -> Subscriber x b -> m (WeakBagTicket (Subscriber x b), PushSubscribed x a b)
 getPushSubscribed p sub = do
   mSubscribed <- liftIO $ readIORef $ pushSubscribed p
   case mSubscribed of
@@ -1489,11 +1486,11 @@ cleanupPushSubscribed self = do
   writeIORef (pushSubscribedCachedSubscribed self) $ Nothing
 
 {-# INLINE subscribePushSubscribed #-}
-subscribePushSubscribed :: PushSubscribed x a b -> Subscriber x b -> IO (SubscriberListTicket x b)
+subscribePushSubscribed :: PushSubscribed x a b -> Subscriber x b -> IO (WeakBagTicket (Subscriber x b))
 subscribePushSubscribed subscribed sub = WeakBag.insert sub (pushSubscribedSubscribers subscribed) (pushSubscribedWeakSelf subscribed) cleanupPushSubscribed
 
-{-# SPECIALIZE getMergeSubscribed :: GCompare k => Merge x k -> Subscriber x (DMap k Identity) -> EventM x (SubscriberListTicket x (DMap k Identity), MergeSubscribed x k) #-}
-getMergeSubscribed :: forall x k m. (CanSubscribe x m, GCompare k) => Merge x k -> Subscriber x (DMap k Identity) -> m (SubscriberListTicket x (DMap k Identity), MergeSubscribed x k)
+{-# SPECIALIZE getMergeSubscribed :: GCompare k => Merge x k -> Subscriber x (DMap k Identity) -> EventM x (WeakBagTicket (Subscriber x (DMap k Identity)), MergeSubscribed x k) #-}
+getMergeSubscribed :: forall x k m. (CanSubscribe x m, GCompare k) => Merge x k -> Subscriber x (DMap k Identity) -> m (WeakBagTicket (Subscriber x (DMap k Identity)), MergeSubscribed x k)
 getMergeSubscribed m sub = do
   mSubscribed <- liftIO $ readIORef $ mergeSubscribed m
   case mSubscribed of
@@ -1559,11 +1556,11 @@ cleanupMergeSubscribed subscribed = do
   writeIORef (mergeSubscribedCachedSubscribed subscribed) $ Nothing -- Get rid of the cached subscribed
 
 {-# INLINE subscribeMergeSubscribed #-}
-subscribeMergeSubscribed :: MergeSubscribed x k -> Subscriber x (DMap k Identity) -> IO (SubscriberListTicket x (DMap k Identity))
+subscribeMergeSubscribed :: MergeSubscribed x k -> Subscriber x (DMap k Identity) -> IO (WeakBagTicket (Subscriber x (DMap k Identity)))
 subscribeMergeSubscribed subscribed sub = WeakBag.insert sub (mergeSubscribedSubscribers subscribed) (mergeSubscribedWeakSelf subscribed) cleanupMergeSubscribed
 
-{-# SPECIALIZE getFanSubscribed :: GCompare k => k a -> Fan x k -> Subscriber x a -> EventM x (SubscriberListTicket x a, FanSubscribed x k) #-}
-getFanSubscribed :: (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderEnv x m, m ~ EventM x, GCompare k) => k a -> Fan x k -> Subscriber x a -> m (SubscriberListTicket x a, FanSubscribed x k)
+{-# SPECIALIZE getFanSubscribed :: GCompare k => k a -> Fan x k -> Subscriber x a -> EventM x (WeakBagTicket (Subscriber x a), FanSubscribed x k) #-}
+getFanSubscribed :: (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderEnv x m, m ~ EventM x, GCompare k) => k a -> Fan x k -> Subscriber x a -> m (WeakBagTicket (Subscriber x a), FanSubscribed x k)
 getFanSubscribed k f sub = do
   mSubscribed <- liftIO $ readIORef $ fanSubscribed f
   case mSubscribed of
@@ -1605,7 +1602,7 @@ cleanupFanSubscribed (k, subscribed) = do
     else writeIORef (fanSubscribedSubscribers subscribed) $! reducedSubscribers
 
 {-# INLINE subscribeFanSubscribed #-}
-subscribeFanSubscribed :: GCompare k => k a -> FanSubscribed x k -> Subscriber x a -> IO (SubscriberListTicket x a)
+subscribeFanSubscribed :: GCompare k => k a -> FanSubscribed x k -> Subscriber x a -> IO (WeakBagTicket (Subscriber x a))
 subscribeFanSubscribed k subscribed sub = do
   subscribers <- readIORef $ fanSubscribedSubscribers subscribed
   case DMap.lookup k subscribers of
@@ -1617,8 +1614,8 @@ subscribeFanSubscribed k subscribed sub = do
       return sln
     Just (FanSubscribedChildren list _ weakSelf) -> {-# SCC "hitSubscribeFanSubscribed" #-} WeakBag.insert sub list weakSelf cleanupFanSubscribed
 
-{-# SPECIALIZE getSwitchSubscribed :: Switch x a -> Subscriber x a -> EventM x (SubscriberListTicket x a, SwitchSubscribed x a) #-}
-getSwitchSubscribed :: (Defer (SomeHoldInit x) m, Defer (SomeAssignment x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, Defer (SomeResetCoincidence x) m, HasCurrentHeight x m, HasSpiderEnv x m, m ~ EventM x) => Switch x a -> Subscriber x a -> m (SubscriberListTicket x a, SwitchSubscribed x a)
+{-# SPECIALIZE getSwitchSubscribed :: Switch x a -> Subscriber x a -> EventM x (WeakBagTicket (Subscriber x a), SwitchSubscribed x a) #-}
+getSwitchSubscribed :: (Defer (SomeHoldInit x) m, Defer (SomeAssignment x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, Defer (SomeResetCoincidence x) m, HasCurrentHeight x m, HasSpiderEnv x m, m ~ EventM x) => Switch x a -> Subscriber x a -> m (WeakBagTicket (Subscriber x a), SwitchSubscribed x a)
 getSwitchSubscribed s sub = do
   mSubscribed <- liftIO $ readIORef $ switchSubscribed s
   case mSubscribed of
@@ -1670,11 +1667,11 @@ cleanupSwitchSubscribed subscribed = do
   writeIORef (switchSubscribedCachedSubscribed subscribed) Nothing
 
 {-# INLINE subscribeSwitchSubscribed #-}
-subscribeSwitchSubscribed :: SwitchSubscribed x a -> Subscriber x a -> IO (SubscriberListTicket x a)
+subscribeSwitchSubscribed :: SwitchSubscribed x a -> Subscriber x a -> IO (WeakBagTicket (Subscriber x a))
 subscribeSwitchSubscribed subscribed sub = WeakBag.insert sub (switchSubscribedSubscribers subscribed) (switchSubscribedWeakSelf subscribed) cleanupSwitchSubscribed
 
-{-# SPECIALIZE getCoincidenceSubscribed :: Coincidence x a -> Subscriber x a -> EventM x (SubscriberListTicket x a, CoincidenceSubscribed x a) #-}
-getCoincidenceSubscribed :: forall x a m. (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderEnv x m, m ~ EventM x) => Coincidence x a -> Subscriber x a -> m (SubscriberListTicket x a, CoincidenceSubscribed x a)
+{-# SPECIALIZE getCoincidenceSubscribed :: Coincidence x a -> Subscriber x a -> EventM x (WeakBagTicket (Subscriber x a), CoincidenceSubscribed x a) #-}
+getCoincidenceSubscribed :: forall x a m. (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderEnv x m, m ~ EventM x) => Coincidence x a -> Subscriber x a -> m (WeakBagTicket (Subscriber x a), CoincidenceSubscribed x a)
 getCoincidenceSubscribed c sub = do
   mSubscribed <- liftIO $ readIORef $ coincidenceSubscribed c
   case mSubscribed of
@@ -1724,7 +1721,7 @@ cleanupCoincidenceSubscribed subscribed = do
   writeIORef (coincidenceSubscribedCachedSubscribed subscribed) Nothing
 
 {-# INLINE subscribeCoincidenceSubscribed #-}
-subscribeCoincidenceSubscribed :: CoincidenceSubscribed x a -> Subscriber x a -> IO (SubscriberListTicket x a)
+subscribeCoincidenceSubscribed :: CoincidenceSubscribed x a -> Subscriber x a -> IO (WeakBagTicket (Subscriber x a))
 subscribeCoincidenceSubscribed subscribed sub = WeakBag.insert sub (coincidenceSubscribedSubscribers subscribed) (coincidenceSubscribedWeakSelf subscribed) cleanupCoincidenceSubscribed
 
 {-# INLINE merge #-}
@@ -2133,7 +2130,7 @@ instance R.MonadHold (SpiderEnv x) (SpiderPushM x) where
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 (SpiderEvent e) = SpiderPushM $ SpiderIncremental . DynamicHold <$> hold v0 e
 
-data RootTrigger x a = forall k. GCompare k => RootTrigger (SubscriberList x a, IORef (DMap k Identity), k a)
+data RootTrigger x a = forall k. GCompare k => RootTrigger (WeakBag (Subscriber x a), IORef (DMap k Identity), k a)
 newtype SpiderEventHandle x a = SpiderEventHandle { unSpiderEventHandle :: EventSubscription x a }
 
 instance R.MonadSubscribeEvent (SpiderEnv x) (SpiderHostFrame x) where
