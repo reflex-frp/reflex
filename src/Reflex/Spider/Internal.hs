@@ -222,9 +222,9 @@ subscribe e sub = case e of
 
 {-# INLINE subscribeCoincidenceInner #-}
 subscribeCoincidenceInner :: CanSubscribe x m => Event a -> Height -> CoincidenceSubscribed a -> m (Maybe a, Height, EventSubscribed a)
-subscribeCoincidenceInner o outerHeight subscribedUnsafe = do
+subscribeCoincidenceInner inner outerHeight subscribedUnsafe = do
   subInner <- liftIO $ newSubscriberCoincidenceInner subscribedUnsafe
-  subscription@(EventSubscription _ innerSubd) <- subscribe o subInner
+  subscription@(EventSubscription _ innerSubd) <- subscribe inner subInner
   innerOcc <- liftIO $ readEventSubscribed innerSubd
   innerHeight <- liftIO $ getEventSubscribedHeight innerSubd
   let height = max innerHeight outerHeight
