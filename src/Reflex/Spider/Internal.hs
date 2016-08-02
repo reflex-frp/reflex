@@ -260,43 +260,27 @@ data Subscriber x a
 -- The result is also evaluated to WHNF, since forcing a thunk invalidates
 -- the weak pointer to it in some cases.
 
---TODO: I think all of these noinlines are now unnecessary
-{-# NOINLINE newSubscriberPush #-}
 newSubscriberPush :: (a -> ComputeM x (Maybe b)) -> PushSubscribed x a b -> IO (Subscriber x a)
 newSubscriberPush compute subd = return $! SubscriberPush compute subd
 
-{-# RULES
-  "newSubscriberHold/Identity" forall h. newSubscriberHold h = newSubscriberHoldIdentity h
-  #-}
-{-# NOINLINE newSubscriberHold #-}
 newSubscriberHold :: R.Patch p => Hold x p a -> IO (Subscriber x (p a))
 newSubscriberHold h = return $! SubscriberHold h
 
-{-# NOINLINE newSubscriberHoldIdentity #-}
-newSubscriberHoldIdentity :: Hold x Identity a -> IO (Subscriber x (Identity a))
-newSubscriberHoldIdentity h = return $! SubscriberHoldIdentity h
-
-{-# NOINLINE newSubscriberMerge #-}
 newSubscriberMerge :: GCompare k => k a -> MergeSubscribed x k -> IO (Subscriber x a)
 newSubscriberMerge k subd = return $! SubscriberMerge k subd
 
-{-# NOINLINE newSubscriberMergeChange #-}
 newSubscriberMergeChange :: GCompare k => MergeSubscribed x k -> IO (Subscriber x (R.PatchDMap (DMap k (Event x))))
 newSubscriberMergeChange subd = return $! SubscriberMergeChange subd
 
-{-# NOINLINE newSubscriberFan #-}
 newSubscriberFan :: GCompare k => FanSubscribed x k -> IO (Subscriber x (DMap k Identity))
 newSubscriberFan subd = return $! SubscriberFan subd
 
-{-# NOINLINE newSubscriberSwitch #-}
 newSubscriberSwitch :: SwitchSubscribed x a -> IO (Subscriber x a)
 newSubscriberSwitch subd = return $! SubscriberSwitch subd
 
-{-# NOINLINE newSubscriberCoincidenceOuter #-}
 newSubscriberCoincidenceOuter :: CoincidenceSubscribed x b -> IO (Subscriber x (Event x b))
 newSubscriberCoincidenceOuter subd = return $! SubscriberCoincidenceOuter subd
 
-{-# NOINLINE newSubscriberCoincidenceInner #-}
 newSubscriberCoincidenceInner :: CoincidenceSubscribed x a -> IO (Subscriber x a)
 newSubscriberCoincidenceInner subd = return $! SubscriberCoincidenceInner subd
 
