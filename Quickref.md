@@ -37,23 +37,23 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   traceEventWith ::    (a -> String) -> Event a -> Event a
 
 -- Transform Event to Event by sampling Behavior or Dynamic
-[ ]   gate               ::                     Behavior Bool -> Event a -> Event a
-[ ]   tag                ::                        Behavior a -> Event b -> Event a
-[ ]   tagDyn             ::                         Dynamic a -> Event b -> Event a
-[ ]   attach             ::                        Behavior a -> Event b -> Event (a, b)
-[ ]   attachDyn          ::                         Dynamic a -> Event b -> Event (a, b)
-[ ]   attachWith         :: (a -> b ->       c) -> Behavior a -> Event b -> Event c
-[ ]   attachDynWith      :: (a -> b ->       c) ->  Dynamic a -> Event b -> Event c
-[ ]   attachWithMaybe    :: (a -> b -> Maybe c) -> Behavior a -> Event b -> Event c
-[ ]   attachDynWithMaybe :: (a -> b -> Maybe c) ->  Dynamic a -> Event b -> Event c
+[ ]   gate                       ::                     Behavior Bool -> Event a -> Event a
+[ ]   tag                        ::                        Behavior a -> Event b -> Event a
+[ ]   tagPromptlyDyn             ::                         Dynamic a -> Event b -> Event a
+[ ]   attach                     ::                        Behavior a -> Event b -> Event (a, b)
+[ ]   attachPromptlyDyn          ::                         Dynamic a -> Event b -> Event (a, b)
+[ ]   attachWith                 :: (a -> b ->       c) -> Behavior a -> Event b -> Event c
+[ ]   attachPromptlyDynWith      :: (a -> b ->       c) ->  Dynamic a -> Event b -> Event c
+[ ]   attachWithMaybe            :: (a -> b -> Maybe c) -> Behavior a -> Event b -> Event c
+[ ]   attachPromptlyDynWithMaybe :: (a -> b -> Maybe c) ->  Dynamic a -> Event b -> Event c
 
 -- Combine multiple Events
-[ ]   <> :: Monoid a => Event a -> Event a -> Event a
+[ ]   <>        :: Monoid a => Event a -> Event a -> Event a
 [ ]   mergeWith :: (a -> a -> a) -> [Event a] -> Event a
-[ ]   leftmost :: [Event a] -> Event a
+[ ]   leftmost  :: [Event a] -> Event a
 [ ]   mergeList :: [Event a] -> Event (NonEmpty a)
-[ ]   merge :: GCompare k => DMap (WrapArg Event k) -> Event (DMap k)
-[ ]   mergeMap :: Ord k => Map k (Event a) -> Event (Map k a)
+[ ]   merge     :: GCompare k => DMap (WrapArg Event k) -> Event (DMap k)
+[ ]   mergeMap  :: Ord k => Map k (Event a) -> Event (Map k a)
 
 -- Efficient one-to-many fanout
 [ ]   fanMap ::      Ord k => Event (Map k a) -> EventSelector (Const2 k a)
@@ -84,11 +84,11 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [H]   hold     :: a ->   Event a -> m (Behavior a)
 
 -- Transform Behavior to Behavior using function
-[ ]   fmap ::   (a -> b) -> Behavior a -> Behavior b
-[ ]   ffor :: Behavior a ->   (a -> b) -> Behavior b
-[ ]   <*> :: Behavior (a -> b) -> Behavior a -> Behavior b
-[ ]   >>= :: Behavior a -> (a -> Behavior b) -> Behavior b
-[ ]   <> :: Monoid a => Behavior a -> Behavior a -> Behavior a
+[ ]   fmap ::               (a -> b) ->        Behavior a -> Behavior b
+[ ]   ffor ::             Behavior a ->          (a -> b) -> Behavior b
+[ ]   <*>  ::      Behavior (a -> b) ->        Behavior a -> Behavior b
+[ ]   >>=  ::             Behavior a -> (a -> Behavior b) -> Behavior b
+[ ]   <>   :: Monoid a => Behavior a ->        Behavior a -> Behavior a
 -- ... plus many more due to typeclass membership
 
 -- Behavior to Behavior by sampling current values
@@ -117,24 +117,21 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [H]   toggle :: Bool -> Event a -> m (Dynamic Bool)
 
 -- Transform Dynamic to Dynamic using function
-[H]   forDyn  ::   Dynamic a ->  (a -> b) -> m (Dynamic b)
-[H]   mapDyn  :: (a ->    b) -> Dynamic a -> m (Dynamic b)
-[H]   mapDynM :: (a -> m' b) -> Dynamic a -> m (Dynamic b)
-      -- Note m' supplies [S] context
-[H]   splitDyn :: Dynamic (a, b) -> m (Dynamic a, Dynamic b)
+[ ]   ffor         ::   Dynamic a ->  (a -> b) -> Dynamic b
+[ ]   fmap         :: (a ->    b) -> Dynamic a -> Dynamic b
+[ ]   splitDynPure ::           Dynamic (a, b) -> (Dynamic a, Dynamic b)
 
 -- Combine multiple Dynamics
-[H]   mconcatDyn :: Monoid a => [Dynamic a] -> m (Dynamic a)
-[H]   distributeDMapOverDyn :: GCompare k => DMap (WrapArg Dynamic k) -> m (Dynamic (DMap k))
-[H]   combineDyn :: (a -> b -> c) -> Dynamic a -> Dynamic b -> m (Dynamic c)
-[ ]   zipDynWith :: (a -> b -> c) -> Dynamic a -> Dynamic b -> Dynamic c
+[ ]   mconcat                   :: Monoid a => [Dynamic a] -> Dynamic a
+[ ]   distributeDMapOverDynPure :: GCompare k => DMap (WrapArg Dynamic k) -> Dynamic (DMap k)
+[ ]   zipDynWith                :: (a -> b -> c) -> Dynamic a -> Dynamic b -> Dynamic c
 
 -- Efficient one-to-many fanout
-[ ]   demux      :: Ord k => Dynamic k -> Demux k
-[H]   getDemuxed ::  Eq k =>              Demux k -> k -> m (Dynamic Bool)
+[ ]   demux   :: Ord k => Dynamic k -> Demux k
+[ ]   demuxed :: Eq k  =>              Demux k -> k -> Dynamic Bool
 
 -- Dynamic to Dynamic, removing updates w/o value change
-[ ]   nubDyn :: Eq a => Dynamic a -> Dynamic a
+[ ]   uniqDyn :: Eq a => Dynamic a -> Dynamic a
 
 -- Dynamic to identical Dynamic with debug trace.  (Only prints if Dynamic is ultimately used.)
 [ ]   traceDyn     :: Show a => String -> Dynamic a -> Dynamic a
@@ -166,7 +163,7 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 
 -- Flatten Dynamic-of-Dynamic to Dynamic.  New Dynamic is used immediately.
 -- Output updated whenever inner OR outer Dynamic updates.
-[ ]   joinDyn           ::          Dynamic        (Dynamic a)  ->  Dynamic a
+[ ]   join              ::          Dynamic        (Dynamic a)  ->  Dynamic a
 [ ]   joinDynThroughMap :: Ord k => Dynamic (Map k (Dynamic a)) ->  Dynamic (Map k a)
 
 -- Analogous to 'hold':  Create a Behavior that is initially identical to the
