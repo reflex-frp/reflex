@@ -279,8 +279,8 @@ newSubscriberPush compute subscribed = return $ Subscriber
 newSubscriberHold :: R.Patch p => Hold x p a -> IO (Subscriber x (p a))
 newSubscriberHold h = return $ Subscriber
   { subscriberPropagate = {-# SCC "traverseHold" #-} propagateSubscriberHold h
-  , subscriberInvalidateHeight = \old -> return ()
-  , subscriberRecalculateHeight = \new -> return ()
+  , subscriberInvalidateHeight = \_ -> return ()
+  , subscriberRecalculateHeight = \_ -> return ()
   }
 
 newSubscriberMerge :: GCompare k => k a -> MergeSubscribed x k -> IO (Subscriber x a)
@@ -321,8 +321,8 @@ newSubscriberMergeChange subscribed = return $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseMergeChange" #-} do
       tracePropagate $ "SubscriberMerge" <> showNodeId subscribed
       defer $ SomeMergeUpdate a subscribed
-  , subscriberInvalidateHeight = \old -> return ()
-  , subscriberRecalculateHeight = \new -> return ()
+  , subscriberInvalidateHeight = \_ -> return ()
+  , subscriberRecalculateHeight = \_ -> return ()
   }
 
 newSubscriberFan :: GCompare k => FanSubscribed x k -> IO (Subscriber x (DMap k Identity))
@@ -357,7 +357,7 @@ newSubscriberSwitch subscribed = return $ Subscriber
       liftIO $ writeIORef (switchSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ switchSubscribedOccurrence subscribed
       propagate a $ switchSubscribedSubscribers subscribed
-  , subscriberInvalidateHeight = \old -> do
+  , subscriberInvalidateHeight = \_ -> do
       when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberSwitch" <> showNodeId subscribed
       oldHeight <- readIORef $ switchSubscribedHeight subscribed
       when (oldHeight /= invalidHeight) $ do
@@ -391,11 +391,11 @@ newSubscriberCoincidenceOuter subscribed = return $ Subscriber
           liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) occ
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
           propagate o $ coincidenceSubscribedSubscribers subscribed
-  , subscriberInvalidateHeight = \old -> do
+  , subscriberInvalidateHeight = \_ -> do
       when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberCoincidenceOuter" <> showNodeId subscribed
       invalidateCoincidenceHeight subscribed
       when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberCoincidenceOuter" <> showNodeId subscribed <> " done"
-  , subscriberRecalculateHeight = \new -> do
+  , subscriberRecalculateHeight = \_ -> do
       when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberCoincidenceOuter" <> showNodeId subscribed
       recalculateCoincidenceHeight subscribed
       when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberCoincidenceOuter" <> showNodeId subscribed <> " done"
@@ -412,11 +412,11 @@ newSubscriberCoincidenceInner subscribed = return $ Subscriber
           liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) $ Just a
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
           propagate a $ coincidenceSubscribedSubscribers subscribed
-  , subscriberInvalidateHeight = \old -> do
+  , subscriberInvalidateHeight = \_ -> do
       when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberCoincidenceInner" <> showNodeId subscribed
       invalidateCoincidenceHeight subscribed
       when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberCoincidenceInner" <> showNodeId subscribed <> " done"
-  , subscriberRecalculateHeight = \new -> do
+  , subscriberRecalculateHeight = \_ -> do
       when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberCoincidenceInner" <> showNodeId subscribed
       recalculateCoincidenceHeight subscribed
       when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberCoincidenceInner" <> showNodeId subscribed <> " done"
