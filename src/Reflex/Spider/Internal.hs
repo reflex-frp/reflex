@@ -711,8 +711,8 @@ getHoldEventSubscription h = do
     Left e -> do
       subscriptionRef <- liftIO $ newIORef $ error "getHoldEventSubscription: subdRef uninitialized"
       subscription@(EventSubscription _ subd) <- subscribe e =<< liftIO (newSubscriberHold h)
-      liftIO $ writeIORef subscriptionRef $! subscription
       occ <- liftIO $ readEventSubscribed subd
+      liftIO $ writeIORef subscriptionRef $! subscription
       case occ of
         Nothing -> return ()
         Just o -> do
@@ -1613,8 +1613,8 @@ getSwitchSubscribed s sub = do
       holdInits <- getDeferralQueue
       e <- liftIO $ runBehaviorM (readBehaviorTracked (switchParent s)) (Just (wi, parentsRef)) holdInits
       subscription@(EventSubscription _ subd) <- subscribe e mySub
-      subscriptionRef <- liftIO $ newIORef subscription
       parentOcc <- liftIO $ readEventSubscribed subd
+      subscriptionRef <- liftIO $ newIORef subscription
       occRef <- liftIO $ newIORef parentOcc
       when (isJust parentOcc) $ scheduleClear occRef
       heightRef <- liftIO $ newIORef =<< getEventSubscribedHeight subd
