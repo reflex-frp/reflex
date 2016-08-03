@@ -194,25 +194,25 @@ wrap tag getSpecificSubscribed sub = do
   return $ EventSubscription (Just sln) $ tag subd
 
 eventRoot :: GCompare k => k a -> Root x k -> Event x a
-eventRoot !k !r = Event $ wrap EventSubscribedRoot $ liftIO . getRootSubscribed k r
+eventRoot !k !r = Event $ wrap eventSubscribedRoot $ liftIO . getRootSubscribed k r
 
 eventNever :: Event x a
-eventNever = Event $ \_ -> return $ EventSubscription Nothing EventSubscribedNever
+eventNever = Event $ \_ -> return $ EventSubscription Nothing eventSubscribedNever
 
 eventPush :: Push x b a -> Event x a
-eventPush !p = Event $ wrap EventSubscribedPush $ getPushSubscribed p
+eventPush !p = Event $ wrap eventSubscribedPush $ getPushSubscribed p
 
 eventMerge :: (GCompare k, a ~ DMap k Identity) => Merge x k -> Event x a
-eventMerge !m = Event $ wrap EventSubscribedMerge $ getMergeSubscribed m
+eventMerge !m = Event $ wrap eventSubscribedMerge $ getMergeSubscribed m
 
 eventFan :: GCompare k => k a -> Fan x k -> Event x a
-eventFan !k !f = Event $ wrap (EventSubscribedFan k) $ getFanSubscribed k f
+eventFan !k !f = Event $ wrap (eventSubscribedFan k) $ getFanSubscribed k f
 
 eventSwitch :: Switch x a -> Event x a
-eventSwitch !s = Event $ wrap EventSubscribedSwitch $ getSwitchSubscribed s
+eventSwitch !s = Event $ wrap eventSubscribedSwitch $ getSwitchSubscribed s
 
 eventCoincidence :: Coincidence x a -> Event x a
-eventCoincidence !c = Event $ wrap EventSubscribedCoincidence $ getCoincidenceSubscribed c
+eventCoincidence !c = Event $ wrap eventSubscribedCoincidence $ getCoincidenceSubscribed c
 
 eventHold :: (a ~ p b, R.Patch p) => Hold x p b -> Event x a
 eventHold !h = Event $ subscribeHoldEvent h
@@ -302,7 +302,7 @@ newSubscriberMerge k subscribed = return $ Subscriber
           if height /= invalidHeight
             then error $ "Height (" ++ show height ++ ") is not greater than current height (" ++ show currentHeight ++ ")\n" ++ unlines (reverse myStack)
             else liftIO $ do
-            nodesInvolvedInCycle <- walkInvalidHeightParents $ EventSubscribedMerge subscribed
+            nodesInvolvedInCycle <- walkInvalidHeightParents $ eventSubscribedMerge subscribed
             stacks <- forM nodesInvolvedInCycle $ \(Some.This es) -> whoCreatedEventSubscribed es
             error $ "Causality loop found:\n" <> drawForest (listsToForest stacks)
         scheduleMerge height subscribed
@@ -438,103 +438,104 @@ propagate a subscribers = withIncreasedDepth $ do
 -- EventSubscribed
 --------------------------------------------------------------------------------
 
-data EventSubscribed x a
-   = EventSubscribedRoot {-# NOUNPACK #-} (RootSubscribed x a)
-   | EventSubscribedNever
-   | forall b. EventSubscribedPush !(PushSubscribed x b a)
-   | forall k. (GCompare k, a ~ DMap k Identity) => EventSubscribedMerge !(MergeSubscribed x k)
-   | forall k. GCompare k => EventSubscribedFan !(k a) !(FanSubscribed x k)
-   | EventSubscribedSwitch !(SwitchSubscribed x a)
-   | EventSubscribedCoincidence !(CoincidenceSubscribed x a)
+data EventSubscribed x a = EventSubscribed
+  { eventSubscribedSubscribe :: !(Subscriber x a -> IO (Maybe (WeakBagTicket (Subscriber x a))))
+  , eventSubscribedRead :: !(IO (Maybe a))
+  , eventSubscribedGetParents :: !(IO [Some (EventSubscribed x)]) -- For debugging loops
+  , eventSubscribedHeightRef :: {-# UNPACK #-} !(IORef Height)
+  , eventSubscribedHasOwnHeightRef :: !Bool
+  , eventSubscribedWhoCreated :: !(IO [String])
+  }
 
 readEventSubscribed :: EventSubscribed x a -> IO (Maybe a)
-readEventSubscribed = \case
-  EventSubscribedRoot rs -> readRootSubscribed rs
-  EventSubscribedNever -> return Nothing
-  EventSubscribedPush ps -> readPushSubscribed ps
-  EventSubscribedMerge ms -> readMergeSubscribed ms
-  EventSubscribedFan k fs -> readFanSubscribed k fs
-  EventSubscribedSwitch ss -> readSwitchSubscribed ss
-  EventSubscribedCoincidence cs -> readCoincidenceSubscribed cs
+readEventSubscribed = eventSubscribedRead
 
-{-# INLINE subscribeEventSubscribed #-}
 subscribeEventSubscribed :: EventSubscribed x a -> Subscriber x a -> IO (Maybe (WeakBagTicket (Subscriber x a)))
-subscribeEventSubscribed es sub = case es of
-  EventSubscribedRoot r -> do
-    traceSubscribe $ "subscribeEventSubscribed Root"
-    Just <$> subscribeRootSubscribed r sub
-  EventSubscribedNever -> do
-    traceSubscribe $ "subscribeEventSubscribed Never"
-    return Nothing
-  EventSubscribedPush subscribed -> do
-    traceSubscribe $ "subscribeEventSubscribed Push"
-    Just <$> subscribePushSubscribed subscribed sub
-  EventSubscribedFan k subscribed -> do
-    traceSubscribe $ "subscribeEventSubscribed Fan"
-    Just <$> subscribeFanSubscribed k subscribed sub
-  EventSubscribedMerge subscribed -> do
-    traceSubscribe $ "subscribeEventSubscribed Merge"
-    Just <$> subscribeMergeSubscribed subscribed sub
-  EventSubscribedSwitch subscribed -> do
-    traceSubscribe $ "subscribeEventSubscribed Switch"
-    Just <$> subscribeSwitchSubscribed subscribed sub
-  EventSubscribedCoincidence subscribed -> do
-    traceSubscribe $ "subscribeEventSubscribed Coincidence"
-    Just <$> subscribeCoincidenceSubscribed subscribed sub
+subscribeEventSubscribed = eventSubscribedSubscribe
 
-{-# INLINE eventSubscribedGetParents #-}
-eventSubscribedGetParents :: EventSubscribed x a -> IO [Some (EventSubscribed x)]
-eventSubscribedGetParents = \case
-  EventSubscribedRoot _ -> return []
-  EventSubscribedNever -> return []
-  EventSubscribedPush subscribed -> return [Some.This $ _eventSubscription_subscribed $ pushSubscribedParent subscribed]
-  EventSubscribedFan _ subscribed -> return [Some.This $ _eventSubscription_subscribed $ fanSubscribedParent subscribed]
-  EventSubscribedMerge subscribed -> do
-    ps <- readIORef $ mergeSubscribedParents subscribed
-    return $ R.ffor (DMap.toList ps) $ \(_ :=> v) -> Some.This $ _eventSubscription_subscribed $ mergeSubscribedParentSubscription v
-  EventSubscribedSwitch subscribed -> do
-    s <- readIORef $ switchSubscribedCurrentParent subscribed
-    return [Some.This $ _eventSubscription_subscribed s]
-  EventSubscribedCoincidence subscribed -> do
-    innerSubscription <- readIORef $ coincidenceSubscribedInnerParent subscribed
-    let outerParent = Some.This $ _eventSubscription_subscribed $ coincidenceSubscribedOuterParent subscribed
-        innerParents = maybeToList $ fmap Some.This innerSubscription
-    return $ outerParent : innerParents
+eventSubscribedRoot :: RootSubscribed x a -> EventSubscribed x a
+eventSubscribedRoot !r = EventSubscribed
+  { eventSubscribedSubscribe = \sub -> Just <$> subscribeRootSubscribed r sub
+  , eventSubscribedRead = readRootSubscribed r
+  , eventSubscribedGetParents = return []
+  , eventSubscribedHeightRef = zeroRef
+  , eventSubscribedHasOwnHeightRef = False
+  , eventSubscribedWhoCreated = return ["root"]
+  }
+
+eventSubscribedNever :: EventSubscribed x a
+eventSubscribedNever = EventSubscribed
+  { eventSubscribedSubscribe = \_ -> return Nothing
+  , eventSubscribedRead = return Nothing
+  , eventSubscribedGetParents = return []
+  , eventSubscribedHeightRef = zeroRef
+  , eventSubscribedHasOwnHeightRef = False
+  , eventSubscribedWhoCreated = return ["never"]
+  }
+
+eventSubscribedPush :: PushSubscribed x b a -> EventSubscribed x a
+eventSubscribedPush !subscribed = EventSubscribed
+  { eventSubscribedSubscribe = \sub -> Just <$> subscribePushSubscribed subscribed sub
+  , eventSubscribedRead = readPushSubscribed subscribed
+  , eventSubscribedGetParents = return [Some.This $ _eventSubscription_subscribed $ pushSubscribedParent subscribed]
+  , eventSubscribedHeightRef = pushSubscribedHeight subscribed
+  , eventSubscribedHasOwnHeightRef = False
+  , eventSubscribedWhoCreated = whoCreatedIORef $ pushSubscribedCachedSubscribed subscribed
+  }
+
+eventSubscribedMerge :: a ~ DMap k Identity => MergeSubscribed x k -> EventSubscribed x a
+eventSubscribedMerge !subscribed = EventSubscribed
+  { eventSubscribedSubscribe = \sub -> Just <$> subscribeMergeSubscribed subscribed sub
+  , eventSubscribedRead = readMergeSubscribed subscribed
+  , eventSubscribedGetParents = do
+      ps <- readIORef $ mergeSubscribedParents subscribed
+      return $ R.ffor (DMap.toList ps) $ \(_ :=> v) -> Some.This $ _eventSubscription_subscribed $ mergeSubscribedParentSubscription v
+  , eventSubscribedHeightRef = mergeSubscribedHeight subscribed
+  , eventSubscribedHasOwnHeightRef = True
+  , eventSubscribedWhoCreated = whoCreatedIORef $ mergeSubscribedCachedSubscribed subscribed
+  }
+
+eventSubscribedFan :: GCompare k => k a -> FanSubscribed x k -> EventSubscribed x a
+eventSubscribedFan !k !subscribed = EventSubscribed
+  { eventSubscribedSubscribe = \sub -> Just <$> subscribeFanSubscribed k subscribed sub
+  , eventSubscribedRead = readFanSubscribed k subscribed
+  , eventSubscribedGetParents = return [Some.This $ _eventSubscription_subscribed $ fanSubscribedParent subscribed]
+  , eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ fanSubscribedParent subscribed
+  , eventSubscribedHasOwnHeightRef = False
+  , eventSubscribedWhoCreated = whoCreatedIORef $ fanSubscribedCachedSubscribed subscribed
+  }
+
+eventSubscribedSwitch :: SwitchSubscribed x a -> EventSubscribed x a
+eventSubscribedSwitch !subscribed = EventSubscribed
+  { eventSubscribedSubscribe = \sub -> Just <$> subscribeSwitchSubscribed subscribed sub
+  , eventSubscribedRead = readSwitchSubscribed subscribed
+  , eventSubscribedGetParents = do
+      s <- readIORef $ switchSubscribedCurrentParent subscribed
+      return [Some.This $ _eventSubscription_subscribed s]
+  , eventSubscribedHeightRef = switchSubscribedHeight subscribed
+  , eventSubscribedHasOwnHeightRef = True
+  , eventSubscribedWhoCreated = whoCreatedIORef $ switchSubscribedCachedSubscribed subscribed
+  }
+
+eventSubscribedCoincidence :: CoincidenceSubscribed x a -> EventSubscribed x a
+eventSubscribedCoincidence !subscribed = EventSubscribed
+  { eventSubscribedSubscribe = \sub -> Just <$> subscribeCoincidenceSubscribed subscribed sub
+  , eventSubscribedRead = readCoincidenceSubscribed subscribed
+  , eventSubscribedGetParents = do
+      innerSubscription <- readIORef $ coincidenceSubscribedInnerParent subscribed
+      let outerParent = Some.This $ _eventSubscription_subscribed $ coincidenceSubscribedOuterParent subscribed
+          innerParents = maybeToList $ fmap Some.This innerSubscription
+      return $ outerParent : innerParents
+  , eventSubscribedHeightRef = coincidenceSubscribedHeight subscribed
+  , eventSubscribedHasOwnHeightRef = True
+  , eventSubscribedWhoCreated = whoCreatedIORef $ coincidenceSubscribedCachedSubscribed subscribed
+  }
 
 getEventSubscribedHeight :: EventSubscribed x a -> IO Height
 getEventSubscribedHeight es = readIORef $ eventSubscribedHeightRef es
 
-{-# INLINE eventSubscribedHeightRef #-}
-eventSubscribedHeightRef :: EventSubscribed x a -> IORef Height
-eventSubscribedHeightRef = \case
-  EventSubscribedRoot _ -> zeroRef
-  EventSubscribedNever -> zeroRef
-  EventSubscribedPush subscribed -> pushSubscribedHeight subscribed
-  EventSubscribedFan _ subscribed -> eventSubscribedHeightRef $ _eventSubscription_subscribed $ fanSubscribedParent subscribed
-  EventSubscribedMerge subscribed -> mergeSubscribedHeight subscribed
-  EventSubscribedSwitch subscribed -> switchSubscribedHeight subscribed
-  EventSubscribedCoincidence subscribed -> coincidenceSubscribedHeight subscribed
-
 whoCreatedEventSubscribed :: EventSubscribed x a -> IO [String]
-whoCreatedEventSubscribed = \case
-  EventSubscribedRoot _ -> return ["root"]
-  EventSubscribedNever -> return ["never"]
-  EventSubscribedPush subscribed -> whoCreatedIORef $ pushSubscribedCachedSubscribed subscribed
-  EventSubscribedFan _ subscribed -> whoCreatedIORef $ fanSubscribedCachedSubscribed subscribed
-  EventSubscribedMerge subscribed -> whoCreatedIORef $ mergeSubscribedCachedSubscribed subscribed
-  EventSubscribedSwitch subscribed -> whoCreatedIORef $ switchSubscribedCachedSubscribed subscribed
-  EventSubscribedCoincidence subscribed -> whoCreatedIORef $ coincidenceSubscribedCachedSubscribed subscribed
-
-{-# INLINE eventSubscribedHasOwnHeightRef #-}
-eventSubscribedHasOwnHeightRef :: EventSubscribed x a -> Bool
-eventSubscribedHasOwnHeightRef = \case
-  EventSubscribedRoot _ -> False
-  EventSubscribedNever -> False
-  EventSubscribedPush _ -> False
-  EventSubscribedFan _ _ -> False
-  EventSubscribedMerge _ -> True
-  EventSubscribedSwitch _ -> True
-  EventSubscribedCoincidence _ -> True
+whoCreatedEventSubscribed = eventSubscribedWhoCreated
 
 walkInvalidHeightParents :: EventSubscribed x a -> IO [Some (EventSubscribed x)]
 walkInvalidHeightParents s0 = do
@@ -1191,10 +1192,6 @@ type CanTrace x m = (HasSpiderEnv x m, MonadIO m)
 tracePropagate :: (CanTrace x m) => String -> m ()
 tracePropagate = traceWhen debugPropagate
 
-{-# INLINE traceSubscribe #-}
-traceSubscribe :: String -> IO ()
-traceSubscribe = when debugSubscribe . liftIO . putStrLn
-
 {-# INLINE traceInvalidate #-}
 traceInvalidate :: String -> IO ()
 traceInvalidate = when debugInvalidate . liftIO . putStrLn
@@ -1367,10 +1364,6 @@ readCoincidenceSubscribed subscribed = do
 {-# NOINLINE zeroRef #-}
 zeroRef :: IORef Height
 zeroRef = unsafePerformIO $ newIORef zeroHeight
-
-{-# INLINE debugSubscribe #-}
-debugSubscribe :: Bool
-debugSubscribe = False
 
 type CanSubscribe x m =
   ( HasSpiderEnv x m
