@@ -47,6 +47,8 @@ import qualified Data.Dependent.Map as DMap
 import Data.Foldable hiding (concat, elem, sequence_)
 import Data.Function
 import Data.Functor.Compose
+import Data.Functor.Constant
+import Data.Functor.Product
 import Data.GADT.Compare
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
@@ -330,14 +332,11 @@ newSubscriberFan subscribed = return $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
       subs <- liftIO $ readIORef $ fanSubscribedSubscribers subscribed
       tracePropagate $ "SubscriberFan" <> showNodeId subscribed <> ": " ++ show (DMap.size subs) ++ " keys subscribed, " ++ show (DMap.size a) ++ " keys firing"
-      --TODO: We need a better DMap intersection; here, we are assuming that the number of firing keys is small and the number of subscribers is large
-      forM_ (DMap.toList a) $ \(k :=> Identity v) -> {-# SCC "SubscriberFan" #-} case DMap.lookup k subs of
-        Nothing -> do
-          tracePropagate "No subscriber for key"
-          return ()
-        Just subsubs -> do
-          propagate v $ _fanSubscribedChildren_list subsubs
-          return ()
+      let f _ (Pair (Identity v) subsubs) = do
+            propagate v $ _fanSubscribedChildren_list subsubs
+            return $ Constant ()
+      _ <- DMap.traverseWithKey f $ DMap.intersectionWithKey (\_ -> Pair) a subs --TODO: Would be nice to have DMap.traverse_
+      return ()
   , subscriberInvalidateHeight = \old -> do
       when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberFan" <> showNodeId subscribed
       subscribers <- readIORef $ fanSubscribedSubscribers subscribed
