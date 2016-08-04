@@ -39,7 +39,6 @@ import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence)
 import Control.Monad.Primitive
 import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_, sequence)
 import Control.Monad.Ref
-import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
 import Data.Align
 import Data.Coerce
 import Data.Dependent.Map (DMap, DSum (..))
@@ -54,21 +53,26 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
 import Data.List hiding (foldl')
-import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
-import qualified Data.List.NonEmpty as NonEmpty
 import Data.Maybe
-import Data.Monoid (mempty, (<>))
+import Data.Monoid ((<>))
 import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.These
 import Data.Traversable
-import Data.Tree (Forest, Tree (..), drawForest)
 import Data.Word
 import GHC.IORef (IORef (..))
 import GHC.Stack
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
+
+#ifdef DEBUG_CYCLES
+import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
+import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
+import Data.Monoid (mempty)
+import Data.Tree (Forest, Tree (..), drawForest)
+#endif
 
 import Data.WeakBag (WeakBag, WeakBagTicket)
 import qualified Data.WeakBag as WeakBag
@@ -188,6 +192,12 @@ unsafeNodeId a = unsafePerformIO $ do
 
 newtype Event x a = Event { subscribe :: Subscriber x a -> EventM x (EventSubscription x a) }
 
+subscribeAndRead :: Event x a -> Subscriber x a -> EventM x (EventSubscription x a, Maybe a)
+subscribeAndRead e sub = do
+  subscription@(EventSubscription _ subd) <- subscribe e sub
+  occ <- liftIO $ eventSubscribedRead subd
+  return (subscription, occ)
+
 wrap :: Monad m => (t -> EventSubscribed x a) -> (Subscriber x a -> m (WeakBagTicket (Subscriber x a), t)) -> Subscriber x a -> m (EventSubscription x a)
 wrap tag getSpecificSubscribed sub = do
   (sln, subd) <- getSpecificSubscribed sub
@@ -230,8 +240,7 @@ eventDynIdentity !j = Event $ \sub -> getDynHold j >>= \h -> subscribeHoldEvent 
 subscribeCoincidenceInner :: CanSubscribe x m => Event x a -> Height -> CoincidenceSubscribed x a -> m (Maybe a, Height, EventSubscribed x a)
 subscribeCoincidenceInner inner outerHeight subscribedUnsafe = do
   subInner <- liftIO $ newSubscriberCoincidenceInner subscribedUnsafe
-  subscription@(EventSubscription _ innerSubd) <- subscribe inner subInner
-  innerOcc <- liftIO $ readEventSubscribed innerSubd
+  (subscription@(EventSubscription _ innerSubd), innerOcc) <- subscribeAndRead inner subInner
   innerHeight <- liftIO $ getEventSubscribedHeight innerSubd
   let height = max innerHeight outerHeight
   defer $ SomeResetCoincidence subscription $ if height > outerHeight then Just subscribedUnsafe else Nothing
@@ -298,13 +307,19 @@ newSubscriberMerge k subscribed = return $ Subscriber
         --TODO: assertions about height
         currentHeight <- getCurrentHeight
         when (height <= currentHeight) $ do
-          myStack <- liftIO $ whoCreatedIORef $ mergeSubscribedCachedSubscribed subscribed
           if height /= invalidHeight
-            then error $ "Height (" ++ show height ++ ") is not greater than current height (" ++ show currentHeight ++ ")\n" ++ unlines (reverse myStack)
+            then do
+            myStack <- liftIO $ whoCreatedIORef $ mergeSubscribedCachedSubscribed subscribed
+            error $ "Height (" ++ show height ++ ") is not greater than current height (" ++ show currentHeight ++ ")\n" ++ unlines (reverse myStack)
             else liftIO $ do
+#ifdef DEBUG_CYCLES
             nodesInvolvedInCycle <- walkInvalidHeightParents $ eventSubscribedMerge subscribed
             stacks <- forM nodesInvolvedInCycle $ \(Some.This es) -> whoCreatedEventSubscribed es
-            error $ "Causality loop found:\n" <> drawForest (listsToForest stacks)
+            let cycleInfo = ":\n" <> drawForest (listsToForest stacks)
+#else
+            let cycleInfo = ""
+#endif
+            error $ "Causality loop found" <> cycleInfo
         scheduleMerge height subscribed
   , subscriberInvalidateHeight = \old -> do
       when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberMerge" <> showNodeId subscribed
@@ -441,10 +456,12 @@ propagate a subscribers = withIncreasedDepth $ do
 data EventSubscribed x a = EventSubscribed
   { eventSubscribedSubscribe :: !(Subscriber x a -> IO (Maybe (WeakBagTicket (Subscriber x a))))
   , eventSubscribedRead :: !(IO (Maybe a))
-  , eventSubscribedGetParents :: !(IO [Some (EventSubscribed x)]) -- For debugging loops
   , eventSubscribedHeightRef :: {-# UNPACK #-} !(IORef Height)
+#ifdef DEBUG_CYCLES
+  , eventSubscribedGetParents :: !(IO [Some (EventSubscribed x)]) -- For debugging loops
   , eventSubscribedHasOwnHeightRef :: !Bool
   , eventSubscribedWhoCreated :: !(IO [String])
+#endif
   }
 
 readEventSubscribed :: EventSubscribed x a -> IO (Maybe a)
@@ -457,83 +474,98 @@ eventSubscribedRoot :: RootSubscribed x a -> EventSubscribed x a
 eventSubscribedRoot !r = EventSubscribed
   { eventSubscribedSubscribe = \sub -> Just <$> subscribeRootSubscribed r sub
   , eventSubscribedRead = readRootSubscribed r
-  , eventSubscribedGetParents = return []
   , eventSubscribedHeightRef = zeroRef
+#ifdef DEBUG_CYCLES
+  , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = return ["root"]
+#endif
   }
 
 eventSubscribedNever :: EventSubscribed x a
 eventSubscribedNever = EventSubscribed
   { eventSubscribedSubscribe = \_ -> return Nothing
   , eventSubscribedRead = return Nothing
-  , eventSubscribedGetParents = return []
   , eventSubscribedHeightRef = zeroRef
+#ifdef DEBUG_CYCLES
+  , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = return ["never"]
+#endif
   }
 
 eventSubscribedPush :: PushSubscribed x b a -> EventSubscribed x a
 eventSubscribedPush !subscribed = EventSubscribed
   { eventSubscribedSubscribe = \sub -> Just <$> subscribePushSubscribed subscribed sub
   , eventSubscribedRead = readPushSubscribed subscribed
-  , eventSubscribedGetParents = return [Some.This $ _eventSubscription_subscribed $ pushSubscribedParent subscribed]
   , eventSubscribedHeightRef = pushSubscribedHeight subscribed
+#ifdef DEBUG_CYCLES
+  , eventSubscribedGetParents = return [Some.This $ _eventSubscription_subscribed $ pushSubscribedParent subscribed]
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = whoCreatedIORef $ pushSubscribedCachedSubscribed subscribed
+#endif
   }
 
 eventSubscribedMerge :: a ~ DMap k Identity => MergeSubscribed x k -> EventSubscribed x a
 eventSubscribedMerge !subscribed = EventSubscribed
   { eventSubscribedSubscribe = \sub -> Just <$> subscribeMergeSubscribed subscribed sub
   , eventSubscribedRead = readMergeSubscribed subscribed
+  , eventSubscribedHeightRef = mergeSubscribedHeight subscribed
+#ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = do
       ps <- readIORef $ mergeSubscribedParents subscribed
       return $ R.ffor (DMap.toList ps) $ \(_ :=> v) -> Some.This $ _eventSubscription_subscribed $ mergeSubscribedParentSubscription v
-  , eventSubscribedHeightRef = mergeSubscribedHeight subscribed
   , eventSubscribedHasOwnHeightRef = True
   , eventSubscribedWhoCreated = whoCreatedIORef $ mergeSubscribedCachedSubscribed subscribed
+#endif
   }
 
 eventSubscribedFan :: GCompare k => k a -> FanSubscribed x k -> EventSubscribed x a
 eventSubscribedFan !k !subscribed = EventSubscribed
   { eventSubscribedSubscribe = \sub -> Just <$> subscribeFanSubscribed k subscribed sub
   , eventSubscribedRead = readFanSubscribed k subscribed
-  , eventSubscribedGetParents = return [Some.This $ _eventSubscription_subscribed $ fanSubscribedParent subscribed]
   , eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ fanSubscribedParent subscribed
+#ifdef DEBUG_CYCLES
+  , eventSubscribedGetParents = return [Some.This $ _eventSubscription_subscribed $ fanSubscribedParent subscribed]
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = whoCreatedIORef $ fanSubscribedCachedSubscribed subscribed
+#endif
   }
 
 eventSubscribedSwitch :: SwitchSubscribed x a -> EventSubscribed x a
 eventSubscribedSwitch !subscribed = EventSubscribed
   { eventSubscribedSubscribe = \sub -> Just <$> subscribeSwitchSubscribed subscribed sub
   , eventSubscribedRead = readSwitchSubscribed subscribed
+  , eventSubscribedHeightRef = switchSubscribedHeight subscribed
+#ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = do
       s <- readIORef $ switchSubscribedCurrentParent subscribed
       return [Some.This $ _eventSubscription_subscribed s]
-  , eventSubscribedHeightRef = switchSubscribedHeight subscribed
   , eventSubscribedHasOwnHeightRef = True
   , eventSubscribedWhoCreated = whoCreatedIORef $ switchSubscribedCachedSubscribed subscribed
+#endif
   }
 
 eventSubscribedCoincidence :: CoincidenceSubscribed x a -> EventSubscribed x a
 eventSubscribedCoincidence !subscribed = EventSubscribed
   { eventSubscribedSubscribe = \sub -> Just <$> subscribeCoincidenceSubscribed subscribed sub
   , eventSubscribedRead = readCoincidenceSubscribed subscribed
+  , eventSubscribedHeightRef = coincidenceSubscribedHeight subscribed
+#ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = do
       innerSubscription <- readIORef $ coincidenceSubscribedInnerParent subscribed
       let outerParent = Some.This $ _eventSubscription_subscribed $ coincidenceSubscribedOuterParent subscribed
           innerParents = maybeToList $ fmap Some.This innerSubscription
       return $ outerParent : innerParents
-  , eventSubscribedHeightRef = coincidenceSubscribedHeight subscribed
   , eventSubscribedHasOwnHeightRef = True
   , eventSubscribedWhoCreated = whoCreatedIORef $ coincidenceSubscribedCachedSubscribed subscribed
+#endif
   }
 
 getEventSubscribedHeight :: EventSubscribed x a -> IO Height
 getEventSubscribedHeight es = readIORef $ eventSubscribedHeightRef es
 
+#ifdef DEBUG_CYCLES
 whoCreatedEventSubscribed :: EventSubscribed x a -> IO [String]
 whoCreatedEventSubscribed = eventSubscribedWhoCreated
 
@@ -547,6 +579,7 @@ walkInvalidHeightParents s0 = do
       mapM_ loop =<< liftIO (eventSubscribedGetParents s)
   forM_ subscribers $ \(Some.This s) -> writeIORef (eventSubscribedHeightRef s) $! invalidHeight
   return subscribers
+#endif
 
 {-# INLINE subscribeHoldEvent #-}
 subscribeHoldEvent :: (CanSubscribe x m, R.Patch p) => Hold x p a -> Subscriber x (p a) -> m (EventSubscription x (p a))
@@ -711,8 +744,7 @@ getHoldEventSubscription h = do
     Right subd -> return subd
     Left e -> do
       subscriptionRef <- liftIO $ newIORef $ error "getHoldEventSubscription: subdRef uninitialized"
-      subscription@(EventSubscription _ subd) <- subscribe e =<< liftIO (newSubscriberHold h)
-      occ <- liftIO $ readEventSubscribed subd
+      (subscription@(EventSubscription _ _), occ) <- subscribeAndRead e =<< liftIO (newSubscriberHold h)
       liftIO $ writeIORef subscriptionRef $! subscription
       case occ of
         Nothing -> return ()
@@ -1215,6 +1247,7 @@ traceMWhen b getMessage = when b $ do
 whoCreatedIORef :: IORef a -> IO [String]
 whoCreatedIORef (IORef a) = whoCreated $! a
 
+#ifdef DEBUG_CYCLES
 groupByHead :: Eq a => [NonEmpty a] -> [(a, NonEmpty [a])]
 groupByHead = \case
   [] -> []
@@ -1226,6 +1259,7 @@ groupByHead = \case
 
 listsToForest :: Eq a => [[a]] -> Forest a
 listsToForest l = fmap (\(a, l') -> Node a $ listsToForest $ toList l') $ groupByHead $ catMaybes $ fmap nonEmpty l
+#endif
 
 {-# INLINE propagateSubscriberHold #-}
 propagateSubscriberHold :: R.Patch p => Hold x p a -> p a -> EventM x ()
@@ -1428,8 +1462,7 @@ getPushSubscribed p sub = do
       subscribedRef <- liftIO $ newIORef $ error "getPushSubscribed: subscribed not yet intialized"
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
       s <- liftIO $ newSubscriberPush (pushCompute p) subscribedUnsafe
-      subscription@(EventSubscription _ subd) <- subscribe (pushParent p) s
-      parentOcc <- liftIO $ readEventSubscribed subd
+      (subscription@(EventSubscription _ subd), parentOcc) <- subscribeAndRead (pushParent p) s
       occ <- runComputeM $ join <$> mapM (pushCompute p) parentOcc
       occRef <- liftIO $ newIORef occ
       when (isJust occ) $ scheduleClear occRef
@@ -1476,8 +1509,7 @@ getMergeSubscribed m sub = do
       initialParents <- readBehaviorUntracked $ current $ mergeParents m
       subscribers :: [(Maybe (DSum k Identity), Height, DSum k (MergeSubscribedParent x k))] <- forM (DMap.toList initialParents) $ \(k :=> e) -> do
         s <- liftIO $ newSubscriberMerge k subscribedUnsafe
-        subscription@(EventSubscription _ parentSubd) <- subscribe e s
-        parentOcc <- liftIO $ readEventSubscribed parentSubd
+        (subscription@(EventSubscription _ parentSubd), parentOcc) <- subscribeAndRead e s
         height <- liftIO $ getEventSubscribedHeight parentSubd
         return $ (fmap (\x -> k :=> Identity x) parentOcc, height, k :=> MergeSubscribedParent subscription s)
       let dm = DMap.fromDistinctAscList $ mapMaybe (\(x, _, _) -> x) subscribers
@@ -1605,12 +1637,11 @@ getSwitchSubscribed s sub = do
       parentsRef <- liftIO $ newIORef [] --TODO: This should be unnecessary, because it will always be filled with just the single parent behavior
       holdInits <- getDeferralQueue
       e <- liftIO $ runBehaviorM (readBehaviorTracked (switchParent s)) (Just (wi, parentsRef)) holdInits
-      subscription@(EventSubscription _ subd) <- subscribe e mySub
-      parentOcc <- liftIO $ readEventSubscribed subd
+      (subscription@(EventSubscription _ subd), parentOcc) <- subscribeAndRead e mySub
+      heightRef <- liftIO $ newIORef =<< getEventSubscribedHeight subd
       subscriptionRef <- liftIO $ newIORef subscription
       occRef <- liftIO $ newIORef parentOcc
       when (isJust parentOcc) $ scheduleClear occRef
-      heightRef <- liftIO $ newIORef =<< getEventSubscribedHeight subd
       weakSelf <- liftIO $ newIORef $ error "getSwitchSubscribed: weakSelf not yet initialized"
       (subs, slnForSub) <- liftIO $ WeakBag.singleton sub weakSelf cleanupSwitchSubscribed
       let !subscribed = SwitchSubscribed
@@ -1655,8 +1686,7 @@ getCoincidenceSubscribed c sub = do
       subscribedRef <- liftIO $ newIORef $ error "getCoincidenceSubscribed: subscribed has not yet been created"
       subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
       subOuter <- liftIO $ newSubscriberCoincidenceOuter subscribedUnsafe
-      outerSubscription@(EventSubscription _ outerSubd) <- subscribe (coincidenceParent c) subOuter
-      outerOcc <- liftIO $ readEventSubscribed outerSubd
+      (outerSubscription@(EventSubscription _ outerSubd), outerOcc) <- subscribeAndRead (coincidenceParent c) subOuter
       outerHeight <- liftIO $ getEventSubscribedHeight outerSubd
       (occ, height, mInnerSubd) <- case outerOcc of
         Nothing -> return (Nothing, outerHeight, Nothing)
@@ -1731,8 +1761,7 @@ initHold (SomeHoldInit h) = void $ getHoldEventSubscription h
 initMerge :: SomeMergeInit x -> EventM x ()
 initMerge (SomeMergeInit subscribed changed) = do
   changeSub <- liftIO $ newSubscriberMergeChange subscribed
-  EventSubscription _ changeSubd <- subscribe changed changeSub
-  change <- liftIO $ readEventSubscribed changeSubd
+  (EventSubscription _ changeSubd, change) <- subscribeAndRead changed changeSub
   forM_ change $ \c -> defer $ SomeMergeUpdate c subscribed
   liftIO $ writeIORef (mergeSubscribedChange subscribed) (changeSub, changeSubd)
 
@@ -1779,8 +1808,8 @@ runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
                 Just e -> do
                   s <- liftIO $ newSubscriberMerge k m
                   subscription@(EventSubscription _ subd) <- subscribe e s
-                  let newParent = MergeSubscribedParent subscription s
                   newParentHeight <- liftIO $ getEventSubscribedHeight subd
+                  let newParent = MergeSubscribedParent subscription s
                   liftIO $ addMergeHeight newParentHeight m
                   return $ DMap.insertLookupWithKey' (\_ new _ -> new) k newParent ps
               forM_ mOldSubd $ \oldSubd -> do
@@ -1849,10 +1878,12 @@ zeroHeight = Height 0
 invalidHeight :: Height
 invalidHeight = Height (-1000)
 
+#ifdef DEBUG_CYCLES
 -- | An invalid height that is currently being traversed, e.g. by walkInvalidHeightParents
 {-# INLINE invalidHeightBeingTraversed #-}
 invalidHeightBeingTraversed :: Height
 invalidHeightBeingTraversed = Height (-1001)
+#endif
 
 {-# INLINE succHeight #-}
 succHeight :: Height -> Height
@@ -2104,20 +2135,28 @@ instance R.MonadHold (SpiderEnv x) (SpiderPushM x) where
   holdIncremental v0 (SpiderEvent e) = SpiderPushM $ SpiderIncremental . DynamicHold <$> hold v0 e
 
 data RootTrigger x a = forall k. GCompare k => RootTrigger (WeakBag (Subscriber x a), IORef (DMap k Identity), k a)
-newtype SpiderEventHandle x a = SpiderEventHandle { unSpiderEventHandle :: EventSubscription x a }
 
-emptySubscriber :: Subscriber x a
-emptySubscriber = Subscriber
-  { subscriberPropagate = \_ -> return ()
-  , subscriberInvalidateHeight = \_ -> return ()
-  , subscriberRecalculateHeight = \_ -> return ()
+data SpiderEventHandle x a = SpiderEventHandle
+  { spiderEventHandleSubscription :: EventSubscription x a
+  , spiderEventHandleValue :: IORef (Maybe a)
   }
 
 instance R.MonadSubscribeEvent (SpiderEnv x) (SpiderHostFrame x) where
   {-# INLINABLE subscribeEvent #-}
   subscribeEvent e = SpiderHostFrame $ do
-    subscription <- subscribe (unSpiderEvent e) emptySubscriber --TODO: Unsubscribe eventually (manually and/or with weak ref)
-    return $ SpiderEventHandle subscription
+    --TODO: Unsubscribe eventually (manually and/or with weak ref)
+    val <- liftIO $ newIORef Nothing
+    subscription <- subscribe (unSpiderEvent e) $ Subscriber
+      { subscriberPropagate = \a -> do
+          liftIO $ writeIORef val $ Just a
+          scheduleClear val
+      , subscriberInvalidateHeight = \_ -> return ()
+      , subscriberRecalculateHeight = \_ -> return ()
+      }
+    return $ SpiderEventHandle
+      { spiderEventHandleSubscription = subscription
+      , spiderEventHandleValue = val
+      }
 
 instance R.ReflexHost (SpiderEnv x) where
   type EventTrigger (SpiderEnv x) = RootTrigger x
@@ -2127,10 +2166,8 @@ instance R.ReflexHost (SpiderEnv x) where
 instance R.MonadReadEvent (SpiderEnv x) (ReadPhase x) where
   {-# INLINABLE readEvent #-}
   readEvent h = ReadPhase $ fmap (fmap return) $ liftIO $ do
-    let EventSubscription sln subscribed = unSpiderEventHandle h
-    result <- readEventSubscribed subscribed
-    touch sln
-    return result
+    touch h
+    readIORef $ spiderEventHandleValue h
 
 instance MonadRef (EventM x) where
   type Ref (EventM x) = Ref IO
@@ -2220,12 +2257,7 @@ instance R.MonadReflexCreateTrigger (SpiderEnv x) (SpiderHostFrame x) where
 
 instance R.MonadSubscribeEvent (SpiderEnv x) (SpiderHost x) where
   {-# INLINABLE subscribeEvent #-}
-  subscribeEvent = subscribeEventSpiderHost
-
-subscribeEventSpiderHost :: R.Event (SpiderEnv x) a -> SpiderHost x (R.EventHandle (SpiderEnv x) a)
-subscribeEventSpiderHost e = do
-  subscription <- runFrame $ subscribe (unSpiderEvent e) emptySubscriber --TODO: Unsubscribe eventually (manually and/or with weak ref)
-  return $ SpiderEventHandle subscription
+  subscribeEvent = runFrame . runSpiderHostFrame . R.subscribeEvent
 
 newtype ReadPhase x a = ReadPhase (ResultM x a) deriving (Functor, Applicative, Monad, MonadFix)
 
