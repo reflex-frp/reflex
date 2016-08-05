@@ -2025,19 +2025,19 @@ instance R.Reflex (SpiderEnv x) where
   {-# INLINABLE pull #-}
   pull = SpiderBehavior . pull . coerce
   {-# INLINABLE merge #-}
-  merge = SpiderEvent . merge . DynamicConst . (unsafeCoerce :: DMap k (R.Event (SpiderEnv x)) -> DMap k (Event x))
+  merge = SpiderEvent . merge . DynamicConst . (coerce :: DMap k (R.Event (SpiderEnv x)) -> DMap k (Event x))
   {-# INLINABLE fan #-}
   fan e = R.EventSelector $ SpiderEvent . select (fan (unSpiderEvent e))
   {-# INLINABLE switch #-}
   switch = SpiderEvent . switch . (unsafeCoerce :: Behavior x (R.Event (SpiderEnv x) a) -> Behavior x (Event x a)) . unSpiderBehavior
   {-# INLINABLE coincidence #-}
-  coincidence = SpiderEvent . coincidence . (unsafeCoerce :: Event x (R.Event (SpiderEnv x) a) -> Event x (Event x a)) . unSpiderEvent
+  coincidence = SpiderEvent . coincidence . (coerce :: Event x (R.Event (SpiderEnv x) a) -> Event x (Event x a)) . unSpiderEvent
   {-# INLINABLE current #-}
   current = SpiderBehavior . current . unSpiderDynamic
   {-# INLINABLE updated #-}
   updated = SpiderEvent . fmap runIdentity . updated . unSpiderDynamic
   {-# INLINABLE unsafeBuildDynamic #-}
-  unsafeBuildDynamic readV0 v' = SpiderDynamic $ DynamicDynIdentity $ unsafeDyn (coerce readV0) $ addIdentity $ unSpiderEvent v'
+  unsafeBuildDynamic readV0 v' = SpiderDynamic $ DynamicDynIdentity $ unsafeDyn (coerce readV0) $ coerce $ unSpiderEvent v'
   {-# INLINABLE unsafeBuildIncremental #-}
   unsafeBuildIncremental readV0 dv = SpiderIncremental $ DynamicDyn $ unsafeDyn (coerce readV0) $ unSpiderEvent dv
   {-# INLINABLE mergeIncremental #-}
@@ -2064,10 +2064,10 @@ instance R.MonadHold (SpiderEnv x) (EventM x) where
   holdIncremental = holdIncrementalSpiderEventM
 
 holdSpiderEventM :: a -> R.Event (SpiderEnv x) a -> EventM x (R.Behavior (SpiderEnv x) a)
-holdSpiderEventM v0 e = fmap (SpiderBehavior . BehaviorHoldIdentity) $ hold v0 $ addIdentity $ unSpiderEvent e
+holdSpiderEventM v0 e = fmap (SpiderBehavior . BehaviorHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
 
 holdDynSpiderEventM :: a -> R.Event (SpiderEnv x) a -> EventM x (R.Dynamic (SpiderEnv x) a)
-holdDynSpiderEventM v0 e = fmap (SpiderDynamic . DynamicHoldIdentity) $ hold v0 $ addIdentity $ unSpiderEvent e
+holdDynSpiderEventM v0 e = fmap (SpiderDynamic . DynamicHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
 
 holdIncrementalSpiderEventM :: R.Patch p => a -> R.Event (SpiderEnv x) (p a) -> EventM x (R.Incremental (SpiderEnv x) p a)
 holdIncrementalSpiderEventM v0 e = fmap (SpiderIncremental . DynamicHold) $ hold v0 $ unSpiderEvent e
@@ -2096,7 +2096,7 @@ instance R.MonadHold (SpiderEnv x) (SpiderPushM x) where
   {-# INLINABLE hold #-}
   hold v0 e = R.current <$> R.holdDyn v0 e
   {-# INLINABLE holdDyn #-}
-  holdDyn v0 (SpiderEvent e) = SpiderPushM $ fmap (SpiderDynamic . DynamicHoldIdentity) $ hold v0 $ addIdentity e
+  holdDyn v0 (SpiderEvent e) = SpiderPushM $ fmap (SpiderDynamic . DynamicHoldIdentity) $ hold v0 $ coerce e
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 (SpiderEvent e) = SpiderPushM $ SpiderIncremental . DynamicHold <$> hold v0 e
 
@@ -2182,15 +2182,11 @@ instance Monad (SpiderHostFrame x) where
 instance R.MonadSample (SpiderEnv x) (SpiderHostFrame x) where
   sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
 
-addIdentity :: Event x a -> Event x (Identity a)
---addIdentity = fmap Identity
-addIdentity = unsafeCoerce
-
 instance R.MonadHold (SpiderEnv x) (SpiderHostFrame x) where
   {-# INLINABLE hold #-}
-  hold v0 e = SpiderHostFrame $ fmap (SpiderBehavior . BehaviorHoldIdentity) $ hold v0 $ addIdentity $ unSpiderEvent e
+  hold v0 e = SpiderHostFrame $ fmap (SpiderBehavior . BehaviorHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
   {-# INLINABLE holdDyn #-}
-  holdDyn v0 e = SpiderHostFrame $ fmap (SpiderDynamic . DynamicHoldIdentity) $ hold v0 $ addIdentity $ unSpiderEvent e
+  holdDyn v0 e = SpiderHostFrame $ fmap (SpiderDynamic . DynamicHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 e = SpiderHostFrame $ fmap (SpiderIncremental . DynamicHold) $ hold v0 $ unSpiderEvent e
 
