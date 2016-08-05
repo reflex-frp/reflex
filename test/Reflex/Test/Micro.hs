@@ -50,6 +50,13 @@ testCases =
         pushAlways (const $ hold "z" es) e
       return (join b)
 
+  , testE "id" $ do
+      events2
+
+  , testE "fmap-id" $ do
+      e <- events2
+      return $ fmap id e
+
   , testE "tag-1" $ do
       b1 <- behavior1
       e <- events2
