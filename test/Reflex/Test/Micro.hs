@@ -1,9 +1,11 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 
 module Reflex.Test.Micro (testCases) where
 
@@ -12,12 +14,11 @@ import Reflex.TestPlan
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Fix
 import Data.Char
 import Data.Functor.Misc
 import Data.Monoid
-
 import Data.Foldable
-
 import qualified Data.Map as Map
 
 import Prelude
@@ -248,6 +249,14 @@ testCases =
   , testE "fan-6" $ do
       f <- fanMap . fmap toMap <$> events1
       return $ toList <$> mergeList [ select f (Const2 'b'), select f (Const2 'b'), select f (Const2 'e'), select f (Const2 'e') ]
+
+  , testE "lazy-hold" $ do
+      let lazyHold :: forall t m. (Reflex t, MonadHold t m, MonadFix m) => m (Event t ())
+          lazyHold = do
+            rec !b <- hold never e
+                let e = never <$ switch b
+            return $ void e
+      lazyHold
 
   ] where
 

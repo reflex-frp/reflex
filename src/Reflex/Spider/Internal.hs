@@ -596,7 +596,7 @@ unsubscribe (EventSubscription msln _) = forM_ msln $ \sln -> WeakBag.remove sln
 data Hold x p a
    = Hold { holdValue :: !(IORef a)
           , holdInvalidators :: !(IORef [Weak (Invalidator x)])
-          , holdEvent :: !(Event x (p a))
+          , holdEvent :: Event x (p a) -- This must be lazy, or holds cannot be defined before their input Events
           , holdParent :: !(IORef (Maybe (EventSubscription x (p a)))) -- Keeps its parent alive (will be undefined until the hold is initialized) --TODO: Probably shouldn't be an IORef
 #ifdef DEBUG_NODEIDS
           , holdNodeId :: Int
