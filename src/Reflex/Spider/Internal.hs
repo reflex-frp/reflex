@@ -586,6 +586,69 @@ unsubscribe :: EventSubscription x a -> IO ()
 unsubscribe (EventSubscription msln _) = forM_ msln $ \sln -> WeakBag.remove sln
 
 --------------------------------------------------------------------------------
+-- Behavior
+--------------------------------------------------------------------------------
+
+newtype Behavior x a = Behavior { readBehaviorTracked :: BehaviorM x a }
+
+behaviorHold :: Hold x p a -> Behavior x a
+behaviorHold !h = Behavior $ readHoldTracked h
+
+behaviorHoldIdentity :: Hold x Identity a -> Behavior x a
+behaviorHoldIdentity = behaviorHold
+
+behaviorConst :: a -> Behavior x a
+behaviorConst !a = Behavior $ return a
+
+behaviorPull :: Pull x a -> Behavior x a
+behaviorPull !p = Behavior $ do
+    val <- liftIO $ readIORef $ pullValue p
+    case val of
+      Just subscribed -> do
+        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
+        askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (pullSubscribedInvalidators subscribed) (wi:))
+        liftIO $ touch $ pullSubscribedOwnInvalidator subscribed
+        return $ pullSubscribedValue subscribed
+      Nothing -> do
+        i <- liftIO $ newInvalidatorPull p
+        wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorPull"
+        parentsRef <- liftIO $ newIORef []
+        holdInits <- askBehaviorHoldInits
+        a <- liftIO $ runReaderT (unBehaviorM $ pullCompute p) (Just (wi, parentsRef), holdInits)
+        invsRef <- liftIO . newIORef . maybeToList =<< askInvalidator
+        parents <- liftIO $ readIORef parentsRef
+        let subscribed = PullSubscribed
+              { pullSubscribedValue = a
+              , pullSubscribedInvalidators = invsRef
+              , pullSubscribedOwnInvalidator = i
+              , pullSubscribedParents = parents
+              }
+        liftIO $ writeIORef (pullValue p) $ Just subscribed
+        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
+        return a
+
+behaviorDyn :: R.Patch p => Dyn x p a -> Behavior x a
+behaviorDyn !d = Behavior $ readHoldTracked =<< getDynHold d
+
+behaviorDynIdentity :: Dyn x Identity a -> Behavior x a
+behaviorDynIdentity = behaviorDyn
+
+{-# INLINE readHoldTracked #-}
+readHoldTracked :: Hold x p a -> BehaviorM x a
+readHoldTracked h = do
+  result <- liftIO $ readIORef $ holdValue h
+  askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (holdInvalidators h) (wi:))
+  askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedHold h) :))
+  return result
+
+{-# SPECIALIZE readBehaviorUntracked :: Behavior x a -> BehaviorM x a #-}
+{-# SPECIALIZE readBehaviorUntracked :: Behavior x a -> EventM x a #-}
+readBehaviorUntracked :: Defer (SomeHoldInit x) m => Behavior x a -> m a
+readBehaviorUntracked b = do
+  holdInits <- getDeferralQueue
+  liftIO $ runBehaviorM (readBehaviorTracked b) Nothing holdInits --TODO: Specialize readBehaviorTracked to the Nothing and Just cases
+
+--------------------------------------------------------------------------------
 -- Combinators
 --------------------------------------------------------------------------------
 
@@ -996,11 +1059,11 @@ data Dynamic x p a
 {-# INLINE current #-}
 current :: R.Patch p => Dynamic x p a -> Behavior x a
 current = \case
-  DynamicHold h -> BehaviorHold h
-  DynamicHoldIdentity h -> BehaviorHoldIdentity h
-  DynamicConst a -> BehaviorConst a
-  DynamicDyn d -> BehaviorDyn d
-  DynamicDynIdentity d -> BehaviorDynIdentity d
+  DynamicHold h -> behaviorHold h
+  DynamicHoldIdentity h -> behaviorHoldIdentity h
+  DynamicConst a -> behaviorConst a
+  DynamicDyn d -> behaviorDyn d
+  DynamicDynIdentity d -> behaviorDynIdentity d
 
 --TODO: If you only need updated, not current, can we avoid actually constructing the Hold?
 {-# INLINE updated #-}
@@ -1051,7 +1114,7 @@ instance Monad (Dynamic x Identity) where
   {-# INLINE return #-}
   return = pure
   {-# INLINE (>>=) #-}
-  x >>= f = DynamicDynIdentity $ newJoinDyn $ newMapDyn f x --TODO: (>>), fail
+  x >>= f = DynamicDynIdentity $ newJoinDyn $ newMapDyn f x
   {-# INLINE (>>) #-}
   _ >> y = y
   {-# INLINE fail #-}
@@ -1071,15 +1134,6 @@ newJoinDyn d =
       eBoth = coincidence $ updated . runIdentity <$> updated d
       v' = unSpiderEvent $ R.leftmost $ map SpiderEvent [eBoth, eOuter, eInner]
   in unsafeDyn readV0 v'
-
---type role Behavior representational
-data Behavior x a
-   = forall p. BehaviorHold !(Hold x p a)
-   | BehaviorHoldIdentity !(Hold x Identity a)
-   | BehaviorConst !a
-   | BehaviorPull !(Pull x a)
-   | BehaviorDynIdentity !(Dyn x Identity a)
-   | forall p. R.Patch p => BehaviorDyn !(Dyn x p a)
 
 -- ResultM can read behaviors and events
 type ResultM = EventM
@@ -1105,7 +1159,7 @@ push f e = eventPush $ Push
 
 {-# NOINLINE pull #-}
 pull :: BehaviorM x a -> Behavior x a
-pull a = BehaviorPull $ Pull
+pull a = behaviorPull $ Pull
   { pullCompute = a
   , pullValue = unsafeNewIORef a Nothing
 #ifdef DEBUG_NODEIDS
@@ -1267,13 +1321,6 @@ propagateSubscriberHold h a = do
 
 data SomeResetCoincidence x = forall a. SomeResetCoincidence !(EventSubscription x a) !(Maybe (CoincidenceSubscribed x a)) -- The CoincidenceSubscriber will be present only if heights need to be reset
 
-{-# SPECIALIZE readBehaviorUntracked :: Behavior x a -> BehaviorM x a #-}
-{-# SPECIALIZE readBehaviorUntracked :: Behavior x a -> EventM x a #-}
-readBehaviorUntracked :: Defer (SomeHoldInit x) m => Behavior x a -> m a
-readBehaviorUntracked b = do
-  holdInits <- getDeferralQueue
-  liftIO $ runBehaviorM (readBehaviorTracked b) Nothing holdInits --TODO: Specialize readBehaviorTracked to the Nothing and Just cases
-
 runBehaviorM :: BehaviorM x a -> Maybe (Weak (Invalidator x), IORef [SomeBehaviorSubscribed x]) -> IORef [SomeHoldInit x] -> IO a
 runBehaviorM a mwi holdInits = runReaderT (unBehaviorM a) (mwi, holdInits)
 
@@ -1295,47 +1342,6 @@ askBehaviorHoldInits :: BehaviorM x (IORef [SomeHoldInit x])
 askBehaviorHoldInits = do
   (_, !his) <- BehaviorM ask
   return his
-
-readBehaviorTracked :: Behavior x a -> BehaviorM x a
-readBehaviorTracked b = case b of
-  BehaviorHold h -> readHoldTracked h
-  BehaviorHoldIdentity h -> readHoldTracked h
-  BehaviorConst a -> return a
-  BehaviorPull p -> do
-    val <- liftIO $ readIORef $ pullValue p
-    case val of
-      Just subscribed -> do
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
-        askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (pullSubscribedInvalidators subscribed) (wi:))
-        liftIO $ touch $ pullSubscribedOwnInvalidator subscribed
-        return $ pullSubscribedValue subscribed
-      Nothing -> do
-        i <- liftIO $ newInvalidatorPull p
-        wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorPull"
-        parentsRef <- liftIO $ newIORef []
-        holdInits <- askBehaviorHoldInits
-        a <- liftIO $ runReaderT (unBehaviorM $ pullCompute p) (Just (wi, parentsRef), holdInits)
-        invsRef <- liftIO . newIORef . maybeToList =<< askInvalidator
-        parents <- liftIO $ readIORef parentsRef
-        let subscribed = PullSubscribed
-              { pullSubscribedValue = a
-              , pullSubscribedInvalidators = invsRef
-              , pullSubscribedOwnInvalidator = i
-              , pullSubscribedParents = parents
-              }
-        liftIO $ writeIORef (pullValue p) $ Just subscribed
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
-        return a
-  BehaviorDyn d -> readHoldTracked =<< getDynHold d
-  BehaviorDynIdentity d -> readHoldTracked =<< getDynHold d
-
-{-# INLINE readHoldTracked #-}
-readHoldTracked :: Hold x p a -> BehaviorM x a
-readHoldTracked h = do
-  result <- liftIO $ readIORef $ holdValue h
-  askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (holdInvalidators h) (wi:))
-  askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedHold h) :))
-  return result
 
 {-# INLINE getDynHold #-}
 getDynHold :: (Defer (SomeHoldInit x) m, R.Patch p) => Dyn x p a -> m (Hold x p a)
@@ -2020,7 +2026,7 @@ instance R.Reflex (SpiderEnv x) where
   {-# INLINABLE never #-}
   never = SpiderEvent eventNever
   {-# INLINABLE constant #-}
-  constant = SpiderBehavior . BehaviorConst
+  constant = SpiderBehavior . behaviorConst
   {-# INLINABLE push #-}
   push f = SpiderEvent . push (coerce f) . unSpiderEvent
   {-# INLINABLE pull #-}
@@ -2065,7 +2071,7 @@ instance R.MonadHold (SpiderEnv x) (EventM x) where
   holdIncremental = holdIncrementalSpiderEventM
 
 holdSpiderEventM :: a -> R.Event (SpiderEnv x) a -> EventM x (R.Behavior (SpiderEnv x) a)
-holdSpiderEventM v0 e = fmap (SpiderBehavior . BehaviorHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
+holdSpiderEventM v0 e = fmap (SpiderBehavior . behaviorHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
 
 holdDynSpiderEventM :: a -> R.Event (SpiderEnv x) a -> EventM x (R.Dynamic (SpiderEnv x) a)
 holdDynSpiderEventM v0 e = fmap (SpiderDynamic . DynamicHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
@@ -2185,7 +2191,7 @@ instance R.MonadSample (SpiderEnv x) (SpiderHostFrame x) where
 
 instance R.MonadHold (SpiderEnv x) (SpiderHostFrame x) where
   {-# INLINABLE hold #-}
-  hold v0 e = SpiderHostFrame $ fmap (SpiderBehavior . BehaviorHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
+  hold v0 e = SpiderHostFrame $ fmap (SpiderBehavior . behaviorHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
   {-# INLINABLE holdDyn #-}
   holdDyn v0 e = SpiderHostFrame $ fmap (SpiderDynamic . DynamicHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
   {-# INLINABLE holdIncremental #-}
