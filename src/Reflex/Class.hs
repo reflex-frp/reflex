@@ -470,7 +470,6 @@ headE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
 headE e = do
   rec be <- hold e $ fmap (const never) e'
       let e' = switch be
-      e' `seq` return ()
   return e'
 
 -- | Create a new 'Event' that occurs on all but the first occurence of the
