@@ -2036,7 +2036,7 @@ instance R.Reflex (SpiderEnv x) where
   {-# INLINABLE fan #-}
   fan e = R.EventSelector $ SpiderEvent . select (fan (unSpiderEvent e))
   {-# INLINABLE switch #-}
-  switch = SpiderEvent . switch . (unsafeCoerce :: Behavior x (R.Event (SpiderEnv x) a) -> Behavior x (Event x a)) . unSpiderBehavior
+  switch = SpiderEvent . switch . (coerce :: Behavior x (R.Event (SpiderEnv x) a) -> Behavior x (Event x a)) . unSpiderBehavior
   {-# INLINABLE coincidence #-}
   coincidence = SpiderEvent . coincidence . (coerce :: Event x (R.Event (SpiderEnv x) a) -> Event x (Event x a)) . unSpiderEvent
   {-# INLINABLE current #-}
