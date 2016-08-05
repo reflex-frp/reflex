@@ -115,7 +115,7 @@ benchmark saulzar-bench
     mtl,
     primitive,
     process,
-    ref-tf == 0.4,
+    ref-tf,
     reflex,
     split,
     stm,

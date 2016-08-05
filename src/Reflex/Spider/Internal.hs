@@ -28,6 +28,7 @@ module Reflex.Spider.Internal
        , runSpiderHost
        , newSpiderEnv
        , askSpiderEnv
+       , SpiderEventHandle
        ) where
 
 import Control.Applicative
