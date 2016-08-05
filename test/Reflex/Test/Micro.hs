@@ -16,10 +16,10 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.Fix
 import Data.Char
-import Data.Functor.Misc
-import Data.Monoid
 import Data.Foldable
+import Data.Functor.Misc
 import qualified Data.Map as Map
+import Data.Monoid
 
 import Prelude
 
