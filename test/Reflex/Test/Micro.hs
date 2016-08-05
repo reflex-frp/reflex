@@ -23,6 +23,7 @@ import Data.Monoid
 
 import Prelude
 
+{-# ANN testCases "HLint: ignore Functor law" #-}
 testCases :: [(String, TestCase)]
 testCases =
   [ testB "hold"  $ hold "0" =<< events1
