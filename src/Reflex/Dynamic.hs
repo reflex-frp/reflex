@@ -444,7 +444,7 @@ mapDyn f = return . fmap f
 {-# DEPRECATED mapDynM "Consider using the Monad instance for Dynamic instead." #-}
 mapDynM :: forall t m a b. (Reflex t, MonadHold t m) => (forall m'. MonadSample t m' => a -> m' b) -> Dynamic t a -> m (Dynamic t b)
 mapDynM f d = do
-  let e' = push (liftM Just . f :: a -> PushM t (Maybe b)) $ updated d
+  let e' = push (fmap Just . f :: a -> PushM t (Maybe b)) $ updated d
       eb' = fmap constant e'
       v0 = pull $ f =<< sample (current d)
   bb' :: Behavior t (Behavior t b) <- hold v0 eb'
