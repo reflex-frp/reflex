@@ -63,6 +63,7 @@ module Reflex.Class
        , zipListWithEvent
        , headE
        , tailE
+       , headTailE
        , switcher
          -- * Debugging functions
        , traceEvent
