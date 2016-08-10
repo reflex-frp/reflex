@@ -36,6 +36,8 @@ module Reflex.Class
        , mergeWith
          -- ** Breaking up 'Event's
        , splitE
+       , fanEither
+       , fanThese
        , fanMap
        , dmapToThese
        , EitherTag (..)
@@ -95,6 +97,7 @@ import Data.Bifunctor
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (ShowTag (..))
+import Data.Either
 import Data.Foldable
 import Data.Functor.Bind hiding (join)
 import qualified Data.Functor.Bind as Bind
@@ -599,6 +602,18 @@ mergeList es = mergeWith (<>) $ map (fmap (:|[])) es
 -- occuring at that time.
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
+
+-- | Split the event into separate events for 'Left' and 'Right' values.
+fanEither :: Reflex t => Event t (Either a b) -> (Event t a, Event t b)
+fanEither e = let justLeft = either Just (const Nothing)
+                  justRight = either (const Nothing) Just
+              in
+                (fmapMaybe justLeft e, fmapMaybe justRight e)
+
+-- | Split the event into separate events for 'This' and 'That' values,
+-- allowing them to fire simultaneously when the input value is 'These'.
+fanThese :: Reflex t => Event t (These a b) -> (Event t a, Event t b)
+fanThese e = (fmapMaybe justThis e, fmapMaybe justThat e)
 
 -- | Split the event into an 'EventSelector' that allows efficient selection of
 -- the individual 'Event's.
