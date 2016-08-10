@@ -605,15 +605,22 @@ mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
 
 -- | Split the event into separate events for 'Left' and 'Right' values.
 fanEither :: Reflex t => Event t (Either a b) -> (Event t a, Event t b)
-fanEither e = let justLeft = either Just (const Nothing)
-                  justRight = either (const Nothing) Just
-              in
-                (fmapMaybe justLeft e, fmapMaybe justRight e)
+fanEither e =
+  let justLeft = either Just (const Nothing)
+      justRight = either (const Nothing) Just
+  in (fmapMaybe justLeft e, fmapMaybe justRight e)
 
 -- | Split the event into separate events for 'This' and 'That' values,
 -- allowing them to fire simultaneously when the input value is 'These'.
 fanThese :: Reflex t => Event t (These a b) -> (Event t a, Event t b)
-fanThese e = (fmapMaybe justThis e, fmapMaybe justThat e)
+fanThese e =
+  let this (This x) = Just x
+      this (These x _) = Just x
+      this _ = Nothing
+      that (That y) = Just y
+      that (These _ y) = Just y
+      that _ = Nothing
+  in (fmapMaybe this e, fmapMaybe that e)
 
 -- | Split the event into an 'EventSelector' that allows efficient selection of
 -- the individual 'Event's.
