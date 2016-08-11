@@ -54,6 +54,8 @@ module Reflex.Class
        , gate
          -- ** Combining 'Dynamic's
        , distributeDMapOverDynPure
+       , distributeListOverDyn
+       , distributeListOverDynWith
        , zipDyn
        , zipDynWith
          -- ** Accumulating state
