@@ -674,7 +674,7 @@ zipDynWith f da db =
   in unsafeBuildDynamic (f <$> sample (current da) <*> sample (current db)) ec
 
 instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
-  mconcat = fmap (mconcat . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..]
+  mconcat = distributeListOverDynWith mconcat
   mempty = constDyn mempty
   mappend = zipDynWith mappend
 
@@ -692,6 +692,15 @@ distributeDMapOverDynPure dm = case DMap.toList dm of
           olds <- sample $ current result
           return $ DMap.unionWithKey (\_ _ new -> new) olds news
     in result
+
+-- | Convert a list of 'Dynamic's into a 'Dynamic' list.
+distributeListOverDyn :: Reflex t => [Dynamic t a] -> Dynamic t [a]
+distributeListOverDyn = distributeListOverDynWith id
+
+-- | Create a new 'Dynamic' by applying a combining function to a list of 'Dynamic's
+distributeListOverDynWith :: Reflex t => ([a] -> b) -> [Dynamic t a] -> Dynamic t b
+distributeListOverDynWith f = fmap (f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..]
+
 
 --------------------------------------------------------------------------------
 -- Accumulator
