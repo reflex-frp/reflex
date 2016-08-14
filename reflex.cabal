@@ -48,6 +48,7 @@ library
     Reflex.Dynamic,
     Reflex.Dynamic.TH,
     Reflex.Dynamic.Uniq,
+    Reflex.DynamicWriter,
     Reflex.Host.Class,
     Reflex.PerformEvent.Base,
     Reflex.PerformEvent.Class,
