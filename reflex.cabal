@@ -25,6 +25,7 @@ library
     exception-transformers == 0.4.*,
     haskell-src-exts >= 1.16 && < 1.18,
     haskell-src-meta == 0.6.*,
+    lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
     primitive >= 0.5 && < 0.7,
@@ -48,6 +49,8 @@ library
     Reflex.Dynamic.TH,
     Reflex.Dynamic.Uniq,
     Reflex.Host.Class,
+    Reflex.PerformEvent.Base,
+    Reflex.PerformEvent.Class,
     Reflex.Pure,
     Reflex.Spider,
     Reflex.Spider.Internal
