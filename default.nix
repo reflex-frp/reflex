@@ -1,8 +1,9 @@
 { mkDerivation, base, bifunctors, containers, deepseq
 , dependent-map, dependent-sum, exception-transformers
-, haskell-src-exts, haskell-src-meta, hlint, MemoTrie, mtl
-, primitive, ref-tf, semigroupoids, semigroups, split, stdenv, stm
-, syb, template-haskell, these, transformers, transformers-compat
+, haskell-src-exts, haskell-src-meta, hlint, lens, MemoTrie
+, monad-control, mtl , primitive, ref-tf, semigroupoids
+, semigroups, split, stdenv, stm , syb, template-haskell
+, these, transformers, transformers-compat
 }:
 mkDerivation {
   pname = "reflex";
@@ -10,9 +11,10 @@ mkDerivation {
   src = builtins.filterSource (path: type: baseNameOf path != ".git") ./.;
   libraryHaskellDepends = [
     base bifunctors containers dependent-map dependent-sum
-    exception-transformers haskell-src-exts haskell-src-meta MemoTrie
-    mtl primitive ref-tf semigroupoids semigroups stm syb
-    template-haskell these transformers transformers-compat
+    exception-transformers haskell-src-exts haskell-src-meta lens
+    MemoTrie monad-control mtl primitive ref-tf semigroupoids
+    semigroups stm syb template-haskell these transformers 
+    transformers-compat
   ];
   testHaskellDepends = [
     base bifunctors containers deepseq dependent-map dependent-sum
