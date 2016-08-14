@@ -51,6 +51,7 @@ library
     Reflex.Host.Class,
     Reflex.PerformEvent.Base,
     Reflex.PerformEvent.Class,
+    Reflex.PostBuild.Class,
     Reflex.Pure,
     Reflex.Spider,
     Reflex.Spider.Internal
