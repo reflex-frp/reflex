@@ -9,7 +9,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Reflex.PerformEvent.Class where
 
-import Reflex
+import Reflex.Class
 
 import Control.Monad.Reader
 

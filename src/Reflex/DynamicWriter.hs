@@ -22,8 +22,9 @@ import Data.Functor.Misc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Semigroup
-import Reflex
+import Reflex.Class
 import Reflex.Deletable.Class
+import Reflex.Dynamic
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Host.Class

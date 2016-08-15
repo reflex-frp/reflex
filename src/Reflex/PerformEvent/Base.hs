@@ -11,10 +11,10 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Reflex.PerformEvent.Base where
 
-import Reflex
+import Reflex.Class
 import Reflex.Deletable.Class
-import Reflex.PerformEvent.Class
 import Reflex.Host.Class
+import Reflex.PerformEvent.Class
 
 import Control.Lens
 import Control.Monad.Exception

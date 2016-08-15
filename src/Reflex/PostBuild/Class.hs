@@ -13,7 +13,7 @@ import Control.Monad.Exception
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Control
-import Reflex
+import Reflex.Class
 import Reflex.Deletable.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class

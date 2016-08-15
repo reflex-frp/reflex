@@ -4,7 +4,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Reflex.Deletable.Class where
 
-import Reflex
+import Reflex.Class
 
 import Control.Monad.Reader
 import Control.Monad.Trans.Control
