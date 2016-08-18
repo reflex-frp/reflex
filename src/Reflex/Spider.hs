@@ -8,6 +8,7 @@ module Reflex.Spider
        , runSpiderHost
        , runSpiderHostForTimeline
        , newSpiderTimeline
+       , withSpiderTimeline
        , askSpiderTimeline
          -- * Deprecated
        , SpiderEnv
