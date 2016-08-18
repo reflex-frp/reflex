@@ -2021,7 +2021,11 @@ unsafeNewSpiderTimeline = do
 
 -- | Create a new SpiderTimeline
 newSpiderTimeline :: IO (Some SpiderTimeline)
-newSpiderTimeline = Some.This <$> unsafeNewSpiderTimeline
+newSpiderTimeline = withSpiderTimeline (pure . Some.This)
+
+-- | Pass a new timeline to the given function.
+withSpiderTimeline :: (forall x. SpiderTimeline x -> IO r) -> IO r
+withSpiderTimeline k = unsafeNewSpiderTimeline >>= k
 
 newtype SpiderPullM x a = SpiderPullM (BehaviorM a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
