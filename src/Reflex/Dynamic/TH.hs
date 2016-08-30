@@ -38,7 +38,7 @@ qDyn qe = do
   let exprs = reverse exprsReversed
       arg = foldr (\a b -> ConE 'FHCons `AppE` a `AppE` b) (ConE 'FHNil) $ map snd exprs
       param = foldr (\a b -> ConP 'HCons [VarP a, b]) (ConP 'HNil []) $ map fst exprs
-  [| return $ fmap $(return $ LamE [param] e') $ distributeFHListOverDynPure $(return arg) |]
+  [| return $ $(return $ LamE [param] e') <$> distributeFHListOverDynPure $(return arg) |]
 
 -- | Antiquote a 'Dynamic' expression.  This can /only/ be used inside of a
 -- 'qDyn' quotation.
