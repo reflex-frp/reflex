@@ -20,16 +20,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 -- | This module is the implementation of the 'Spider' 'Reflex' engine.  It uses
 -- a graph traversal algorithm to propagate 'Event's and 'Behavior's.
-module Reflex.Spider.Internal
-       ( Spider
-       , SpiderEnv (..)
-       , Global
-       , SpiderHost
-       , runSpiderHost
-       , newSpiderEnv
-       , askSpiderEnv
-       , SpiderEventHandle
-       ) where
+module Reflex.Spider.Internal where
 
 import Control.Applicative
 import Control.Concurrent
@@ -691,7 +682,7 @@ data Hold x p a
           }
 
 data EventEnv x
-   = EventEnv { eventEnvSpiderEnv :: !(SpiderEnv x)
+   = EventEnv { eventEnvSpiderTimeline :: !(SpiderTimeline x)
               , eventEnvAssignments :: !(IORef [SomeAssignment x]) -- Needed for Subscribe
               , eventEnvHoldInits :: !(IORef [SomeHoldInit x]) -- Needed for Subscribe
               , eventEnvMergeUpdates :: !(IORef [SomeMergeUpdate x])
@@ -750,17 +741,17 @@ instance HasCurrentHeight x (EventM x) where
     delayedRef <- asks eventEnvDelayedMerges
     liftIO $ modifyIORef' delayedRef $ IntMap.insertWith (++) (unHeight height) [DelayedMerge subscribed]
 
-class HasSpiderEnv x m | m -> x where
-  -- | Retrieve the current SpiderEnv
-  askSpiderEnv :: m (SpiderEnv x)
+class HasSpiderTimeline x m | m -> x where
+  -- | Retrieve the current SpiderTimeline
+  askSpiderTimeline :: m (SpiderTimeline x)
 
-instance HasSpiderEnv x (EventM x) where
-  {-# INLINE askSpiderEnv #-}
-  askSpiderEnv = EventM $ asks eventEnvSpiderEnv
+instance HasSpiderTimeline x (EventM x) where
+  {-# INLINE askSpiderTimeline #-}
+  askSpiderTimeline = EventM $ asks eventEnvSpiderTimeline
 
-instance HasSpiderEnv x (SpiderHost x) where
-  {-# INLINE askSpiderEnv #-}
-  askSpiderEnv = SpiderHost ask
+instance HasSpiderTimeline x (SpiderHost x) where
+  {-# INLINE askSpiderTimeline #-}
+  askSpiderTimeline = SpiderHost ask
 
 putCurrentHeight :: Height -> EventM x ()
 putCurrentHeight h = EventM $ do
@@ -811,7 +802,7 @@ hold v0 e = do
   return h
 
 {-# INLINE getHoldEventSubscription #-}
-getHoldEventSubscription :: forall m p a x. (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer SomeClear m, R.Patch p, HasCurrentHeight x m, Defer (SomeMergeInit x) m, Defer (SomeResetCoincidence x) m, HasSpiderEnv x m, m ~ EventM x) => Hold x p a -> m (EventSubscription x (p a))
+getHoldEventSubscription :: forall m p a x. (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer SomeClear m, R.Patch p, HasCurrentHeight x m, Defer (SomeMergeInit x) m, Defer (SomeResetCoincidence x) m, HasSpiderTimeline x m, m ~ EventM x) => Hold x p a -> m (EventSubscription x (p a))
 getHoldEventSubscription h = do
   ep <- liftIO $ readIORef $ holdParent h
   case ep of
@@ -1182,8 +1173,8 @@ coincidence a = eventCoincidence $ Coincidence
 run :: [DSum (RootTrigger x) Identity] -> ResultM x b -> SpiderHost x b
 run roots after = do
   tracePropagate $ "Running an event frame with " <> show (length roots) <> " events"
-  spiderEnv <- SpiderHost ask
-  result <- SpiderHost $ lift $ withMVar (_spiderEnv_lock spiderEnv) $ \_ -> flip runReaderT spiderEnv $ unSpiderHost $ runFrame $ do
+  spiderTimeline <- SpiderHost ask
+  result <- SpiderHost $ lift $ withMVar (_spiderTimeline_lock spiderTimeline) $ \_ -> flip runReaderT spiderTimeline $ unSpiderHost $ runFrame $ do
     rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readIORef occRef
@@ -1249,17 +1240,17 @@ type WeakList a = [Weak a]
 #ifdef DEBUG
 withIncreasedDepth :: CanTrace x m => m a -> m a
 withIncreasedDepth a = do
-  spiderEnv <- askSpiderEnv
-  liftIO $ modifyIORef' (_spiderEnv_depth spiderEnv) succ
+  spiderTimeline <- askSpiderTimeline
+  liftIO $ modifyIORef' (_spiderTimeline_depth spiderTimeline) succ
   result <- a
-  liftIO $ modifyIORef' (_spiderEnv_depth spiderEnv) pred
+  liftIO $ modifyIORef' (_spiderTimeline_depth spiderTimeline) pred
   return result
 #else
 withIncreasedDepth :: m a -> m a
 withIncreasedDepth = id
 #endif
 
-type CanTrace x m = (HasSpiderEnv x m, MonadIO m)
+type CanTrace x m = (HasSpiderTimeline x m, MonadIO m)
 
 {-# INLINE tracePropagate #-}
 tracePropagate :: (CanTrace x m) => String -> m ()
@@ -1278,8 +1269,8 @@ traceMWhen :: (CanTrace x m) => Bool -> m String -> m ()
 traceMWhen b getMessage = when b $ do
   message <- getMessage
 #ifdef DEBUG
-  spiderEnv <- askSpiderEnv
-  d <- liftIO $ readIORef $ _spiderEnv_depth spiderEnv
+  spiderTimeline <- askSpiderTimeline
+  d <- liftIO $ readIORef $ _spiderTimeline_depth spiderTimeline
 #else
   let d = 0
 #endif
@@ -1360,7 +1351,7 @@ zeroRef :: IORef Height
 zeroRef = unsafePerformIO $ newIORef zeroHeight
 
 type CanSubscribe x m =
-  ( HasSpiderEnv x m
+  ( HasSpiderTimeline x m
   , HasCurrentHeight x m
   , Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m -- The things we need to lazily initialize state
   , Defer SomeClear m -- Wiping out event firings
@@ -1530,7 +1521,7 @@ subscribeMergeSubscribed :: MergeSubscribed x k -> Subscriber x (DMap k Identity
 subscribeMergeSubscribed subscribed sub = WeakBag.insert sub (mergeSubscribedSubscribers subscribed) (mergeSubscribedWeakSelf subscribed) cleanupMergeSubscribed
 
 {-# SPECIALIZE getFanSubscribed :: GCompare k => k a -> Fan x k -> Subscriber x a -> EventM x (WeakBagTicket (Subscriber x a), FanSubscribed x k, Maybe a) #-}
-getFanSubscribed :: (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderEnv x m, m ~ EventM x, GCompare k) => k a -> Fan x k -> Subscriber x a -> m (WeakBagTicket (Subscriber x a), FanSubscribed x k, Maybe a)
+getFanSubscribed :: (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderTimeline x m, m ~ EventM x, GCompare k) => k a -> Fan x k -> Subscriber x a -> m (WeakBagTicket (Subscriber x a), FanSubscribed x k, Maybe a)
 getFanSubscribed k f sub = do
   mSubscribed <- liftIO $ readIORef $ fanSubscribed f
   case mSubscribed of
@@ -1589,7 +1580,7 @@ subscribeFanSubscribed k subscribed sub = do
     Just (FanSubscribedChildren list _ weakSelf) -> {-# SCC "hitSubscribeFanSubscribed" #-} WeakBag.insert sub list weakSelf cleanupFanSubscribed
 
 {-# SPECIALIZE getSwitchSubscribed :: Switch x a -> Subscriber x a -> EventM x (WeakBagTicket (Subscriber x a), SwitchSubscribed x a, Maybe a) #-}
-getSwitchSubscribed :: (Defer (SomeHoldInit x) m, Defer (SomeAssignment x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, Defer (SomeResetCoincidence x) m, HasCurrentHeight x m, HasSpiderEnv x m, m ~ EventM x) => Switch x a -> Subscriber x a -> m (WeakBagTicket (Subscriber x a), SwitchSubscribed x a, Maybe a)
+getSwitchSubscribed :: (Defer (SomeHoldInit x) m, Defer (SomeAssignment x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, Defer (SomeResetCoincidence x) m, HasCurrentHeight x m, HasSpiderTimeline x m, m ~ EventM x) => Switch x a -> Subscriber x a -> m (WeakBagTicket (Subscriber x a), SwitchSubscribed x a, Maybe a)
 getSwitchSubscribed s sub = do
   mSubscribed <- liftIO $ readIORef $ switchSubscribed s
   case mSubscribed of
@@ -1645,7 +1636,7 @@ subscribeSwitchSubscribed :: SwitchSubscribed x a -> Subscriber x a -> IO (WeakB
 subscribeSwitchSubscribed subscribed sub = WeakBag.insert sub (switchSubscribedSubscribers subscribed) (switchSubscribedWeakSelf subscribed) cleanupSwitchSubscribed
 
 {-# SPECIALIZE getCoincidenceSubscribed :: Coincidence x a -> Subscriber x a -> EventM x (WeakBagTicket (Subscriber x a), CoincidenceSubscribed x a, Maybe a) #-}
-getCoincidenceSubscribed :: forall x a m. (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderEnv x m, m ~ EventM x) => Coincidence x a -> Subscriber x a -> m (WeakBagTicket (Subscriber x a), CoincidenceSubscribed x a, Maybe a)
+getCoincidenceSubscribed :: forall x a m. (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderTimeline x m, m ~ EventM x) => Coincidence x a -> Subscriber x a -> m (WeakBagTicket (Subscriber x a), CoincidenceSubscribed x a, Maybe a)
 getCoincidenceSubscribed c sub = do
   mSubscribed <- liftIO $ readIORef $ coincidenceSubscribed c
   case mSubscribed of
@@ -1738,9 +1729,9 @@ initMerge (SomeMergeInit subscribed changed) = do
 
 -- | Run an event action outside of a frame
 runFrame :: forall x a. EventM x a -> SpiderHost x a --TODO: This function also needs to hold the mutex
-runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
+runFrame a = SpiderHost $ ask >>= \spiderTimeline -> lift $ do
   -- Clear out pending unsubscriptions; these will need to happen eventually anyway, and might cause us a lot of extra work during the frame, so get rid of them now
-  pendingCleanups <- atomicModifyIORef (_spiderEnv_cleanups spiderEnv) $ \x -> ([], x)
+  pendingCleanups <- atomicModifyIORef (_spiderTimeline_cleanups spiderTimeline) $ \x -> ([], x)
   {-# SCC "cleanups" #-} sequence_ pendingCleanups
   toAssignRef <- newIORef [] -- This should only actually get used when events are firing
   holdInitRef <- newIORef []
@@ -1751,7 +1742,7 @@ runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
   toClearRootRef <- newIORef []
   coincidenceInfosRef <- newIORef []
   delayedRef <- liftIO $ newIORef IntMap.empty
-  let env = EventEnv spiderEnv toAssignRef holdInitRef mergeUpdateRef mergeInitRef toClearRef toClearRootRef heightRef coincidenceInfosRef delayedRef
+  let env = EventEnv spiderTimeline toAssignRef holdInitRef mergeUpdateRef mergeInitRef toClearRef toClearRootRef heightRef coincidenceInfosRef delayedRef
   let go = do
         result <- a
         runHoldInits holdInitRef mergeInitRef -- This must happen before doing the assignments, in case subscribing a Hold causes existing Holds to be read by the newly-propagated events
@@ -1808,7 +1799,7 @@ runFrame a = SpiderHost $ ask >>= \spiderEnv -> lift $ do
     runEventM (runHoldInits holdInitRef mergeInitRef) env --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
     --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
     sub <- newSubscriberSwitch subscribed
-    subscription <- runReaderT (unSpiderHost (runFrame ({-# SCC "subscribeSwitch" #-} subscribe e sub))) spiderEnv --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
+    subscription <- runReaderT (unSpiderHost (runFrame ({-# SCC "subscribeSwitch" #-} subscribe e sub))) spiderTimeline --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
     {-
     stackTrace <- liftIO $ fmap renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
     liftIO $ putStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
@@ -1963,64 +1954,68 @@ invalidate toReconnectRef wis = do
 --------------------------------------------------------------------------------
 
 -- | The default, global Spider environment
-type Spider = SpiderEnv Global
+type Spider = SpiderTimeline Global
 
 -- | Designates the default, global Spider timeline
 data Global
 
-{-# NOINLINE globalSpiderEnv #-}
-globalSpiderEnv :: SpiderEnv Global
-globalSpiderEnv = unsafePerformIO unsafeNewSpiderEnv
+{-# NOINLINE globalSpiderTimeline #-}
+globalSpiderTimeline :: SpiderTimeline Global
+globalSpiderTimeline = unsafePerformIO unsafeNewSpiderTimeline
 
 -- | Stores all global data relevant to a particular Spider timeline; only one
 -- value should exist for each type @x@
-data SpiderEnv x = SpiderEnv
-  { _spiderEnv_toUnsubscribe :: !(IORef [SomeEventSubscription x])
-  , _spiderEnv_lock :: !(MVar ())
-  , _spiderEnv_cleanups :: !(IORef [IO ()])
+data SpiderTimeline x = SpiderTimeline
+  { _spiderTimeline_toUnsubscribe :: !(IORef [SomeEventSubscription x])
+  , _spiderTimeline_lock :: !(MVar ())
+  , _spiderTimeline_cleanups :: !(IORef [IO ()])
 #ifdef DEBUG
-  , _spiderEnv_depth :: !(IORef Int)
+  , _spiderTimeline_depth :: !(IORef Int)
 #endif
   }
-type role SpiderEnv nominal
+type role SpiderTimeline nominal
 
-instance GEq SpiderEnv where
-  a `geq` b = if _spiderEnv_lock a == _spiderEnv_lock b
-              then Just $ unsafeCoerce Refl -- This unsafeCoerce is safe because the same SpiderEnv can't have two different 'x' arguments
+instance GEq SpiderTimeline where
+  a `geq` b = if _spiderTimeline_lock a == _spiderTimeline_lock b
+              then Just $ unsafeCoerce Refl -- This unsafeCoerce is safe because the same SpiderTimeline can't have two different 'x' arguments
               else Nothing
 
-unsafeNewSpiderEnv :: forall x. IO (SpiderEnv x)
-unsafeNewSpiderEnv = do
+unsafeNewSpiderTimeline :: forall x. IO (SpiderTimeline x)
+unsafeNewSpiderTimeline = do
   toUnsubscribe <- newIORef []
   lock <- newMVar ()
   cleanups <- newIORef []
 #ifdef DEBUG
   depthRef <- newIORef 0
 #endif
-  return $ SpiderEnv
-    { _spiderEnv_toUnsubscribe = toUnsubscribe
-    , _spiderEnv_lock = lock
-    , _spiderEnv_cleanups = cleanups
+  return $ SpiderTimeline
+    { _spiderTimeline_toUnsubscribe = toUnsubscribe
+    , _spiderTimeline_lock = lock
+    , _spiderTimeline_cleanups = cleanups
 #ifdef DEBUG
-    , _spiderEnv_depth = depthRef
+    , _spiderTimeline_depth = depthRef
 #endif
     }
 
--- | Create a new SpiderEnv
-newSpiderEnv :: IO (Some SpiderEnv)
-newSpiderEnv = Some.This <$> unsafeNewSpiderEnv
+-- | Create a new SpiderTimeline
+newSpiderTimeline :: IO (Some SpiderTimeline)
+newSpiderTimeline = withSpiderTimeline (pure . Some.This)
+
+-- | Pass a new timeline to the given function.
+withSpiderTimeline :: (forall x. SpiderTimeline x -> IO r) -> IO r
+withSpiderTimeline k = unsafeNewSpiderTimeline >>= k
 
 newtype SpiderPullM x a = SpiderPullM (BehaviorM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
 newtype SpiderPushM x a = SpiderPushM (ComputeM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
-instance R.Reflex (SpiderEnv x) where
-  newtype Behavior (SpiderEnv x) a = SpiderBehavior { unSpiderBehavior :: Behavior x a }
-  newtype Event (SpiderEnv x) a = SpiderEvent { unSpiderEvent :: Event x a }
-  newtype Dynamic (SpiderEnv x) a = SpiderDynamic { unSpiderDynamic :: Dynamic x Identity a } deriving (Functor, Applicative, Monad)
-  newtype Incremental (SpiderEnv x) p a = SpiderIncremental { unSpiderIncremental :: Dynamic x p a }
-  type PullM (SpiderEnv x) = SpiderPullM x
-  type PushM (SpiderEnv x) = SpiderPushM x
+instance R.Reflex (SpiderTimeline x) where
+  newtype Behavior (SpiderTimeline x) a = SpiderBehavior { unSpiderBehavior :: Behavior x a }
+  newtype Event (SpiderTimeline x) a = SpiderEvent { unSpiderEvent :: Event x a }
+  newtype Dynamic (SpiderTimeline x) a = SpiderDynamic { unSpiderDynamic :: Dynamic x Identity a } deriving (Functor, Applicative, Monad)
+  newtype Incremental (SpiderTimeline x) p a = SpiderIncremental { unSpiderIncremental :: Dynamic x p a }
+  type PullM (SpiderTimeline x) = SpiderPullM x
+  type PushM (SpiderTimeline x) = SpiderPushM x
   {-# INLINABLE never #-}
   never = SpiderEvent eventNever
   {-# INLINABLE constant #-}
@@ -2030,13 +2025,13 @@ instance R.Reflex (SpiderEnv x) where
   {-# INLINABLE pull #-}
   pull = SpiderBehavior . pull . coerce
   {-# INLINABLE merge #-}
-  merge = SpiderEvent . merge . dynamicConst . (coerce :: DMap k (R.Event (SpiderEnv x)) -> DMap k (Event x))
+  merge = SpiderEvent . merge . dynamicConst . (coerce :: DMap k (R.Event (SpiderTimeline x)) -> DMap k (Event x))
   {-# INLINABLE fan #-}
   fan e = R.EventSelector $ SpiderEvent . select (fan (unSpiderEvent e))
   {-# INLINABLE switch #-}
-  switch = SpiderEvent . switch . (coerce :: Behavior x (R.Event (SpiderEnv x) a) -> Behavior x (Event x a)) . unSpiderBehavior
+  switch = SpiderEvent . switch . (coerce :: Behavior x (R.Event (SpiderTimeline x) a) -> Behavior x (Event x a)) . unSpiderBehavior
   {-# INLINABLE coincidence #-}
-  coincidence = SpiderEvent . coincidence . (coerce :: Event x (R.Event (SpiderEnv x) a) -> Event x (Event x a)) . unSpiderEvent
+  coincidence = SpiderEvent . coincidence . (coerce :: Event x (R.Event (SpiderTimeline x) a) -> Event x (Event x a)) . unSpiderEvent
   {-# INLINABLE current #-}
   current = SpiderBehavior . dynamicCurrent . unSpiderDynamic
   {-# INLINABLE updated #-}
@@ -2046,7 +2041,7 @@ instance R.Reflex (SpiderEnv x) where
   {-# INLINABLE unsafeBuildIncremental #-}
   unsafeBuildIncremental readV0 dv = SpiderIncremental $ dynamicDyn $ unsafeDyn (coerce readV0) $ unSpiderEvent dv
   {-# INLINABLE mergeIncremental #-}
-  mergeIncremental = SpiderEvent . merge . (unsafeCoerce :: Dynamic x R.PatchDMap (DMap k (R.Event (SpiderEnv x))) -> Dynamic x R.PatchDMap (DMap k (Event x))) . unSpiderIncremental
+  mergeIncremental = SpiderEvent . merge . (unsafeCoerce :: Dynamic x R.PatchDMap (DMap k (R.Event (SpiderTimeline x))) -> Dynamic x R.PatchDMap (DMap k (Event x))) . unSpiderIncremental
   {-# INLINABLE currentIncremental #-}
   currentIncremental = SpiderBehavior . dynamicCurrent . unSpiderIncremental
   {-# INLINABLE updatedIncremental #-}
@@ -2056,11 +2051,11 @@ instance R.Reflex (SpiderEnv x) where
     c <- readBehaviorUntracked $ dynamicCurrent i
     return $ Identity <$> R.apply p c --TODO: Avoid the redundant 'apply'
 
-instance R.MonadSample (SpiderEnv x) (EventM x) where
+instance R.MonadSample (SpiderTimeline x) (EventM x) where
   {-# INLINABLE sample #-}
   sample (SpiderBehavior b) = readBehaviorUntracked b
 
-instance R.MonadHold (SpiderEnv x) (EventM x) where
+instance R.MonadHold (SpiderTimeline x) (EventM x) where
   {-# INLINABLE hold #-}
   hold = holdSpiderEventM
   {-# INLINABLE holdDyn #-}
@@ -2068,16 +2063,16 @@ instance R.MonadHold (SpiderEnv x) (EventM x) where
   {-# INLINABLE holdIncremental #-}
   holdIncremental = holdIncrementalSpiderEventM
 
-holdSpiderEventM :: a -> R.Event (SpiderEnv x) a -> EventM x (R.Behavior (SpiderEnv x) a)
+holdSpiderEventM :: a -> R.Event (SpiderTimeline x) a -> EventM x (R.Behavior (SpiderTimeline x) a)
 holdSpiderEventM v0 e = fmap (SpiderBehavior . behaviorHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
 
-holdDynSpiderEventM :: a -> R.Event (SpiderEnv x) a -> EventM x (R.Dynamic (SpiderEnv x) a)
+holdDynSpiderEventM :: a -> R.Event (SpiderTimeline x) a -> EventM x (R.Dynamic (SpiderTimeline x) a)
 holdDynSpiderEventM v0 e = fmap (SpiderDynamic . dynamicHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
 
-holdIncrementalSpiderEventM :: R.Patch p => a -> R.Event (SpiderEnv x) (p a) -> EventM x (R.Incremental (SpiderEnv x) p a)
+holdIncrementalSpiderEventM :: R.Patch p => a -> R.Event (SpiderTimeline x) (p a) -> EventM x (R.Incremental (SpiderTimeline x) p a)
 holdIncrementalSpiderEventM v0 e = fmap (SpiderIncremental . dynamicHold) $ hold v0 $ unSpiderEvent e
 
-instance R.MonadHold (SpiderEnv x) (SpiderHost x) where
+instance R.MonadHold (SpiderTimeline x) (SpiderHost x) where
   {-# INLINABLE hold #-}
   hold v0 e = R.runHostFrame $ R.hold v0 e
   {-# INLINABLE holdDyn #-}
@@ -2085,19 +2080,19 @@ instance R.MonadHold (SpiderEnv x) (SpiderHost x) where
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 e = R.runHostFrame $ R.holdIncremental v0 e
 
-instance R.MonadSample (SpiderEnv x) (SpiderHost x) where
+instance R.MonadSample (SpiderTimeline x) (SpiderHost x) where
   {-# INLINABLE sample #-}
   sample = runFrame . readBehaviorUntracked . unSpiderBehavior
 
-instance R.MonadSample (SpiderEnv x) (SpiderPullM x) where
+instance R.MonadSample (SpiderTimeline x) (SpiderPullM x) where
   {-# INLINABLE sample #-}
   sample = coerce . readBehaviorTracked . unSpiderBehavior
 
-instance R.MonadSample (SpiderEnv x) (SpiderPushM x) where
+instance R.MonadSample (SpiderTimeline x) (SpiderPushM x) where
   {-# INLINABLE sample #-}
   sample (SpiderBehavior b) = SpiderPushM $ readBehaviorUntracked b
 
-instance R.MonadHold (SpiderEnv x) (SpiderPushM x) where
+instance R.MonadHold (SpiderTimeline x) (SpiderPushM x) where
   {-# INLINABLE hold #-}
   hold v0 e = R.current <$> R.holdDyn v0 e
   {-# INLINABLE holdDyn #-}
@@ -2112,7 +2107,7 @@ data SpiderEventHandle x a = SpiderEventHandle
   , spiderEventHandleValue :: IORef (Maybe a)
   }
 
-instance R.MonadSubscribeEvent (SpiderEnv x) (SpiderHostFrame x) where
+instance R.MonadSubscribeEvent (SpiderTimeline x) (SpiderHostFrame x) where
   {-# INLINABLE subscribeEvent #-}
   subscribeEvent e = SpiderHostFrame $ do
     --TODO: Unsubscribe eventually (manually and/or with weak ref)
@@ -2129,12 +2124,12 @@ instance R.MonadSubscribeEvent (SpiderEnv x) (SpiderHostFrame x) where
       , spiderEventHandleValue = val
       }
 
-instance R.ReflexHost (SpiderEnv x) where
-  type EventTrigger (SpiderEnv x) = RootTrigger x
-  type EventHandle (SpiderEnv x) = SpiderEventHandle x
-  type HostFrame (SpiderEnv x) = SpiderHostFrame x
+instance R.ReflexHost (SpiderTimeline x) where
+  type EventTrigger (SpiderTimeline x) = RootTrigger x
+  type EventHandle (SpiderTimeline x) = SpiderEventHandle x
+  type HostFrame (SpiderTimeline x) = SpiderHostFrame x
 
-instance R.MonadReadEvent (SpiderEnv x) (ReadPhase x) where
+instance R.MonadReadEvent (SpiderTimeline x) (ReadPhase x) where
   {-# NOINLINE readEvent #-}
   readEvent h = ReadPhase $ fmap (fmap return) $ liftIO $ do
     result <- readIORef $ spiderEventHandleValue h
@@ -2155,7 +2150,7 @@ instance MonadAtomicRef (EventM x) where
   atomicModifyRef r f = liftIO $ atomicModifyRef r f
 
 -- | The monad for actions that manipulate a Spider timeline identified by @x@
-newtype SpiderHost x a = SpiderHost { unSpiderHost :: ReaderT (SpiderEnv x) IO a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
+newtype SpiderHost x a = SpiderHost { unSpiderHost :: ReaderT (SpiderTimeline x) IO a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 instance Monad (SpiderHost x) where
   {-# INLINABLE (>>=) #-}
@@ -2170,7 +2165,12 @@ instance Monad (SpiderHost x) where
 -- | Run an action affecting the global Spider timeline; this will be guarded by
 -- a mutex for that timeline
 runSpiderHost :: SpiderHost Global a -> IO a
-runSpiderHost (SpiderHost a) = runReaderT a globalSpiderEnv
+runSpiderHost (SpiderHost a) = runReaderT a globalSpiderTimeline
+
+-- | Run an action affecting a given Spider timeline; this will be guarded by a
+-- mutex for that timeline
+runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimeline x -> IO a
+runSpiderHostForTimeline (SpiderHost a) = runReaderT a
 
 newtype SpiderHostFrame x a = SpiderHostFrame { runSpiderHostFrame :: EventM x a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
@@ -2184,10 +2184,10 @@ instance Monad (SpiderHostFrame x) where
   {-# INLINABLE fail #-}
   fail s = SpiderHostFrame $ fail s
 
-instance R.MonadSample (SpiderEnv x) (SpiderHostFrame x) where
+instance R.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
   sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
 
-instance R.MonadHold (SpiderEnv x) (SpiderHostFrame x) where
+instance R.MonadHold (SpiderTimeline x) (SpiderHostFrame x) where
   {-# INLINABLE hold #-}
   hold v0 e = SpiderHostFrame $ fmap (SpiderBehavior . behaviorHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
   {-# INLINABLE holdDyn #-}
@@ -2211,29 +2211,29 @@ newFanEventWithTriggerIO f = do
         }
   return $ EventSelector $ \k -> eventRoot k r
 
-instance R.MonadReflexCreateTrigger (SpiderEnv x) (SpiderHost x) where
+instance R.MonadReflexCreateTrigger (SpiderTimeline x) (SpiderHost x) where
   newEventWithTrigger = SpiderHost . lift . fmap SpiderEvent . newEventWithTriggerIO
   newFanEventWithTrigger f = SpiderHost $ lift $ do
     es <- newFanEventWithTriggerIO f
     return $ R.EventSelector $ SpiderEvent . select es
 
-instance R.MonadReflexCreateTrigger (SpiderEnv x) (SpiderHostFrame x) where
+instance R.MonadReflexCreateTrigger (SpiderTimeline x) (SpiderHostFrame x) where
   newEventWithTrigger = SpiderHostFrame . EventM . liftIO . fmap SpiderEvent . newEventWithTriggerIO
   newFanEventWithTrigger f = SpiderHostFrame $ EventM $ liftIO $ do
     es <- newFanEventWithTriggerIO f
     return $ R.EventSelector $ SpiderEvent . select es
 
-instance R.MonadSubscribeEvent (SpiderEnv x) (SpiderHost x) where
+instance R.MonadSubscribeEvent (SpiderTimeline x) (SpiderHost x) where
   {-# INLINABLE subscribeEvent #-}
   subscribeEvent = runFrame . runSpiderHostFrame . R.subscribeEvent
 
 newtype ReadPhase x a = ReadPhase (ResultM x a) deriving (Functor, Applicative, Monad, MonadFix)
 
-instance R.MonadSample (SpiderEnv x) (ReadPhase x) where
+instance R.MonadSample (SpiderTimeline x) (ReadPhase x) where
   {-# INLINABLE sample #-}
   sample = ReadPhase . R.sample
 
-instance R.MonadHold (SpiderEnv x) (ReadPhase x) where
+instance R.MonadHold (SpiderTimeline x) (ReadPhase x) where
   {-# INLINABLE hold #-}
   hold v0 e = ReadPhase $ R.hold v0 e
   {-# INLINABLE holdDyn #-}
@@ -2241,7 +2241,7 @@ instance R.MonadHold (SpiderEnv x) (ReadPhase x) where
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 e = ReadPhase $ R.holdIncremental v0 e
 
-instance R.MonadReflexHost (SpiderEnv x) (SpiderHost x) where
+instance R.MonadReflexHost (SpiderTimeline x) (SpiderHost x) where
   type ReadPhase (SpiderHost x) = ReadPhase x
   fireEventsAndRead es (ReadPhase a) = run es a
   runHostFrame = runFrame . runSpiderHostFrame
@@ -2263,3 +2263,10 @@ instance MonadRef (SpiderHostFrame x) where
 
 instance MonadAtomicRef (SpiderHostFrame x) where
   atomicModifyRef r = SpiderHostFrame . atomicModifyRef r
+
+--------------------------------------------------------------------------------
+-- Deprecated items
+--------------------------------------------------------------------------------
+
+{-# DEPRECATED SpiderEnv "Use 'SpiderTimeline' instead" #-}
+type SpiderEnv = SpiderTimeline

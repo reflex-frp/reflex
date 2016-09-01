@@ -36,6 +36,8 @@ module Reflex.Class
        , mergeWith
          -- ** Breaking up 'Event's
        , splitE
+       , fanEither
+       , fanThese
        , fanMap
        , dmapToThese
        , EitherTag (..)
@@ -52,6 +54,8 @@ module Reflex.Class
        , gate
          -- ** Combining 'Dynamic's
        , distributeDMapOverDynPure
+       , distributeListOverDyn
+       , distributeListOverDynWith
        , zipDyn
        , zipDynWith
          -- ** Accumulating state
@@ -63,6 +67,7 @@ module Reflex.Class
        , zipListWithEvent
        , headE
        , tailE
+       , headTailE
        , switcher
          -- * Debugging functions
        , traceEvent
@@ -94,6 +99,7 @@ import Data.Bifunctor
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (ShowTag (..))
+import Data.Either
 import Data.Foldable
 import Data.Functor.Bind hiding (join)
 import qualified Data.Functor.Bind as Bind
@@ -598,6 +604,25 @@ mergeList es = mergeWith (<>) $ map (fmap (:|[])) es
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
 
+-- | Split the event into separate events for 'Left' and 'Right' values.
+fanEither :: Reflex t => Event t (Either a b) -> (Event t a, Event t b)
+fanEither e =
+  let justLeft = either Just (const Nothing)
+      justRight = either (const Nothing) Just
+  in (fmapMaybe justLeft e, fmapMaybe justRight e)
+
+-- | Split the event into separate events for 'This' and 'That' values,
+-- allowing them to fire simultaneously when the input value is 'These'.
+fanThese :: Reflex t => Event t (These a b) -> (Event t a, Event t b)
+fanThese e =
+  let this (This x) = Just x
+      this (These x _) = Just x
+      this _ = Nothing
+      that (That y) = Just y
+      that (These _ y) = Just y
+      that _ = Nothing
+  in (fmapMaybe this e, fmapMaybe that e)
+
 -- | Split the event into an 'EventSelector' that allows efficient selection of
 -- the individual 'Event's.
 fanMap :: (Reflex t, Ord k) => Event t (Map k a) -> EventSelector t (Const2 k a)
@@ -650,7 +675,7 @@ zipDynWith f da db =
   in unsafeBuildDynamic (f <$> sample (current da) <*> sample (current db)) ec
 
 instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
-  mconcat = fmap (mconcat . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..]
+  mconcat = distributeListOverDynWith mconcat
   mempty = constDyn mempty
   mappend = zipDynWith mappend
 
@@ -668,6 +693,15 @@ distributeDMapOverDynPure dm = case DMap.toList dm of
           olds <- sample $ current result
           return $ DMap.unionWithKey (\_ _ new -> new) olds news
     in result
+
+-- | Convert a list of 'Dynamic's into a 'Dynamic' list.
+distributeListOverDyn :: Reflex t => [Dynamic t a] -> Dynamic t [a]
+distributeListOverDyn = distributeListOverDynWith id
+
+-- | Create a new 'Dynamic' by applying a combining function to a list of 'Dynamic's
+distributeListOverDynWith :: Reflex t => ([a] -> b) -> [Dynamic t a] -> Dynamic t b
+distributeListOverDynWith f = fmap (f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..]
+
 
 --------------------------------------------------------------------------------
 -- Accumulator

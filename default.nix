@@ -1,18 +1,20 @@
 { mkDerivation, base, bifunctors, containers, deepseq
 , dependent-map, dependent-sum, exception-transformers
-, haskell-src-exts, haskell-src-meta, hlint, MemoTrie, mtl
-, primitive, ref-tf, semigroupoids, semigroups, split, stdenv, stm
-, syb, template-haskell, these, transformers, transformers-compat
+, haskell-src-exts, haskell-src-meta, hlint, lens, MemoTrie
+, monad-control, mtl, primitive, ref-tf, semigroupoids, semigroups
+, split, stdenv, stm, syb, template-haskell, these, transformers
+, transformers-compat
 }:
 mkDerivation {
   pname = "reflex";
-  version = "0.4.0";
+  version = "0.5.0";
   src = ./.;
   libraryHaskellDepends = [
     base bifunctors containers dependent-map dependent-sum
-    exception-transformers haskell-src-exts haskell-src-meta MemoTrie
-    mtl primitive ref-tf semigroupoids semigroups stm syb
-    template-haskell these transformers transformers-compat
+    exception-transformers haskell-src-exts haskell-src-meta lens
+    MemoTrie monad-control mtl primitive ref-tf semigroupoids
+    semigroups stm syb template-haskell these transformers
+    transformers-compat
   ];
   testHaskellDepends = [
     base bifunctors containers deepseq dependent-map dependent-sum
