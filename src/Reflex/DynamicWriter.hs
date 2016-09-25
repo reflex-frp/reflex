@@ -71,7 +71,7 @@ data Replaceable t w = Replaceable
   , _replaceable_modify :: Event t (Maybe (Replaceable t w)) -- "Please delete" is represented with an event of Nothing; all subsequent events will be ignored
   }
 
-type DynamicWriterAccumulator t w = [Replaceable t (Dynamic t w)]
+type DynamicWriterAccumulator t w = [Dynamic t w]
 
 newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT (DynamicWriterAccumulator t w) m a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadHold t, MonadSample t, MonadAsyncException, MonadException) -- The list is kept in reverse order
 
@@ -111,17 +111,16 @@ mconcatIncrementalReplaceableDynMap m0 m' additionsCeased = do
       result = fmap (mconcat . Map.elems) $ incrementalToDynamic $ mergeDynIncremental i
   return $ Replaceable result $ fmapMaybe id $ updated $ zipDynWith replaceSelf noMoreAdditions $ incrementalToDynamic vals
 
-runDynamicWriterT :: (MonadFix m, Reflex t, MonadHold t m, Monoid w) => DynamicWriterT t w m a -> m (a, Dynamic t w)
+runDynamicWriterT :: (MonadFix m, Reflex t, Monoid w) => DynamicWriterT t w m a -> m (a, Dynamic t w)
 runDynamicWriterT (DynamicWriterT a) = do
   (result, ws) <- runStateT a []
-  Replaceable w _ <- mconcatIncrementalReplaceableDynMap (Map.fromList $ zip [1 :: Int ..] $ reverse ws) never never
-  return (result, w)
+  return (result, mconcat $ reverse ws)
 
 class Monad m => MonadDynamicWriter t w m | m -> t w where
   tellDyn :: Dynamic t w -> m ()
 
 instance (Monad m, Reflex t) => MonadDynamicWriter t w (DynamicWriterT t w m) where
-  tellDyn w = DynamicWriterT $ modify (Replaceable w never :)
+  tellDyn w = DynamicWriterT $ modify (w :)
 
 instance MonadReader r m => MonadReader r (DynamicWriterT t w m) where
   ask = lift ask
