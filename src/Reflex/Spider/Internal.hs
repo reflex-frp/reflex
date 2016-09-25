@@ -2281,6 +2281,10 @@ instance MonadRef (SpiderHostFrame x) where
 instance MonadAtomicRef (SpiderHostFrame x) where
   atomicModifyRef r = SpiderHostFrame . atomicModifyRef r
 
+instance PrimMonad (SpiderHostFrame x) where
+  type PrimState (SpiderHostFrame x) = PrimState IO
+  primitive = SpiderHostFrame . EventM . primitive
+
 --------------------------------------------------------------------------------
 -- Deprecated items
 --------------------------------------------------------------------------------

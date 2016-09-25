@@ -20,6 +20,7 @@ module Data.Functor.Misc
        , WrapArg (..)
          -- * Convenience functions for DMap
        , mapWithFunctorToDMap
+       , mapKeyValuePairsMonotonic
        , combineDMapsWithKey
          -- * Deprecated functions
        , sequenceDmap

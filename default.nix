@@ -3,7 +3,7 @@
 , haskell-src-exts, haskell-src-meta, hlint, lens, MemoTrie
 , monad-control, mtl , primitive, ref-tf, semigroupoids
 , semigroups, split, stdenv, stm , syb, template-haskell
-, these, transformers, transformers-compat
+, these, transformers, transformers-compat, prim-uniq
 }:
 mkDerivation {
   pname = "reflex";
@@ -13,8 +13,8 @@ mkDerivation {
     base bifunctors containers dependent-map dependent-sum
     exception-transformers haskell-src-exts haskell-src-meta lens
     MemoTrie monad-control mtl primitive ref-tf semigroupoids
-    semigroups stm syb template-haskell these transformers 
-    transformers-compat
+    semigroups stm syb template-haskell these transformers
+    transformers-compat prim-uniq
   ];
   testHaskellDepends = [
     base bifunctors containers deepseq dependent-map dependent-sum
