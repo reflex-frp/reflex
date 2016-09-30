@@ -16,6 +16,7 @@ module Reflex.PerformEvent.Base where
 
 import Reflex.Class
 import Reflex.Host.Class
+import Reflex.PostBuild.Class
 import Reflex.PerformEvent.Class
 
 import Control.Lens
@@ -51,6 +52,10 @@ deriving instance ReflexHost t => Monad (PerformEventT t m)
 deriving instance ReflexHost t => MonadFix (PerformEventT t m)
 deriving instance (ReflexHost t, MonadIO (HostFrame t)) => MonadIO (PerformEventT t m)
 deriving instance (ReflexHost t, MonadException (HostFrame t)) => MonadException (PerformEventT t m)
+
+instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m) where
+  type PrimState (PerformEventT t m) = PrimState (HostFrame t)
+  primitive = PerformEventT . lift . primitive
 
 instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent t (PerformEventT t m) where
   type Performable (PerformEventT t m) = HostFrame t
@@ -153,21 +158,15 @@ runRequestT (RequestT a) responses = do
   (result, requests) <- runReaderT (runStateT a mempty) $ fan $ mapKeyValuePairsMonotonic (\(t :=> e) -> WrapArg t :=> Identity e) <$> responses
   return (result, mergeWith DMap.union requests)
 
-requesting_ :: (Reflex t, PrimMonad m) => Event t (request a) -> RequestT t request response m ()
-requesting_ req = do
-  t <- lift newTag
-  RequestT $ modify $ (:) $ DMap.singleton t <$> req
-
-withRequesting :: (Reflex t, PrimMonad m) => (Event t (response a) -> RequestT t request response m (Event t (request a), r)) -> RequestT t request response m r
-withRequesting a = do
-  t <- lift newTag
-  s <- RequestT ask
-  (req, result) <- a $ select s $ WrapArg t
-  RequestT $ modify $ (:) $ DMap.singleton t <$> req
-  return result
-
-requesting :: (Reflex t, PrimMonad m) => Event t (request a) -> RequestT t request response m (Event t (response a))
-requesting req = withRequesting $ return . (,) req
+instance (Reflex t, PrimMonad m) => MonadRequest t (RequestT t request response m) where
+  type Request (RequestT t request response m) = request
+  type Response (RequestT t request response m) = response
+  withRequesting a = do
+    t <- lift newTag
+    s <- RequestT ask
+    (req, result) <- a $ select s $ WrapArg t
+    RequestT $ modify $ (:) $ DMap.singleton t <$> req
+    return result
 
 data DMapTransform (a :: *) k k' v v' = forall (b :: *). DMapTransform !(k a -> k' b) !(v a -> v' b)
 
@@ -216,6 +215,48 @@ sequenceDMapWithAdjustRequestTWith f (dm0 :: DMap k (RequestT t request response
     mconcat $ (\(Const2 _ :=> Identity reqs) -> reqs) <$> DMap.toList m
 --  RequestT $ modify $ (:) $ coincidence $ ffor requests' $ \(PatchDMap p) -> mergeWith DMap.union $ catMaybes $ ffor (DMap.toList p) $ \(Const2 _ :=> Compose me) -> me -- We could make it prompt like this, but this seems to be slower than just delaying the PostBuild event to allow this stuff to settle (which is more similar to the previous behavior anyway)
   return (result0, result')
+
+instance PerformEvent t m => PerformEvent t (RequestT t request response m) where
+  type Performable (RequestT t request response m) = Performable m
+  performEvent_ = lift . performEvent_
+  performEvent = lift . performEvent
+
+instance PostBuild t m => PostBuild t (RequestT t request response m) where
+  getPostBuild = lift getPostBuild
+
+instance TriggerEvent t m => TriggerEvent t (RequestT t request response m) where
+  newTriggerEvent = lift newTriggerEvent
+  newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
+  newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete
+
+instance MonadReader r m => MonadReader r (RequestT t request response m) where
+  ask = lift ask
+  local f (RequestT a) = RequestT $ mapStateT (mapReaderT $ local f) a
+  reader = lift . reader
+
+{-
+withRequestT :: forall t m a (req :: * -> *) (req' :: * -> *).
+                (Reflex t, MonadHold t m, MonadFix m)
+             => (forall x. request x -> request' x)
+             -> (forall x. response' x -> response x)
+             -> RequestT t request response m a
+             -> RequestT t request' response m a
+withRequestT f g m = RequestT $ hoist (hoist (withDynamicWriterT f')) (unRequestT m)
+  where
+    f' :: Event t [(y, Some request)] -> Event t [(y, Some request')]
+    f' = fmap . fmap . fmap $ \(SomeRequest req) -> SomeRequest $ f req
+-}
+
+instance MonadRef m => MonadRef (RequestT t request response m) where
+  type Ref (RequestT t request response m) = Ref m
+  newRef = lift . newRef
+  readRef = lift . readRef
+  writeRef r = lift . writeRef r
+
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (RequestT t request response m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
+
 
 --------------------------------------------------------------------------------
 -- Helpers

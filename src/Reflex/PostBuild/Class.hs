@@ -11,6 +11,7 @@
 module Reflex.PostBuild.Class where
 
 import Control.Monad.Exception
+import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Control
@@ -24,6 +25,10 @@ class (Reflex t, Monad m) => PostBuild t m | m -> t where
   getPostBuild :: m (Event t ())
 
 newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event t ()) m a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans, MonadException, MonadAsyncException)
+
+instance PrimMonad m => PrimMonad (PostBuildT x m) where
+  type PrimState (PostBuildT x m) = PrimState m
+  primitive = lift . primitive
 
 instance MonadTransControl (PostBuildT t) where
   type StT (PostBuildT t) a = StT (ReaderT (Event t ())) a

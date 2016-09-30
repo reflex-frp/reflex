@@ -177,3 +177,20 @@ instance (MonadAdjust t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => Mon
     i <- holdIncremental liftedWritten0 liftedWritten'
     tellDyn $ join $ fold . dmapToMap <$> incrementalToDynamic i
     return (liftedResult0, liftedResult')
+
+withDynamicWriterT :: (Monoid w, Reflex t, MonadHold t m, MonadFix m)
+                   => (w -> w')
+                   -> DynamicWriterT t w m a
+                   -> DynamicWriterT t w' m a
+withDynamicWriterT f dw = do
+  (r, d) <- lift $ do
+    (r, d) <- runDynamicWriterT dw
+    let d' = fmap f d
+    return (r, d')
+  tellDyn d
+  return r
+
+instance MonadRequest t m => MonadRequest t (DynamicWriterT t w m) where
+  type Request (DynamicWriterT t w m) = Request m
+  type Response (DynamicWriterT t w m) = Response m
+  withRequesting f = DynamicWriterT $ withRequesting $ unDynamicWriterT . f
