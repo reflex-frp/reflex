@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 -- | This module defines the 'WeakBag' type, which represents a mutable
 -- collection of items that does not cause the items to be retained in memory.
 -- This is useful for situations where a value needs to be inspected or modified
@@ -12,7 +13,6 @@ module Data.WeakBag
        , remove
        ) where
 
-import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad hiding (forM_, mapM_)
 import Control.Monad.IO.Class
@@ -28,8 +28,8 @@ import Prelude hiding (mapM_, traverse)
 -- that is, they can still be garbage-collected.  As long as the @a@s remain
 -- alive, the 'WeakBag' will continue to refer to them.
 data WeakBag a = WeakBag
-  { _weakBag_nextId :: {-# UNPACK #-} !(TVar Int) --TODO: what if this wraps around?
-  , _weakBag_children :: {-# UNPACK #-} !(TVar (IntMap (Weak a)))
+  { _weakBag_nextId :: {-# UNPACK #-} !(IORef Int) --TODO: what if this wraps around?
+  , _weakBag_children :: {-# UNPACK #-} !(IORef (IntMap (Weak a)))
   }
 
 -- | When inserting an item into a 'WeakBag', a 'WeakBagTicket' is returned.  If
@@ -56,24 +56,19 @@ insert :: a -- ^ The item
 insert a (WeakBag nextId children) wbRef finalizer = {-# SCC "insert" #-} do
   a' <- evaluate a
   wbRef' <- evaluate wbRef
-  myId <- atomically $ do
-    myId <- readTVar nextId
-    writeTVar nextId $! succ myId
-    return myId
+  myId <- atomicModifyIORef' nextId $ \n -> (succ n, n)
   let cleanup = do
         wb <- readIORef wbRef'
         mb <- deRefWeak wb
         forM_ mb $ \b -> do
-          isLastNode <- atomically $ do --TODO: Should this run even when mb is Nothing?
-            cs <- readTVar children
-            let csWithoutMe = IntMap.delete myId cs
-            writeTVar children $! csWithoutMe
-            return $ IntMap.size csWithoutMe == 0
-          when isLastNode $ finalizer b
+          csWithoutMe <- atomicModifyIORef children $ \cs ->
+            let !csWithoutMe = IntMap.delete myId cs
+            in (csWithoutMe, csWithoutMe)
+          when (IntMap.null csWithoutMe) $ finalizer b
           return ()
         return ()
   wa <- mkWeakPtr a' $ Just cleanup
-  atomically $ modifyTVar' children $ IntMap.insert myId wa
+  atomicModifyIORef' children $ \cs -> (IntMap.insert myId wa cs, ())
   return $ WeakBagTicket
     { _weakBagTicket_weakItem = wa
     , _weakBagTicket_item = a'
@@ -83,8 +78,8 @@ insert a (WeakBag nextId children) wbRef finalizer = {-# SCC "insert" #-} do
 {-# INLINE empty #-}
 empty :: IO (WeakBag a)
 empty = {-# SCC "empty" #-} do
-  nextId <- newTVarIO 1
-  children <- newTVarIO IntMap.empty
+  nextId <- newIORef 1
+  children <- newIORef IntMap.empty
   let bag = WeakBag
         { _weakBag_nextId = nextId
         , _weakBag_children = children
@@ -107,7 +102,7 @@ singleton a wbRef finalizer = {-# SCC "singleton" #-} do
 -- is made about the order of the traversal.
 traverse :: MonadIO m => WeakBag a -> (a -> m ()) -> m ()
 traverse (WeakBag _ children) f = {-# SCC "traverse" #-} do
-  cs <- liftIO $ readTVarIO children
+  cs <- liftIO $ readIORef children
   forM_ cs $ \c -> do
     ma <- liftIO $ deRefWeak c
     mapM_ f ma
