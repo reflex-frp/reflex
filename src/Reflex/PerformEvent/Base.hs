@@ -1,7 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -12,31 +15,36 @@
 module Reflex.PerformEvent.Base where
 
 import Reflex.Class
-import Reflex.Deletable.Class
 import Reflex.Host.Class
+import Reflex.PostBuild.Class
 import Reflex.PerformEvent.Class
 
 import Control.Lens
 import Control.Monad.Exception
 import Control.Monad.Identity
+import Control.Monad.Primitive
 import Control.Monad.Ref
 import Control.Monad.State.Strict
-import Data.Align
-import Data.Dependent.Map (DMap)
+import Control.Monad.Reader
+import Data.Coerce
+import Data.Dependent.Map (DMap, GCompare (..), Some)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.Functor.Compose
 import Data.Functor.Misc
-import Data.Maybe
 import Data.Semigroup
+import qualified Data.Some as Some
 import Data.These
-import Data.Word
+import Data.Tuple
+import Data.Unique.Tag
+
+import Unsafe.Coerce
 
 newtype EventTriggerRef t m a = EventTriggerRef { unEventTriggerRef :: Ref m (Maybe (EventTrigger t a)) }
 
 newtype FireCommand t m = FireCommand { runFireCommand :: forall a. [DSum (EventTrigger t) Identity] -> ReadPhase m a -> m [a] } --TODO: The handling of this ReadPhase seems wrong, or at least inelegant; how do we actually make the decision about what order frames run in?
 
-newtype PerformEventT t m a = PerformEventT { unPerformEventT :: StateT [Event t (These (PerformEventT t m [DSum (EventTriggerRef t m) Identity]) ())] (HostFrame t) a }
+newtype PerformEventT t m a = PerformEventT { unPerformEventT :: RequestT t (HostFrame t) Identity (HostFrame t) a }
 
 deriving instance ReflexHost t => Functor (PerformEventT t m)
 deriving instance ReflexHost t => Applicative (PerformEventT t m)
@@ -45,29 +53,25 @@ deriving instance ReflexHost t => MonadFix (PerformEventT t m)
 deriving instance (ReflexHost t, MonadIO (HostFrame t)) => MonadIO (PerformEventT t m)
 deriving instance (ReflexHost t, MonadException (HostFrame t)) => MonadException (PerformEventT t m)
 
-instance (ReflexHost t, MonadAsyncException (HostFrame t)) => MonadAsyncException (PerformEventT t m) where
-  mask f = PerformEventT $ mask $ \unmask -> unPerformEventT $ f $ PerformEventT . unmask . unPerformEventT
+instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m) where
+  type PrimState (PerformEventT t m) = PrimState (HostFrame t)
+  primitive = PerformEventT . lift . primitive
 
-instance (ReflexHost t, Ref m ~ Ref IO, MonadRef (HostFrame t), Ref (HostFrame t) ~ Ref IO) => PerformEvent t (PerformEventT t m) where
-  type Performable (PerformEventT t m) = PerformEventT t m
+instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent t (PerformEventT t m) where
+  type Performable (PerformEventT t m) = HostFrame t
   {-# INLINABLE performEvent_ #-}
-  performEvent_ = PerformEventT . modify . (:) . fmap (This . (>> return []))
+  performEvent_ = PerformEventT . requesting_
   {-# INLINABLE performEvent #-}
-  performEvent e = PerformEventT $ do
-    (eResult, reResultTrigger) <- newEventWithTriggerRef
-    modify $ (:) $ ffor e $ \o -> This $ do
-      result <- o
-      return [EventTriggerRef reResultTrigger :=> Identity result]
-    return eResult
+  performEvent = PerformEventT . fmap (fmap runIdentity) . requesting
 
-instance (ReflexHost t, Monad (HostFrame t), Ref (HostFrame t) ~ Ref IO, Ref m ~ Ref IO) => Deletable t (PerformEventT t m) where
-  {-# INLINABLE deletable #-}
-  deletable d a = PerformEventT $ do
-    (result, reverseEventsToPerform) <- lift $ runStateT (unPerformEventT a) []
-    let (numberedEvents, _) = numberWith (\n e -> Const2 n :=> e) (reverse reverseEventsToPerform) (1 :: Word64)
-    eventToPerform <- lift $ mergePerformEventsAndAdd (DMap.fromList numberedEvents) never
-    modify (align eventToPerform d :)
-    return result
+instance (ReflexHost t, PrimMonad (HostFrame t)) => MonadAdjust t (PerformEventT t m) where
+  sequenceDMapWithAdjust outerDm0 outerDm' = PerformEventT $ sequenceDMapWithAdjustRequestTWith f (coerce outerDm0) (unsafeCoerce outerDm') --TODO: Eliminate unsafeCoerce (why doesn't coerce work here, even inside the Event and PatchDMap?)
+    where f :: DMap k (HostFrame t) -> Event t (PatchDMap (DMap k (HostFrame t))) -> RequestT t (HostFrame t) Identity (HostFrame t) (DMap k Identity, Event t (PatchDMap (DMap k Identity)))
+          f dm0 dm' = do
+            result0 <- lift $ DMap.traverseWithKey (\_ v -> Identity <$> v) dm0
+            result' <- requesting $ ffor dm' $ \(PatchDMap p) -> do
+              PatchDMap <$> DMap.traverseWithKey (\_ (Compose mv) -> Compose <$> mapM (fmap Identity) mv) p
+            return (result0, fmap runIdentity result')
 
 instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
   {-# INLINABLE newEventWithTrigger #-}
@@ -75,55 +79,19 @@ instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
   {-# INLINABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = PerformEventT $ lift $ newFanEventWithTrigger f
 
-{-# INLINABLE numberWith #-}
-numberWith :: (Enum n, Traversable t) => (n -> a -> b) -> t a -> n -> (t b, n)
-numberWith f t n0 = flip runState n0 $ forM t $ \x -> state $ \n -> (f n x, succ n)
-
-{-# INLINABLE mergePerformEventsAndAdd #-}
-mergePerformEventsAndAdd :: forall t m. ReflexHost t
-  => DMap (Const2 Word64 (These (PerformEventT t m [DSum (EventTriggerRef t m) Identity]) ())) (Event t)
-  -> Event t (PatchDMap (DMap (Const2 Word64 (These (PerformEventT t m [DSum (EventTriggerRef t m) Identity]) ())) (Event t)))
-  -> HostFrame t (Event t (PerformEventT t m [DSum (EventTriggerRef t m) Identity]))
-mergePerformEventsAndAdd initial eAddNew = do
-  rec events :: Incremental t PatchDMap (DMap (Const2 Word64 (These (PerformEventT t m [DSum (EventTriggerRef t m) Identity]) ())) (Event t))
-        <- holdIncremental initial $ eAddNew <> eDelete --TODO: Eliminate empty firings
-      let event = mergeWith DMap.union [mergeIncremental events, coincidence (fmap (\(PatchDMap m) -> merge $ DMap.mapMaybeWithKey (const getCompose) m) eAddNew)]
-          eventToPerform :: Event t (PerformEventT t m [DSum (EventTriggerRef t m) Identity])
-          eventToPerform = ffor event $
-            fmap concat .
-            sequence .
-            fmapMaybe (\(Const2 _ :=> Identity x) -> x ^? here) .
-            DMap.toList
-          eDelete :: Event t (PatchDMap (DMap (Const2 Word64 (These (PerformEventT t m [DSum (EventTriggerRef t m) Identity]) ())) (Event t)))
-          eDelete = fforMaybe event $
-            fmap (PatchDMap . DMap.fromList) .
-            (\l -> if null l then Nothing else Just l) .
-            fmapMaybe (\(Const2 k :=> Identity x) -> (Const2 k :=> Compose Nothing) <$ x ^? there) .
-            DMap.toList
-  return eventToPerform
-
-{-# INLINABLE runPerformEventT #-}
-runPerformEventT :: forall t m a. (ReflexHost t, MonadRef (HostFrame t), Ref (HostFrame t) ~ Ref IO, Ref m ~ Ref IO) => PerformEventT t m a -> HostFrame t (a, Event t (HostFrame t [DSum (EventTriggerRef t m) Identity]))
-runPerformEventT (PerformEventT a) = do
-  (result, reverseEventsToPerform) <- runStateT a []
-  (eAddNew, reAddNewTrigger) <- newEventWithTriggerRef
-  let (numberedEvents, nextNumber) = numberWith (\n e -> Const2 n :=> e) (reverse reverseEventsToPerform) (1 :: Word64)
-  nextNumberRef <- newRef nextNumber
-  let runResult :: PerformEventT t m [DSum (EventTriggerRef t m) Identity] -> HostFrame t [DSum (EventTriggerRef t m) Identity]
-      runResult (PerformEventT r) = do
-        (followups, reverseNewEventsToPerform) <- runStateT r []
-        oldN <- readRef nextNumberRef
-        let (numberedNewEvents, newN) = numberWith (\n e -> Const2 n :=> Compose (Just e)) (reverse reverseNewEventsToPerform) oldN
-        if newN == oldN then return followups else do
-          writeRef nextNumberRef newN
-          return $ (EventTriggerRef reAddNewTrigger :=> Identity (PatchDMap (DMap.fromList numberedNewEvents))) : followups
-  eventToPerform <- mergePerformEventsAndAdd (DMap.fromList numberedEvents) eAddNew
-  return (result, runResult <$> eventToPerform)
-
 {-# INLINABLE hostPerformEventT #-}
-hostPerformEventT :: forall t m a. (Monad m, MonadSubscribeEvent t m, MonadReflexHost t m, MonadRef m, Ref m ~ Ref IO, MonadRef (HostFrame t), Ref (HostFrame t) ~ Ref IO) => PerformEventT t m a -> m (a, FireCommand t m)
+hostPerformEventT :: forall t m a.
+                     ( Monad m
+                     , MonadSubscribeEvent t m
+                     , MonadReflexHost t m
+                     , MonadRef m
+                     , Ref m ~ Ref IO
+                     )
+                  => PerformEventT t m a
+                  -> m (a, FireCommand t m)
 hostPerformEventT a = do
-  (result, eventToPerform) <- runHostFrame $ runPerformEventT a
+  (response, responseTrigger) <- newEventWithTriggerRef
+  (result, eventToPerform) <- runHostFrame $ runRequestT (unPerformEventT a) response
   eventToPerformHandle <- subscribeEvent eventToPerform
   return $ (,) result $ FireCommand $ \triggers (readPhase :: ReadPhase m a') -> do
     let go :: [DSum (EventTrigger t) Identity] -> m [a']
@@ -135,11 +103,12 @@ hostPerformEventT a = do
           case mToPerform of
             Nothing -> return [result']
             Just toPerform -> do
-              followupEventTriggerRefs <- runHostFrame toPerform
-              followupEventTriggers <- forM followupEventTriggerRefs $ \(EventTriggerRef rt :=> x) -> do
-                mt <- readRef rt
-                return $ fmap (:=> x) mt
-              fmap (result':) $ go $ catMaybes followupEventTriggers
+              responses <- runHostFrame $ DMap.traverseWithKey (\_ v -> Identity <$> v) toPerform
+              mrt <- readRef responseTrigger
+              let followupEventTriggers = case mrt of
+                    Just rt -> [rt :=> Identity responses]
+                    Nothing -> []
+              (result':) <$> go followupEventTriggers
     go triggers
 
 instance ReflexHost t => MonadSample t (PerformEventT t m) where
@@ -166,3 +135,155 @@ instance (MonadRef (HostFrame t), ReflexHost t) => MonadRef (PerformEventT t m) 
 instance (MonadAtomicRef (HostFrame t), ReflexHost t) => MonadAtomicRef (PerformEventT t m) where
   {-# INLINABLE atomicModifyRef #-}
   atomicModifyRef r = PerformEventT . lift . atomicModifyRef r
+
+--------------------------------------------------------------------------------
+-- RequestT
+--------------------------------------------------------------------------------
+
+newtype RequestT t request response m a
+  = RequestT { unRequestT :: StateT [Event t (DMap (Tag (PrimState m)) request)] (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) a }
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException)
+
+instance MonadTrans (RequestT t request response) where
+  lift = RequestT . lift . lift
+
+runRequestT :: forall t m a request response.
+               ( Reflex t
+               , Monad m
+               )
+            => RequestT t request response m a
+            -> Event t (DMap (Tag (PrimState m)) response)
+            -> m (a, Event t (DMap (Tag (PrimState m)) request))
+runRequestT (RequestT a) responses = do
+  (result, requests) <- runReaderT (runStateT a mempty) $ fan $ mapKeyValuePairsMonotonic (\(t :=> e) -> WrapArg t :=> Identity e) <$> responses
+  return (result, mergeWith DMap.union requests)
+
+instance (Reflex t, PrimMonad m) => MonadRequest t (RequestT t request response m) where
+  type Request (RequestT t request response m) = request
+  type Response (RequestT t request response m) = response
+  withRequesting a = do
+    t <- lift newTag
+    s <- RequestT ask
+    (req, result) <- a $ select s $ WrapArg t
+    RequestT $ modify $ (:) $ DMap.singleton t <$> req
+    return result
+
+data DMapTransform (a :: *) k k' v v' = forall (b :: *). DMapTransform !(k a -> k' b) !(v a -> v' b)
+
+mapPatchKeysAndValuesMonotonic :: GCompare k' => (forall a. DMapTransform a k k' v v') -> PatchDMap (DMap k v) -> PatchDMap (DMap k' v')
+mapPatchKeysAndValuesMonotonic x (PatchDMap p) = PatchDMap $ mapKeyValuePairsMonotonic (\(k :=> Compose mv) -> case x of DMapTransform f g -> f k :=> Compose (fmap g mv)) p
+
+mapKeysAndValuesMonotonic :: (forall a. DMapTransform a k k' v v') -> DMap k v -> DMap k' v'
+mapKeysAndValuesMonotonic x = mapKeyValuePairsMonotonic $ \(k :=> v) -> case x of
+  DMapTransform f g -> f k :=> g v
+
+instance MonadSample t m => MonadSample t (RequestT t request response m) where
+  sample = lift . sample
+
+instance MonadHold t m => MonadHold t (RequestT t request response m) where
+  hold v0 = lift . hold v0
+  holdDyn v0 = lift . holdDyn v0
+  holdIncremental v0 = lift . holdIncremental v0
+
+instance (Reflex t, MonadAdjust t m, MonadHold t m) => MonadAdjust t (RequestT t request response m) where
+  sequenceDMapWithAdjust = sequenceDMapWithAdjustRequestTWith $ \dm0 dm' -> lift $ sequenceDMapWithAdjust dm0 dm'
+
+sequenceDMapWithAdjustRequestTWith :: (GCompare k, Monad m, Reflex t, MonadHold t m)
+                                   => (forall k'. GCompare k'
+                                       => DMap k' m
+                                       -> Event t (PatchDMap (DMap k' m))
+                                       -> RequestT t request response m (DMap k' Identity, Event t (PatchDMap (DMap k' Identity)))
+                                      )
+                                   -> DMap k (RequestT t request response m)
+                                   -> Event t (PatchDMap (DMap k (RequestT t request response m)))
+                                   -> RequestT t request response m (DMap k Identity, Event t (PatchDMap (DMap k Identity)))
+sequenceDMapWithAdjustRequestTWith f (dm0 :: DMap k (RequestT t request response m)) dm' = do
+  response <- RequestT ask
+  let inputTransform :: forall a. DMapTransform a k (WrapArg ((,) [Event t (DMap (Tag (PrimState m)) request)]) k) (RequestT t request response m) m
+      inputTransform = DMapTransform WrapArg (\(RequestT v) -> swap <$> runReaderT (runStateT v mempty) response)
+  (children0, children') <- f (mapKeysAndValuesMonotonic inputTransform dm0) $ mapPatchKeysAndValuesMonotonic inputTransform <$> dm'
+  let result0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity (_, v)) -> k :=> Identity v) children0
+      result' = ffor children' $ \(PatchDMap p) -> PatchDMap $
+        mapKeyValuePairsMonotonic (\(WrapArg k :=> Compose mv) -> k :=> Compose (fmap (Identity . snd . runIdentity) mv)) p
+      requests0 :: DMap (Const2 (Some k) (DMap (Tag (PrimState m)) request)) (Event t)
+      requests0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity (r, _)) -> Const2 (Some.This k) :=> mergeWith DMap.union r) children0
+      requests' :: Event t (PatchDMap (DMap (Const2 (Some k) (DMap (Tag (PrimState m)) request)) (Event t)))
+      requests' = ffor children' $ \(PatchDMap p) -> PatchDMap $
+        mapKeyValuePairsMonotonic (\(WrapArg k :=> Compose mv) -> Const2 (Some.This k) :=> Compose (fmap (mergeWith DMap.union . fst . runIdentity) mv)) p
+  childRequestMap <- holdIncremental requests0 requests'
+  RequestT $ modify $ (:) $ ffor (mergeIncremental childRequestMap) $ \m ->
+    mconcat $ (\(Const2 _ :=> Identity reqs) -> reqs) <$> DMap.toList m
+--  RequestT $ modify $ (:) $ coincidence $ ffor requests' $ \(PatchDMap p) -> mergeWith DMap.union $ catMaybes $ ffor (DMap.toList p) $ \(Const2 _ :=> Compose me) -> me -- We could make it prompt like this, but this seems to be slower than just delaying the PostBuild event to allow this stuff to settle (which is more similar to the previous behavior anyway)
+  return (result0, result')
+
+instance PerformEvent t m => PerformEvent t (RequestT t request response m) where
+  type Performable (RequestT t request response m) = Performable m
+  performEvent_ = lift . performEvent_
+  performEvent = lift . performEvent
+
+instance PostBuild t m => PostBuild t (RequestT t request response m) where
+  getPostBuild = lift getPostBuild
+
+instance TriggerEvent t m => TriggerEvent t (RequestT t request response m) where
+  newTriggerEvent = lift newTriggerEvent
+  newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
+  newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete
+
+instance MonadReader r m => MonadReader r (RequestT t request response m) where
+  ask = lift ask
+  local f (RequestT a) = RequestT $ mapStateT (mapReaderT $ local f) a
+  reader = lift . reader
+
+{-
+withRequestT :: forall t m a (req :: * -> *) (req' :: * -> *).
+                (Reflex t, MonadHold t m, MonadFix m)
+             => (forall x. request x -> request' x)
+             -> (forall x. response' x -> response x)
+             -> RequestT t request response m a
+             -> RequestT t request' response m a
+withRequestT f g m = RequestT $ hoist (hoist (withDynamicWriterT f')) (unRequestT m)
+  where
+    f' :: Event t [(y, Some request)] -> Event t [(y, Some request')]
+    f' = fmap . fmap . fmap $ \(SomeRequest req) -> SomeRequest $ f req
+-}
+
+instance MonadRef m => MonadRef (RequestT t request response m) where
+  type Ref (RequestT t request response m) = Ref m
+  newRef = lift . newRef
+  readRef = lift . readRef
+  writeRef r = lift . writeRef r
+
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (RequestT t request response m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
+
+
+--------------------------------------------------------------------------------
+-- Helpers
+--------------------------------------------------------------------------------
+
+{-# INLINABLE numberWith #-}
+numberWith :: (Enum n, Traversable t) => (n -> a -> b) -> t a -> n -> (t b, n)
+numberWith f t n0 = flip runState n0 $ forM t $ \x -> state $ \n -> (f n x, succ n)
+
+{-# INLINABLE mergeSelfDeletingEvents #-}
+mergeSelfDeletingEvents :: forall t m k v. (Ord k, Reflex t, MonadFix m, MonadHold t m)
+  => DMap (Const2 k (These v ())) (Event t)
+  -> Event t (PatchDMap (DMap (Const2 k (These v ())) (Event t)))
+  -> m (Event t [v])
+mergeSelfDeletingEvents initial eAddNew = do
+  rec events :: Incremental t PatchDMap (DMap (Const2 k (These v ())) (Event t))
+        <- holdIncremental initial $ eAddNew <> eDelete --TODO: Eliminate empty firings
+      let event = mergeWith DMap.union
+            [ mergeIncremental events
+            , coincidence $ ffor eAddNew $ \(PatchDMap m) -> merge $ DMap.mapMaybeWithKey (const getCompose) m
+            ]
+          eDelete :: Event t (PatchDMap (DMap (Const2 k (These v ())) (Event t)))
+          eDelete = fforMaybe event $
+            fmap (PatchDMap . DMap.fromDistinctAscList) .
+            (\l -> if null l then Nothing else Just l) .
+            fmapMaybe (\(Const2 k :=> Identity x) -> (Const2 k :=> Compose Nothing) <$ x ^? there) .
+            DMap.toList
+  return $ ffor event $
+    fmapMaybe (\(Const2 _ :=> Identity x) -> x ^? here) .
+    DMap.toList

@@ -12,18 +12,21 @@
 module Reflex.DynamicWriter where
 
 import Control.Monad.Exception
+import Control.Monad.Identity
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
-import Data.Dependent.Map (DMap)
+import Data.Dependent.Map (DMap, DSum (..))
+import Data.Foldable
 import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Semigroup
+import Data.Some (Some)
+import qualified Data.Some as Some
 import Reflex.Class
-import Reflex.Deletable.Class
 import Reflex.Dynamic
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
@@ -31,33 +34,6 @@ import Reflex.Host.Class
 
 instance MonadTrans (DynamicWriterT t w) where
   lift = DynamicWriterT . lift
-
-data PatchMap a where
-  PatchMap :: Ord k => Map k (Maybe v) -> PatchMap (Map k v)
-
-instance Patch PatchMap where
-  apply (PatchMap p) old = Just $! insertions `Map.union` (old `Map.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
-    where insertions = Map.mapMaybeWithKey (const id) p
-          deletions = Map.mapMaybeWithKey (const nothingToJust) p
-          nothingToJust = \case
-            Nothing -> Just ()
-            Just _ -> Nothing
-
-instance Ord k => Semigroup (PatchMap (Map k v)) where
-  PatchMap a <> PatchMap b = PatchMap $ a `mappend` b --TODO: Add a semigroup instance for Map
-  -- PatchMap is idempotent, so stimes n is id for every n
-#if MIN_VERSION_semigroups(0,17,0)
-  stimes = stimesIdempotentMonoid
-#else
-  times1p n x = case compare n 0 of
-    LT -> error "stimesIdempotentMonoid: negative multiplier"
-    EQ -> mempty
-    GT -> x
-#endif
-
-instance Ord k => Monoid (PatchMap (Map k v)) where
-  mempty = PatchMap mempty
-  mappend = (<>)
 
 mconcatIncremental :: (Reflex t, MonadHold t m, MonadFix m, Monoid v) => Map k v -> Event t (PatchMap (Map k v)) -> m (Dynamic t v)
 mconcatIncremental m0 e = do
@@ -95,7 +71,7 @@ data Replaceable t w = Replaceable
   , _replaceable_modify :: Event t (Maybe (Replaceable t w)) -- "Please delete" is represented with an event of Nothing; all subsequent events will be ignored
   }
 
-type DynamicWriterAccumulator t w = [Replaceable t (Dynamic t w)]
+type DynamicWriterAccumulator t w = [Dynamic t w]
 
 newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT (DynamicWriterAccumulator t w) m a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadHold t, MonadSample t, MonadAsyncException, MonadException) -- The list is kept in reverse order
 
@@ -115,7 +91,12 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (DynamicWrit
 runDynamicWriterTInternal :: DynamicWriterT t w m a -> m (a, DynamicWriterAccumulator t w)
 runDynamicWriterTInternal (DynamicWriterT a) = runStateT a []
 
-mconcatIncrementalReplaceableDynMap :: forall m t k v. (MonadFix m, MonadHold t m, Reflex t, Monoid v, Ord k) => Map k (Replaceable t (Dynamic t v)) -> Event t (PatchMap (Map k (Replaceable t (Dynamic t v)))) -> Event t () -> m (Replaceable t (Dynamic t v))
+mconcatIncrementalReplaceableDynMap :: forall m t k v.
+                                       (MonadFix m, MonadHold t m, Reflex t, Monoid v, Ord k)
+                                    => Map k (Replaceable t (Dynamic t v))
+                                    -> Event t (PatchMap (Map k (Replaceable t (Dynamic t v))))
+                                    -> Event t ()
+                                    -> m (Replaceable t (Dynamic t v))
 mconcatIncrementalReplaceableDynMap m0 m' additionsCeased = do
   rec vals <- holdIncremental m0 $ m' <> valChanges
       let valChanges = fmap PatchMap $ mergeIncrementalMap $ mapIncrementalMapValues _replaceable_modify vals
@@ -130,17 +111,16 @@ mconcatIncrementalReplaceableDynMap m0 m' additionsCeased = do
       result = fmap (mconcat . Map.elems) $ incrementalToDynamic $ mergeDynIncremental i
   return $ Replaceable result $ fmapMaybe id $ updated $ zipDynWith replaceSelf noMoreAdditions $ incrementalToDynamic vals
 
-runDynamicWriterT :: (MonadFix m, Reflex t, MonadHold t m, Monoid w) => DynamicWriterT t w m a -> m (a, Dynamic t w)
+runDynamicWriterT :: (MonadFix m, Reflex t, Monoid w) => DynamicWriterT t w m a -> m (a, Dynamic t w)
 runDynamicWriterT (DynamicWriterT a) = do
   (result, ws) <- runStateT a []
-  Replaceable w _ <- mconcatIncrementalReplaceableDynMap (Map.fromList $ zip [1 :: Int ..] $ reverse ws) never never
-  return (result, w)
+  return (result, mconcat $ reverse ws)
 
 class Monad m => MonadDynamicWriter t w m | m -> t w where
   tellDyn :: Dynamic t w -> m ()
 
 instance (Monad m, Reflex t) => MonadDynamicWriter t w (DynamicWriterT t w m) where
-  tellDyn w = DynamicWriterT $ modify (Replaceable w never :)
+  tellDyn w = DynamicWriterT $ modify (w :)
 
 instance MonadReader r m => MonadReader r (DynamicWriterT t w m) where
   ask = lift ask
@@ -153,12 +133,6 @@ liftDynamicWriterTThroughSync f (DynamicWriterT child) = DynamicWriterT $ do
     (b, (a, newS)) <- lift $ f $ runStateT child s
     put newS
     return (b, a)
-
-instance (Deletable t m, Reflex t, Monoid w, MonadHold t m, MonadFix m) => Deletable t (DynamicWriterT t w m) where
-  deletable delete child = do
-    (result, output) <- lift $ deletable delete $ runDynamicWriterT child
-    DynamicWriterT $ modify (Replaceable output (Nothing <$ delete) :)
-    return result
 
 instance PerformEvent t m => PerformEvent t (DynamicWriterT t w m) where
   type Performable (DynamicWriterT t w m) = Performable m
@@ -179,3 +153,44 @@ instance MonadDynamicWriter t w m => MonadDynamicWriter t w (ReaderT r m) where
 instance MonadState s m => MonadState s (DynamicWriterT t w m) where
   get = lift get
   put = lift . put
+
+newtype DynamicWriterTLoweredResult t w v = DynamicWriterTLoweredResult { unDynamicWriterTLoweredResult :: (v, Dynamic t w) }
+
+instance (MonadAdjust t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => MonadAdjust t (DynamicWriterT t w m) where
+  sequenceDMapWithAdjust (dm0 :: DMap k (DynamicWriterT t w m)) dm' = do
+    let loweredDm0 = mapKeyValuePairsMonotonic (\(k :=> v) -> WrapArg k :=> fmap DynamicWriterTLoweredResult (runDynamicWriterT v)) dm0
+    let loweredDm' = ffor dm' $ \(PatchDMap p) -> PatchDMap $
+          mapKeyValuePairsMonotonic (\(k :=> Compose mv) -> WrapArg k :=> Compose (fmap (fmap DynamicWriterTLoweredResult . runDynamicWriterT) mv)) p
+    (result0, result') <- lift $ sequenceDMapWithAdjust loweredDm0 loweredDm'
+    let getValue (DynamicWriterTLoweredResult (v, _)) = v
+        getWritten (DynamicWriterTLoweredResult (_, w)) = w
+        liftedResult0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity r) -> k :=> Identity (getValue r)) result0
+        liftedResult' = ffor result' $ \(PatchDMap p) -> PatchDMap $
+          mapKeyValuePairsMonotonic (\(WrapArg k :=> Compose mr) -> k :=> Compose (fmap (Identity . getValue . runIdentity) mr)) p
+        liftedWritten0 :: DMap (Const2 (Some k) (Dynamic t w)) Identity
+        liftedWritten0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity r) -> Const2 (Some.This k) :=> Identity (getWritten r)) result0
+        liftedWritten' = ffor result' $ \(PatchDMap p) -> PatchDMap $
+          mapKeyValuePairsMonotonic (\(WrapArg k :=> Compose mr) -> Const2 (Some.This k) :=> Compose (fmap (Identity . getWritten . runIdentity) mr)) p
+    --TODO: We should be able to improve the performance here in two ways
+    -- 1. Incrementally merging the Dynamics
+    -- 2. Incrementally updating the mconcat of the merged Dynamics
+    i <- holdIncremental liftedWritten0 liftedWritten'
+    tellDyn $ join $ fold . dmapToMap <$> incrementalToDynamic i
+    return (liftedResult0, liftedResult')
+
+withDynamicWriterT :: (Monoid w, Reflex t, MonadHold t m, MonadFix m)
+                   => (w -> w')
+                   -> DynamicWriterT t w m a
+                   -> DynamicWriterT t w' m a
+withDynamicWriterT f dw = do
+  (r, d) <- lift $ do
+    (r, d) <- runDynamicWriterT dw
+    let d' = fmap f d
+    return (r, d')
+  tellDyn d
+  return r
+
+instance MonadRequest t m => MonadRequest t (DynamicWriterT t w m) where
+  type Request (DynamicWriterT t w m) = Request m
+  type Response (DynamicWriterT t w m) = Response m
+  withRequesting f = DynamicWriterT $ withRequesting $ unDynamicWriterT . f

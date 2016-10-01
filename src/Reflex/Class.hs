@@ -26,6 +26,7 @@ module Reflex.Class
          -- ** 'Incremental'-related types
        , Patch (..)
        , PatchDMap (..)
+       , PatchMap (..)
          -- * Convenience functions
        , constDyn
        , pushAlways
@@ -80,6 +81,7 @@ module Reflex.Class
        , ffilter
          -- * Miscellaneous convenience functions
        , ffor
+       , MonadAdjust (..)
          -- * Deprecated functions
        , appendEvents
        , onceE
@@ -111,6 +113,7 @@ import Data.GADT.Compare ((:~:) (..), GEq (..))
 import Data.GADT.Show (GShow (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Maybe
 import Data.Monoid hiding (Alt, (<>))
 import Data.Semigroup (Semigroup, sconcat, stimes, stimesIdempotentMonoid, (<>))
@@ -239,6 +242,33 @@ instance Patch PatchDMap where
           nothingToJust = \case
             Nothing -> Just $ Constant ()
             Just _ -> Nothing
+
+data PatchMap a where
+  PatchMap :: Ord k => Map k (Maybe v) -> PatchMap (Map k v)
+
+instance Patch PatchMap where
+  apply (PatchMap p) old = Just $! insertions `Map.union` (old `Map.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
+    where insertions = Map.mapMaybeWithKey (const id) p
+          deletions = Map.mapMaybeWithKey (const nothingToJust) p
+          nothingToJust = \case
+            Nothing -> Just ()
+            Just _ -> Nothing
+
+instance Ord k => Semigroup (PatchMap (Map k v)) where
+  PatchMap a <> PatchMap b = PatchMap $ a `mappend` b --TODO: Add a semigroup instance for Map
+  -- PatchMap is idempotent, so stimes n is id for every n
+#if MIN_VERSION_semigroups(0,17,0)
+  stimes = stimesIdempotentMonoid
+#else
+  times1p n x = case compare n 0 of
+    LT -> error "stimesIdempotentMonoid: negative multiplier"
+    EQ -> mempty
+    GT -> x
+#endif
+
+instance Ord k => Monoid (PatchMap (Map k v)) where
+  mempty = PatchMap mempty
+  mappend = (<>)
 
 -- | Construct a 'Dynamic' from a 'Behavior' and an 'Event'.  The 'Behavior'
 -- _must_ change when and only when the 'Event' fires, such that the
@@ -788,6 +818,17 @@ zipListWithEvent f l e = do
         h:t -> (Just t, Just $ f h b)
         _ -> (Nothing, Nothing) --TODO: Unsubscribe the event?
   mapAccumMaybe_ f' l e
+
+class (Reflex t, Monad m) => MonadAdjust t m | m -> t where
+  sequenceDMapWithAdjust :: GCompare k => DMap k m -> Event t (PatchDMap (DMap k m)) -> m (DMap k Identity, Event t (PatchDMap (DMap k Identity)))
+
+instance (Reflex t, MonadAdjust t m) => MonadAdjust t (ReaderT r m) where
+  sequenceDMapWithAdjust dm0 dm' = do
+    r <- ask
+    let loweredDm0 = DMap.map (`runReaderT` r) dm0
+        loweredDm' = ffor dm' $ \(PatchDMap p) -> PatchDMap $
+          DMap.map (\(Compose mv) -> Compose $ fmap (`runReaderT` r) mv) p
+    lift $ sequenceDMapWithAdjust loweredDm0 loweredDm'
 
 --------------------------------------------------------------------------------
 -- Deprecated functions
