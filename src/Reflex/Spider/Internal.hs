@@ -37,7 +37,6 @@ import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Foldable hiding (concat, elem, sequence_)
 import Data.Function
-import Data.Functor.Compose
 import Data.Functor.Constant
 import Data.Functor.Product
 import Data.GADT.Compare
@@ -51,6 +50,7 @@ import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.These
 import Data.Traversable
+import Data.Type.Coercion
 import Data.Word
 import GHC.IORef (IORef (..))
 import GHC.Stack
@@ -215,10 +215,10 @@ eventSwitch !s = Event $ wrap eventSubscribedSwitch $ getSwitchSubscribed s
 eventCoincidence :: Coincidence x a -> Event x a
 eventCoincidence !c = Event $ wrap eventSubscribedCoincidence $ getCoincidenceSubscribed c
 
-eventHold :: a ~ p b => Hold x p b -> Event x a
+eventHold :: Hold x p -> Event x p
 eventHold !h = Event $ subscribeHoldEvent h
 
-eventDyn :: (a ~ p b, R.Patch p) => Dyn x p b -> Event x a
+eventDyn :: R.Patch p => Dyn x p -> Event x p
 eventDyn !j = Event $ \sub -> getDynHold j >>= \h -> subscribeHoldEvent h sub
 
 {-# INLINE subscribeCoincidenceInner #-}
@@ -272,7 +272,7 @@ newSubscriberPush compute subscribed = return $ Subscriber
       when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberPush" <> showNodeId subscribed <> " done"
   }
 
-newSubscriberHold :: R.Patch p => Hold x p a -> IO (Subscriber x (p a))
+newSubscriberHold :: R.Patch p => Hold x p -> IO (Subscriber x p)
 newSubscriberHold h = return $ Subscriber
   { subscriberPropagate = {-# SCC "traverseHold" #-} propagateSubscriberHold h
   , subscriberInvalidateHeight = \_ -> return ()
@@ -318,7 +318,7 @@ newSubscriberMerge k subscribed = return $ Subscriber
       when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberMerge" <> showNodeId subscribed <> " done"
   }
 
-newSubscriberMergeChange :: GCompare k => MergeSubscribed x k -> IO (Subscriber x (R.PatchDMap (DMap k (Event x))))
+newSubscriberMergeChange :: GCompare k => MergeSubscribed x k -> IO (Subscriber x (R.PatchDMap k (Event x)))
 newSubscriberMergeChange subscribed = return $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseMergeChange" #-} do
       tracePropagate $ "SubscriberMerge" <> showNodeId subscribed
@@ -555,7 +555,7 @@ walkInvalidHeightParents s0 = do
 #endif
 
 {-# INLINE subscribeHoldEvent #-}
-subscribeHoldEvent :: CanSubscribe x m => Hold x p a -> Subscriber x (p a) -> m (EventSubscription x (p a), Maybe (p a))
+subscribeHoldEvent :: CanSubscribe x m => Hold x p -> Subscriber x p -> m (EventSubscription x p, Maybe p)
 subscribeHoldEvent = subscribeAndRead . holdEvent
 
 --------------------------------------------------------------------------------
@@ -576,10 +576,10 @@ unsubscribe (EventSubscription msln _) = forM_ msln $ \sln -> WeakBag.remove sln
 
 newtype Behavior x a = Behavior { readBehaviorTracked :: BehaviorM x a }
 
-behaviorHold :: Hold x p a -> Behavior x a
+behaviorHold :: Hold x p -> Behavior x (R.PatchTarget p)
 behaviorHold !h = Behavior $ readHoldTracked h
 
-behaviorHoldIdentity :: Hold x Identity a -> Behavior x a
+behaviorHoldIdentity :: Hold x (Identity a) -> Behavior x a
 behaviorHoldIdentity = behaviorHold
 
 behaviorConst :: a -> Behavior x a
@@ -612,11 +612,11 @@ behaviorPull !p = Behavior $ do
         askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
         return a
 
-behaviorDyn :: R.Patch p => Dyn x p a -> Behavior x a
+behaviorDyn :: R.Patch p => Dyn x p -> Behavior x (R.PatchTarget p)
 behaviorDyn !d = Behavior $ readHoldTracked =<< getDynHold d
 
 {-# INLINE readHoldTracked #-}
-readHoldTracked :: Hold x p a -> BehaviorM x a
+readHoldTracked :: Hold x p -> BehaviorM x (R.PatchTarget p)
 readHoldTracked h = do
   result <- liftIO $ readIORef $ holdValue h
   askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (holdInvalidators h) (wi:))
@@ -634,33 +634,33 @@ readBehaviorUntracked b = do
 -- Dynamic
 --------------------------------------------------------------------------------
 
-data Dynamic x p a = Dynamic
-  { dynamicCurrent :: !(Behavior x a)
-  , dynamicUpdated :: !(Event x (p a))
+data Dynamic x p = Dynamic
+  { dynamicCurrent :: !(Behavior x (R.PatchTarget p))
+  , dynamicUpdated :: !(Event x p)
   }
 
-dynamicHold :: Hold x p a -> Dynamic x p a
+dynamicHold :: Hold x p -> Dynamic x p
 dynamicHold !h = Dynamic
   { dynamicCurrent = behaviorHold h
   , dynamicUpdated = eventHold h
   }
 
-dynamicHoldIdentity :: Hold x Identity a -> Dynamic x Identity a
+dynamicHoldIdentity :: Hold x (Identity a) -> Dynamic x (Identity a)
 dynamicHoldIdentity = dynamicHold
 
-dynamicConst :: a -> Dynamic x p a
+dynamicConst :: R.PatchTarget p -> Dynamic x p
 dynamicConst !a = Dynamic
   { dynamicCurrent = behaviorConst a
   , dynamicUpdated = eventNever
   }
 
-dynamicDyn :: R.Patch p => Dyn x p a -> Dynamic x p a
+dynamicDyn :: R.Patch p => Dyn x p -> Dynamic x p
 dynamicDyn !d = Dynamic
   { dynamicCurrent = behaviorDyn d
   , dynamicUpdated = eventDyn d
   }
 
-dynamicDynIdentity :: Dyn x Identity a -> Dynamic x Identity a
+dynamicDynIdentity :: Dyn x (Identity a) -> Dynamic x (Identity a)
 dynamicDynIdentity = dynamicDyn
 
 --------------------------------------------------------------------------------
@@ -671,11 +671,11 @@ dynamicDynIdentity = dynamicDyn
 --representational so we can use coerce
 
 --type role Hold representational
-data Hold x p a
-   = Hold { holdValue :: !(IORef a)
+data Hold x p
+   = Hold { holdValue :: !(IORef (R.PatchTarget p))
           , holdInvalidators :: !(IORef [Weak (Invalidator x)])
-          , holdEvent :: Event x (p a) -- This must be lazy, or holds cannot be defined before their input Events
-          , holdParent :: !(IORef (Maybe (EventSubscription x (p a)))) -- Keeps its parent alive (will be undefined until the hold is initialized) --TODO: Probably shouldn't be an IORef
+          , holdEvent :: Event x p -- This must be lazy, or holds cannot be defined before their input Events
+          , holdParent :: !(IORef (Maybe (EventSubscription x p))) -- Keeps its parent alive (will be undefined until the hold is initialized) --TODO: Probably shouldn't be an IORef
 #ifdef DEBUG_NODEIDS
           , holdNodeId :: Int
 #endif
@@ -779,9 +779,9 @@ instance Defer (SomeResetCoincidence x) (EventM x) where
   getDeferralQueue = EventM $ asks eventEnvResetCoincidences
 
 -- Note: hold cannot examine its event until after the phase is over
-{-# SPECIALIZE hold :: R.Patch p => a -> Event x (p a) -> EventM x (Hold x p a) #-}
-{-# SPECIALIZE hold :: R.Patch p => a -> Event x (p a) -> ComputeM x (Hold x p a) #-}
-hold :: (R.Patch p, Defer (SomeHoldInit x) m) => a -> Event x (p a) -> m (Hold x p a)
+{-# SPECIALIZE hold :: R.Patch p => R.PatchTarget p -> Event x p -> EventM x (Hold x p) #-}
+{-# SPECIALIZE hold :: R.Patch p => R.PatchTarget p -> Event x p -> ComputeM x (Hold x p) #-}
+hold :: (R.Patch p, Defer (SomeHoldInit x) m) => R.PatchTarget p -> Event x p -> m (Hold x p)
 hold v0 e = do
   valRef <- liftIO $ newIORef v0
   invsRef <- liftIO $ newIORef []
@@ -802,7 +802,7 @@ hold v0 e = do
   return h
 
 {-# INLINE getHoldEventSubscription #-}
-getHoldEventSubscription :: forall m p a x. (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer SomeClear m, R.Patch p, HasCurrentHeight x m, Defer (SomeMergeInit x) m, Defer (SomeResetCoincidence x) m, HasSpiderTimeline x m, m ~ EventM x) => Hold x p a -> m (EventSubscription x (p a))
+getHoldEventSubscription :: forall m p x. (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer SomeClear m, R.Patch p, HasCurrentHeight x m, Defer (SomeMergeInit x) m, Defer (SomeResetCoincidence x) m, HasSpiderTimeline x m, m ~ EventM x) => Hold x p -> m (EventSubscription x p)
 getHoldEventSubscription h = do
   ep <- liftIO $ readIORef $ holdParent h
   case ep of
@@ -843,7 +843,7 @@ instance Monad (BehaviorM x) where
   fail s = BehaviorM $ fail s
 
 data BehaviorSubscribed x a
-   = forall p. BehaviorSubscribedHold (Hold x p a)
+   = forall p. BehaviorSubscribedHold (Hold x p)
    | BehaviorSubscribedPull (PullSubscribed x a)
 
 data SomeBehaviorSubscribed x = forall a. SomeBehaviorSubscribed (BehaviorSubscribed x a)
@@ -887,11 +887,11 @@ data Root x (k :: * -> *)
           , rootInit :: !(forall a. k a -> RootTrigger x a -> IO (IO ()))
           }
 
-data SomeHoldInit x = forall p a. R.Patch p => SomeHoldInit !(Hold x p a)
+data SomeHoldInit x = forall p. R.Patch p => SomeHoldInit !(Hold x p)
 
-data SomeMergeUpdate x = forall k. GCompare k => SomeMergeUpdate (R.PatchDMap (DMap k (Event x))) (MergeSubscribed x k)
+data SomeMergeUpdate x = forall k. GCompare k => SomeMergeUpdate (R.PatchDMap k (Event x)) (MergeSubscribed x k)
 
-data SomeMergeInit x = forall k. GCompare k => SomeMergeInit !(MergeSubscribed x k) !(Event x (R.PatchDMap (DMap k (Event x))))
+data SomeMergeInit x = forall k. GCompare k => SomeMergeInit !(MergeSubscribed x k) !(Event x (R.PatchDMap k (Event x)))
 
 data SomeEventSubscription x = forall a. SomeEventSubscription (EventSubscription x a)
 
@@ -980,7 +980,7 @@ data MergeSubscribed x k
                      , mergeSubscribedHeight :: !(IORef Height)
                      , mergeSubscribedHeightBag :: !(IORef HeightBag)
                      , mergeSubscribedSubscribers :: !(WeakBag (Subscriber x (DMap k Identity)))
-                     , mergeSubscribedChange :: !(IORef (Subscriber x (R.PatchDMap (DMap k (Event x))), EventSubscribed x (R.PatchDMap (DMap k (Event x)))))
+                     , mergeSubscribedChange :: !(IORef (Subscriber x (R.PatchDMap k (Event x)), EventSubscribed x (R.PatchDMap k (Event x))))
                      , mergeSubscribedParents :: !(IORef (DMap k (MergeSubscribedParent x k)))
                      , mergeSubscribedWeakSelf :: !(IORef (Weak (MergeSubscribed x k)))
 #ifdef DEBUG_NODEIDS
@@ -990,7 +990,7 @@ data MergeSubscribed x k
 
 --TODO: DMap sucks; we should really write something better (with a functor for the value as well as the key)
 data Merge x k
-   = Merge { mergeParents :: !(Dynamic x R.PatchDMap (DMap k (Event x)))
+   = Merge { mergeParents :: !(Dynamic x (R.PatchDMap k (Event x)))
            , mergeSubscribed :: !(IORef (Maybe (MergeSubscribed x k)))
            }
 
@@ -1071,22 +1071,13 @@ instance Align (Event x) where
   nil = eventNever
   align ea eb = R.fmapMaybe R.dmapToThese $ merge $ dynamicConst $ DMap.fromList [R.LeftTag :=> ea, R.RightTag :=> eb]
 
-newtype Dyn x p a = Dyn { unDyn :: IORef (Either (BehaviorM x a, Event x (p a)) (Hold x p a)) }
+newtype Dyn x p = Dyn { unDyn :: IORef (Either (BehaviorM x (R.PatchTarget p), Event x p) (Hold x p)) }
 
-newMapDyn :: (a -> b) -> Dynamic x Identity a -> Dynamic x Identity b
+newMapDyn :: (a -> b) -> Dynamic x (Identity a) -> Dynamic x (Identity b)
 newMapDyn f d = dynamicDynIdentity $ unsafeDyn (fmap f $ readBehaviorTracked $ dynamicCurrent d) (Identity . f . runIdentity <$> dynamicUpdated d)
 
-instance Functor (Dynamic x Identity) where
-  fmap = newMapDyn
-
-instance Applicative (Dynamic x Identity) where
-  pure = dynamicConst
-  (<*>) = zipDynWith ($)
-  _ *> b = b
-  a <* _ = a
-
 --TODO: Avoid the duplication between this and R.zipDynWith
-zipDynWith :: (a -> b -> c) -> Dynamic x Identity a -> Dynamic x Identity b -> Dynamic x Identity c
+zipDynWith :: (a -> b -> c) -> Dynamic x (Identity a) -> Dynamic x (Identity b) -> Dynamic x (Identity c)
 zipDynWith f da db =
   let eab = align (dynamicUpdated da) (dynamicUpdated db)
       ec = flip push eab $ \o -> do
@@ -1101,21 +1092,11 @@ zipDynWith f da db =
         return $ Just $ Identity $ f a b
   in dynamicDynIdentity $ unsafeDyn (f <$> readBehaviorUntracked (dynamicCurrent da) <*> readBehaviorUntracked (dynamicCurrent db)) ec
 
-instance Monad (Dynamic x Identity) where
-  {-# INLINE return #-}
-  return = pure
-  {-# INLINE (>>=) #-}
-  x >>= f = dynamicDynIdentity $ newJoinDyn $ newMapDyn f x
-  {-# INLINE (>>) #-}
-  _ >> y = y
-  {-# INLINE fail #-}
-  fail _ = error "Dynamic does not support 'fail'"
-
-unsafeDyn :: BehaviorM x a -> Event x (p a) -> Dyn x p a
+unsafeDyn :: BehaviorM x (R.PatchTarget p) -> Event x p -> Dyn x p
 unsafeDyn readV0 v' = Dyn $ unsafeNewIORef x $ Left x
   where x = (readV0, v')
 
-newJoinDyn :: Dynamic x Identity (Dynamic x Identity a) -> Dyn x Identity a
+newJoinDyn :: Dynamic x (Identity (Dynamic x (Identity a))) -> Dyn x (Identity a)
 newJoinDyn d =
   let readV0 = readBehaviorTracked . dynamicCurrent =<< readBehaviorTracked (dynamicCurrent d)
       eOuter = push (fmap (Just . Identity) . readBehaviorUntracked . dynamicCurrent . runIdentity) $ dynamicUpdated d
@@ -1294,7 +1275,7 @@ listsToForest l = fmap (\(a, l') -> Node a $ listsToForest $ toList l') $ groupB
 #endif
 
 {-# INLINE propagateSubscriberHold #-}
-propagateSubscriberHold :: R.Patch p => Hold x p a -> p a -> EventM x ()
+propagateSubscriberHold :: R.Patch p => Hold x p -> p -> EventM x ()
 propagateSubscriberHold h a = do
   {-# SCC "trace" #-} traceMWhen debugPropagate $ liftIO $ do
     invalidators <- liftIO $ readIORef $ holdInvalidators h
@@ -1333,7 +1314,7 @@ askBehaviorHoldInits = do
   return his
 
 {-# INLINE getDynHold #-}
-getDynHold :: (Defer (SomeHoldInit x) m, R.Patch p) => Dyn x p a -> m (Hold x p a)
+getDynHold :: (Defer (SomeHoldInit x) m, R.Patch p) => Dyn x p -> m (Hold x p)
 getDynHold d = do
   mh <- liftIO $ readIORef $ unDyn d
   case mh of
@@ -1690,7 +1671,7 @@ subscribeCoincidenceSubscribed :: CoincidenceSubscribed x a -> Subscriber x a ->
 subscribeCoincidenceSubscribed subscribed sub = WeakBag.insert sub (coincidenceSubscribedSubscribers subscribed) (coincidenceSubscribedWeakSelf subscribed) cleanupCoincidenceSubscribed
 
 {-# INLINE merge #-}
-merge :: GCompare k => Dynamic x R.PatchDMap (DMap k (Event x)) -> Event x (DMap k Identity)
+merge :: GCompare k => Dynamic x (R.PatchDMap k (Event x)) -> Event x (DMap k Identity)
 merge m = eventMerge $ Merge
   { mergeParents = m
   , mergeSubscribed = unsafeNewIORef m Nothing
@@ -1762,9 +1743,9 @@ runFrame a = SpiderHost $ ask >>= \spiderTimeline -> lift $ do
   mergeUpdates <- readIORef mergeUpdateRef
   writeIORef mergeUpdateRef []
   let updateMerge :: SomeMergeUpdate x -> IO [SomeEventSubscription x]
-      updateMerge (SomeMergeUpdate (R.PatchDMap p :: R.PatchDMap (DMap k (Event x))) m) = do
+      updateMerge (SomeMergeUpdate (R.PatchDMap p :: R.PatchDMap k (Event x)) m) = do
         oldParents <- readIORef $ mergeSubscribedParents m
-        let f (subscriptionsToKill, ps) (k :=> Compose me) = do
+        let f (subscriptionsToKill, ps) (k :=> R.ComposeMaybe me) = do
               (mOldSubd, newPs) <- case me of
                 Nothing -> return $ DMap.updateLookupWithKey (\_ _ -> Nothing) k ps
                 Just e -> do
@@ -2009,11 +1990,30 @@ newtype SpiderPullM x a = SpiderPullM (BehaviorM x a) deriving (Functor, Applica
 
 newtype SpiderPushM x a = SpiderPushM (ComputeM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
+instance Functor (R.Dynamic (SpiderTimeline x)) where
+  fmap f = SpiderDynamic . newMapDyn f . unSpiderDynamic
+
+instance Applicative (R.Dynamic (SpiderTimeline x)) where
+  pure = SpiderDynamic . dynamicConst
+  SpiderDynamic a <*> SpiderDynamic b = SpiderDynamic $ zipDynWith ($) a b
+  _ *> b = b
+  a <* _ = a
+
+instance Monad (R.Dynamic (SpiderTimeline x)) where
+  {-# INLINE return #-}
+  return = pure
+  {-# INLINE (>>=) #-}
+  x >>= f = SpiderDynamic $ dynamicDynIdentity $ newJoinDyn $ newMapDyn (unSpiderDynamic . f) $ unSpiderDynamic x
+  {-# INLINE (>>) #-}
+  _ >> y = y
+  {-# INLINE fail #-}
+  fail _ = error "Dynamic does not support 'fail'"
+
 instance R.Reflex (SpiderTimeline x) where
   newtype Behavior (SpiderTimeline x) a = SpiderBehavior { unSpiderBehavior :: Behavior x a }
   newtype Event (SpiderTimeline x) a = SpiderEvent { unSpiderEvent :: Event x a }
-  newtype Dynamic (SpiderTimeline x) a = SpiderDynamic { unSpiderDynamic :: Dynamic x Identity a } deriving (Functor, Applicative, Monad)
-  newtype Incremental (SpiderTimeline x) p a = SpiderIncremental { unSpiderIncremental :: Dynamic x p a }
+  newtype Dynamic (SpiderTimeline x) a = SpiderDynamic { unSpiderDynamic :: Dynamic x (Identity a) } -- deriving (Functor, Applicative, Monad)
+  newtype Incremental (SpiderTimeline x) p = SpiderIncremental { unSpiderIncremental :: Dynamic x p }
   type PullM (SpiderTimeline x) = SpiderPullM x
   type PushM (SpiderTimeline x) = SpiderPushM x
   {-# INLINABLE never #-}
@@ -2041,7 +2041,7 @@ instance R.Reflex (SpiderTimeline x) where
   {-# INLINABLE unsafeBuildIncremental #-}
   unsafeBuildIncremental readV0 dv = SpiderIncremental $ dynamicDyn $ unsafeDyn (coerce readV0) $ unSpiderEvent dv
   {-# INLINABLE mergeIncremental #-}
-  mergeIncremental = SpiderEvent . merge . (unsafeCoerce :: Dynamic x R.PatchDMap (DMap k (R.Event (SpiderTimeline x))) -> Dynamic x R.PatchDMap (DMap k (Event x))) . unSpiderIncremental
+  mergeIncremental = SpiderEvent . merge . (unsafeCoerce :: Dynamic x (R.PatchDMap k (R.Event (SpiderTimeline x))) -> Dynamic x (R.PatchDMap k (Event x))) . unSpiderIncremental
   {-# INLINABLE currentIncremental #-}
   currentIncremental = SpiderBehavior . dynamicCurrent . unSpiderIncremental
   {-# INLINABLE updatedIncremental #-}
@@ -2050,6 +2050,9 @@ instance R.Reflex (SpiderTimeline x) where
   incrementalToDynamic (SpiderIncremental i) = SpiderDynamic $ dynamicDynIdentity $ unsafeDyn (readBehaviorUntracked $ dynamicCurrent i) $ flip push (dynamicUpdated i) $ \p -> do
     c <- readBehaviorUntracked $ dynamicCurrent i
     return $ Identity <$> R.apply p c --TODO: Avoid the redundant 'apply'
+  eventCoercion Coercion = Coercion
+  behaviorCoercion Coercion = Coercion
+  dynamicCoercion = unsafeCoerce --TODO: How can we avoid this unsafeCoerce?  This is safe only because we know how Identity works as a Patch instance
 
 instance R.MonadSample (SpiderTimeline x) (EventM x) where
   {-# INLINABLE sample #-}
@@ -2069,7 +2072,7 @@ holdSpiderEventM v0 e = fmap (SpiderBehavior . behaviorHoldIdentity) $ hold v0 $
 holdDynSpiderEventM :: a -> R.Event (SpiderTimeline x) a -> EventM x (R.Dynamic (SpiderTimeline x) a)
 holdDynSpiderEventM v0 e = fmap (SpiderDynamic . dynamicHoldIdentity) $ hold v0 $ coerce $ unSpiderEvent e
 
-holdIncrementalSpiderEventM :: R.Patch p => a -> R.Event (SpiderTimeline x) (p a) -> EventM x (R.Incremental (SpiderTimeline x) p a)
+holdIncrementalSpiderEventM :: R.Patch p => R.PatchTarget p -> R.Event (SpiderTimeline x) p -> EventM x (R.Incremental (SpiderTimeline x) p)
 holdIncrementalSpiderEventM v0 e = fmap (SpiderIncremental . dynamicHold) $ hold v0 $ unSpiderEvent e
 
 instance R.MonadHold (SpiderTimeline x) (SpiderHost x) where

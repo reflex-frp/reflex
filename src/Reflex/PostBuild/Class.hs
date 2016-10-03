@@ -16,7 +16,6 @@ import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Control
 import qualified Data.Dependent.Map as DMap
-import Data.Functor.Compose
 import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
@@ -100,5 +99,5 @@ instance (Reflex t, MonadHold t m, MonadFix m, MonadAdjust t m, PerformEvent t m
     rec (result0, result') <- lift $ sequenceDMapWithAdjust loweredDm0 loweredDm'
         delayedResult' <- performEvent $ return () <$ result' -- Delaying this result seems to be faster than making RequestT (and thus PerformEvent) more prompt
         let loweredDm' = ffor dm' $ \(PatchDMap p) -> PatchDMap $
-              DMap.map (Compose . fmap (\v -> runPostBuildT v =<< headE (void delayedResult')) . getCompose) p --TODO: Avoid doing this headE so many times; once per loweredDm' firing ought to be OK, but it's not totally trivial to do because result' might be firing at the same time, and we don't want *that* to be the postBuild occurrence
+              DMap.map (ComposeMaybe . fmap (\v -> runPostBuildT v =<< headE (void delayedResult')) . getComposeMaybe) p --TODO: Avoid doing this headE so many times; once per loweredDm' firing ought to be OK, but it's not totally trivial to do because result' might be firing at the same time, and we don't want *that* to be the postBuild occurrence
     return (result0, result')

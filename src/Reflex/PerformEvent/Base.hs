@@ -30,15 +30,12 @@ import Data.Coerce
 import Data.Dependent.Map (DMap, GCompare (..), Some)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
-import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.Semigroup
 import qualified Data.Some as Some
 import Data.These
 import Data.Tuple
 import Data.Unique.Tag
-
-import Unsafe.Coerce
 
 newtype EventTriggerRef t m a = EventTriggerRef { unEventTriggerRef :: Ref m (Maybe (EventTrigger t a)) }
 
@@ -65,12 +62,12 @@ instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent
   performEvent = PerformEventT . fmap (fmap runIdentity) . requesting
 
 instance (ReflexHost t, PrimMonad (HostFrame t)) => MonadAdjust t (PerformEventT t m) where
-  sequenceDMapWithAdjust outerDm0 outerDm' = PerformEventT $ sequenceDMapWithAdjustRequestTWith f (coerce outerDm0) (unsafeCoerce outerDm') --TODO: Eliminate unsafeCoerce (why doesn't coerce work here, even inside the Event and PatchDMap?)
-    where f :: DMap k (HostFrame t) -> Event t (PatchDMap (DMap k (HostFrame t))) -> RequestT t (HostFrame t) Identity (HostFrame t) (DMap k Identity, Event t (PatchDMap (DMap k Identity)))
+  sequenceDMapWithAdjust (outerDm0 :: DMap k (PerformEventT t m)) outerDm' = PerformEventT $ sequenceDMapWithAdjustRequestTWith f (coerce outerDm0) (coerceEvent outerDm')
+    where f :: DMap k' (HostFrame t) -> Event t (PatchDMap k' (HostFrame t)) -> RequestT t (HostFrame t) Identity (HostFrame t) (DMap k' Identity, Event t (PatchDMap k' Identity))
           f dm0 dm' = do
             result0 <- lift $ DMap.traverseWithKey (\_ v -> Identity <$> v) dm0
             result' <- requesting $ ffor dm' $ \(PatchDMap p) -> do
-              PatchDMap <$> DMap.traverseWithKey (\_ (Compose mv) -> Compose <$> mapM (fmap Identity) mv) p
+              PatchDMap <$> DMap.traverseWithKey (\_ (ComposeMaybe mv) -> ComposeMaybe <$> mapM (fmap Identity) mv) p
             return (result0, fmap runIdentity result')
 
 instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
@@ -170,8 +167,8 @@ instance (Reflex t, PrimMonad m) => MonadRequest t (RequestT t request response 
 
 data DMapTransform (a :: *) k k' v v' = forall (b :: *). DMapTransform !(k a -> k' b) !(v a -> v' b)
 
-mapPatchKeysAndValuesMonotonic :: GCompare k' => (forall a. DMapTransform a k k' v v') -> PatchDMap (DMap k v) -> PatchDMap (DMap k' v')
-mapPatchKeysAndValuesMonotonic x (PatchDMap p) = PatchDMap $ mapKeyValuePairsMonotonic (\(k :=> Compose mv) -> case x of DMapTransform f g -> f k :=> Compose (fmap g mv)) p
+mapPatchKeysAndValuesMonotonic :: (forall a. DMapTransform a k k' v v') -> PatchDMap k v -> PatchDMap k' v'
+mapPatchKeysAndValuesMonotonic x (PatchDMap p) = PatchDMap $ mapKeyValuePairsMonotonic (\(k :=> ComposeMaybe mv) -> case x of DMapTransform f g -> f k :=> ComposeMaybe (fmap g mv)) p
 
 mapKeysAndValuesMonotonic :: (forall a. DMapTransform a k k' v v') -> DMap k v -> DMap k' v'
 mapKeysAndValuesMonotonic x = mapKeyValuePairsMonotonic $ \(k :=> v) -> case x of
@@ -191,12 +188,12 @@ instance (Reflex t, MonadAdjust t m, MonadHold t m) => MonadAdjust t (RequestT t
 sequenceDMapWithAdjustRequestTWith :: (GCompare k, Monad m, Reflex t, MonadHold t m)
                                    => (forall k'. GCompare k'
                                        => DMap k' m
-                                       -> Event t (PatchDMap (DMap k' m))
-                                       -> RequestT t request response m (DMap k' Identity, Event t (PatchDMap (DMap k' Identity)))
+                                       -> Event t (PatchDMap k' m)
+                                       -> RequestT t request response m (DMap k' Identity, Event t (PatchDMap k' Identity))
                                       )
                                    -> DMap k (RequestT t request response m)
-                                   -> Event t (PatchDMap (DMap k (RequestT t request response m)))
-                                   -> RequestT t request response m (DMap k Identity, Event t (PatchDMap (DMap k Identity)))
+                                   -> Event t (PatchDMap k (RequestT t request response m))
+                                   -> RequestT t request response m (DMap k Identity, Event t (PatchDMap k Identity))
 sequenceDMapWithAdjustRequestTWith f (dm0 :: DMap k (RequestT t request response m)) dm' = do
   response <- RequestT ask
   let inputTransform :: forall a. DMapTransform a k (WrapArg ((,) [Event t (DMap (Tag (PrimState m)) request)]) k) (RequestT t request response m) m
@@ -204,16 +201,16 @@ sequenceDMapWithAdjustRequestTWith f (dm0 :: DMap k (RequestT t request response
   (children0, children') <- f (mapKeysAndValuesMonotonic inputTransform dm0) $ mapPatchKeysAndValuesMonotonic inputTransform <$> dm'
   let result0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity (_, v)) -> k :=> Identity v) children0
       result' = ffor children' $ \(PatchDMap p) -> PatchDMap $
-        mapKeyValuePairsMonotonic (\(WrapArg k :=> Compose mv) -> k :=> Compose (fmap (Identity . snd . runIdentity) mv)) p
+        mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mv) -> k :=> ComposeMaybe (fmap (Identity . snd . runIdentity) mv)) p
       requests0 :: DMap (Const2 (Some k) (DMap (Tag (PrimState m)) request)) (Event t)
       requests0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity (r, _)) -> Const2 (Some.This k) :=> mergeWith DMap.union r) children0
-      requests' :: Event t (PatchDMap (DMap (Const2 (Some k) (DMap (Tag (PrimState m)) request)) (Event t)))
+      requests' :: Event t (PatchDMap (Const2 (Some k) (DMap (Tag (PrimState m)) request)) (Event t))
       requests' = ffor children' $ \(PatchDMap p) -> PatchDMap $
-        mapKeyValuePairsMonotonic (\(WrapArg k :=> Compose mv) -> Const2 (Some.This k) :=> Compose (fmap (mergeWith DMap.union . fst . runIdentity) mv)) p
+        mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mv) -> Const2 (Some.This k) :=> ComposeMaybe (fmap (mergeWith DMap.union . fst . runIdentity) mv)) p
   childRequestMap <- holdIncremental requests0 requests'
   RequestT $ modify $ (:) $ ffor (mergeIncremental childRequestMap) $ \m ->
     mconcat $ (\(Const2 _ :=> Identity reqs) -> reqs) <$> DMap.toList m
---  RequestT $ modify $ (:) $ coincidence $ ffor requests' $ \(PatchDMap p) -> mergeWith DMap.union $ catMaybes $ ffor (DMap.toList p) $ \(Const2 _ :=> Compose me) -> me -- We could make it prompt like this, but this seems to be slower than just delaying the PostBuild event to allow this stuff to settle (which is more similar to the previous behavior anyway)
+--  RequestT $ modify $ (:) $ coincidence $ ffor requests' $ \(PatchDMap p) -> mergeWith DMap.union $ catMaybes $ ffor (DMap.toList p) $ \(Const2 _ :=> ComposeMaybe me) -> me -- We could make it prompt like this, but this seems to be slower than just delaying the PostBuild event to allow this stuff to settle (which is more similar to the previous behavior anyway)
   return (result0, result')
 
 instance PerformEvent t m => PerformEvent t (RequestT t request response m) where
@@ -269,20 +266,20 @@ numberWith f t n0 = flip runState n0 $ forM t $ \x -> state $ \n -> (f n x, succ
 {-# INLINABLE mergeSelfDeletingEvents #-}
 mergeSelfDeletingEvents :: forall t m k v. (Ord k, Reflex t, MonadFix m, MonadHold t m)
   => DMap (Const2 k (These v ())) (Event t)
-  -> Event t (PatchDMap (DMap (Const2 k (These v ())) (Event t)))
+  -> Event t (PatchDMap (Const2 k (These v ())) (Event t))
   -> m (Event t [v])
 mergeSelfDeletingEvents initial eAddNew = do
-  rec events :: Incremental t PatchDMap (DMap (Const2 k (These v ())) (Event t))
+  rec events :: Incremental t (PatchDMap (Const2 k (These v ())) (Event t))
         <- holdIncremental initial $ eAddNew <> eDelete --TODO: Eliminate empty firings
       let event = mergeWith DMap.union
             [ mergeIncremental events
-            , coincidence $ ffor eAddNew $ \(PatchDMap m) -> merge $ DMap.mapMaybeWithKey (const getCompose) m
+            , coincidence $ ffor eAddNew $ \(PatchDMap m) -> merge $ DMap.mapMaybeWithKey (const getComposeMaybe) m
             ]
-          eDelete :: Event t (PatchDMap (DMap (Const2 k (These v ())) (Event t)))
+          eDelete :: Event t (PatchDMap (Const2 k (These v ())) (Event t))
           eDelete = fforMaybe event $
             fmap (PatchDMap . DMap.fromDistinctAscList) .
             (\l -> if null l then Nothing else Just l) .
-            fmapMaybe (\(Const2 k :=> Identity x) -> (Const2 k :=> Compose Nothing) <$ x ^? there) .
+            fmapMaybe (\(Const2 k :=> Identity x) -> (Const2 k :=> ComposeMaybe Nothing) <$ x ^? there) .
             DMap.toList
   return $ ffor event $
     fmapMaybe (\(Const2 _ :=> Identity x) -> x ^? here) .

@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -9,6 +10,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -19,6 +21,9 @@
 module Reflex.Class
        ( -- * Primitives
          Reflex (..)
+       , coerceBehavior
+       , coerceEvent
+       , coerceDynamic
        , MonadSample (..)
        , MonadHold (..)
          -- ** 'fan'-related types
@@ -26,6 +31,7 @@ module Reflex.Class
          -- ** 'Incremental'-related types
        , Patch (..)
        , PatchDMap (..)
+       , ComposeMaybe (..)
        , PatchMap (..)
          -- * Convenience functions
        , constDyn
@@ -98,6 +104,7 @@ import Control.Monad.Trans.RWS (RWST ())
 import Control.Monad.Trans.Writer (WriterT ())
 import Data.Align
 import Data.Bifunctor
+import Data.Coerce
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (ShowTag (..))
@@ -105,7 +112,6 @@ import Data.Either
 import Data.Foldable
 import Data.Functor.Bind hiding (join)
 import qualified Data.Functor.Bind as Bind
-import Data.Functor.Compose
 import Data.Functor.Constant
 import Data.Functor.Misc
 import Data.Functor.Plus
@@ -120,6 +126,7 @@ import Data.Semigroup (Semigroup, sconcat, stimes, stimesIdempotentMonoid, (<>))
 import Data.String
 import Data.These
 import Data.Traversable
+import Data.Type.Coercion
 
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
 import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
@@ -156,7 +163,7 @@ class ( MonadHold t (PushM t)
   -- notifications on changes.  Basically a combination of a 'Behavior' and an
   -- 'Event', with a rule that the 'Behavior' will change if and only if the
   -- 'Event' fires.
-  data Incremental t :: (* -> *) -> * -> *
+  data Incremental t :: * -> *
   -- | An 'Event' with no occurrences
   never :: Event t a
   -- | Create a 'Behavior' that always has the given value
@@ -196,30 +203,59 @@ class ( MonadHold t (PushM t)
   -- | Create a new 'Incremental'.  The given 'PullM''s value must always change
   -- in the same way that the accumulated application of patches would change
   -- that value.
-  unsafeBuildIncremental :: Patch p => PullM t a -> Event t (p a) -> Incremental t p a
+  unsafeBuildIncremental :: Patch p => PullM t (PatchTarget p) -> Event t p -> Incremental t p
   -- | Create a merge whose parents can change over time
-  mergeIncremental :: GCompare k => Incremental t PatchDMap (DMap k (Event t)) -> Event t (DMap k Identity)
+  mergeIncremental :: GCompare k => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
   -- | Extract the 'Behavior' component of an 'Incremental'
-  currentIncremental :: Patch p => Incremental t p a -> Behavior t a
+  currentIncremental :: Patch p => Incremental t p -> Behavior t (PatchTarget p)
   -- | Extract the 'Event' component of an 'Incremental'
-  updatedIncremental :: Patch p => Incremental t p a -> Event t (p a)
+  updatedIncremental :: Patch p => Incremental t p -> Event t p
   -- | Convert an 'Incremental' to a 'Dynamic'
-  incrementalToDynamic :: Patch p => Incremental t p a -> Dynamic t a
+  incrementalToDynamic :: Patch p => Incremental t p -> Dynamic t (PatchTarget p)
+  -- | Construct a 'Coercion' for a 'Behavior' given an 'Coercion' for its
+  -- occurrence type
+  behaviorCoercion :: Coercion a b -> Coercion (Behavior t a) (Behavior t b)
+  -- | Construct a 'Coercion' for an 'Event' given an 'Coercion' for its
+  -- occurrence type
+  eventCoercion :: Coercion a b -> Coercion (Event t a) (Event t b)
+  -- | Construct a 'Coercion' for a 'Dynamic' given an 'Coercion' for its
+  -- occurrence type
+  dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
+
+-- | Coerce a 'Behavior' between representationally-equivalent value types
+coerceBehavior :: (Reflex t, Coercible a b) => Behavior t a -> Behavior t b
+coerceBehavior = coerceWith $ behaviorCoercion Coercion
+
+-- | Coerce an 'Event' between representationally-equivalent occurrence types
+coerceEvent :: (Reflex t, Coercible a b) => Event t a -> Event t b
+coerceEvent = coerceWith $ eventCoercion Coercion
+
+-- | Coerce a 'Dynamic' between representationally-equivalent value types
+coerceDynamic :: (Reflex t, Coercible a b) => Dynamic t a -> Dynamic t b
+coerceDynamic = coerceWith $ dynamicCoercion Coercion
 
 -- | A 'Patch' type represents a kind of change made to a datastructure.
 class Patch p where
+  type PatchTarget p :: *
   -- | Apply the patch @p a@ to the value @a@.  If no change is needed, return
   -- 'Nothing'.
-  apply :: p a -> a -> Maybe a
+  apply :: p -> PatchTarget p -> Maybe (PatchTarget p)
 
-instance Patch Identity where
+-- | We can't use @Compose Maybe@ instead of 'ComposeMaybe', because that would
+-- make the 'f' parameter have a nominal type role.  We need f to be
+-- representational so that we can use safe 'coerce'.
+newtype ComposeMaybe f a = ComposeMaybe { getComposeMaybe :: Maybe (f a) }
+
+deriving instance Functor f => Functor (ComposeMaybe f)
+
+instance Patch (Identity a) where
+  type PatchTarget (Identity a) = a
   apply (Identity a) _ = Just a
 
 -- | A set of changes to a 'DMap'.  Only DMap types are allowed for @a@.
-data PatchDMap a where
-  PatchDMap :: GCompare k => DMap k (Compose Maybe v) -> PatchDMap (DMap k v)
+newtype PatchDMap k v = PatchDMap (DMap k (ComposeMaybe v))
 
-instance GCompare k => Semigroup (PatchDMap (DMap k v)) where
+instance GCompare k => Semigroup (PatchDMap k v) where
   PatchDMap a <> PatchDMap b = PatchDMap $ a `mappend` b --TODO: Add a semigroup instance for DMap
   -- PatchDMap is idempotent, so stimes n is id for every n
 #if MIN_VERSION_semigroups(0,17,0)
@@ -231,22 +267,23 @@ instance GCompare k => Semigroup (PatchDMap (DMap k v)) where
     GT -> x
 #endif
 
-instance GCompare k => Monoid (PatchDMap (DMap k v)) where
+instance GCompare k => Monoid (PatchDMap k v) where
   mempty = PatchDMap mempty
   mappend = (<>)
 
-instance Patch PatchDMap where
+instance GCompare k => Patch (PatchDMap k v) where
+  type PatchTarget (PatchDMap k v) = DMap k v
   apply (PatchDMap diff) old = Just $! insertions `DMap.union` (old `DMap.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
-    where insertions = DMap.mapMaybeWithKey (const $ getCompose) diff
-          deletions = DMap.mapMaybeWithKey (const $ nothingToJust . getCompose) diff
+    where insertions = DMap.mapMaybeWithKey (const $ getComposeMaybe) diff
+          deletions = DMap.mapMaybeWithKey (const $ nothingToJust . getComposeMaybe) diff
           nothingToJust = \case
             Nothing -> Just $ Constant ()
             Just _ -> Nothing
 
-data PatchMap a where
-  PatchMap :: Ord k => Map k (Maybe v) -> PatchMap (Map k v)
+newtype PatchMap k v = PatchMap (Map k (Maybe v))
 
-instance Patch PatchMap where
+instance Ord k => Patch (PatchMap k v) where
+  type PatchTarget (PatchMap k v) = Map k v
   apply (PatchMap p) old = Just $! insertions `Map.union` (old `Map.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
     where insertions = Map.mapMaybeWithKey (const id) p
           deletions = Map.mapMaybeWithKey (const nothingToJust) p
@@ -254,7 +291,7 @@ instance Patch PatchMap where
             Nothing -> Just ()
             Just _ -> Nothing
 
-instance Ord k => Semigroup (PatchMap (Map k v)) where
+instance Ord k => Semigroup (PatchMap k v) where
   PatchMap a <> PatchMap b = PatchMap $ a `mappend` b --TODO: Add a semigroup instance for Map
   -- PatchMap is idempotent, so stimes n is id for every n
 #if MIN_VERSION_semigroups(0,17,0)
@@ -266,7 +303,7 @@ instance Ord k => Semigroup (PatchMap (Map k v)) where
     GT -> x
 #endif
 
-instance Ord k => Monoid (PatchMap (Map k v)) where
+instance Ord k => Monoid (PatchMap k v) where
   mempty = PatchMap mempty
   mappend = (<>)
 
@@ -304,7 +341,7 @@ class MonadSample t m => MonadHold t m where
   holdDyn :: a -> Event t a -> m (Dynamic t a)
   -- | Create an 'Incremental' value using the given initial value that changes
   -- every time the 'Event' occurs.
-  holdIncremental :: Patch p => a -> Event t (p a) -> m (Incremental t p a)
+  holdIncremental :: Patch p => PatchTarget p -> Event t p -> m (Incremental t p)
 
 -- | An 'EventSelector' allows you to efficiently 'select' an 'Event' based on a
 -- key.  This is much more efficient than filtering for each key with
@@ -820,14 +857,14 @@ zipListWithEvent f l e = do
   mapAccumMaybe_ f' l e
 
 class (Reflex t, Monad m) => MonadAdjust t m | m -> t where
-  sequenceDMapWithAdjust :: GCompare k => DMap k m -> Event t (PatchDMap (DMap k m)) -> m (DMap k Identity, Event t (PatchDMap (DMap k Identity)))
+  sequenceDMapWithAdjust :: GCompare k => DMap k m -> Event t (PatchDMap k m) -> m (DMap k Identity, Event t (PatchDMap k Identity))
 
 instance (Reflex t, MonadAdjust t m) => MonadAdjust t (ReaderT r m) where
   sequenceDMapWithAdjust dm0 dm' = do
     r <- ask
     let loweredDm0 = DMap.map (`runReaderT` r) dm0
         loweredDm' = ffor dm' $ \(PatchDMap p) -> PatchDMap $
-          DMap.map (\(Compose mv) -> Compose $ fmap (`runReaderT` r) mv) p
+          DMap.map (\(ComposeMaybe mv) -> ComposeMaybe $ fmap (`runReaderT` r) mv) p
     lift $ sequenceDMapWithAdjust loweredDm0 loweredDm'
 
 --------------------------------------------------------------------------------
