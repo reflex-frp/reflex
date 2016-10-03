@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ExistentialQuantification #-}
 -- | This module defines the 'WeakBag' type, which represents a mutable
 -- collection of items that does not cause the items to be retained in memory.
 -- This is useful for situations where a value needs to be inspected or modified
@@ -36,7 +37,7 @@ data WeakBag a = WeakBag
 -- the caller retains the ticket, the item is guranteed to stay in memory (and
 -- thus in the 'WeakBag').  The ticket can also be used to remove the item from
 -- the 'WeakBag' prematurely (i.e. while it is still alive), using 'remove'.
-data WeakBagTicket a = WeakBagTicket
+data WeakBagTicket = forall a. WeakBagTicket
   { _weakBagTicket_weakItem :: {-# UNPACK #-} !(Weak a)
   , _weakBagTicket_item :: {-# NOUNPACK #-} !a
   }
@@ -50,9 +51,8 @@ insert :: a -- ^ The item
        -> (b -> IO ()) -- ^ A callback to be invoked when the item is removed
                        -- (whether automatically by the item being garbage
                        -- collected or manually via 'remove')
-       -> IO (WeakBagTicket a) -- ^ Returns a 'WeakBagTicket' that ensures the
-                               -- item is retained and allows the item to be
-                               -- removed.
+       -> IO WeakBagTicket -- ^ Returns a 'WeakBagTicket' that ensures the item
+                           -- is retained and allows the item to be removed.
 insert a (WeakBag nextId children) wbRef finalizer = {-# SCC "insert" #-} do
   a' <- evaluate a
   wbRef' <- evaluate wbRef
@@ -89,7 +89,7 @@ empty = {-# SCC "empty" #-} do
 -- | Create a 'WeakBag' with one item; equivalent to creating the 'WeakBag' with
 -- 'empty', then using 'insert'.
 {-# INLINE singleton #-}
-singleton :: a -> IORef (Weak b) -> (b -> IO ()) -> IO (WeakBag a, WeakBagTicket a)
+singleton :: a -> IORef (Weak b) -> (b -> IO ()) -> IO (WeakBag a, WeakBagTicket)
 singleton a wbRef finalizer = {-# SCC "singleton" #-} do
   bag <- empty
   ticket <- insert a bag wbRef finalizer
@@ -110,6 +110,8 @@ traverse (WeakBag _ children) f = {-# SCC "traverse" #-} do
 -- | Remove an item from the 'WeakBag'; does nothing if invoked multiple times
 -- on the same 'WeakBagTicket'.
 {-# INLINE remove #-}
-remove :: WeakBagTicket a -> IO ()
-remove = {-# SCC "remove" #-} finalize . _weakBagTicket_weakItem
+remove :: WeakBagTicket -> IO ()
+remove (WeakBagTicket w _) = {-# SCC "remove" #-} finalize w
 --TODO: Should 'remove' also drop the reference to the item?
+
+--TODO: can/should we provide a null WeakBagTicket?
