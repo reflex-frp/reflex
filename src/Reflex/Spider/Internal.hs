@@ -884,10 +884,7 @@ instance Defer (SomeHoldInit x) (ComputeM x) where
 runComputeM :: Defer (SomeHoldInit x) m => ComputeM x a -> m a
 runComputeM (ComputeM a) = liftIO . runReaderT a =<< getDeferralQueue
 
-data MergeSubscribedParent (x :: *) (k :: * -> *) a = MergeSubscribedParent !(EventSubscription x) !(Subscriber x a)
-
-mergeSubscribedParentSubscription :: MergeSubscribedParent x k a -> EventSubscription x
-mergeSubscribedParentSubscription (MergeSubscribedParent es _) = es
+newtype MergeSubscribedParent x a = MergeSubscribedParent { unMergeSubscribedParent :: EventSubscription x }
 
 data HeightBag = HeightBag
   { _heightBag_size :: {-# UNPACK #-} !Int
@@ -1553,11 +1550,11 @@ merge d = cacheEvent $ Event $ \sub -> do
             modifyIORef' heightBagRef $ heightBagAdd new
             revalidateMyHeight
         }
-  subscribers :: [(Maybe (DSum k Identity), Height, DSum k (MergeSubscribedParent x k))] <- forM (DMap.toList initialParents) $ \(k :=> e) -> do
+  subscribers :: [(Maybe (DSum k Identity), Height, DSum k (MergeSubscribedParent x))] <- forM (DMap.toList initialParents) $ \(k :=> e) -> do
     let s = subscriber k
     (subscription@(EventSubscription _ parentSubd), parentOcc) <- subscribeAndRead e s
     height <- liftIO $ getEventSubscribedHeight parentSubd
-    return $ (fmap (\x -> k :=> Identity x) parentOcc, height, k :=> MergeSubscribedParent subscription s)
+    return $ (fmap (\x -> k :=> Identity x) parentOcc, height, k :=> MergeSubscribedParent subscription)
   let dm = DMap.fromDistinctAscList $ mapMaybe (\(x, _, _) -> x) subscribers
       heights = fmap (\(_, h, _) -> h) subscribers --TODO: Assert that there's no invalidHeight in here
       myHeightBag = heightBagFromList $ filter (/= invalidHeight) heights
@@ -1586,13 +1583,13 @@ merge d = cacheEvent $ Event $ \sub -> do
                   let s = subscriber k
                   subscription@(EventSubscription _ subd) <- subscribe e s
                   newParentHeight <- liftIO $ getEventSubscribedHeight subd
-                  let newParent = MergeSubscribedParent subscription s
+                  let newParent = MergeSubscribedParent subscription
                   liftIO $ modifyIORef' heightBagRef $ heightBagAdd newParentHeight
                   return $ DMap.insertLookupWithKey' (\_ new _ -> new) k newParent ps
               forM_ mOldSubd $ \oldSubd -> do
-                oldHeight <- liftIO $ getEventSubscribedHeight $ _eventSubscription_subscribed $ mergeSubscribedParentSubscription oldSubd
+                oldHeight <- liftIO $ getEventSubscribedHeight $ _eventSubscription_subscribed $ unMergeSubscribedParent oldSubd
                 liftIO $ modifyIORef heightBagRef $ heightBagRemove oldHeight
-              return (maybeToList (mergeSubscribedParentSubscription <$> mOldSubd) ++ subscriptionsToKill, newPs)
+              return (maybeToList (unMergeSubscribedParent <$> mOldSubd) ++ subscriptionsToKill, newPs)
         (subscriptionsToKill, newParents) <- foldM f ([], oldParents) $ DMap.toList p --TODO: I think this runEventM is OK, since no events are firing at this time, but it might not be
         liftIO $ writeIORef parentsRef $! newParents
         return subscriptionsToKill
@@ -1609,7 +1606,7 @@ merge d = cacheEvent $ Event $ \sub -> do
     liftIO $ writeIORef changeSubdRef (s, changeSubd)
   let unsubscribeAll = do
         parents <- readIORef parentsRef
-        forM_ (DMap.toList parents) $ \(_ :=> MergeSubscribedParent s _) -> unsubscribe s
+        forM_ (DMap.toList parents) $ \(_ :=> MergeSubscribedParent s) -> unsubscribe s
   return ( EventSubscription unsubscribeAll $ EventSubscribed heightRef $ toAny (parentsRef, changeSubdRef)
          , occ
          )
