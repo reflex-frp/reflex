@@ -2,7 +2,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE EmptyDataDecls #-}
-{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -275,7 +274,7 @@ eventRoot !k !r = Event $ wrap eventSubscribedRoot $ liftIO . getRootSubscribed 
 eventNever :: Event x a
 eventNever = Event $ \_ -> return (EventSubscription Nothing eventSubscribedNever, Nothing)
 
-eventMerge :: (GCompare k, a ~ DMap k Identity) => Merge x k -> Event x a
+eventMerge :: GCompare k => Merge x k -> Event x (DMap k Identity)
 eventMerge !m = Event $ wrap eventSubscribedMerge $ getMergeSubscribed m
 
 eventFan :: GCompare k => k a -> Fan x k -> Event x a
@@ -373,7 +372,7 @@ newSubscriberMergeChange :: GCompare k => MergeSubscribed x k -> IO (Subscriber 
 newSubscriberMergeChange subscribed = return $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseMergeChange" #-} do
       tracePropagate $ "SubscriberMerge" <> showNodeId subscribed
-      defer $ SomeMergeUpdate a subscribed
+      defer $ SomeMergeUpdate (mkUpdateMerge a subscribed) (invalidateMergeHeight subscribed) (revalidateMergeHeight subscribed)
   , subscriberInvalidateHeight = \_ -> return ()
   , subscriberRecalculateHeight = \_ -> return ()
   }
@@ -932,9 +931,13 @@ data Root x (k :: * -> *)
 
 data SomeHoldInit x = forall p. R.Patch p => SomeHoldInit !(Hold x p)
 
-data SomeMergeUpdate x = forall k. GCompare k => SomeMergeUpdate (R.PatchDMap k (Event x)) (MergeSubscribed x k)
+data SomeMergeUpdate x = SomeMergeUpdate
+  { _someMergeUpdate_update :: !(EventM x [EventSubscription x])
+  , _someMergeUpdate_invalidateHeight :: !(IO ())
+  , _someMergeUpdate_recalculateHeight :: !(IO ())
+  }
 
-data SomeMergeInit x = forall k. GCompare k => SomeMergeInit !(MergeSubscribed x k) !(Event x (R.PatchDMap k (Event x)))
+newtype SomeMergeInit x = SomeMergeInit { unSomeMergeInit :: EventM x () }
 
 -- EventM can do everything BehaviorM can, plus create holds
 newtype EventM x (a :: *) = EventM { unEventM :: ReaderT (EventEnv x) IO a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadException, MonadAsyncException) -- The environment should be Nothing if we are not in a frame, and Just if we are - in which case it is a list of assignments to be done after the frame is over
@@ -1462,7 +1465,7 @@ getMergeSubscribed m sub = do
             , mergeSubscribedNodeId = unsafeNodeId m
 #endif
             }
-      defer $ SomeMergeInit subscribed $ dynamicUpdated $ mergeParents m
+      defer $ SomeMergeInit $ mkInitMerge subscribed $ dynamicUpdated $ mergeParents m
       liftIO $ writeIORef subscribedRef $! subscribed
       liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "MergeSubscribed"
       liftIO $ writeIORef (mergeSubscribed m) $ Just subscribed
@@ -1673,18 +1676,39 @@ runHoldInits holdInitRef mergeInitRef = do
     liftIO $ writeIORef holdInitRef []
     liftIO $ writeIORef mergeInitRef []
     mapM_ initHold holdInits
-    mapM_ initMerge mergeInits
+    mapM_ unSomeMergeInit mergeInits
     runHoldInits holdInitRef mergeInitRef
 
 initHold :: SomeHoldInit x -> EventM x ()
 initHold (SomeHoldInit h) = void $ getHoldEventSubscription h
 
-initMerge :: SomeMergeInit x -> EventM x ()
-initMerge (SomeMergeInit subscribed changed) = do
+mkInitMerge :: GCompare k => MergeSubscribed x k -> Event x (R.PatchDMap k (Event x)) -> EventM x ()
+mkInitMerge subscribed changed = do
   changeSub <- liftIO $ newSubscriberMergeChange subscribed
   (EventSubscription _ changeSubd, change) <- subscribeAndRead changed changeSub
-  forM_ change $ \c -> defer $ SomeMergeUpdate c subscribed
+  forM_ change $ \c -> defer $ SomeMergeUpdate (mkUpdateMerge c subscribed) (invalidateMergeHeight subscribed) (revalidateMergeHeight subscribed)
   liftIO $ writeIORef (mergeSubscribedChange subscribed) (changeSub, changeSubd)
+
+mkUpdateMerge :: forall k x. GCompare k => R.PatchDMap k (Event x) -> MergeSubscribed x k -> EventM x [EventSubscription x]
+mkUpdateMerge (R.PatchDMap p) m = do
+  oldParents <- liftIO $ readIORef $ mergeSubscribedParents m
+  let f (subscriptionsToKill, ps) (k :=> R.ComposeMaybe me) = do
+        (mOldSubd, newPs) <- case me of
+          Nothing -> return $ DMap.updateLookupWithKey (\_ _ -> Nothing) k ps
+          Just e -> do
+            s <- liftIO $ newSubscriberMerge k m
+            subscription@(EventSubscription _ subd) <- subscribe e s
+            newParentHeight <- liftIO $ getEventSubscribedHeight subd
+            let newParent = MergeSubscribedParent subscription s
+            liftIO $ addMergeHeight newParentHeight m
+            return $ DMap.insertLookupWithKey' (\_ new _ -> new) k newParent ps
+        forM_ mOldSubd $ \oldSubd -> do
+          oldHeight <- liftIO $ getEventSubscribedHeight $ _eventSubscription_subscribed $ mergeSubscribedParentSubscription oldSubd
+          liftIO $ removeMergeHeight oldHeight m
+        return (maybeToList (mergeSubscribedParentSubscription <$> mOldSubd) ++ subscriptionsToKill, newPs)
+  (subscriptionsToKill, newParents) <- foldM f ([], oldParents) $ DMap.toList p --TODO: I think this runEventM is OK, since no events are firing at this time, but it might not be
+  liftIO $ writeIORef (mergeSubscribedParents m) $! newParents
+  return subscriptionsToKill
 
 -- | Run an event action outside of a frame
 runFrame :: forall x a. EventM x a -> SpiderHost x a --TODO: This function also needs to hold the mutex
@@ -1720,28 +1744,8 @@ runFrame a = SpiderHost $ ask >>= \spiderTimeline -> lift $ do
     writeIORef iRef =<< evaluate =<< invalidate toReconnectRef =<< readIORef iRef
   mergeUpdates <- readIORef mergeUpdateRef
   writeIORef mergeUpdateRef []
-  let updateMerge :: SomeMergeUpdate x -> IO [EventSubscription x]
-      updateMerge (SomeMergeUpdate (R.PatchDMap p :: R.PatchDMap k (Event x)) m) = do
-        oldParents <- readIORef $ mergeSubscribedParents m
-        let f (subscriptionsToKill, ps) (k :=> R.ComposeMaybe me) = do
-              (mOldSubd, newPs) <- case me of
-                Nothing -> return $ DMap.updateLookupWithKey (\_ _ -> Nothing) k ps
-                Just e -> do
-                  s <- liftIO $ newSubscriberMerge k m
-                  subscription@(EventSubscription _ subd) <- subscribe e s
-                  newParentHeight <- liftIO $ getEventSubscribedHeight subd
-                  let newParent = MergeSubscribedParent subscription s
-                  liftIO $ addMergeHeight newParentHeight m
-                  return $ DMap.insertLookupWithKey' (\_ new _ -> new) k newParent ps
-              forM_ mOldSubd $ \oldSubd -> do
-                oldHeight <- liftIO $ getEventSubscribedHeight $ _eventSubscription_subscribed $ mergeSubscribedParentSubscription oldSubd
-                liftIO $ removeMergeHeight oldHeight m
-              return (maybeToList (mergeSubscribedParentSubscription <$> mOldSubd) ++ subscriptionsToKill, newPs)
-        (subscriptionsToKill, newParents) <- flip runEventM env $ foldM f ([], oldParents) $ DMap.toList p --TODO: I think this runEventM is OK, since no events are firing at this time, but it might not be
-        writeIORef (mergeSubscribedParents m) $! newParents
-        return subscriptionsToKill
   when debugPropagate $ putStrLn "Updating merges"
-  mergeSubscriptionsToKill <- concat <$> mapM updateMerge mergeUpdates
+  mergeSubscriptionsToKill <- flip runEventM env $ concat <$> mapM _someMergeUpdate_update mergeUpdates
   when debugPropagate $ putStrLn "Updating merges done"
   toReconnect <- readIORef toReconnectRef
   switchSubscriptionsToKill <- forM toReconnect $ \(SomeSwitchSubscribed subscribed) -> {-# SCC "switchSubscribed" #-} do
@@ -1777,13 +1781,12 @@ runFrame a = SpiderHost $ ask >>= \spiderTimeline -> lift $ do
     when (parentHeight /= myHeight) $ do
       writeIORef (switchSubscribedHeight subscribed) $! invalidHeight
       WeakBag.traverse (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight myHeight
-  forM_ mergeUpdates $ \(SomeMergeUpdate _ m) -> do
-    invalidateMergeHeight m --TODO: In addition to when the patch is completely empty, we should also not run this if it has some Nothing values, but none of them have actually had any effect; potentially, we could even check for Just values with no effect (e.g. by comparing their IORefs and ignoring them if they are unchanged); actually, we could just check if the new height is different
+  mapM_ _someMergeUpdate_invalidateHeight mergeUpdates --TODO: In addition to when the patch is completely empty, we should also not run this if it has some Nothing values, but none of them have actually had any effect; potentially, we could even check for Just values with no effect (e.g. by comparing their IORefs and ignoring them if they are unchanged); actually, we could just check if the new height is different
   forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mcs) -> do
     unsubscribe subscription
     mapM_ invalidateCoincidenceHeight mcs
   forM_ coincidenceInfos $ \(SomeResetCoincidence _ mcs) -> mapM_ recalculateCoincidenceHeight mcs
-  forM_ mergeUpdates $ \(SomeMergeUpdate _ m) -> revalidateMergeHeight m
+  mapM_ _someMergeUpdate_recalculateHeight mergeUpdates
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> do
     height <- calculateSwitchHeight subscribed
     updateSwitchHeight height subscribed
