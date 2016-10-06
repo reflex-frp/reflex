@@ -188,6 +188,7 @@ newtype Event x a = Event { subscribeAndRead :: Subscriber x a -> EventM x (Even
 -- | Construct an 'Event' equivalent to that constructed by 'push', but with no
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
+{-# INLINABLE pushCheap #-}
 pushCheap :: (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 pushCheap f e = Event $ \sub -> do
   (subscription, occ) <- subscribeAndRead e $ sub
@@ -212,6 +213,7 @@ data CacheSubscribed x a
 --TODO: Try a caching strategy where we subscribe directly to the parent when
 --there's only one subscriber, and then build our own WeakBag only when a second
 --subscriber joins
+{-# INLINABLE cacheEvent #-}
 cacheEvent :: Event x a -> Event x a
 cacheEvent e = Event $ \sub -> do
   let !mSubscribedRef = unsafeNewIORef e Nothing
@@ -1138,7 +1140,7 @@ instance Functor (Event x) where
 instance Functor (Behavior x) where
   fmap f = pull . fmap f . readBehaviorTracked
 
-{-# NOINLINE push #-} --TODO: If this is helpful, we can get rid of the unsafeNewIORef and use unsafePerformIO directly
+{-# INLINABLE push #-} --TODO: If this is helpful, we can get rid of the unsafeNewIORef and use unsafePerformIO directly
 push :: (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 push f e = cacheEvent (pushCheap f e)
 {-
@@ -1150,7 +1152,7 @@ push f e = eventPush $ Push
 -- DISABLED: {- RULES "push/push" forall f g e. push f (push g e) = push (maybe (return Nothing) f <=< g) e #-}
 -}
 
-{-# NOINLINE pull #-}
+{-# INLINABLE pull #-}
 pull :: BehaviorM x a -> Behavior x a
 pull a = behaviorPull $ Pull
   { pullCompute = a
@@ -1160,7 +1162,7 @@ pull a = behaviorPull $ Pull
 #endif
   }
 
-{-# NOINLINE switch #-}
+{-# INLINABLE switch #-}
 switch :: Behavior x (Event x a) -> Event x a
 switch a = eventSwitch $ Switch
   { switchParent = a
