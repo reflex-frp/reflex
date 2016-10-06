@@ -18,7 +18,6 @@ import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Dependent.Map (DMap, DSum (..))
-import Data.Foldable
 import Data.Functor.Misc
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -174,7 +173,7 @@ instance (MonadAdjust t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => Mon
     -- 1. Incrementally merging the Dynamics
     -- 2. Incrementally updating the mconcat of the merged Dynamics
     i <- holdIncremental liftedWritten0 liftedWritten'
-    tellDyn $ join $ fold . dmapToMap <$> incrementalToDynamic i
+    tellDyn $ join $ mconcat . Map.elems . dmapToMap <$> incrementalToDynamic i
     return (liftedResult0, liftedResult')
 
 withDynamicWriterT :: (Monoid w, Reflex t, MonadHold t m, MonadFix m)
