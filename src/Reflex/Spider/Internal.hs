@@ -211,7 +211,7 @@ data CacheSubscribed x a
 --subscriber joins
 {-# INLINABLE cacheEvent #-}
 cacheEvent :: Event x a -> Event x a
-cacheEvent e = Event $ \sub -> do
+cacheEvent e = Event $ \sub -> {-# SCC "cacheEvent" #-} do
   let !mSubscribedRef = unsafeNewIORef e Nothing
   mSubscribed <- liftIO $ readIORef mSubscribedRef
   case mSubscribed of
