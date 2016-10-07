@@ -1641,9 +1641,6 @@ initHold (SomeHoldInit h) = void $ getHoldEventSubscription h
 -- | Run an event action outside of a frame
 runFrame :: forall x a. EventM x a -> SpiderHost x a --TODO: This function also needs to hold the mutex
 runFrame a = SpiderHost $ ask >>= \spiderTimeline -> lift $ do
-  -- Clear out pending unsubscriptions; these will need to happen eventually anyway, and might cause us a lot of extra work during the frame, so get rid of them now
-  pendingCleanups <- atomicModifyIORef (_spiderTimeline_cleanups spiderTimeline) $ \x -> ([], x)
-  {-# SCC "cleanups" #-} sequence_ pendingCleanups
   toAssignRef <- newIORef [] -- This should only actually get used when events are firing
   holdInitRef <- newIORef []
   mergeUpdateRef <- newIORef []
@@ -1818,9 +1815,7 @@ globalSpiderTimeline = unsafePerformIO unsafeNewSpiderTimeline
 -- | Stores all global data relevant to a particular Spider timeline; only one
 -- value should exist for each type @x@
 data SpiderTimeline x = SpiderTimeline
-  { _spiderTimeline_toUnsubscribe :: !(IORef [EventSubscription x])
-  , _spiderTimeline_lock :: !(MVar ())
-  , _spiderTimeline_cleanups :: !(IORef [IO ()])
+  { _spiderTimeline_lock :: !(MVar ())
 #ifdef DEBUG
   , _spiderTimeline_depth :: !(IORef Int)
 #endif
@@ -1834,16 +1829,12 @@ instance GEq SpiderTimeline where
 
 unsafeNewSpiderTimeline :: forall x. IO (SpiderTimeline x)
 unsafeNewSpiderTimeline = do
-  toUnsubscribe <- newIORef []
   lock <- newMVar ()
-  cleanups <- newIORef []
 #ifdef DEBUG
   depthRef <- newIORef 0
 #endif
   return $ SpiderTimeline
-    { _spiderTimeline_toUnsubscribe = toUnsubscribe
-    , _spiderTimeline_lock = lock
-    , _spiderTimeline_cleanups = cleanups
+    { _spiderTimeline_lock = lock
 #ifdef DEBUG
     , _spiderTimeline_depth = depthRef
 #endif
