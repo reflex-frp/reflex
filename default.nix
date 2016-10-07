@@ -1,9 +1,10 @@
-{ mkDerivation, base, bifunctors, containers, deepseq
+{ mkDerivation, ghc, base, bifunctors, containers, deepseq
 , dependent-map, dependent-sum, exception-transformers
 , haskell-src-exts, haskell-src-meta, hlint, lens, MemoTrie
 , monad-control, mtl, primitive, ref-tf, semigroupoids
 , semigroups, split, stdenv, stm, syb, template-haskell
-, these, transformers, transformers-compat, prim-uniq
+, these, transformers, transformers-compat, prim-uniq, structs
+, criterion, loch-th, process, time
 }:
 mkDerivation {
   pname = "reflex";
@@ -14,12 +15,15 @@ mkDerivation {
     exception-transformers haskell-src-exts haskell-src-meta lens
     MemoTrie monad-control mtl primitive ref-tf semigroupoids
     semigroups stm syb template-haskell these transformers
-    transformers-compat prim-uniq
+    transformers-compat prim-uniq split structs
   ];
   testHaskellDepends = [
     base bifunctors containers deepseq dependent-map dependent-sum
-    hlint mtl ref-tf split transformers
-  ];
+    mtl ref-tf split transformers criterion loch-th process
+    time
+  ] ++ (if ghc.isGhcjs or false then [] else [
+    hlint
+  ]);
   homepage = "https://github.com/reflex-frp/reflex";
   description = "Higher-order Functional Reactive Programming";
   license = stdenv.lib.licenses.bsd3;

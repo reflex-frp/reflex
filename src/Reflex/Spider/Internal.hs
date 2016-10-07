@@ -17,6 +17,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE UnboxedTuples #-}
 -- | This module is the implementation of the 'Spider' 'Reflex' engine.  It uses
 -- a graph traversal algorithm to propagate 'Event's and 'Behavior's.
 module Reflex.Spider.Internal where
@@ -47,6 +49,7 @@ import Data.Maybe
 import Data.Monoid ((<>))
 import Data.Some (Some)
 import qualified Data.Some as Some
+import Data.Struct
 import Data.These
 import Data.Traversable
 import Data.Type.Coercion
@@ -57,6 +60,7 @@ import GHC.Stack
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
+import GHC.IO (IO (..))
 
 #ifdef DEBUG_CYCLES
 import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
@@ -195,13 +199,61 @@ pushCheap f e = Event $ \sub -> do
   occ' <- join <$> mapM (runComputeM . f) occ
   return (subscription, occ')
 
+{-
 data CacheSubscribed x a
    = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
                      , _cacheSubscribed_weakSelf :: {-# UNPACK #-} !(IORef (Weak (CacheSubscribed x a)))
                      , _cacheSubscribed_parent :: {-# UNPACK #-} !(EventSubscription x)
-                     , _cacheSubscribed_cached :: {-# UNPACK #-} !(IORef (Maybe (CacheSubscribed x a)))
                      , _cacheSubscribed_occurrence :: {-# UNPACK #-} !(IORef (Maybe a))
+                     , _cacheSubscribed_cached :: {-# UNPACK #-} !(IORef (Maybe (CacheSubscribed x a)))
                      }
+-}
+
+newtype EventCache x a s = EventCache (Object s) deriving Struct
+
+allocEventCache :: PrimMonad m => m (EventCache x a (PrimState m))
+allocEventCache = alloc 4
+
+{-# NOINLINE unsafeAllocEventCache #-}
+unsafeAllocEventCache :: q -> EventCache x a (PrimState IO)
+unsafeAllocEventCache q = unsafePerformIO $ do
+  touch q
+  c <- allocEventCache
+  set eventCache_subscribers_slot c Nil -- We only need to initialize this one; the others will be initialized later
+  return c
+
+clearEventCache :: EventCache x a (PrimState IO) -> IO ()
+clearEventCache c = do
+  set eventCache_subscribers_slot c Nil
+  setField eventCache_weakSelf c $ error "weakSelf has been cleared"
+  setField eventCache_parent c $ error "parent has been cleared"
+  set eventCache_occurrence_slot c Nil
+
+eventCache_subscribers :: Field (EventCache x a) (WeakBag (Subscriber x a))
+eventCache_subscribers = field 0
+
+eventCache_subscribers_slot :: Slot (EventCache x a) Object
+eventCache_subscribers_slot = slot 0
+
+eventCache_weakSelf :: Field (EventCache x a) (Weak (EventCache x a s))
+eventCache_weakSelf = field 1
+
+eventCache_parent :: Field (EventCache x a) (EventSubscription x)
+eventCache_parent = field 2
+
+eventCache_occurrence :: Field (EventCache x a) a
+eventCache_occurrence = field 3
+
+eventCache_occurrence_slot :: Slot (EventCache x a) Object
+eventCache_occurrence_slot = slot 3
+
+freezeStruct :: Struct t => t (PrimState IO) -> IO ()
+freezeStruct t = IO $ \s -> case unsafeFreezeSmallArray# (destruct t) s of
+  (# s', _ #) -> (# s', () #)
+
+thawStruct :: Struct t => t (PrimState IO) -> IO ()
+thawStruct t = IO $ \s -> case unsafeThawSmallArray# (unsafeCoerce# (destruct t)) s of
+  (# s', _ #) -> (# s', () #)
 
 -- | Construct an 'Event' whose value is guaranteed not to be recomputed
 -- repeatedly
@@ -211,49 +263,59 @@ data CacheSubscribed x a
 --subscriber joins
 {-# INLINABLE cacheEvent #-}
 cacheEvent :: Event x a -> Event x a
-cacheEvent e = Event $ \sub -> {-# SCC "cacheEvent" #-} do
-  let !mSubscribedRef = unsafeNewIORef e Nothing
-  mSubscribed <- liftIO $ readIORef mSubscribedRef
-  case mSubscribed of
-    Just subscribed -> liftIO $ do
-      ticket <- WeakBag.insert sub (_cacheSubscribed_subscribers subscribed) (_cacheSubscribed_weakSelf subscribed) cleanupCacheSubscribed
-      occ <- readIORef $ _cacheSubscribed_occurrence subscribed
-      let es = EventSubscribed
-            { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ _cacheSubscribed_parent subscribed
-            , eventSubscribedRetained = toAny subscribed
+cacheEvent e = let !c = unsafeAllocEventCache e in Event $ \sub -> {-# SCC "cacheEvent" #-} do
+  subscribersNil <- liftIO $ get eventCache_subscribers_slot c
+  case isNil subscribersNil of
+    False -> liftIO $ {-# SCC "cacheEventFalse" #-} do
+      subscribers <- getField eventCache_subscribers c
+      weakSelf <- getField eventCache_weakSelf c
+      weakSelfRef <- newIORef weakSelf --TODO: Get rid of this extraneous IORef
+      ticket <- WeakBag.insert sub subscribers weakSelfRef cleanupCacheSubscribed
+      occNil <- get eventCache_occurrence_slot c
+      occ <- if isNil occNil
+             then return Nothing
+             else Just <$> getField eventCache_occurrence c
+      let es =  EventSubscribed
+            { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ unsafeDupablePerformIO $ getField eventCache_parent c
+            , eventSubscribedRetained = toAny c
             }
       return (EventSubscription (WeakBag.remove ticket >> touch ticket) es, occ)
-    Nothing -> do
-      weakSelf <- liftIO $ newIORef $ error "cacheEvent: weakSelf not yet intialized"
-      (subscribers, ticket) <- liftIO $ WeakBag.singleton sub weakSelf cleanupCacheSubscribed
-      occRef <- liftIO $ newIORef undefined
+    True -> {-# SCC "cacheEventTrue" #-} do
+      weakSelf <- liftIO $ evaluate =<< mkWeakPtrWithDebug c "CacheEvent"
+      liftIO $ setField eventCache_weakSelf c weakSelf
+      weakSelfRef <- liftIO $ newIORef weakSelf --TODO: Get rid of this extraneous IORef
+      (subscribers, ticket) <- liftIO $ WeakBag.singleton sub weakSelfRef cleanupCacheSubscribed
+      liftIO $ setField eventCache_subscribers c subscribers
       (parentSub, occ) <- subscribeAndRead e $ Subscriber
         { subscriberPropagate = \a -> do
-            liftIO $ writeIORef occRef $ Just a
-            scheduleClear occRef
+--            liftIO $ thawStruct c
+            liftIO $ setField eventCache_occurrence c a
+--            liftIO $ freezeStruct c
+            scheduleClearEventCache c
             propagate a subscribers
         , subscriberInvalidateHeight = \old -> do
             WeakBag.traverse subscribers $ invalidateSubscriberHeight old
         , subscriberRecalculateHeight = \new -> do
             WeakBag.traverse subscribers $ recalculateSubscriberHeight new
         }
-      liftIO $ writeIORef occRef occ
-      when (isJust occ) $ scheduleClear occRef
-      let !subscribed = CacheSubscribed
-            { _cacheSubscribed_subscribers = subscribers
-            , _cacheSubscribed_weakSelf = weakSelf
-            , _cacheSubscribed_parent = parentSub
-            , _cacheSubscribed_cached = mSubscribedRef
-            , _cacheSubscribed_occurrence = occRef
-            }
-      liftIO $ writeIORef mSubscribedRef $ Just subscribed
-      liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "PushSubscribed"
-      return (EventSubscription (WeakBag.remove ticket >> touch ticket) (EventSubscribed (eventSubscribedHeightRef $ _eventSubscription_subscribed parentSub) (toAny subscribed)), occ)
+      liftIO $ setField eventCache_parent c parentSub
+      case occ of
+        Nothing -> liftIO $ set eventCache_occurrence_slot c Nil
+        Just o -> do
+          liftIO $ setField eventCache_occurrence c o
+          scheduleClearEventCache c
+--      liftIO $ freezeStruct c
+      return (EventSubscription (WeakBag.remove ticket >> touch ticket) (EventSubscribed (eventSubscribedHeightRef $ _eventSubscription_subscribed parentSub) (toAny c)), occ)
 
-cleanupCacheSubscribed :: CacheSubscribed x a -> IO ()
+{-# INLINE scheduleClearEventCache #-}
+scheduleClearEventCache :: Defer (SomeClearEventCache x) m => EventCache x a (PrimState IO) -> m ()
+scheduleClearEventCache r = defer $ SomeClearEventCache r
+
+cleanupCacheSubscribed :: EventCache x a (PrimState IO) -> IO ()
 cleanupCacheSubscribed self = do
-  unsubscribe $ _cacheSubscribed_parent self
-  writeIORef (_cacheSubscribed_cached self) Nothing
+  parent <- getField eventCache_parent self
+  unsubscribe parent
+  clearEventCache self
 
 subscribe :: Event x a -> Subscriber x a -> EventM x (EventSubscription x)
 subscribe e s = fst <$> subscribeAndRead e s
@@ -663,6 +725,7 @@ data EventEnv x
               , eventEnvMergeUpdates :: !(IORef [SomeMergeUpdate x])
               , eventEnvMergeInits :: !(IORef [SomeMergeInit x]) -- Needed for Subscribe
               , eventEnvClears :: !(IORef [SomeClear]) -- Needed for Subscribe
+              , eventEnvClearEventCaches :: !(IORef [SomeClearEventCache x]) -- Needed for Subscribe
               , eventEnvRootClears :: !(IORef [SomeRootClear])
               , eventEnvCurrentHeight :: !(IORef Height) -- Needed for Subscribe
               , eventEnvResetCoincidences :: !(IORef [SomeResetCoincidence x]) -- Needed for Subscribe
@@ -736,6 +799,10 @@ putCurrentHeight h = EventM $ do
 instance Defer SomeClear (EventM x) where
   {-# INLINE getDeferralQueue #-}
   getDeferralQueue = EventM $ asks eventEnvClears
+
+instance Defer (SomeClearEventCache x) (EventM x) where
+  {-# INLINE getDeferralQueue #-}
+  getDeferralQueue = EventM $ asks eventEnvClearEventCaches
 
 {-# INLINE scheduleClear #-}
 scheduleClear :: Defer SomeClear m => IORef (Maybe a) -> m ()
@@ -1131,6 +1198,8 @@ scheduleMerge' initialHeight heightRef a = scheduleMerge initialHeight $ do
     EQ -> a
 
 data SomeClear = forall a. SomeClear (IORef (Maybe a))
+
+data SomeClearEventCache x = forall a. SomeClearEventCache (EventCache x a (PrimState IO))
 
 data SomeRootClear = forall k. SomeRootClear (IORef (DMap k Identity))
 
@@ -1647,10 +1716,11 @@ runFrame a = SpiderHost $ ask >>= \spiderTimeline -> lift $ do
   mergeInitRef <- newIORef []
   heightRef <- newIORef zeroHeight
   toClearRef <- newIORef []
+  toClearEventCacheRef <- newIORef []
   toClearRootRef <- newIORef []
   coincidenceInfosRef <- newIORef []
   delayedRef <- liftIO $ newIORef IntMap.empty
-  let env = EventEnv spiderTimeline toAssignRef holdInitRef mergeUpdateRef mergeInitRef toClearRef toClearRootRef heightRef coincidenceInfosRef delayedRef
+  let env = EventEnv spiderTimeline toAssignRef holdInitRef mergeUpdateRef mergeInitRef toClearRef toClearEventCacheRef toClearRootRef heightRef coincidenceInfosRef delayedRef
   let go = do
         result <- a
         runHoldInits holdInitRef mergeInitRef -- This must happen before doing the assignments, in case subscribing a Hold causes existing Holds to be read by the newly-propagated events
@@ -1658,6 +1728,11 @@ runFrame a = SpiderHost $ ask >>= \spiderTimeline -> lift $ do
   result <- runEventM go env
   toClear <- readIORef toClearRef
   forM_ toClear $ \(SomeClear ref) -> {-# SCC "clear" #-} writeIORef ref Nothing
+  toClearEventCache <- readIORef toClearEventCacheRef
+  forM_ toClearEventCache $ \(SomeClearEventCache c) -> {-# SCC "clearEventCache" #-} do
+--    thawStruct c
+    set eventCache_occurrence_slot c Nil
+--    freezeStruct c
   toClearRoot <- readIORef toClearRootRef
   forM_ toClearRoot $ \(SomeRootClear ref) -> {-# SCC "rootClear" #-} writeIORef ref $! DMap.empty
   toAssign <- readIORef toAssignRef
