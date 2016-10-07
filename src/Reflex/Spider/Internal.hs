@@ -673,6 +673,9 @@ data EventEnv x
 runEventM :: EventM x a -> EventEnv x -> IO a
 runEventM = runReaderT . unEventM
 
+asksEventEnv :: (EventEnv x -> a) -> EventM x a
+asksEventEnv = EventM . asks
+
 class MonadIO m => Defer a m where
   getDeferralQueue :: m (IORef [a])
 
@@ -684,11 +687,11 @@ defer a = do
 
 instance Defer (SomeAssignment x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
-  getDeferralQueue = EventM $ asks eventEnvAssignments
+  getDeferralQueue = asksEventEnv eventEnvAssignments
 
 instance Defer (SomeHoldInit x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
-  getDeferralQueue = EventM $ asks eventEnvHoldInits
+  getDeferralQueue = asksEventEnv eventEnvHoldInits
 
 instance Defer (SomeHoldInit x) (BehaviorM x) where
   {-# INLINE getDeferralQueue #-}
@@ -696,11 +699,11 @@ instance Defer (SomeHoldInit x) (BehaviorM x) where
 
 instance Defer (SomeMergeUpdate x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
-  getDeferralQueue = EventM $ asks eventEnvMergeUpdates
+  getDeferralQueue = asksEventEnv eventEnvMergeUpdates
 
 instance Defer (SomeMergeInit x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
-  getDeferralQueue = EventM $ asks eventEnvMergeInits
+  getDeferralQueue = asksEventEnv eventEnvMergeInits
 
 class HasCurrentHeight x m | m -> x where
   getCurrentHeight :: m Height
@@ -722,7 +725,7 @@ class HasSpiderTimeline x m | m -> x where
 
 instance HasSpiderTimeline x (EventM x) where
   {-# INLINE askSpiderTimeline #-}
-  askSpiderTimeline = EventM $ asks eventEnvSpiderTimeline
+  askSpiderTimeline = asksEventEnv eventEnvSpiderTimeline
 
 instance HasSpiderTimeline x (SpiderHost x) where
   {-# INLINE askSpiderTimeline #-}
@@ -735,7 +738,7 @@ putCurrentHeight h = EventM $ do
 
 instance Defer SomeClear (EventM x) where
   {-# INLINE getDeferralQueue #-}
-  getDeferralQueue = EventM $ asks eventEnvClears
+  getDeferralQueue = asksEventEnv eventEnvClears
 
 {-# INLINE scheduleClear #-}
 scheduleClear :: Defer SomeClear m => IORef (Maybe a) -> m ()
@@ -743,7 +746,7 @@ scheduleClear r = defer $ SomeClear r
 
 instance Defer SomeRootClear (EventM x) where
   {-# INLINE getDeferralQueue #-}
-  getDeferralQueue = EventM $ asks eventEnvRootClears
+  getDeferralQueue = asksEventEnv eventEnvRootClears
 
 {-# INLINE scheduleRootClear #-}
 scheduleRootClear :: Defer SomeRootClear m => IORef (DMap k Identity) -> m ()
@@ -751,7 +754,7 @@ scheduleRootClear r = defer $ SomeRootClear r
 
 instance Defer (SomeResetCoincidence x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
-  getDeferralQueue = EventM $ asks eventEnvResetCoincidences
+  getDeferralQueue = asksEventEnv eventEnvResetCoincidences
 
 -- Note: hold cannot examine its event until after the phase is over
 {-# SPECIALIZE hold :: R.Patch p => R.PatchTarget p -> Event x p -> EventM x (Hold x p) #-}
@@ -873,7 +876,7 @@ data SomeMergeUpdate x = SomeMergeUpdate
 newtype SomeMergeInit x = SomeMergeInit { unSomeMergeInit :: EventM x () }
 
 -- EventM can do everything BehaviorM can, plus create holds
-newtype EventM x (a :: *) = EventM { unEventM :: ReaderT (EventEnv x) IO a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadException, MonadAsyncException) -- The environment should be Nothing if we are not in a frame, and Just if we are - in which case it is a list of assignments to be done after the frame is over
+newtype EventM x a = EventM { unEventM :: ReaderT (EventEnv x) IO a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadException, MonadAsyncException) -- The environment should be Nothing if we are not in a frame, and Just if we are - in which case it is a list of assignments to be done after the frame is over
 
 newtype ComputeM x a = ComputeM (ReaderT (IORef [SomeHoldInit x]) IO a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
@@ -1104,7 +1107,7 @@ run roots after = do
         else return Nothing
     forM_ (catMaybes rootsToPropagate) $ \(RootTrigger (subscribersRef, _, _) :=> Identity a) -> do
       propagate a subscribersRef
-    delayedRef <- EventM $ asks eventEnvDelayedMerges
+    delayedRef <- asksEventEnv eventEnvDelayedMerges
     let go = do
           delayed <- liftIO $ readIORef delayedRef
           case IntMap.minViewWithKey delayed of
