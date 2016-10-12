@@ -14,6 +14,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 
 -- | This module contains the Reflex interface, as well as a variety of
 -- convenience functions for working with 'Event's, 'Behavior's, and other
@@ -141,8 +142,6 @@ import Debug.Trace (trace)
 class ( MonadHold t (PushM t)
       , MonadSample t (PullM t)
       , MonadFix (PushM t)
-      , Functor (Event t)
-      , Functor (Behavior t)
       , Functor (Dynamic t)
       , Applicative (Dynamic t) -- Necessary for GHC <= 7.8
       , Monad (Dynamic t)
@@ -507,9 +506,11 @@ instance Reflex t => Bind (Event t) where
   join = coincidence
 
 instance Reflex t => Functor (Event t) where
+  {-# INLINE fmap #-}
   fmap f = fmapMaybe $ Just . f
 
 instance Reflex t => FunctorMaybe (Event t) where
+  {-# INLINE fmapMaybe #-}
   fmapMaybe f = push $ return . f
 
 -- | Never: @'zero' = 'never'@.
@@ -645,6 +646,7 @@ instance (Semigroup a, Reflex t) => Monoid (Event t a) where
 -- | Create a new 'Event' that occurs if at least one of the 'Event's in the
 -- list occurs. If multiple occur at the same time they are folded from the left
 -- with the given function.
+{-# INLINE mergeWith #-}
 mergeWith :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
 mergeWith f es = fmap (Prelude.foldl1 f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList)
                . merge
@@ -655,6 +657,7 @@ mergeWith f es = fmap (Prelude.foldl1 f . map (\(Const2 _ :=> Identity v) -> v) 
 -- | Create a new 'Event' that occurs if at least one of the 'Event's in the
 -- list occurs. If multiple occur at the same time the value is the value of the
 -- leftmost event.
+{-# INLINE leftmost #-}
 leftmost :: Reflex t => [Event t a] -> Event t a
 leftmost = mergeWith const
 

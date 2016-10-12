@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 -- | This module provides the interface for hosting 'Reflex' engines.  This
 -- should only be necessary if you're writing a binding or some other library
 -- that provides a core event loop.

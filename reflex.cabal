@@ -28,8 +28,8 @@ library
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
-    primitive >= 0.5 && < 0.7,
     prim-uniq >= 0.1.0.1 && < 0.2,
+    primitive >= 0.5 && < 0.7,
     ref-tf == 0.4.*,
     semigroupoids >= 4.0 && < 6,
     semigroups >= 0.16 && < 0.19,
@@ -56,6 +56,10 @@ library
     Reflex.Pure,
     Reflex.Spider,
     Reflex.Spider.Internal
+
+  if !impl(ghcjs)
+    build-depends: ghc
+    exposed-modules: Reflex.Optimizer
 
   other-extensions: TemplateHaskell
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2

@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 
 -- There are two expected orphan instances in this module:
 --   * MonadSample (Pure t) ((->) t)

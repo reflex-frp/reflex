@@ -8,6 +8,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 -- | This module provides types and functions with no particular theme, but
 -- which are relevant to the use of 'Functor'-based datastructures like
 -- 'Data.Dependent.Map.DMap'.
