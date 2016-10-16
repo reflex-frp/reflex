@@ -641,7 +641,7 @@ switchPromptly ea0 eea = do
 
 instance Reflex t => Align (Event t) where
   nil = never
-  align ea eb = fmapMaybe dmapToThese $ merge $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
+  align = alignWithMaybe Just
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and
 -- the 'Behavior' is true at the time of occurence.
@@ -708,14 +708,15 @@ distributeListOverDynWith f = fmap (f . map (\(Const2 _ :=> Identity v) -> v) . 
 -- | Create a new 'Event' that occurs when the first supplied 'Event' occurs
 -- unless the second supplied 'Event' occurs simultaneously.
 unlessE :: Reflex t => Event t a -> Event t b -> Event t a
-unlessE ea eb =
-  fmapMaybe dmapper
+unlessE = alignWithMaybe $ \case { This a -> Just a ; _ -> Nothing }
+
+-- (intentially not exported, for now)
+alignWithMaybe
+  :: Reflex t => (These a b -> Maybe c) -> Event t a -> Event t b -> Event t c
+alignWithMaybe f ea eb =
+  fmapMaybe (f <=< dmapToThese)
     $ merge
-    $ DMap.fromList [LeftTag DMap.:=> ea, RightTag DMap.:=> eb]
- where
-  dmapper m = case (DMap.lookup LeftTag m, DMap.lookup RightTag m) of
-    (Just (Identity a), Nothing) -> Just a
-    _                            -> Nothing
+    $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
 
 
 --------------------------------------------------------------------------------
