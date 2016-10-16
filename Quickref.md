@@ -48,7 +48,10 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   attachPromptlyDynWithMaybe :: (a -> b -> Maybe c) ->  Dynamic a -> Event b -> Event c
 
 -- Combine multiple Events
-[ ]   <>        :: Monoid a => Event a -> Event a -> Event a
+[ ]   <>        ::         Monoid a => Event a -> Event a -> Event a
+[ ]   unlessE   ::                     Event a -> Event b -> Event a
+[ ]   align     ::                     Event a -> Event b -> Event (These a b)
+[ ]   alignWith :: (These a b -> c) -> Event a -> Event b -> Event c 
 [ ]   mergeWith :: (a -> a -> a) -> [Event a] -> Event a
 [ ]   leftmost  :: [Event a] -> Event a
 [ ]   mergeList :: [Event a] -> Event (NonEmpty a)
@@ -56,9 +59,11 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   mergeMap  :: Ord k => Map k (Event a) -> Event (Map k a)
 
 -- Efficient one-to-many fanout
-[ ]   fanMap ::      Ord k => Event (Map k a) -> EventSelector (Const2 k a)
-[ ]   fan    :: GCompare k => Event  (DMap k) -> EventSelector k
-[ ]   select ::                                  EventSelector k -> k a -> Event a
+[ ]   fanMap    ::      Ord k => Event (Map k a) -> EventSelector (Const2 k a)
+[ ]   fan       :: GCompare k => Event  (DMap k) -> EventSelector k
+[ ]   select    ::                                  EventSelector k -> k a -> Event a
+[ ]   fanEither ::            Event (Either a b) -> (Event a, Event b)
+[ ]   fanThese  ::            Event (These a b)  -> (Event a, Event b)
 
 -- Event to Event via function that can sample current values
 [ ]   push       :: (a -> m (Maybe b)) -> Event a -> Event b
@@ -124,7 +129,9 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 -- Combine multiple Dynamics
 [ ]   mconcat                   :: Monoid a => [Dynamic a] -> Dynamic a
 [ ]   distributeDMapOverDynPure :: GCompare k => DMap (WrapArg Dynamic k) -> Dynamic (DMap k)
-[ ]   zipDynWith                :: (a -> b -> c) -> Dynamic a -> Dynamic b -> Dynamic c
+[ ]   <*>                       ::           Dynamic (a -> b) ->        Dynamic a -> Dynamic b
+[ ]   >>=                       ::                  Dynamic a -> (a -> Dynamic b) -> Dynamic b
+[ ]   zipDynWith                :: (a -> b -> c) -> Dynamic a -> Dynamic b        -> Dynamic c
 
 -- Efficient one-to-many fanout
 [ ]   demux   :: Ord k => Dynamic k -> Demux k

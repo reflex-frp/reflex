@@ -661,6 +661,7 @@ zipDyn = zipDynWith (,)
 
 -- | Combine two 'Dynamic's with a combining function.  The result will change
 -- whenever either (or both) input 'Dynamic' changes.
+-- More efficient than liftA2.
 zipDynWith :: Reflex t => (a -> b -> c) -> Dynamic t a -> Dynamic t b -> Dynamic t c
 zipDynWith f da db =
   let eab = align (updated da) (updated db)
