@@ -34,6 +34,7 @@ module Reflex.Class
        , mergeMap
        , mergeList
        , mergeWith
+       , unlessE
          -- ** Breaking up 'Event's
        , splitE
        , fanEither
@@ -702,6 +703,18 @@ distributeListOverDyn = distributeListOverDynWith id
 -- | Create a new 'Dynamic' by applying a combining function to a list of 'Dynamic's
 distributeListOverDynWith :: Reflex t => ([a] -> b) -> [Dynamic t a] -> Dynamic t b
 distributeListOverDynWith f = fmap (f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..]
+
+-- | Create a new 'Event' that occurs when the first supplied 'Event' occurs
+-- unless the second supplied 'Event' occurs simultaneously.
+unlessE :: Reflex t => Event t a -> Event t b -> Event t a
+unlessE ea eb =
+  fmapMaybe dmapper
+    $ merge
+    $ DMap.fromList [LeftTag DMap.:=> ea, RightTag DMap.:=> eb]
+ where
+  dmapper m = case (DMap.lookup LeftTag m, DMap.lookup RightTag m) of
+    (Just (Identity a), Nothing) -> Just a
+    _                            -> Nothing
 
 
 --------------------------------------------------------------------------------
