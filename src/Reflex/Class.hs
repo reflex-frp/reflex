@@ -409,8 +409,21 @@ instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
 #endif
 
 --TODO: See if there's a better class in the standard libraries already
+
 -- | A class for values that combines filtering and mapping using 'Maybe'.
-class FunctorMaybe f where
+-- Morally, @'FunctorMaybe' ~ KleisliFunctor 'Maybe'@. Also similar is the
+-- @Witherable@ typeclass, but it requires @Foldable f@ and @Traverable f@,
+-- and e.g. 'Event' is instance of neither.
+--
+-- A definition of 'fmapMaybe' must satisfy the following laws:
+--
+-- [/identity/]
+--   @'fmapMaybe' 'Just' ≡ 'id'@
+--
+-- [/composition/]
+--   @'fmapMaybe' (f <=< g) ≡ 'fmapMaybe' f . 'fmapMaybe' g@
+
+class Functor f => FunctorMaybe f where
   -- | Combined mapping and filtering function.
   fmapMaybe :: (a -> Maybe b) -> f a -> f b
 
