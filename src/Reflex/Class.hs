@@ -34,7 +34,7 @@ module Reflex.Class
        , mergeMap
        , mergeList
        , mergeWith
-       , unlessE
+       , difference
          -- ** Breaking up 'Event's
        , splitE
        , fanEither
@@ -720,8 +720,10 @@ distributeListOverDynWith f = fmap (f . map (\(Const2 _ :=> Identity v) -> v) . 
 
 -- | Create a new 'Event' that occurs when the first supplied 'Event' occurs
 -- unless the second supplied 'Event' occurs simultaneously.
-unlessE :: Reflex t => Event t a -> Event t b -> Event t a
-unlessE = alignWithMaybe $ \case { This a -> Just a ; _ -> Nothing }
+difference :: Reflex t => Event t a -> Event t b -> Event t a
+difference = alignWithMaybe $ \case
+  This a -> Just a
+  _      -> Nothing
 
 -- (intentially not exported, for now)
 alignWithMaybe

@@ -48,15 +48,15 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   attachPromptlyDynWithMaybe :: (a -> b -> Maybe c) ->  Dynamic a -> Event b -> Event c
 
 -- Combine multiple Events
-[ ]   <>        ::         Monoid a => Event a -> Event a -> Event a
-[ ]   unlessE   ::                     Event a -> Event b -> Event a
-[ ]   align     ::                     Event a -> Event b -> Event (These a b)
-[ ]   alignWith :: (These a b -> c) -> Event a -> Event b -> Event c 
-[ ]   mergeWith :: (a -> a -> a) -> [Event a] -> Event a
-[ ]   leftmost  :: [Event a] -> Event a
-[ ]   mergeList :: [Event a] -> Event (NonEmpty a)
-[ ]   merge     :: GCompare k => DMap (WrapArg Event k) -> Event (DMap k)
-[ ]   mergeMap  :: Ord k => Map k (Event a) -> Event (Map k a)
+[ ]   <>         ::      Semigroup a => Event a -> Event a -> Event a
+[ ]   difference ::                     Event a -> Event b -> Event a
+[ ]   align      ::                     Event a -> Event b -> Event (These a b)
+[ ]   alignWith  :: (These a b -> c) -> Event a -> Event b -> Event c
+[ ]   mergeWith  :: (a -> a -> a) -> [Event a] -> Event a
+[ ]   leftmost   :: [Event a] -> Event a
+[ ]   mergeList  :: [Event a] -> Event (NonEmpty a)
+[ ]   merge      :: GCompare k => DMap (WrapArg Event k) -> Event (DMap k)
+[ ]   mergeMap   :: Ord k => Map k (Event a) -> Event (Map k a)
 
 -- Efficient one-to-many fanout
 [ ]   fanMap    ::      Ord k => Event (Map k a) -> EventSelector (Const2 k a)
