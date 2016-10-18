@@ -32,6 +32,7 @@ import Data.Dependent.Map (DMap, GCompare (..), Some)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.Functor.Misc
+import Data.Maybe
 import Data.Semigroup
 import qualified Data.Some as Some
 import Data.These
@@ -211,7 +212,7 @@ sequenceDMapWithAdjustRequestTWith f (dm0 :: DMap k (RequestT t request response
   childRequestMap <- holdIncremental requests0 requests'
   RequestT $ modify $ (:) $ ffor (mergeIncremental childRequestMap) $ \m ->
     mconcat $ (\(Const2 _ :=> Identity reqs) -> reqs) <$> DMap.toList m
---  RequestT $ modify $ (:) $ coincidence $ ffor requests' $ \(PatchDMap p) -> mergeWith DMap.union $ catMaybes $ ffor (DMap.toList p) $ \(Const2 _ :=> ComposeMaybe me) -> me -- We could make it prompt like this, but this seems to be slower than just delaying the PostBuild event to allow this stuff to settle (which is more similar to the previous behavior anyway)
+  RequestT $ modify $ (:) $ coincidence $ ffor requests' $ \(PatchDMap p) -> mergeWith DMap.union $ catMaybes $ ffor (DMap.toList p) $ \(Const2 _ :=> ComposeMaybe me) -> me
   return (result0, result')
 
 instance PerformEvent t m => PerformEvent t (RequestT t request response m) where

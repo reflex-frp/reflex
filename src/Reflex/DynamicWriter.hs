@@ -19,6 +19,7 @@ import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Dependent.Map (DMap, DSum (..))
+import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -166,15 +167,13 @@ instance (MonadAdjust t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => Mon
         liftedResult0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity r) -> k :=> Identity (getValue r)) result0
         liftedResult' = ffor result' $ \(PatchDMap p) -> PatchDMap $
           mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mr) -> k :=> ComposeMaybe (fmap (Identity . getValue . runIdentity) mr)) p
-        liftedWritten0 :: DMap (Const2 (Some k) (Dynamic t w)) Identity
-        liftedWritten0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity r) -> Const2 (Some.This k) :=> Identity (getWritten r)) result0
-        liftedWritten' = ffor result' $ \(PatchDMap p) -> PatchDMap $
-          mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mr) -> Const2 (Some.This k) :=> ComposeMaybe (fmap (Identity . getWritten . runIdentity) mr)) p
-    --TODO: We should be able to improve the performance here in two ways
-    -- 1. Incrementally merging the Dynamics
-    -- 2. Incrementally updating the mconcat of the merged Dynamics
+        liftedWritten0 :: Map (Some k) (Dynamic t w)
+        liftedWritten0 = Map.fromDistinctAscList $ fmap (\(WrapArg k :=> Identity r) -> (Some.This k, getWritten r)) $ DMap.toList result0
+        liftedWritten' = ffor result' $ \(PatchDMap p) -> PatchMap $
+          Map.fromDistinctAscList $ fmap (\(WrapArg k :=> ComposeMaybe mr) -> (Some.This k, fmap (getWritten . runIdentity) mr)) $ DMap.toList p
+    --TODO: We should be able to improve the performance here by incrementally updating the mconcat of the merged Dynamics
     i <- holdIncremental liftedWritten0 liftedWritten'
-    tellDyn $ join $ mconcat . Map.elems . dmapToMap <$> incrementalToDynamic i
+    tellDyn $ fmap (mconcat . Map.elems) $ incrementalToDynamic $ mergeDynIncremental i
     return (liftedResult0, liftedResult')
 
 withDynamicWriterT :: (Monoid w, Reflex t, MonadHold t m, MonadFix m)

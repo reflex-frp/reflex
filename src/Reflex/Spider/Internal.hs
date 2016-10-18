@@ -17,6 +17,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 -- | This module is the implementation of the 'Spider' 'Reflex' engine.  It uses
 -- a graph traversal algorithm to propagate 'Event's and 'Behavior's.
 module Reflex.Spider.Internal where
@@ -180,12 +181,23 @@ unsafeNodeId a = unsafePerformIO $ do
 -- Event
 --------------------------------------------------------------------------------
 
-newtype Event x a = Event { subscribeAndRead :: Subscriber x a -> EventM x (EventSubscription x, Maybe a) }
+newtype Event x a = Event { unEvent :: Subscriber x a -> EventM x (EventSubscription x, Maybe a) }
+
+{-# INLINE subscribeAndRead #-}
+subscribeAndRead :: Event x a -> Subscriber x a -> EventM x (EventSubscription x, Maybe a)
+subscribeAndRead = unEvent
+
+{-# RULES "pushCheap/cacheEvent" forall f e. pushCheap f (cacheEvent e) = pushCheap f e #-}
+{-# RULES "hold/cacheEvent" forall f e. hold f (cacheEvent e) = hold f e #-}
+{- RULES
+    "subscribeAndRead/cacheEvent" forall e. subscribeAndRead (cacheEvent e) = subscribeAndRead e
+  #-}
 
 -- | Construct an 'Event' equivalent to that constructed by 'push', but with no
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
-{-# INLINABLE pushCheap #-}
+{- INLINABLE pushCheap #-}
+{-# INLINE [1] pushCheap #-}
 pushCheap :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 pushCheap f e = Event $ \sub -> do
   (subscription, occ) <- subscribeAndRead e $ sub
@@ -210,7 +222,7 @@ data CacheSubscribed x a
 --TODO: Try a caching strategy where we subscribe directly to the parent when
 --there's only one subscriber, and then build our own WeakBag only when a second
 --subscriber joins
-{-# INLINABLE cacheEvent #-}
+{-# NOINLINE [1] cacheEvent #-}
 cacheEvent :: HasSpiderTimeline x => Event x a -> Event x a
 cacheEvent e = Event $ \sub -> {-# SCC "cacheEvent" #-} do
   let !mSubscribedRef = unsafeNewIORef e Nothing
@@ -588,7 +600,7 @@ behaviorPull !p = Behavior $ do
         askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
         return a
 
-behaviorDyn :: (HasSpiderTimeline x, R.Patch p) => Dyn x p -> Behavior x (R.PatchTarget p)
+behaviorDyn :: R.Patch p => Dyn x p -> Behavior x (R.PatchTarget p)
 behaviorDyn !d = Behavior $ readHoldTracked =<< getDynHold d
 
 {-# INLINE readHoldTracked #-}
@@ -599,7 +611,7 @@ readHoldTracked h = do
   askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedHold h) :))
   return result
 
-{-# SPECIALIZE readBehaviorUntracked :: HasSpiderTimeline x => Behavior x a -> BehaviorM x a #-}
+{-# SPECIALIZE readBehaviorUntracked :: Behavior x a -> BehaviorM x a #-}
 {-# SPECIALIZE readBehaviorUntracked :: HasSpiderTimeline x => Behavior x a -> EventM x a #-}
 readBehaviorUntracked :: Defer (SomeHoldInit x) m => Behavior x a -> m a
 readBehaviorUntracked b = do
@@ -693,7 +705,7 @@ instance HasSpiderTimeline x => Defer (SomeHoldInit x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
   getDeferralQueue = asksEventEnv eventEnvHoldInits
 
-instance HasSpiderTimeline x => Defer (SomeHoldInit x) (BehaviorM x) where
+instance Defer (SomeHoldInit x) (BehaviorM x) where
   {-# INLINE getDeferralQueue #-}
   getDeferralQueue = BehaviorM $ asks snd
 
@@ -752,8 +764,8 @@ instance HasSpiderTimeline x => Defer (SomeResetCoincidence x) (EventM x) where
   getDeferralQueue = asksEventEnv eventEnvResetCoincidences
 
 -- Note: hold cannot examine its event until after the phase is over
-{-# SPECIALIZE hold :: (HasSpiderTimeline x, R.Patch p) => R.PatchTarget p -> Event x p -> EventM x (Hold x p) #-}
-{- SPECIALIZE hold :: (HasSpiderTimeline x, R.Patch p) => R.PatchTarget p -> Event x p -> ComputeM x (Hold x p) #-}
+{- SPECIALIZE hold :: (HasSpiderTimeline x, R.Patch p) => R.PatchTarget p -> Event x p -> EventM x (Hold x p) #-}
+{-# INLINE [1] hold #-}
 hold :: (R.Patch p, Defer (SomeHoldInit x) m) => R.PatchTarget p -> Event x p -> m (Hold x p)
 hold v0 e = do
   valRef <- liftIO $ newIORef v0
@@ -1050,17 +1062,9 @@ instance HasSpiderTimeline x => Functor (Event x) where
 instance Functor (Behavior x) where
   fmap f = pull . fmap f . readBehaviorTracked
 
-{-# INLINABLE push #-} --TODO: If this is helpful, we can get rid of the unsafeNewIORef and use unsafePerformIO directly
+{-# INLINE push #-}
 push :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 push f e = cacheEvent (pushCheap f e)
-{-
-push f e = eventPush $ Push
-  { pushCompute = f
-  , pushParent = e
-  , pushSubscribed = unsafeNewIORef (f, e) Nothing --TODO: Does the use of the tuple here create unnecessary overhead?
-  }
--- DISABLED: {- RULES "push/push" forall f g e. push f (push g e) = push (maybe (return Nothing) f <=< g) e #-}
--}
 
 {-# INLINABLE pull #-}
 pull :: BehaviorM x a -> Behavior x a
@@ -1089,8 +1093,8 @@ coincidence a = eventCoincidence $ Coincidence
 run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> SpiderHost x b
 run roots after = do
   tracePropagate (Proxy :: Proxy x) $ "Running an event frame with " <> show (length roots) <> " events"
-  spiderTimeline <- SpiderHost ask
-  result <- SpiderHost $ lift $ withMVar (_spiderTimeline_lock spiderTimeline) $ \_ -> flip runReaderT spiderTimeline $ unSpiderHost $ runFrame $ do
+  t <- SpiderHost ask
+  result <- SpiderHost $ lift $ withMVar (_spiderTimeline_lock t) $ \_ -> flip runReaderT t $ unSpiderHost $ runFrame $ do
     rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readIORef occRef
@@ -1485,7 +1489,11 @@ subscribeCoincidenceSubscribed subscribed sub = WeakBag.insert sub (coincidenceS
 
 {-# INLINE merge #-}
 merge :: forall k x. (HasSpiderTimeline x, GCompare k) => Dynamic x (R.PatchDMap k (Event x)) -> Event x (DMap k Identity)
-merge d = cacheEvent $ Event $ \sub -> do
+merge d = cacheEvent (mergeCheap d)
+
+{-# INLINE [1] mergeCheap #-}
+mergeCheap :: forall k x. (HasSpiderTimeline x, GCompare k) => Dynamic x (R.PatchDMap k (Event x)) -> Event x (DMap k Identity)
+mergeCheap d = Event $ \sub -> do
   initialParents <- readBehaviorUntracked $ dynamicCurrent d
   accumRef <- liftIO $ newIORef $ error "merge: accumRef not yet initialized"
   heightRef <- liftIO $ newIORef $ error "merge: heightRef not yet initialized"
@@ -1660,7 +1668,7 @@ clearEventEnv (EventEnv toAssignRef holdInitRef mergeUpdateRef mergeInitRef toCl
 
 -- | Run an event action outside of a frame
 runFrame :: forall x a. HasSpiderTimeline x => EventM x a -> SpiderHost x a --TODO: This function also needs to hold the mutex
-runFrame a = SpiderHost $ ask >>= \spiderTimeline -> lift $ do
+runFrame a = SpiderHost $ ask >>= \_ -> lift $ do
   let env = _spiderTimeline_eventEnv (spiderTimeline :: SpiderTimeline x)
   let go = do
         result <- a
@@ -1822,7 +1830,7 @@ data Global
 
 {-# NOINLINE globalSpiderTimeline #-}
 globalSpiderTimeline :: SpiderTimeline Global
-globalSpiderTimeline = unsafePerformIO unsafeNewSpiderTimeline
+!globalSpiderTimeline = unsafePerformIO unsafeNewSpiderTimeline
 
 -- | Stores all global data relevant to a particular Spider timeline; only one
 -- value should exist for each type @x@
@@ -1887,6 +1895,7 @@ instance HasSpiderTimeline x => Monad (R.Dynamic (SpiderTimeline x)) where
   fail _ = error "Dynamic does not support 'fail'"
 
 instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
+  {-# SPECIALIZE instance R.Reflex (SpiderTimeline Global) #-}
   newtype Behavior (SpiderTimeline x) a = SpiderBehavior { unSpiderBehavior :: Behavior x a }
   newtype Event (SpiderTimeline x) a = SpiderEvent { unSpiderEvent :: Event x a }
   newtype Dynamic (SpiderTimeline x) a = SpiderDynamic { unSpiderDynamic :: Dynamic x (Identity a) } -- deriving (Functor, Applicative, Monad)
@@ -1897,7 +1906,7 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   never = SpiderEvent eventNever
   {-# INLINABLE constant #-}
   constant = SpiderBehavior . behaviorConst
-  {-# INLINABLE push #-}
+  {-# INLINE push #-}
   push f = SpiderEvent . push (coerce f) . unSpiderEvent
   {-# INLINABLE pull #-}
   pull = SpiderBehavior . pull . coerce
@@ -1964,11 +1973,11 @@ instance HasSpiderTimeline x => R.MonadSample (SpiderTimeline x) (SpiderHost x) 
   {-# INLINABLE sample #-}
   sample = runFrame . readBehaviorUntracked . unSpiderBehavior
 
-instance HasSpiderTimeline x => R.MonadSample (SpiderTimeline x) (SpiderPullM x) where
+instance R.MonadSample (SpiderTimeline x) (SpiderPullM x) where
   {-# INLINABLE sample #-}
   sample = coerce . readBehaviorTracked . unSpiderBehavior
 
-instance HasSpiderTimeline x => R.MonadSample (SpiderTimeline x) (SpiderPushM x) where
+instance R.MonadSample (SpiderTimeline x) (SpiderPushM x) where
   {-# INLINABLE sample #-}
   sample (SpiderBehavior b) = SpiderPushM $ readBehaviorUntracked b
 

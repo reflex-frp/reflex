@@ -32,3 +32,5 @@ hsenv.log
 .#*
 /shell.nix
 /ghci-tmp
+*.dump-*
+*.verbose-core2core
