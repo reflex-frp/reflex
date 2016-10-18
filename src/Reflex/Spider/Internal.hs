@@ -840,10 +840,10 @@ instance Functor (Dynamic Identity) where
   fmap = newMapDyn
 
 instance Applicative (Dynamic Identity) where
-  pure = DynamicConst
+  pure  = DynamicConst
   (<*>) = zipDynWith ($)
-  _ *> b = b
-  a <* _ = a
+  (*>)  = zipDynWith (flip const)
+  (<*)  = zipDynWith const
 
 instance R.FunctorMaybe Event where
   fmapMaybe f = push $ return . f
