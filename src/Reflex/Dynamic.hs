@@ -39,6 +39,8 @@ module Reflex.Dynamic
        , traceDynWith
        , splitDynPure
        , distributeDMapOverDynPure
+       , distributeMapOverDynPure
+       , distributeListOverDynPure
        , Demux
        , demux
        , demuxed
@@ -151,15 +153,24 @@ switchPromptlyDyn de =
 splitDynPure :: Reflex t => Dynamic t (a, b) -> (Dynamic t a, Dynamic t b)
 splitDynPure d = (fmap fst d, fmap snd d)
 
--- | Create a 'Dynamic' with a 'DMap' of values out of a 'DMap' of 'Dynamic'
--- values.  The resulting 'Dynamic' will change whenever one of the input
--- 'Dynamic's changes.
---
--- This function's implementation is more efficient than simply using
--- 'zipDynWith' or applicative syntax to achieve the same result, especially for
--- maps with many elements.
+-- | Convert a 'Map' with 'Dynamic' elements into a 'Dynamic' of a 'Map' with
+-- non-'Dynamic' elements.
 distributeMapOverDynPure :: (Reflex t, Ord k) => Map k (Dynamic t v) -> Dynamic t (Map k v)
 distributeMapOverDynPure = fmap dmapToMap . distributeDMapOverDynPure . mapWithFunctorToDMap
+
+-- | Convert a list with 'Dynamic' elements into a 'Dynamic' of a list with
+-- non-'Dynamic' elements, preserving the order of the elements.
+distributeListOverDynPure :: Reflex t => [Dynamic t v] -> Dynamic t [v]
+distributeListOverDynPure =
+  fmap (map fromDSum . DMap.toAscList) .
+  distributeDMapOverDynPure .
+  DMap.fromDistinctAscList .
+  zipWith toDSum [0..]
+  where
+    toDSum :: Int -> Dynamic t a -> DSum (Const2 Int a) (Dynamic t)
+    toDSum k v = Const2 k :=> v
+    fromDSum :: DSum (Const2 Int a) Identity -> a
+    fromDSum (Const2 _ :=> Identity v) = v
 
 --TODO: Generalize this to functors other than Maps
 -- | Combine a 'Dynamic' of a 'Map' of 'Dynamic's into a 'Dynamic'
