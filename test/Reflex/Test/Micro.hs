@@ -242,6 +242,11 @@ testCases =
       f <- fanMap . fmap toMap <$> events1
       return $ toList <$> mergeList [ select f (Const2 'b'), select f (Const2 'b'), select f (Const2 'e'), select f (Const2 'e') ]
 
+  , testE "difference" $ do
+      e1 <- events1
+      e2 <- events2
+      return $ e1 `difference ` e2
+
   ] where
 
     events1, events2, events3 ::  TestPlan t m => m (Event t String)

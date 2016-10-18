@@ -34,6 +34,7 @@ module Reflex.Class
        , mergeMap
        , mergeList
        , mergeWith
+       , difference
          -- ** Breaking up 'Event's
        , splitE
        , fanEither
@@ -408,8 +409,21 @@ instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
 #endif
 
 --TODO: See if there's a better class in the standard libraries already
+
 -- | A class for values that combines filtering and mapping using 'Maybe'.
-class FunctorMaybe f where
+-- Morally, @'FunctorMaybe' ~ KleisliFunctor 'Maybe'@. Also similar is the
+-- @Witherable@ typeclass, but it requires @Foldable f@ and @Traverable f@,
+-- and e.g. 'Event' is instance of neither.
+--
+-- A definition of 'fmapMaybe' must satisfy the following laws:
+--
+-- [/identity/]
+--   @'fmapMaybe' 'Just' ≡ 'id'@
+--
+-- [/composition/]
+--   @'fmapMaybe' (f <=< g) ≡ 'fmapMaybe' f . 'fmapMaybe' g@
+
+class Functor f => FunctorMaybe f where
   -- | Combined mapping and filtering function.
   fmapMaybe :: (a -> Maybe b) -> f a -> f b
 
@@ -640,7 +654,7 @@ switchPromptly ea0 eea = do
 
 instance Reflex t => Align (Event t) where
   nil = never
-  align ea eb = fmapMaybe dmapToThese $ merge $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
+  align = alignWithMaybe Just
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and
 -- the 'Behavior' is true at the time of occurence.
@@ -660,6 +674,7 @@ zipDyn = zipDynWith (,)
 
 -- | Combine two 'Dynamic's with a combining function.  The result will change
 -- whenever either (or both) input 'Dynamic' changes.
+-- More efficient than liftA2.
 zipDynWith :: Reflex t => (a -> b -> c) -> Dynamic t a -> Dynamic t b -> Dynamic t c
 zipDynWith f da db =
   let eab = align (updated da) (updated db)
@@ -702,6 +717,21 @@ distributeListOverDyn = distributeListOverDynWith id
 -- | Create a new 'Dynamic' by applying a combining function to a list of 'Dynamic's
 distributeListOverDynWith :: Reflex t => ([a] -> b) -> [Dynamic t a] -> Dynamic t b
 distributeListOverDynWith f = fmap (f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..]
+
+-- | Create a new 'Event' that occurs when the first supplied 'Event' occurs
+-- unless the second supplied 'Event' occurs simultaneously.
+difference :: Reflex t => Event t a -> Event t b -> Event t a
+difference = alignWithMaybe $ \case
+  This a -> Just a
+  _      -> Nothing
+
+-- (intentially not exported, for now)
+alignWithMaybe
+  :: Reflex t => (These a b -> Maybe c) -> Event t a -> Event t b -> Event t c
+alignWithMaybe f ea eb =
+  fmapMaybe (f <=< dmapToThese)
+    $ merge
+    $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
 
 
 --------------------------------------------------------------------------------
