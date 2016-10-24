@@ -1,8 +1,14 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 module Reflex.Optimizer (plugin) where
+#ifdef ghcjs_HOST_OS
 
-#ifndef ghcjs_HOST_OS
+import Plugins
+
+plugin :: Plugin
+plugin = undefined
+
+#else
 
 import GhcPlugins
 import Control.Arrow
@@ -24,10 +30,5 @@ makeInlinable = CoreDoPluginPass "MakeInlinable" $ \modGuts -> do
         NonRec b e -> NonRec (f b) e
         Rec bes -> Rec $ map (first f) bes
   return $ modGuts { mg_binds = newBinds }
-
-#else
-
-plugin :: ()
-plugin = ()
 
 #endif
