@@ -97,6 +97,7 @@ import Control.Monad.Trans.RWS (RWST ())
 import Control.Monad.Trans.Writer (WriterT ())
 import Data.Align
 import Data.Bifunctor
+import Data.Default
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..), GOrdering (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (ShowTag (..))
@@ -252,6 +253,9 @@ unsafeDynamic = unsafeBuildDynamic . sample
 -- | Construct a 'Dynamic' value that never changes
 constDyn :: Reflex t => a -> Dynamic t a
 constDyn = pure
+
+instance (Reflex t, Default a) => Default (Dynamic t a) where
+  def = pure def
 
 -- | 'MonadSample' designates monads that can read the current value of a
 -- 'Behavior'.  This includes both 'PullM' and 'PushM'.
