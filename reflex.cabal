@@ -13,6 +13,11 @@ Cabal-version: >=1.9.2
 homepage: https://github.com/reflex-frp/reflex
 bug-reports: https://github.com/reflex-frp/reflex/issues
 
+flag specialize-to-spidertimeline-global
+  description: Specialize all Reflex functions to the SpiderTimeline Global implementation.  This may improve performance, but will disable all other implementations.
+  default: False
+  manual: True
+
 library
   hs-source-dirs: src
   build-depends:
@@ -55,13 +60,17 @@ library
     Reflex.PerformEvent.Base,
     Reflex.PerformEvent.Class,
     Reflex.PostBuild.Class,
-    Reflex.Pure,
     Reflex.Spider,
     Reflex.Spider.Internal
 
   other-extensions: TemplateHaskell
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
   ghc-prof-options: -auto-all
+
+  if flag(specialize-to-spidertimeline-global)
+    cpp-options: -DSPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
+  else
+    exposed-modules: Reflex.Pure
 
 test-suite semantics
   type: exitcode-stdio-1.0

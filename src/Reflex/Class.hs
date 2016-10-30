@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -9,6 +10,7 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -89,6 +91,10 @@ module Reflex.Class
        , appendEvents
        , onceE
        , sequenceThese
+#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
+       , SpiderTimeline
+       , Global
+#endif
        ) where
 
 import Control.Applicative
@@ -129,6 +135,10 @@ import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
 
 import Debug.Trace (trace)
 
+#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
+#include "Spider/SpiderTimeline.include.hs"
+#endif
+
 -- | The 'Reflex' class contains all the primitive functionality needed for
 -- Functional Reactive Programming (FRP).  The @t@ type parameter indicates
 -- which "timeline" is in use.  Timelines are fully-independent FRP contexts,
@@ -140,6 +150,9 @@ class ( MonadHold t (PushM t)
       , Functor (Dynamic t)
       , Applicative (Dynamic t) -- Necessary for GHC <= 7.8
       , Monad (Dynamic t)
+#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
+      , t ~ SpiderTimeline Global
+#endif
       ) => Reflex t where
   -- | A container for a value that can change over time.  'Behavior's can be
   -- sampled at will, but it is not possible to be notified when they change
@@ -719,21 +732,21 @@ class Reflex t => Accumulator t f | f -> t where
 
 -- | Accumulate occurrences of an 'Event', producing an output occurrence each
 -- time.  Discard the underlying 'Accumulator'.
-mapAccum_ :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (a, c)) -> a -> Event t b -> m (Event t c)
+mapAccum_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (a, c)) -> a -> Event t b -> m (Event t c)
 mapAccum_ f z e = do
   (_ :: Behavior t a, result) <- mapAccum f z e
   return result
 
 -- | Accumulate occurrences of an 'Event', possibly producing an output
 -- occurrence each time.  Discard the underlying 'Accumulator'.
-mapAccumMaybe_ :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (Maybe a, Maybe c)) -> a -> Event t b -> m (Event t c)
+mapAccumMaybe_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (Maybe a, Maybe c)) -> a -> Event t b -> m (Event t c)
 mapAccumMaybe_ f z e = do
   (_ :: Behavior t a, result) <- mapAccumMaybe f z e
   return result
 
 -- | Accumulate occurrences of an 'Event', using a 'PushM' action and producing
 -- an output occurrence each time.  Discard the underlying 'Accumulator'.
-mapAccumM_ :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (a, c)) -> a -> Event t b -> m (Event t c)
+mapAccumM_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (a, c)) -> a -> Event t b -> m (Event t c)
 mapAccumM_ f z e = do
   (_ :: Behavior t a, result) <- mapAccumM f z e
   return result
@@ -741,7 +754,7 @@ mapAccumM_ f z e = do
 -- | Accumulate occurrences of an 'Event', using a 'PushM' action and possibly
 -- producing an output occurrence each time.  Discard the underlying
 -- 'Accumulator'.
-mapAccumMaybeM_ :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Event t c)
+mapAccumMaybeM_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Event t c)
 mapAccumMaybeM_ f z e = do
   (_ :: Behavior t a, result) <- mapAccumMaybeM f z e
   return result
