@@ -7,7 +7,6 @@ import Reflex.Dynamic as X
 import Reflex.Dynamic.TH as X
 import Reflex.Dynamic.Uniq as X
 import Reflex.DynamicWriter as X
-import Reflex.Patch as X
 import Reflex.PerformEvent.Class as X
 import Reflex.PostBuild.Class as X
 import Reflex.Spider as X

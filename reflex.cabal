@@ -57,6 +57,7 @@ library
     Reflex.DynamicWriter,
     Reflex.Host.Class,
     Reflex.Optimizer,
+    Reflex.Patch,
     Reflex.PerformEvent.Base,
     Reflex.PerformEvent.Class,
     Reflex.PostBuild.Class,
@@ -89,6 +90,8 @@ test-suite semantics
     reflex,
     split,
     transformers >= 0.3
+  if flag(specialize-to-spidertimeline-global)
+    buildable: False
 
 --test-suite hlint
 --  type: exitcode-stdio-1.0

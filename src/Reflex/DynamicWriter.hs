@@ -29,7 +29,6 @@ import qualified Data.Some as Some
 import Reflex.Class
 import Reflex.Dynamic
 import Reflex.Host.Class
-import Reflex.Patch
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 

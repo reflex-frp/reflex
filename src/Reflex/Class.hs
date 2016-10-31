@@ -22,8 +22,9 @@
 -- convenience functions for working with 'Event's, 'Behavior's, and other
 -- signals.
 module Reflex.Class
-       ( -- * Primitives
-         Reflex (..)
+       ( module Reflex.Patch
+         -- * Primitives
+       , Reflex (..)
        , coerceBehavior
        , coerceEvent
        , coerceDynamic

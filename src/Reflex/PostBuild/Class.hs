@@ -19,7 +19,6 @@ import Control.Monad.Trans.Control
 import qualified Data.Dependent.Map as DMap
 import Reflex.Class
 import Reflex.Host.Class
-import Reflex.Patch
 import Reflex.PerformEvent.Class
 
 class (Reflex t, Monad m) => PostBuild t m | m -> t where

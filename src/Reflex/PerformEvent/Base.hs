@@ -17,7 +17,6 @@ module Reflex.PerformEvent.Base where
 
 import Reflex.Class
 import Reflex.Host.Class
-import Reflex.Patch
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 

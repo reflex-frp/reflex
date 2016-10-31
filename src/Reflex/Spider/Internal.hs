@@ -1853,7 +1853,7 @@ invalidate toReconnectRef wis = do
 --------------------------------------------------------------------------------
 
 -- | The default, global Spider environment
-type Spider = SpiderTimelineEnv Global
+type Spider = SpiderTimeline Global
 
 #ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 -- When we're specializing, we include this from Reflex.Class instead, because
@@ -2202,4 +2202,4 @@ instance PrimMonad (SpiderHostFrame x) where
 --------------------------------------------------------------------------------
 
 {-# DEPRECATED SpiderEnv "Use 'SpiderTimelineEnv' instead" #-}
-type SpiderEnv = SpiderTimelineEnv
+type SpiderEnv = SpiderTimeline
