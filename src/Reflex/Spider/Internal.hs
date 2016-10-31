@@ -194,8 +194,11 @@ newtype Event x a = Event { unEvent :: Subscriber x a -> EventM x (EventSubscrip
 subscribeAndRead :: Event x a -> Subscriber x a -> EventM x (EventSubscription x, Maybe a)
 subscribeAndRead = unEvent
 
-{-# RULES "pushCheap/cacheEvent" forall f e. pushCheap f (cacheEvent e) = pushCheap f e #-}
-{-# RULES "hold/cacheEvent" forall f e. hold f (cacheEvent e) = hold f e #-}
+{-# RULES
+"cacheEvent/cacheEvent" forall e. cacheEvent (cacheEvent e) = cacheEvent e
+"cacheEvent/pushCheap" forall f e. pushCheap f (cacheEvent e) = cacheEvent (pushCheap f e)
+"hold/cacheEvent" forall f e. hold f (cacheEvent e) = hold f e
+  #-}
 {- RULES
     "subscribeAndRead/cacheEvent" forall e. subscribeAndRead (cacheEvent e) = subscribeAndRead e
   #-}
@@ -203,8 +206,8 @@ subscribeAndRead = unEvent
 -- | Construct an 'Event' equivalent to that constructed by 'push', but with no
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
-{- INLINABLE pushCheap #-}
-{-# INLINE [1] pushCheap #-}
+{- INLINE [1] pushCheap #-}
+{-# NOINLINE pushCheap #-}
 pushCheap :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 pushCheap f e = Event $ \sub -> do
   (subscription, occ) <- subscribeAndRead e $ sub
@@ -229,7 +232,7 @@ data CacheSubscribed x a
 --TODO: Try a caching strategy where we subscribe directly to the parent when
 --there's only one subscriber, and then build our own WeakBag only when a second
 --subscriber joins
-{-# NOINLINE [1] cacheEvent #-}
+{-# NOINLINE cacheEvent #-}
 cacheEvent :: HasSpiderTimeline x => Event x a -> Event x a
 cacheEvent e = Event $ \sub -> {-# SCC "cacheEvent" #-} do
   let !mSubscribedRef = unsafeNewIORef e Nothing
