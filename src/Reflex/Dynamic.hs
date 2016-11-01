@@ -38,6 +38,7 @@ module Reflex.Dynamic
        , traceDyn
        , traceDynWith
        , splitDynPure
+       , distributeMapOverDynPure
        , distributeDMapOverDynPure
        , Demux
        , demux
