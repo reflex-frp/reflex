@@ -22,6 +22,7 @@ import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
+import Reflex.TriggerEvent.Class
 
 import Control.Lens
 import Control.Monad.Exception

@@ -11,6 +11,7 @@
 module Reflex.PerformEvent.Class where
 
 import Reflex.Class
+import Reflex.TriggerEvent.Class
 
 import Control.Monad.Identity
 import Control.Monad.Reader
@@ -21,12 +22,6 @@ class (Reflex t, Monad (Performable m), Monad m) => PerformEvent t m | m -> t wh
   type Performable m :: * -> *
   performEvent :: Event t (Performable m a) -> m (Event t a)
   performEvent_ :: Event t (Performable m ()) -> m ()
-
---TODO: Shouldn't have IO hard-coded
-class Monad m => TriggerEvent t m | m -> t where
-  newTriggerEvent :: m (Event t a, a -> IO ())
-  newTriggerEventWithOnComplete :: m (Event t a, a -> IO () -> IO ()) --TODO: This and newTriggerEvent should be unified somehow
-  newEventWithLazyTriggerWithOnComplete :: ((a -> IO () -> IO ()) -> IO (IO ())) -> m (Event t a)
 
 class (Reflex t, Monad m) => MonadRequest t m | m -> t where
   type Request m :: * -> *
@@ -48,11 +43,6 @@ instance PerformEvent t m => PerformEvent t (ReaderT r m) where
   performEvent e = do
     r <- ask
     lift $ performEvent $ flip runReaderT r <$> e
-
-instance TriggerEvent t m => TriggerEvent t (ReaderT r m) where
-  newTriggerEvent = lift newTriggerEvent
-  newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
-  newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete
 
 instance MonadRequest t m => MonadRequest t (ReaderT r m) where
   type Request (ReaderT r m) = Request m

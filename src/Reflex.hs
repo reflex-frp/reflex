@@ -10,3 +10,4 @@ import Reflex.DynamicWriter as X
 import Reflex.PerformEvent.Class as X
 import Reflex.PostBuild.Class as X
 import Reflex.Spider as X
+import Reflex.TriggerEvent.Class as X

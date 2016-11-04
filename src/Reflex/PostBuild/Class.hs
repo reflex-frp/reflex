@@ -23,6 +23,7 @@ import qualified Data.Dependent.Map as DMap
 import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
+import Reflex.TriggerEvent.Class
 
 class (Reflex t, Monad m) => PostBuild t m | m -> t where
   getPostBuild :: m (Event t ())

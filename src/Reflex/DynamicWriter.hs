@@ -32,6 +32,7 @@ import Reflex.Class
 import Reflex.Dynamic
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
+import Reflex.TriggerEvent.Class
 import Reflex.PostBuild.Class
 
 instance MonadTrans (DynamicWriterT t w) where
