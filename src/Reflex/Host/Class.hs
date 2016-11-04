@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -44,8 +45,19 @@ import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
 
+#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
+import Reflex.Spider.Internal (HasSpiderTimeline, SpiderHost (..), SpiderHostFrame (..), Subscriber (..), SpiderEventHandle (..), RootTrigger, runFrame, subscribe, scheduleClear, newEventWithTriggerIO, newFanEventWithTriggerIO, EventM (..), run)
+import qualified Reflex.Spider.Internal
+import Data.IORef
+import Control.Monad.Primitive (touch)
+#endif
+
 -- Note: this import must come last to silence warnings from AMP
 import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
+
+#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
+#include "../Spider/SpiderTimelineHost.include.hs"
+#endif
 
 -- | Framework implementation support class for the reflex implementation
 -- represented by @t@.

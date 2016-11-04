@@ -55,6 +55,7 @@ library
     Reflex.Dynamic.TH,
     Reflex.Dynamic.Uniq,
     Reflex.DynamicWriter,
+    Reflex.FunctorMaybe,
     Reflex.Host.Class,
     Reflex.Optimizer,
     Reflex.Patch,

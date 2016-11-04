@@ -31,7 +31,6 @@ import Data.MemoTrie
 import Data.Monoid
 import Data.Type.Coercion
 import Reflex.Class
-import Reflex.Patch
 
 data Pure t
 

@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Reflex.Optimizer (plugin) where
 #ifdef ghcjs_HOST_OS
 
@@ -10,14 +11,19 @@ plugin = undefined
 
 #else
 
-import GhcPlugins
 import Control.Arrow
+import CoreMonad
+import Data.String
+import GhcPlugins
 
 plugin :: Plugin
 plugin = defaultPlugin { installCoreToDos = install }
 
 install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
 install [] p = return $ makeInlinable : p
+install options@(_:_) p = do
+  warnMsg $ "Reflex.Optimizer: ignoring " <> fromString (show $ length options) <> " command-line options"
+  install [] p
 
 makeInlinable :: CoreToDo
 makeInlinable = CoreDoPluginPass "MakeInlinable" $ \modGuts -> do

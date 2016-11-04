@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -23,6 +24,10 @@ module Data.Functor.Misc
        , mapWithFunctorToDMap
        , mapKeyValuePairsMonotonic
        , combineDMapsWithKey
+       , EitherTag (..)
+       , dmapToThese
+       , eitherToDSum
+       , dsumToEither
          -- * Deprecated functions
        , sequenceDmap
        , wrapDMap
@@ -133,6 +138,55 @@ combineDMapsWithKey f mg mh = DMap.fromList $ go (DMap.toList mg) (DMap.toList m
           GLT -> (gk :=> f gk (This gv)) : go gs' hs
           GEQ -> (gk :=> f gk (These gv hv)) : go gs' hs'
           GGT -> (hk :=> f hk (That hv)) : go gs hs'
+
+-- | Extract the values of a 'DMap' of 'EitherTag's.
+dmapToThese :: DMap (EitherTag a b) Identity -> Maybe (These a b)
+dmapToThese m = case (DMap.lookup LeftTag m, DMap.lookup RightTag m) of
+  (Nothing, Nothing) -> Nothing
+  (Just (Identity a), Nothing) -> Just $ This a
+  (Nothing, Just (Identity b)) -> Just $ That b
+  (Just (Identity a), Just (Identity b)) -> Just $ These a b
+
+-- | Tag type for 'Either' to use it as a 'DSum'.
+data EitherTag l r a where
+  LeftTag :: EitherTag l r l
+  RightTag :: EitherTag l r r
+
+instance GEq (EitherTag l r) where
+  geq a b = case (a, b) of
+    (LeftTag, LeftTag) -> Just Refl
+    (RightTag, RightTag) -> Just Refl
+    _ -> Nothing
+
+instance GCompare (EitherTag l r) where
+  gcompare a b = case (a, b) of
+    (LeftTag, LeftTag) -> GEQ
+    (LeftTag, RightTag) -> GLT
+    (RightTag, LeftTag) -> GGT
+    (RightTag, RightTag) -> GEQ
+
+instance GShow (EitherTag l r) where
+  gshowsPrec _ a = case a of
+    LeftTag -> showString "LeftTag"
+    RightTag -> showString "RightTag"
+
+instance (Show l, Show r) => ShowTag (EitherTag l r) Identity where
+  showTaggedPrec t n (Identity a) = case t of
+    LeftTag -> showsPrec n a
+    RightTag -> showsPrec n a
+
+-- | Convert 'Either' to a 'DSum'. Inverse of 'dsumToEither'.
+eitherToDSum :: Either a b -> DSum (EitherTag a b) Identity
+eitherToDSum = \case
+  Left a -> (LeftTag :=> Identity a)
+  Right b -> (RightTag :=> Identity b)
+
+-- | Convert 'DSum' to 'Either'. Inverse of 'eitherToDSum'.
+dsumToEither :: DSum (EitherTag a b) Identity -> Either a b
+dsumToEither = \case
+  (LeftTag :=> Identity a) -> Left a
+  (RightTag :=> Identity b) -> Right b
+
 
 --------------------------------------------------------------------------------
 -- Deprecated functions
