@@ -57,6 +57,7 @@ library
     Data.Functor.Misc,
     Data.WeakBag,
     Reflex,
+    Reflex.Base,
     Reflex.Class,
     Reflex.Dynamic,
     Reflex.Dynamic.TH,
