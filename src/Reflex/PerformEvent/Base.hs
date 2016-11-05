@@ -32,6 +32,7 @@ import Data.Dependent.Map (DMap, GCompare (..), Some)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.Functor.Misc
+import qualified Data.List.NonEmpty as NonEmpty
 import Data.Maybe
 import Data.Semigroup
 import qualified Data.Some as Some
@@ -64,6 +65,12 @@ instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent
   performEvent = PerformEventT . fmap (fmap runIdentity) . requesting
 
 instance (ReflexHost t, PrimMonad (HostFrame t)) => MonadAdjust t (PerformEventT t m) where
+  runWithReplace outerA0 outerA' = PerformEventT $ runWithReplaceRequestTWith f (coerce outerA0) (coerceEvent outerA')
+    where f :: HostFrame t a -> Event t (HostFrame t b) -> RequestT t (HostFrame t) Identity (HostFrame t) (a, Event t b)
+          f a0 a' = do
+            result0 <- lift a0
+            result' <- requesting a'
+            return (result0, fmap runIdentity result')
   sequenceDMapWithAdjust (outerDm0 :: DMap k (PerformEventT t m)) outerDm' = PerformEventT $ sequenceDMapWithAdjustRequestTWith f (coerce outerDm0) (coerceEvent outerDm')
     where f :: DMap k' (HostFrame t) -> Event t (PatchDMap k' (HostFrame t)) -> RequestT t (HostFrame t) Identity (HostFrame t) (DMap k' Identity, Event t (PatchDMap k' Identity))
           f dm0 dm' = do
@@ -185,9 +192,30 @@ instance MonadHold t m => MonadHold t (RequestT t request response m) where
   holdIncremental v0 = lift . holdIncremental v0
 
 instance (Reflex t, MonadAdjust t m, MonadHold t m) => MonadAdjust t (RequestT t request response m) where
+  runWithReplace = runWithReplaceRequestTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
   sequenceDMapWithAdjust = sequenceDMapWithAdjustRequestTWith $ \dm0 dm' -> lift $ sequenceDMapWithAdjust dm0 dm'
 
-sequenceDMapWithAdjustRequestTWith :: (GCompare k, Monad m, Reflex t, MonadHold t m)
+runWithReplaceRequestTWith :: forall m t request response a b. (Reflex t, MonadHold t m)
+                           => (forall a' b'.
+                                  m a'
+                               -> Event t (m b')
+                               -> RequestT t request response m (a', Event t b')
+                              )
+                           -> RequestT t request response m a
+                           -> Event t (RequestT t request response m b)
+                           -> RequestT t request response m (a, Event t b)
+runWithReplaceRequestTWith f a0 a' = do
+  response <- RequestT ask
+  let g :: RequestT t request response m c -> m (c, [Event t (DMap (Tag (PrimState m)) request)])
+      g (RequestT r) = runReaderT (runStateT r mempty) response
+  (result0, result') <- f (g a0) $ g <$> a'
+  request <- holdDyn (fmap (mconcat . NonEmpty.toList) $ mergeList $ snd result0) $ fmap (mconcat . NonEmpty.toList) . mergeList . snd <$> result'
+  -- We add these two separately to take advantage of the free merge being done later.  The coincidence case must come first so that it has precedence if both fire simultaneously.  (Really, we should probably block the 'switch' whenever 'updated' fires, but switchPromptlyDyn has the same issue.)
+  RequestT $ modify $ (:) $ coincidence $ updated request
+  RequestT $ modify $ (:) $ switch $ current request
+  return (fst result0, fst <$> result')
+
+sequenceDMapWithAdjustRequestTWith :: (GCompare k, Reflex t, MonadHold t m)
                                    => (forall k'. GCompare k'
                                        => DMap k' m
                                        -> Event t (PatchDMap k' m)
@@ -210,9 +238,10 @@ sequenceDMapWithAdjustRequestTWith f (dm0 :: DMap k (RequestT t request response
       requests' = ffor children' $ \(PatchDMap p) -> PatchDMap $
         mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mv) -> Const2 (Some.This k) :=> ComposeMaybe (fmap (mergeWith DMap.union . fst . runIdentity) mv)) p
   childRequestMap <- holdIncremental requests0 requests'
+  -- We add these two separately to take advantage of the free merge being done later.  The coincidence case must come first so that it has precedence if both fire simultaneously.  (Really, we should probably block the 'switch' whenever 'updated' fires, but switchPromptlyDyn has the same issue.)
+  RequestT $ modify $ (:) $ coincidence $ ffor requests' $ \(PatchDMap p) -> mergeWith DMap.union $ catMaybes $ ffor (DMap.toList p) $ \(Const2 _ :=> ComposeMaybe me) -> me
   RequestT $ modify $ (:) $ ffor (mergeIncremental childRequestMap) $ \m ->
     mconcat $ (\(Const2 _ :=> Identity reqs) -> reqs) <$> DMap.toList m
-  RequestT $ modify $ (:) $ coincidence $ ffor requests' $ \(PatchDMap p) -> mergeWith DMap.union $ catMaybes $ ffor (DMap.toList p) $ \(Const2 _ :=> ComposeMaybe me) -> me
   return (result0, result')
 
 instance PerformEvent t m => PerformEvent t (RequestT t request response m) where

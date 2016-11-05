@@ -94,10 +94,18 @@ instance PostBuild t m => PostBuild t (ReaderT r m) where
   getPostBuild = lift getPostBuild
 
 instance (Reflex t, MonadHold t m, MonadFix m, MonadAdjust t m, PerformEvent t m) => MonadAdjust t (PostBuildT t m) where
+  runWithReplace a0 a' = do
+    postBuild <- getPostBuild
+    lift $ do
+      rec result@(_, result') <- runWithReplace (runPostBuildT a0 postBuild) $ fmap (\v -> runPostBuildT v =<< headE voidResult') a'
+          let voidResult' = void result'
+      return result
   sequenceDMapWithAdjust dm0 dm' = do
     postBuild <- getPostBuild
     let loweredDm0 = DMap.map (`runPostBuildT` postBuild) dm0
-    rec (result0, result') <- lift $ sequenceDMapWithAdjust loweredDm0 loweredDm'
-        let loweredDm' = ffor dm' $ \(PatchDMap p) -> PatchDMap $
-              DMap.map (ComposeMaybe . fmap (\v -> runPostBuildT v =<< headE (void result')) . getComposeMaybe) p --TODO: Avoid doing this headE so many times; once per loweredDm' firing ought to be OK, but it's not totally trivial to do because result' might be firing at the same time, and we don't want *that* to be the postBuild occurrence
-    return (result0, result')
+    lift $ do
+      rec (result0, result') <- sequenceDMapWithAdjust loweredDm0 loweredDm'
+          let voidResult' = void result'
+          let loweredDm' = ffor dm' $ \(PatchDMap p) -> PatchDMap $
+                DMap.map (ComposeMaybe . fmap (\v -> runPostBuildT v =<< headE voidResult') . getComposeMaybe) p --TODO: Avoid doing this headE so many times; once per loweredDm' firing ought to be OK, but it's not totally trivial to do because result' might be firing at the same time, and we don't want *that* to be the postBuild occurrence
+      return (result0, result')

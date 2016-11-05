@@ -157,6 +157,10 @@ instance MonadState s m => MonadState s (DynamicWriterT t w m) where
 newtype DynamicWriterTLoweredResult t w v = DynamicWriterTLoweredResult { unDynamicWriterTLoweredResult :: (v, Dynamic t w) }
 
 instance (MonadAdjust t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => MonadAdjust t (DynamicWriterT t w m) where
+  runWithReplace a0 a' = do
+    (result0, result') <- lift $ runWithReplace (runDynamicWriterT a0) $ runDynamicWriterT <$> a'
+    tellDyn . join =<< holdDyn (snd result0) (snd <$> result')
+    return (fst result0, fst <$> result')
   sequenceDMapWithAdjust (dm0 :: DMap k (DynamicWriterT t w m)) dm' = do
     let loweredDm0 = mapKeyValuePairsMonotonic (\(k :=> v) -> WrapArg k :=> fmap DynamicWriterTLoweredResult (runDynamicWriterT v)) dm0
     let loweredDm' = ffor dm' $ \(PatchDMap p) -> PatchDMap $

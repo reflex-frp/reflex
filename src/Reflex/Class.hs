@@ -840,9 +840,13 @@ zipListWithEvent f l e = do
   mapAccumMaybe_ f' l e
 
 class (Reflex t, Monad m) => MonadAdjust t m | m -> t where
+  runWithReplace :: m a -> Event t (m b) -> m (a, Event t b)
   sequenceDMapWithAdjust :: GCompare k => DMap k m -> Event t (PatchDMap k m) -> m (DMap k Identity, Event t (PatchDMap k Identity))
 
 instance (Reflex t, MonadAdjust t m) => MonadAdjust t (ReaderT r m) where
+  runWithReplace a0 a' = do
+    r <- ask
+    lift $ runWithReplace (runReaderT a0 r) $ fmap (`runReaderT` r) a'
   sequenceDMapWithAdjust dm0 dm' = do
     r <- ask
     let loweredDm0 = DMap.map (`runReaderT` r) dm0
