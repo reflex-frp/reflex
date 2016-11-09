@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 -- | This module contains various functions for working with 'Dynamic' values.
 -- 'Dynamic' and its primitives have been moved to the 'Reflex' class.
 module Reflex.Dynamic
@@ -38,8 +39,8 @@ module Reflex.Dynamic
        , traceDyn
        , traceDynWith
        , splitDynPure
-       , distributeDMapOverDynPure
        , distributeMapOverDynPure
+       , distributeDMapOverDynPure
        , distributeListOverDynPure
        , Demux
        , demux

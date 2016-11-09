@@ -74,7 +74,7 @@ newtype Ignore a = Ignore a
 instance NFData (Ignore a) where
   rnf !_ = ()
 
-instance NFData (SpiderEventHandle a) where
+instance NFData (SpiderEventHandle x a) where
   rnf !_ = ()
 
 instance NFData (Behavior t a) where

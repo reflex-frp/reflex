@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 
 -- There are two expected orphan instances in this module:
 --   * MonadSample (Pure t) ((->) t)
@@ -28,6 +29,7 @@ import Data.Functor.Identity
 import Data.Maybe
 import Data.MemoTrie
 import Data.Monoid
+import Data.Type.Coercion
 import Reflex.Class
 
 data Pure t
@@ -40,7 +42,7 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   newtype Behavior (Pure t) a = Behavior { unBehavior :: t -> a }
   newtype Event (Pure t) a = Event { unEvent :: t -> Maybe a }
   newtype Dynamic (Pure t) a = Dynamic { unDynamic :: t -> (a, Maybe a) }
-  newtype Incremental (Pure t) p a = Incremental { unIncremental :: t -> (a, Maybe (p a)) }
+  newtype Incremental (Pure t) p = Incremental { unIncremental :: t -> (PatchTarget p, Maybe p) }
 
   type PushM (Pure t) = (->) t
   type PullM (Pure t) = (->) t
@@ -109,6 +111,9 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
           Nothing -> Nothing
           Just patch -> apply patch old
     in (old, e)
+  behaviorCoercion Coercion = Coercion
+  eventCoercion Coercion = Coercion
+  dynamicCoercion Coercion = Coercion
 
 instance Functor (Dynamic (Pure t)) where
   fmap f d = Dynamic $ \t -> let (cur, upd) = unDynamic d t
@@ -152,7 +157,7 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
     let Behavior f = hold initialValue e initialTime
     in Dynamic $ \t -> (f t, unEvent e t)
 
-  holdIncremental :: Patch p => a -> Event (Pure t) (p a) -> t -> Incremental (Pure t) p a
+  holdIncremental :: Patch p => PatchTarget p -> Event (Pure t) p -> t -> Incremental (Pure t) p
   holdIncremental initialValue e initialTime = Incremental $ \t -> (f t, unEvent e t)
     where f = memo $ \sampleTime ->
             -- Really, the sampleTime should never be prior to the initialTime,

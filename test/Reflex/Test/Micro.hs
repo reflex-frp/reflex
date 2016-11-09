@@ -1,9 +1,11 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 
 module Reflex.Test.Micro (testCases) where
 
@@ -12,16 +14,16 @@ import Reflex.TestPlan
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Fix
 import Data.Char
-import Data.Functor.Misc
-import Data.Monoid
-
 import Data.Foldable
-
+import Data.Functor.Misc
 import qualified Data.Map as Map
+import Data.Monoid
 
 import Prelude
 
+{-# ANN testCases "HLint: ignore Functor law" #-}
 testCases :: [(String, TestCase)]
 testCases =
   [ testB "hold"  $ hold "0" =<< events1
@@ -49,6 +51,13 @@ testCases =
       b <- hold (constant "") $
         pushAlways (const $ hold "z" es) e
       return (join b)
+
+  , testE "id" $ do
+      events2
+
+  , testE "fmap-id" $ do
+      e <- events2
+      return $ fmap id e
 
   , testE "tag-1" $ do
       b1 <- behavior1
@@ -246,6 +255,14 @@ testCases =
       e1 <- events1
       e2 <- events2
       return $ e1 `difference ` e2
+
+  , testE "lazy-hold" $ do
+      let lazyHold :: forall t m. (Reflex t, MonadHold t m, MonadFix m) => m (Event t ())
+          lazyHold = do
+            rec !b <- hold never e
+                let e = never <$ switch b
+            return $ void e
+      lazyHold
 
   ] where
 

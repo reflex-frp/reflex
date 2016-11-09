@@ -1,6 +1,7 @@
 dist
 cabal.sandbox.config
 .cabal-sandbox/
+dist-*
 cabal-dev
 *.o
 *.hi
@@ -33,3 +34,5 @@ hsenv.log
 .#*
 /shell.nix
 /ghci-tmp
+*.dump-*
+*.verbose-core2core

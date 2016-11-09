@@ -13,6 +13,11 @@ Cabal-version: >=1.9.2
 homepage: https://github.com/reflex-frp/reflex
 bug-reports: https://github.com/reflex-frp/reflex/issues
 
+flag specialize-to-spidertimeline-global
+  description: Specialize all Reflex functions to the SpiderTimeline Global implementation.  This may improve performance, but will disable all other implementations.
+  default: False
+  manual: True
+
 library
   hs-source-dirs: src
   build-depends:
@@ -24,11 +29,13 @@ library
     dependent-map >= 0.2.2 && < 0.3,
     dependent-sum == 0.3.*,
     exception-transformers == 0.4.*,
+    ghc,
     haskell-src-exts >= 1.16 && < 1.18,
     haskell-src-meta == 0.6.*,
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
+    prim-uniq >= 0.1.0.1 && < 0.2,
     primitive >= 0.5 && < 0.7,
     ref-tf == 0.4.*,
     semigroupoids >= 4.0 && < 6,
@@ -45,22 +52,28 @@ library
     Data.WeakBag,
     Reflex,
     Reflex.Class,
-    Reflex.Deletable.Class,
     Reflex.Dynamic,
     Reflex.Dynamic.TH,
     Reflex.Dynamic.Uniq,
     Reflex.DynamicWriter,
+    Reflex.FunctorMaybe,
     Reflex.Host.Class,
+    Reflex.Optimizer,
+    Reflex.Patch,
     Reflex.PerformEvent.Base,
     Reflex.PerformEvent.Class,
     Reflex.PostBuild.Class,
-    Reflex.Pure,
     Reflex.Spider,
     Reflex.Spider.Internal
 
   other-extensions: TemplateHaskell
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
   ghc-prof-options: -auto-all
+
+  if flag(specialize-to-spidertimeline-global)
+    cpp-options: -DSPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
+  else
+    exposed-modules: Reflex.Pure
 
 test-suite semantics
   type: exitcode-stdio-1.0
@@ -79,14 +92,16 @@ test-suite semantics
     reflex,
     split,
     transformers >= 0.3
-
-test-suite hlint
-  type: exitcode-stdio-1.0
-  main-is: hlint.hs
-  hs-source-dirs: test
-  build-depends: base, hlint == 1.9.*
-  if impl(ghcjs)
+  if flag(specialize-to-spidertimeline-global)
     buildable: False
+
+--test-suite hlint
+--  type: exitcode-stdio-1.0
+--  main-is: hlint.hs
+--  hs-source-dirs: test
+--  build-depends: base, hlint == 1.9.*
+--  if impl(ghcjs)
+--    buildable: False
 
 benchmark spider-bench
   type: exitcode-stdio-1.0
@@ -123,7 +138,7 @@ benchmark saulzar-bench
     mtl,
     primitive,
     process,
-    ref-tf == 0.4,
+    ref-tf,
     reflex,
     split,
     stm,

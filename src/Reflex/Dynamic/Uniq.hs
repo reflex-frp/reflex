@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 -- | This module provides a variation of 'Dynamic' values that uses cheap
 -- pointer equality checks to reduce the amount of signal propagation needed.
 module Reflex.Dynamic.Uniq
