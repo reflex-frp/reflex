@@ -1,10 +1,13 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
+#ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
+#endif
 -- | Template Haskell helper functions for building complex 'Dynamic' values.
 module Reflex.Dynamic.TH (qDyn, unqDyn, mkDyn) where
 

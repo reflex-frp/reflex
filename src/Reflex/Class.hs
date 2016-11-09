@@ -16,7 +16,9 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+#ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
+#endif
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 #endif

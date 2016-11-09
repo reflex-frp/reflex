@@ -18,6 +18,11 @@ flag specialize-to-spidertimeline-global
   default: False
   manual: True
 
+flag use-reflex-optimizer
+  description: Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.
+  default: False
+  manual: True
+
 library
   hs-source-dirs: src
   build-depends:
