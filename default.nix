@@ -1,4 +1,4 @@
-{ mkDerivation, base, bifunctors, containers, deepseq
+{ mkDerivation, ghc, base, bifunctors, containers, deepseq
 , dependent-map, dependent-sum, exception-transformers
 , haskell-src-exts, haskell-src-meta, hlint, lens, MemoTrie
 , monad-control, mtl, primitive, ref-tf, semigroupoids
@@ -18,6 +18,9 @@ mkDerivation {
     transformers-compat prim-uniq
     base bifunctors containers deepseq dependent-map dependent-sum
     mtl ref-tf split transformers data-default
+  ];
+  testHaskellDepends = if ghc.isGhcjs or false then [] else [
+    hlint
   ];
   homepage = "https://github.com/reflex-frp/reflex";
   description = "Higher-order Functional Reactive Programming";
