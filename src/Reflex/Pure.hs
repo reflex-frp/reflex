@@ -21,7 +21,7 @@
 module Reflex.Pure where
 
 #if !MIN_VERSION_base(4,8,0)
-import Control.Applicative -- Necessary for GHC 7.8
+import Control.Applicative
 #endif
 
 import Control.Monad

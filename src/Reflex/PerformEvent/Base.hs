@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -27,9 +28,9 @@ import Control.Lens
 import Control.Monad.Exception
 import Control.Monad.Identity
 import Control.Monad.Primitive
+import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
-import Control.Monad.Reader
 import Data.Coerce
 import Data.Dependent.Map (DMap, GCompare (..), Some)
 import qualified Data.Dependent.Map as DMap

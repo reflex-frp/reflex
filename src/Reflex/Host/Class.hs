@@ -48,10 +48,12 @@ import Data.GADT.Compare
 import Data.Monoid
 
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-import Reflex.Spider.Internal (HasSpiderTimeline, SpiderHost (..), SpiderHostFrame (..), Subscriber (..), SpiderEventHandle (..), RootTrigger, runFrame, subscribe, scheduleClear, newEventWithTriggerIO, newFanEventWithTriggerIO, EventM (..), run)
-import qualified Reflex.Spider.Internal
-import Data.IORef
 import Control.Monad.Primitive (touch)
+import Data.IORef
+import Reflex.Spider.Internal (EventM (..), HasSpiderTimeline, RootTrigger, SpiderEventHandle (..),
+                               SpiderHost (..), SpiderHostFrame (..), Subscriber (..), newEventWithTriggerIO,
+                               newFanEventWithTriggerIO, run, runFrame, scheduleClear, subscribe)
+import qualified Reflex.Spider.Internal
 #endif
 
 -- Note: this import must come last to silence warnings from AMP

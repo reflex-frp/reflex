@@ -157,11 +157,15 @@ import Data.String
 import Data.These
 import Data.Traversable
 import Data.Type.Coercion
-import Reflex.Patch
 import Reflex.FunctorMaybe
+import Reflex.Patch
 
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-import Reflex.Spider.Internal (Global, SpiderPullM, SpiderPushM (..), HasSpiderTimeline, EventM, readBehaviorUntracked, readBehaviorTracked, dynamicHoldIdentity, dynamicHold, dynamicDynIdentity, newMapDyn, dynamicCurrent, dynamicUpdated, unsafeDyn, dynamicConst, behaviorHoldIdentity, SpiderHost (..), runFrame, runSpiderHostFrame, SpiderHostFrame (..))
+import Reflex.Spider.Internal (EventM, Global, HasSpiderTimeline, SpiderHost (..), SpiderHostFrame (..),
+                               SpiderPullM, SpiderPushM (..), behaviorHoldIdentity, dynamicConst,
+                               dynamicCurrent, dynamicDynIdentity, dynamicHold, dynamicHoldIdentity,
+                               dynamicUpdated, newMapDyn, readBehaviorTracked, readBehaviorUntracked,
+                               runFrame, runSpiderHostFrame, unsafeDyn)
 import qualified Reflex.Spider.Internal
 import qualified Reflex.Spider.Internal as S
 import Unsafe.Coerce

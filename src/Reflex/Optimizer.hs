@@ -2,19 +2,22 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Reflex.Optimizer (plugin) where
-#ifdef ghcjs_HOST_OS
 
+#ifdef ghcjs_HOST_OS
 import Plugins
+#else
+import Control.Arrow
+import CoreMonad
+import Data.String
+import GhcPlugins
+#endif
+
+#ifdef ghcjs_HOST_OS
 
 plugin :: Plugin
 plugin = undefined
 
 #else
-
-import Control.Arrow
-import CoreMonad
-import Data.String
-import GhcPlugins
 
 plugin :: Plugin
 plugin = defaultPlugin { installCoreToDos = install }
