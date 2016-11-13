@@ -56,6 +56,7 @@ module Reflex.Class
        , dsumToEither
          -- ** Switching between 'Event's
        , switchPromptly
+       , switchPromptOnly
          -- ** Using 'Event's to sample 'Behavior's
        , tag
        , attach
@@ -683,14 +684,20 @@ fanThese e =
 fanMap :: (Reflex t, Ord k) => Event t (Map k a) -> EventSelector t (Const2 k a)
 fanMap = fan . fmap mapToDMap
 
--- | Switches to the new event whenever it receives one; the new event is used
--- immediately, on the same frame that it is switched to
-switchPromptly :: forall t m a. (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
+-- | Switches to the new event whenever it receives one.  Whenever a new event
+-- is provided, if it is firing, its value will be the resulting event's value;
+-- if it is not firing, but the old one is, the old one's value will be used.
+switchPromptly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptly ea0 eea = do
   bea <- hold ea0 eea
   let eLag = switch bea
       eCoincidences = coincidence eea
   return $ leftmost [eCoincidences, eLag]
+
+switchPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
+switchPromptOnly e0 e' = do
+  eLag <- switch <$> hold e0 e'
+  return $ coincidence $ leftmost [e', eLag <$ eLag]
 
 instance Reflex t => Align (Event t) where
   nil = never
