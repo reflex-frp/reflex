@@ -174,9 +174,9 @@ instance (MonadAdjust t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => Mon
         liftedResult' = ffor result' $ \(PatchDMap p) -> PatchDMap $
           mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mr) -> k :=> ComposeMaybe (fmap (Identity . getValue . runIdentity) mr)) p
         liftedWritten0 :: Map (Some k) (Dynamic t w)
-        liftedWritten0 = Map.fromDistinctAscList $ fmap (\(WrapArg k :=> Identity r) -> (Some.This k, getWritten r)) $ DMap.toList result0
+        liftedWritten0 = Map.fromDistinctAscList $ (\(WrapArg k :=> Identity r) -> (Some.This k, getWritten r)) <$> DMap.toList result0
         liftedWritten' = ffor result' $ \(PatchDMap p) -> PatchMap $
-          Map.fromDistinctAscList $ fmap (\(WrapArg k :=> ComposeMaybe mr) -> (Some.This k, fmap (getWritten . runIdentity) mr)) $ DMap.toList p
+          Map.fromDistinctAscList $ (\(WrapArg k :=> ComposeMaybe mr) -> (Some.This k, fmap (getWritten . runIdentity) mr)) <$> DMap.toList p
     --TODO: We should be able to improve the performance here by incrementally updating the mconcat of the merged Dynamics
     i <- holdIncremental liftedWritten0 liftedWritten'
     tellDyn $ fmap (mconcat . Map.elems) $ incrementalToDynamic $ mergeDynIncremental i

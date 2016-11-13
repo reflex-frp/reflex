@@ -203,14 +203,10 @@ subscribeAndRead = unEvent
 "cacheEvent/pushCheap" forall f e. pushCheap f (cacheEvent e) = cacheEvent (pushCheap f e)
 "hold/cacheEvent" forall f e. hold f (cacheEvent e) = hold f e
   #-}
-{- RULES
-    "subscribeAndRead/cacheEvent" forall e. subscribeAndRead (cacheEvent e) = subscribeAndRead e
-  #-}
 
 -- | Construct an 'Event' equivalent to that constructed by 'push', but with no
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
-{- INLINE [1] pushCheap #-}
 {-# NOINLINE pushCheap #-}
 pushCheap :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 pushCheap f e = Event $ \sub -> do
@@ -803,7 +799,6 @@ instance HasSpiderTimeline x => Defer (SomeResetCoincidence x) (EventM x) where
   getDeferralQueue = asksEventEnv eventEnvResetCoincidences
 
 -- Note: hold cannot examine its event until after the phase is over
-{- SPECIALIZE hold :: (HasSpiderTimeline x, Patch p) => PatchTarget p -> Event x p -> EventM x (Hold x p) #-}
 {-# INLINE [1] hold #-}
 hold :: (Patch p, Defer (SomeHoldInit x) m) => PatchTarget p -> Event x p -> m (Hold x p)
 hold v0 e = do

@@ -1,6 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -12,7 +10,6 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -20,6 +17,7 @@
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
+{-# LANGUAGE EmptyDataDecls #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 #endif
 
