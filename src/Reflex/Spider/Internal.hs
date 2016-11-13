@@ -53,8 +53,6 @@ import Data.List hiding (foldl')
 import Data.Maybe
 import Data.Monoid ((<>))
 import Data.Proxy
-import Data.Some (Some)
-import qualified Data.Some as Some
 import Data.These
 import Data.Traversable
 import Data.Word
@@ -77,6 +75,9 @@ import Data.Tree (Forest, Tree (..), drawForest)
 import Data.WeakBag (WeakBag, WeakBagTicket)
 import qualified Data.WeakBag as WeakBag
 #ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
+import Data.Reflection
+import Data.Some (Some)
+import qualified Data.Some as Some
 import Data.Type.Coercion
 import qualified Reflex.Class
 import qualified Reflex.Class as R
@@ -1870,13 +1871,29 @@ unsafeNewSpiderTimelineEnv = do
 #endif
     }
 
+#ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 -- | Create a new SpiderTimelineEnv
 newSpiderTimeline :: IO (Some SpiderTimelineEnv)
 newSpiderTimeline = withSpiderTimeline (pure . Some.This)
 
+data LocalSpiderTimeline x s
+
+instance Reifies s (SpiderTimelineEnv x) =>
+         HasSpiderTimeline (LocalSpiderTimeline x s) where
+  spiderTimeline = localSpiderTimeline (Proxy :: Proxy s) $ reflect (Proxy :: Proxy s)
+
+localSpiderTimeline
+  :: Proxy s
+  -> SpiderTimelineEnv x
+  -> SpiderTimelineEnv (LocalSpiderTimeline x s)
+localSpiderTimeline _ = unsafeCoerce
+
 -- | Pass a new timeline to the given function.
-withSpiderTimeline :: (forall x. SpiderTimelineEnv x -> IO r) -> IO r
-withSpiderTimeline k = unsafeNewSpiderTimelineEnv >>= k
+withSpiderTimeline :: (forall x. HasSpiderTimeline x => SpiderTimelineEnv x -> IO r) -> IO r
+withSpiderTimeline k = do
+  env <- unsafeNewSpiderTimelineEnv
+  reify env $ \s -> k $ localSpiderTimeline s env
+#endif
 
 newtype SpiderPullM x a = SpiderPullM (BehaviorM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
@@ -1968,10 +1985,12 @@ instance Monad (SpiderHost x) where
 runSpiderHost :: SpiderHost Global a -> IO a
 runSpiderHost (SpiderHost a) = runReaderT a globalSpiderTimelineEnv
 
+#ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 -- | Run an action affecting a given Spider timeline; this will be guarded by a
 -- mutex for that timeline
 runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimelineEnv x -> IO a
 runSpiderHostForTimeline (SpiderHost a) = runReaderT a
+#endif
 
 newtype SpiderHostFrame x a = SpiderHostFrame { runSpiderHostFrame :: EventM x a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
