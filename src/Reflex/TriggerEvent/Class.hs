@@ -1,8 +1,9 @@
+-- | This module defines 'TriggerEvent', which describes actions that may create
+-- new 'Event's that can be triggered from 'IO'.
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
-
 module Reflex.TriggerEvent.Class
   ( TriggerEvent (..)
   ) where
@@ -13,7 +14,7 @@ import Control.Monad.Reader
 
 --TODO: Shouldn't have IO hard-coded
 -- | 'TriggerEvent' represents actions that can create 'Event's that can be
--- triggered from the IO monad.
+-- triggered by 'IO' actions.
 class Monad m => TriggerEvent t m | m -> t where
   -- | Create a triggerable 'Event'.  Whenever the resulting function is called,
   -- the resulting 'Event' will fire at some point in the future.  Note that
