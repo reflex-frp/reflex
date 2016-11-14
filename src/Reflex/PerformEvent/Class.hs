@@ -1,6 +1,7 @@
 -- | This module defines 'PerformEvent' and 'TriggerEvent', which mediate the
 -- interaction between a "Reflex"-based program and the external side-effecting
 -- actions such as 'IO'.
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
