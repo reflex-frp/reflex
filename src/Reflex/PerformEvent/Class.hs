@@ -13,7 +13,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#ifdef USE_REFLEX_OPTIMIZER
+#endif
 module Reflex.PerformEvent.Class
   ( PerformEvent (..)
   , performEventAsync
