@@ -34,7 +34,6 @@ library
     dependent-map >= 0.2.2 && < 0.3,
     dependent-sum == 0.3.*,
     exception-transformers == 0.4.*,
-    ghc,
     haskell-src-exts >= 1.16 && < 1.18,
     haskell-src-meta == 0.6.*,
     lens >= 4.7 && < 5,
@@ -64,7 +63,6 @@ library
     Reflex.DynamicWriter,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,
-    Reflex.Optimizer,
     Reflex.Patch,
     Reflex.TriggerEvent.Base,
     Reflex.TriggerEvent.Class,
@@ -85,6 +83,11 @@ library
     cpp-options: -DSPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
   else
     exposed-modules: Reflex.Pure
+
+  if flag(use-reflex-optimizer)
+    cpp-options: -DUSE_REFLEX_OPTIMIZER
+    build-depends: ghc
+    exposed-modules: Reflex.Optimizer
 
 test-suite semantics
   type: exitcode-stdio-1.0
