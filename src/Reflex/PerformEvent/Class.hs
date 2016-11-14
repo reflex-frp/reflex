@@ -14,10 +14,10 @@
 module Reflex.PerformEvent.Class
   ( PerformEvent (..)
   , performEventAsync
-  , TriggerEvent (..)
   ) where
 
 import Reflex.Class
+import Reflex.TriggerEvent.Class
 
 import Control.Monad.Reader
 
@@ -35,26 +35,6 @@ class (Reflex t, Monad (Performable m), Monad m) => PerformEvent t m | m -> t wh
   -- | Like 'performEvent', but do not return the result.  May have slightly
   -- better performance.
   performEvent_ :: Event t (Performable m ()) -> m ()
-
---TODO: Shouldn't have IO hard-coded
--- | 'TriggerEvent' represents actions that can create 'Event's that can be
--- triggered from the IO monad.
-class Monad m => TriggerEvent t m | m -> t where
-  -- | Create a triggerable 'Event'.  Whenever the resulting function is called,
-  -- the resulting 'Event' will fire at some point in the future.  Note that
-  -- this may not be synchronous.
-  newTriggerEvent :: m (Event t a, a -> IO ())
-  -- | Like 'newTriggerEvent', but the callback itself takes another callback,
-  -- to be invoked once the requested 'Event' occurrence has finished firing.
-  -- This allows synchronous operation.
-  newTriggerEventWithOnComplete :: m (Event t a, a -> IO () -> IO ()) --TODO: This and newTriggerEvent should be unified somehow
-  -- | Like 'newTriggerEventWithOnComplete', but with setup and teardown.  This
-  -- relatively complex type signature allows any external listeners to be
-  -- subscribed lazily and then removed whenever the returned 'Event' is no
-  -- longer being listened to.  Note that the setup/teardown may happen multiple
-  -- times, and there is no guarantee that the teardown will be executed
-  -- promptly, or even at all, in the case of program termination.
-  newEventWithLazyTriggerWithOnComplete :: ((a -> IO () -> IO ()) -> IO (IO ())) -> m (Event t a)
 
 -- | Like 'performEvent', but the resulting 'Event' occurs only when the
 -- callback (@a -> IO ()@) is called, not when the included action finishes.
@@ -79,8 +59,3 @@ instance PerformEvent t m => PerformEvent t (ReaderT r m) where
   performEvent e = do
     r <- ask
     lift $ performEvent $ flip runReaderT r <$> e
-
-instance TriggerEvent t m => TriggerEvent t (ReaderT r m) where
-  newTriggerEvent = lift newTriggerEvent
-  newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
-  newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete

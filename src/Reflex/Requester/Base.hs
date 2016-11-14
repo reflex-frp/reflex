@@ -25,6 +25,7 @@ import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Requester.Class
+import Reflex.TriggerEvent.Class
 
 import Control.Monad.Exception
 import Control.Monad.Identity

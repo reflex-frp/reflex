@@ -66,6 +66,8 @@ library
     Reflex.Host.Class,
     Reflex.Optimizer,
     Reflex.Patch,
+    Reflex.TriggerEvent.Base,
+    Reflex.TriggerEvent.Class,
     Reflex.PerformEvent.Base,
     Reflex.PerformEvent.Class,
     Reflex.PostBuild.Base,
