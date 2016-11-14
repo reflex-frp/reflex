@@ -18,7 +18,13 @@
 -- serve as a reference for the semantics of the Reflex class.  All
 -- implementations of Reflex should produce the same results as this
 -- implementation, although performance and laziness/strictness may differ.
-module Reflex.Pure where
+module Reflex.Pure
+  ( Pure
+  , Behavior (..)
+  , Event (..)
+  , Dynamic (..)
+  , Incremental (..)
+  ) where
 
 #if !MIN_VERSION_base(4,8,0)
 import Control.Applicative
@@ -34,6 +40,8 @@ import Data.Monoid
 import Data.Type.Coercion
 import Reflex.Class
 
+-- | A completely pure-functional 'Reflex' timeline, identifying moments in time
+-- with the type @t@.
 data Pure t
 
 -- | The Enum instance of t must be dense: for all x :: t, there must not exist
@@ -97,18 +105,18 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   --a) -> Incremental (Pure t) p a
   unsafeBuildIncremental readV0 p = Incremental $ \t -> (readV0 t, unEvent p t)
 
-  mergeIncremental (Incremental f) = Event $ \t ->
-    let results = DMap.mapMaybeWithKey (\_ (Event e) -> Identity <$> e t) $ fst $ f t
+  mergeIncremental i = Event $ \t ->
+    let results = DMap.mapMaybeWithKey (\_ (Event e) -> Identity <$> e t) $ fst $ unIncremental i t
     in if DMap.null results
        then Nothing
        else Just results
 
-  currentIncremental (Incremental f) = Behavior $ \t -> fst $ f t
+  currentIncremental i = Behavior $ \t -> fst $ unIncremental i t
 
-  updatedIncremental (Incremental f) = Event $ \t -> snd $ f t
+  updatedIncremental i = Event $ \t -> snd $ unIncremental i t
 
-  incrementalToDynamic (Incremental f) = Dynamic $ \t ->
-    let (old, mPatch) = f t
+  incrementalToDynamic i = Dynamic $ \t ->
+    let (old, mPatch) = unIncremental i t
         e = case mPatch of
           Nothing -> Nothing
           Just patch -> apply patch old

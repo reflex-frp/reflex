@@ -18,62 +18,66 @@
 -- | This module contains various functions for working with 'Dynamic' values.
 -- 'Dynamic' and its primitives have been moved to the 'Reflex' class.
 module Reflex.Dynamic
-       ( -- * Basics
-         Dynamic -- Abstract so we can preserve the law that the current value is always equal to the most recent update
-       , current
-       , updated
-       , holdDyn
-       , constDyn
-       , uniqDyn
-       , uniqDynBy
-       , count
-       , toggle
-       , switchPromptlyDyn
-       , tagPromptlyDyn
-       , attachPromptlyDyn
-       , attachPromptlyDynWith
-       , attachPromptlyDynWithMaybe
-       , foldDyn
-       , foldDynM
-       , foldDynMaybe
-       , foldDynMaybeM
-       , joinDynThroughMap
-       , traceDyn
-       , traceDynWith
-       , splitDynPure
-       , distributeMapOverDynPure
-       , distributeDMapOverDynPure
-       , distributeListOverDynPure
-       , Demux
-       , demux
-       , demuxed
-         -- Things that probably aren't very useful:
-       , HList (..)
-       , FHList (..)
-       , collectDynPure
-       , distributeFHListOverDynPure
-         -- Unsafe
-       , unsafeDynamic
-         -- * Deprecated functions
-       , apDyn
-       , attachDyn
-       , attachDynWith
-       , attachDynWithMaybe
-       , collectDyn
-       , combineDyn
-       , distributeDMapOverDyn
-       , distributeFHListOverDyn
-       , forDyn
-       , forDynM
-       , getDemuxed
-       , joinDyn
-       , mapDyn
-       , mapDynM
-       , mconcatDyn
-       , nubDyn
-       , splitDyn
-       , tagDyn
-       ) where
+  ( -- * Basics
+    Dynamic -- Abstract so we can preserve the law that the current value is always equal to the most recent update
+  , current
+  , updated
+  , holdDyn
+  , constDyn
+  , uniqDyn
+  , uniqDynBy
+  , count
+  , toggle
+  , switchPromptlyDyn
+  , tagPromptlyDyn
+  , attachPromptlyDyn
+  , attachPromptlyDynWith
+  , attachPromptlyDynWithMaybe
+  , foldDyn
+  , foldDynM
+  , foldDynMaybe
+  , foldDynMaybeM
+  , joinDynThroughMap
+  , traceDyn
+  , traceDynWith
+  , splitDynPure
+  , distributeMapOverDynPure
+  , distributeDMapOverDynPure
+  , distributeListOverDynPure
+  , Demux
+  , demux
+  , demuxed
+    -- Things that probably aren't very useful:
+  , HList (..)
+  , FHList (..)
+  , collectDynPure
+  , RebuildSortedHList (..)
+  , IsHList (..)
+  , AllAreFunctors (..)
+  , HListPtr (..)
+  , distributeFHListOverDynPure
+    -- Unsafe
+  , unsafeDynamic
+    -- * Deprecated functions
+  , apDyn
+  , attachDyn
+  , attachDynWith
+  , attachDynWithMaybe
+  , collectDyn
+  , combineDyn
+  , distributeDMapOverDyn
+  , distributeFHListOverDyn
+  , forDyn
+  , forDynM
+  , getDemuxed
+  , joinDyn
+  , mapDyn
+  , mapDynM
+  , mconcatDyn
+  , nubDyn
+  , splitDyn
+  , tagDyn
+  ) where
 
 import Prelude hiding (mapM, mapM_)
 
@@ -338,6 +342,7 @@ instance GCompare (HListPtr l) where -- Warning: This ordering can't change, dma
   HTailPtr _ `gcompare` HHeadPtr = GGT
   HTailPtr a `gcompare` HTailPtr b = a `gcompare` b
 
+-- | A typed index into a typed heterogeneous list.
 data HListPtr l a where
   HHeadPtr :: HListPtr (h ': t) h
   HTailPtr :: HListPtr t a -> HListPtr (h ': t) a
@@ -349,6 +354,8 @@ fhlistToDMap = DMap.fromList . go
           FHNil -> []
           FHCons h t -> (HHeadPtr :=> h) : map (\(p :=> v) -> HTailPtr p :=> v) (go t)
 
+-- | This class allows 'HList's and 'FHlist's to be built from regular lists;
+-- they must be contiguous and sorted.
 class RebuildSortedHList l where
   rebuildSortedFHList :: [DSum (HListPtr l) f] -> FHList f l
   rebuildSortedHList :: [DSum (HListPtr l) Identity] -> HList l
@@ -378,6 +385,8 @@ dmapToHList = rebuildSortedHList . DMap.toList
 distributeFHListOverDynPure :: (Reflex t, RebuildSortedHList l) => FHList (Dynamic t) l -> Dynamic t (HList l)
 distributeFHListOverDynPure l = fmap dmapToHList $ distributeDMapOverDynPure $ fhlistToDMap l
 
+-- | Indicates that all elements in a type-level list are applications of the
+-- same functor.
 class AllAreFunctors (f :: a -> *) (l :: [a]) where
   type FunctorList f l :: [*]
   toFHList :: HList (FunctorList f l) -> FHList f l
@@ -412,7 +421,7 @@ collectDynPure :: ( RebuildSortedHList (HListElems b)
                   ) => a -> Dynamic t b
 collectDynPure ds = fmap fromHList $ distributeFHListOverDynPure $ toFHList $ toHList ds
 
--- Poor man's Generic
+-- | Poor man's 'Generic's for product types only.
 class IsHList a where
   type HListElems a :: [*]
   toHList :: a -> HList (HListElems a)

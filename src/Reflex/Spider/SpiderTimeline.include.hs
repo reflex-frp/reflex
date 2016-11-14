@@ -117,5 +117,6 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
 -- Deprecated items
 --------------------------------------------------------------------------------
 
+-- | 'SpiderEnv' is the old name for 'SpiderTimeline'
 {-# DEPRECATED SpiderEnv "Use 'SpiderTimelineEnv' instead" #-}
 type SpiderEnv = SpiderTimeline

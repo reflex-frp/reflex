@@ -17,28 +17,28 @@
 -- which are relevant to the use of 'Functor'-based datastructures like
 -- 'Data.Dependent.Map.DMap'.
 module Data.Functor.Misc
-       ( -- * Const2
-         Const2 (..)
-       , dmapToMap
-       , mapToDMap
-         -- * WrapArg
-       , WrapArg (..)
-         -- * Convenience functions for DMap
-       , mapWithFunctorToDMap
-       , mapKeyValuePairsMonotonic
-       , combineDMapsWithKey
-       , EitherTag (..)
-       , dmapToThese
-       , eitherToDSum
-       , dsumToEither
-         -- * Deprecated functions
-       , sequenceDmap
-       , wrapDMap
-       , rewrapDMap
-       , unwrapDMap
-       , unwrapDMapMaybe
-       , extractFunctorDMap
-       ) where
+  ( -- * Const2
+    Const2 (..)
+  , dmapToMap
+  , mapToDMap
+    -- * WrapArg
+  , WrapArg (..)
+    -- * Convenience functions for DMap
+  , mapWithFunctorToDMap
+  , mapKeyValuePairsMonotonic
+  , combineDMapsWithKey
+  , EitherTag (..)
+  , dmapToThese
+  , eitherToDSum
+  , dsumToEither
+    -- * Deprecated functions
+  , sequenceDmap
+  , wrapDMap
+  , rewrapDMap
+  , unwrapDMap
+  , unwrapDMapMaybe
+  , extractFunctorDMap
+  ) where
 
 import Control.Applicative (Applicative, (<$>))
 import Control.Monad.Identity
@@ -189,7 +189,6 @@ dsumToEither :: DSum (EitherTag a b) Identity -> Either a b
 dsumToEither = \case
   (LeftTag :=> Identity a) -> Left a
   (RightTag :=> Identity b) -> Right b
-
 
 --------------------------------------------------------------------------------
 -- Deprecated functions

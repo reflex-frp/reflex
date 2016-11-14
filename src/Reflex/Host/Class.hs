@@ -17,16 +17,16 @@
 -- should only be necessary if you're writing a binding or some other library
 -- that provides a core event loop.
 module Reflex.Host.Class
-       ( ReflexHost (..)
-       , MonadSubscribeEvent (..)
-       , MonadReadEvent (..)
-       , MonadReflexCreateTrigger (..)
-       , MonadReflexHost (..)
-       , fireEvents
-       , newEventWithTriggerRef
-       , fireEventRef
-       , fireEventRefAndRead
-       ) where
+  ( ReflexHost (..)
+  , MonadSubscribeEvent (..)
+  , MonadReadEvent (..)
+  , MonadReflexCreateTrigger (..)
+  , MonadReflexHost (..)
+  , fireEvents
+  , newEventWithTriggerRef
+  , fireEventRef
+  , fireEventRefAndRead
+  ) where
 
 import Reflex.Class
 

@@ -1,4 +1,8 @@
-module Reflex.FunctorMaybe where
+-- | This module defines the FunctorMaybe class, which extends Functors with the
+-- ability to delete values.
+module Reflex.FunctorMaybe
+  ( FunctorMaybe (..)
+  ) where
 
 import Data.Maybe
 
@@ -20,6 +24,6 @@ class FunctorMaybe f where
   -- | Combined mapping and filtering function.
   fmapMaybe :: (a -> Maybe b) -> f a -> f b
 
+-- | @fmapMaybe f = catMaybes . fmap f@
 instance FunctorMaybe [] where
   fmapMaybe f = catMaybes . fmap f
-

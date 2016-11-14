@@ -25,108 +25,108 @@
 -- convenience functions for working with 'Event's, 'Behavior's, and other
 -- signals.
 module Reflex.Class
-       ( module Reflex.Patch
-         -- * Primitives
-       , Reflex (..)
-       , coerceBehavior
-       , coerceEvent
-       , coerceDynamic
-       , MonadSample (..)
-       , MonadHold (..)
-         -- ** 'fan'-related types
-       , EventSelector (..)
-         -- ** 'Incremental'-related types
-         -- * Convenience functions
-       , constDyn
-       , pushAlways
-         -- ** Combining 'Event's
-       , leftmost
-       , mergeMap
-       , mergeList
-       , mergeWith
-       , difference
-         -- ** Breaking up 'Event's
-       , splitE
-       , fanEither
-       , fanThese
-       , fanMap
-       , dmapToThese
-       , EitherTag (..)
-       , eitherToDSum
-       , dsumToEither
-         -- ** Switching between 'Event's
-       , switchPromptly
-       , switchPromptOnly
-         -- ** Using 'Event's to sample 'Behavior's
-       , tag
-       , attach
-       , attachWith
-       , attachWithMaybe
-         -- ** Blocking an 'Event' based on a 'Behavior'
-       , gate
-         -- ** Combining 'Dynamic's
-       , distributeDMapOverDynPure
-       , distributeListOverDyn
-       , distributeListOverDynWith
-       , zipDyn
-       , zipDynWith
-         -- ** Accumulating state
-       , Accumulator (..)
-       , mapAccum_
-       , mapAccumM_
-       , mapAccumMaybe_
-       , mapAccumMaybeM_
-       , zipListWithEvent
-       , headE
-       , tailE
-       , headTailE
-       , switcher
-         -- * Debugging functions
-       , traceEvent
-       , traceEventWith
-         -- * Unsafe functions
-       , unsafeDynamic
-         -- * 'FunctorMaybe'
-       , FunctorMaybe (..)
-       , fforMaybe
-       , ffilter
-         -- * Miscellaneous convenience functions
-       , ffor
-       , MonadAdjust (..)
-         -- * Deprecated functions
-       , appendEvents
-       , onceE
-       , sequenceThese
+  ( module Reflex.Patch
+    -- * Primitives
+  , Reflex (..)
+  , coerceBehavior
+  , coerceEvent
+  , coerceDynamic
+  , MonadSample (..)
+  , MonadHold (..)
+    -- ** 'fan'-related types
+  , EventSelector (..)
+    -- ** 'Incremental'-related types
+    -- * Convenience functions
+  , constDyn
+  , pushAlways
+    -- ** Combining 'Event's
+  , leftmost
+  , mergeMap
+  , mergeList
+  , mergeWith
+  , difference
+    -- ** Breaking up 'Event's
+  , splitE
+  , fanEither
+  , fanThese
+  , fanMap
+  , dmapToThese
+  , EitherTag (..)
+  , eitherToDSum
+  , dsumToEither
+    -- ** Switching between 'Event's
+  , switchPromptly
+  , switchPromptOnly
+    -- ** Using 'Event's to sample 'Behavior's
+  , tag
+  , attach
+  , attachWith
+  , attachWithMaybe
+    -- ** Blocking an 'Event' based on a 'Behavior'
+  , gate
+    -- ** Combining 'Dynamic's
+  , distributeDMapOverDynPure
+  , distributeListOverDyn
+  , distributeListOverDynWith
+  , zipDyn
+  , zipDynWith
+    -- ** Accumulating state
+  , Accumulator (..)
+  , mapAccum_
+  , mapAccumM_
+  , mapAccumMaybe_
+  , mapAccumMaybeM_
+  , zipListWithEvent
+  , headE
+  , tailE
+  , headTailE
+  , switcher
+    -- * Debugging functions
+  , traceEvent
+  , traceEventWith
+    -- * Unsafe functions
+  , unsafeDynamic
+    -- * 'FunctorMaybe'
+  , FunctorMaybe (..)
+  , fforMaybe
+  , ffilter
+    -- * Miscellaneous convenience functions
+  , ffor
+  , MonadAdjust (..)
+    -- * Deprecated functions
+  , appendEvents
+  , onceE
+  , sequenceThese
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-       , Spider
-       , SpiderEnv
-       , SpiderTimeline
-       , Global
-       , Behavior (..)
-       , Event (..)
-       , Dynamic (..)
-       , Incremental (..)
-       , never
-       , constant
-       , push
-       , pull
-       , merge
-       , fan
-       , switch
-       , coincidence
-       , current
-       , updated
-       , unsafeBuildDynamic
-       , unsafeBuildIncremental
-       , mergeIncremental
-       , currentIncremental
-       , updatedIncremental
-       , incrementalToDynamic
-       , behaviorCoercion
-       , eventCoercion
-       , dynamicCoercion
+  , Spider
+  , SpiderEnv
+  , SpiderTimeline
+  , Global
+  , Behavior (..)
+  , Event (..)
+  , Dynamic (..)
+  , Incremental (..)
+  , never
+  , constant
+  , push
+  , pull
+  , merge
+  , fan
+  , switch
+  , coincidence
+  , current
+  , updated
+  , unsafeBuildDynamic
+  , unsafeBuildIncremental
+  , mergeIncremental
+  , currentIncremental
+  , updatedIncremental
+  , incrementalToDynamic
+  , behaviorCoercion
+  , eventCoercion
+  , dynamicCoercion
 #endif
-       ) where
+  ) where
 
 import Control.Applicative
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
@@ -698,6 +698,10 @@ switchPromptly ea0 eea = do
       eCoincidences = coincidence eea
   return $ leftmost [eCoincidences, eLag]
 
+-- | 'switch'es to a new event whenever it receives one.  At the moment of
+-- switching, the old event will be ignored if it fires, and the new one will be
+-- used if it fires; this is the opposite of 'switch', which will use only the
+-- old value.
 switchPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptOnly e0 e' = do
   eLag <- switch <$> hold e0 e'
@@ -871,6 +875,12 @@ zipListWithEvent f l e = do
         _ -> (Nothing, Nothing) --TODO: Unsubscribe the event?
   mapAccumMaybe_ f' l e
 
+-- | A 'Monad' that supports adjustment over time.  After an action has been
+-- run, if the given events fire, it will adjust itself so that its net effect
+-- is as though it had originally been run with the new value.  Note that there
+-- is some issue here with persistent side-effects: obviously, IO (and some
+-- other side-effects) cannot be undone, so it is up to the instance implementer
+-- to determine what the best meaning for this class is in such cases.
 class (Reflex t, Monad m) => MonadAdjust t m | m -> t where
   runWithReplace :: m a -> Event t (m b) -> m (a, Event t b)
   sequenceDMapWithAdjust :: GCompare k => DMap k m -> Event t (PatchDMap k m) -> m (DMap k Identity, Event t (PatchDMap k Identity))
@@ -901,6 +911,7 @@ appendEvents = alignWith $ mergeThese mappend
 onceE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
 onceE = headE
 
+-- | Run both sides of a 'These' monadically, combining the results.
 {-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
 {-# ANN sequenceThese "HLint: ignore Use fmap" #-}
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)

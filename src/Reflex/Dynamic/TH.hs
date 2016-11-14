@@ -9,7 +9,14 @@
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
 -- | Template Haskell helper functions for building complex 'Dynamic' values.
-module Reflex.Dynamic.TH (qDyn, unqDyn, mkDyn) where
+module Reflex.Dynamic.TH
+  ( qDynPure
+  , unqDyn
+  , mkDynPure
+    -- * Deprecated functions
+  , qDyn
+  , mkDyn
+  ) where
 
 import Reflex.Dynamic
 
@@ -26,8 +33,8 @@ import qualified Language.Haskell.TH.Syntax as TH
 -- | Quote a 'Dynamic' expression.  Within the quoted expression, you can use
 -- @$(unqDyn [| x |])@ to refer to any expression @x@ of type @Dynamic t a@; the
 -- unquoted result will be of type @a@
-qDyn :: Q Exp -> Q Exp
-qDyn qe = do
+qDynPure :: Q Exp -> Q Exp
+qDynPure qe = do
   e <- qe
   let f :: forall d. Data d => d -> StateT [(Name, Exp)] Q d
       f d = case eqT of
@@ -42,7 +49,7 @@ qDyn qe = do
   let exprs = reverse exprsReversed
       arg = foldr (\a b -> ConE 'FHCons `AppE` a `AppE` b) (ConE 'FHNil) $ map snd exprs
       param = foldr (\a b -> ConP 'HCons [VarP a, b]) (ConP 'HNil []) $ map fst exprs
-  [| return $ $(return $ LamE [param] e') <$> distributeFHListOverDynPure $(return arg) |]
+  [| $(return $ LamE [param] e') <$> distributeFHListOverDynPure $(return arg) |]
 
 -- | Antiquote a 'Dynamic' expression.  This can /only/ be used inside of a
 -- 'qDyn' quotation.
@@ -68,8 +75,8 @@ unqMarker = error "An unqDyn expression was used outside of a qDyn expression"
 -- > [mkDyn| $x + $v * $t + 1/2 * $a * $t ^ 2 |]
 --
 -- would have a very cumbersome 'Applicative' encoding.
-mkDyn :: QuasiQuoter
-mkDyn = QuasiQuoter
+mkDynPure :: QuasiQuoter
+mkDynPure = QuasiQuoter
   { quoteExp = mkDynExp
   , quotePat = error "mkDyn: pattern splices are not supported"
   , quoteType = error "mkDyn: type splices are not supported"
@@ -79,7 +86,7 @@ mkDyn = QuasiQuoter
 mkDynExp :: String -> Q Exp
 mkDynExp s = case Hs.parseExpWithMode (Hs.defaultParseMode { Hs.extensions = [ Hs.EnableExtension Hs.TemplateHaskell ] }) s of
   Hs.ParseFailed (Hs.SrcLoc _ l c) err -> fail $ "mkDyn:" <> show l <> ":" <> show c <> ": " <> err
-  Hs.ParseOk e -> qDyn $ return $ everywhere (id `extT` reinstateUnqDyn) $ Hs.toExp $ everywhere (id `extT` antiE) e
+  Hs.ParseOk e -> qDynPure $ return $ everywhere (id `extT` reinstateUnqDyn) $ Hs.toExp $ everywhere (id `extT` antiE) e
     where TH.Name (TH.OccName occName) (TH.NameG _ _ (TH.ModName modName)) = 'unqMarker
           antiE x = case x of
             Hs.SpliceExp se ->
@@ -90,3 +97,24 @@ mkDynExp s = case Hs.parseExpWithMode (Hs.defaultParseMode { Hs.extensions = [ H
           reinstateUnqDyn (TH.Name (TH.OccName occName') (TH.NameQ (TH.ModName modName')))
             | modName == modName' && occName == occName' = 'unqMarker
           reinstateUnqDyn x = x
+
+--------------------------------------------------------------------------------
+-- Deprecated
+--------------------------------------------------------------------------------
+
+{-# DEPRECATED qDyn "Instead of $(qDyn x), use return $(qDynPure x)" #-}
+-- | Like 'qDynPure', but wraps its result monadically using 'return'.  This is
+-- no longer necessary, due to 'Dynamic' being an instance of 'Functor'.
+qDyn :: Q Exp -> Q Exp
+qDyn qe = [| return $(qDynPure qe) |]
+
+{-# DEPRECATED mkDyn "Instead of [mkDyn| x |], use return [mkDynPure| x |]" #-}
+-- | Like 'mkDynPure', but wraps its result monadically using 'return'.  This is
+-- no longer necessary, due to 'Dynamic' being an instance of 'Functor'.
+mkDyn :: QuasiQuoter
+mkDyn = QuasiQuoter
+  { quoteExp = \s -> [| return $(mkDynExp s) |]
+  , quotePat = error "mkDyn: pattern splices are not supported"
+  , quoteType = error "mkDyn: type splices are not supported"
+  , quoteDec = error "mkDyn: declaration splices are not supported"
+  }

@@ -9,14 +9,14 @@
 -- This is useful for situations where a value needs to be inspected or modified
 -- if it is still alive, but can be ignored if it is dead.
 module Data.WeakBag
-       ( WeakBag
-       , WeakBagTicket
-       , empty
-       , singleton
-       , insert
-       , traverse
-       , remove
-       ) where
+  ( WeakBag
+  , WeakBagTicket
+  , empty
+  , singleton
+  , insert
+  , traverse
+  , remove
+  ) where
 
 import Control.Exception
 import Control.Monad hiding (forM_, mapM_)

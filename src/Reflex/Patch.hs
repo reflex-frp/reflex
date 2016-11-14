@@ -1,3 +1,5 @@
+-- | This module defines the 'Patch' class, which is used by Reflex to manage
+-- changes to 'Reflex.Class.Incremental' values.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE LambdaCase #-}
@@ -36,7 +38,8 @@ instance Patch (Identity a) where
   type PatchTarget (Identity a) = a
   apply (Identity a) _ = Just a
 
--- | A set of changes to a 'DMap'.  Only DMap types are allowed for @a@.
+-- | A set of changes to a 'DMap'.  Any element may be inserted/updated or
+-- deleted.
 newtype PatchDMap k v = PatchDMap (DMap k (ComposeMaybe v))
 
 instance GCompare k => Semigroup (PatchDMap k v) where
@@ -64,6 +67,8 @@ instance GCompare k => Patch (PatchDMap k v) where
             Nothing -> Just $ Constant ()
             Just _ -> Nothing
 
+-- | A set of changes to a 'Map'.  Any element may be inserted/updated or
+-- deleted.
 newtype PatchMap k v = PatchMap (Map k (Maybe v))
 
 instance Ord k => Patch (PatchMap k v) where

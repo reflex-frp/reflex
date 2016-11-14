@@ -1,7 +1,13 @@
+-- | This module provides a GHC plugin designed to improve code that uses
+-- Reflex.  Currently, it just adds an INLINABLE pragma to any top-level
+-- definition that doesn't have an explicit inlining pragma.  In the future,
+-- additional optimizations are likely to be added.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Reflex.Optimizer (plugin) where
+module Reflex.Optimizer
+  ( plugin
+  ) where
 
 #ifdef ghcjs_HOST_OS
 import Plugins
@@ -14,11 +20,13 @@ import GhcPlugins
 
 #ifdef ghcjs_HOST_OS
 
+-- | The GHCJS build of Reflex.Optimizer just throws an error; instead, the version built with GHC should be used.
 plugin :: Plugin
-plugin = undefined
+plugin = error "The GHCJS build of Reflex.Optimizer cannot be used.  Instead, build with GHC and use the result with GHCJS."
 
 #else
 
+-- | The GHC plugin itself.  See "GhcPlugins" for more details.
 plugin :: Plugin
 plugin = defaultPlugin { installCoreToDos = install }
 

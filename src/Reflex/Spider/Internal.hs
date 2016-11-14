@@ -680,6 +680,9 @@ data Hold x p
 #endif
           }
 
+-- | A statically allocated 'SpiderTimeline'; this is the only instance of
+-- 'SpiderTimeline' that can used when using
+-- -fspecialize-to-spidertimeline-global.
 data Global
 
 {-# NOINLINE globalSpiderTimelineEnv #-}

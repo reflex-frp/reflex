@@ -8,11 +8,11 @@
 -- | This module provides a variation of 'Dynamic' values that uses cheap
 -- pointer equality checks to reduce the amount of signal propagation needed.
 module Reflex.Dynamic.Uniq
-       ( UniqDynamic
-       , uniqDynamic
-       , fromUniqDynamic
-       , alreadyUniqDynamic
-       ) where
+  ( UniqDynamic
+  , uniqDynamic
+  , fromUniqDynamic
+  , alreadyUniqDynamic
+  ) where
 
 import Control.Applicative (Applicative (..))
 import GHC.Exts
