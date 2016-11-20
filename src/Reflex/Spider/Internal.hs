@@ -687,7 +687,7 @@ data Global
 
 {-# NOINLINE globalSpiderTimelineEnv #-}
 globalSpiderTimelineEnv :: SpiderTimelineEnv Global
-!globalSpiderTimelineEnv = unsafePerformIO unsafeNewSpiderTimelineEnv
+globalSpiderTimelineEnv = unsafePerformIO unsafeNewSpiderTimelineEnv
 
 -- | Stores all global data relevant to a particular Spider timeline; only one
 -- value should exist for each type @x@
