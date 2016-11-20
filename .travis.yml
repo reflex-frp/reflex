@@ -5,11 +5,11 @@ cache:
     - /nix
 matrix:
   include:
-  - env: COMPILER=ghc784
   - env: COMPILER=ghc7103
   - env: COMPILER=ghc801
   - env: COMPILER=ghcjs
 script:
+  - set -e
   - nix-build -E "with (import <nixpkgs> {}); pkgs.haskell.packages.$COMPILER.callPackage ./default.nix { }"
   - nix-collect-garbage -d # This is important to do right before 'script' ends so the cache gets GCed
 
