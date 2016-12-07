@@ -57,6 +57,7 @@ library
     Data.WeakBag,
     Reflex,
     Reflex.Class,
+    Reflex.EventWriter,
     Reflex.Dynamic,
     Reflex.Dynamic.TH,
     Reflex.Dynamic.Uniq,

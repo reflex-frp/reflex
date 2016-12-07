@@ -5,6 +5,7 @@ module Reflex
   ) where
 
 import Reflex.Class as X
+import Reflex.EventWriter as X
 import Reflex.Dynamic as X
 import Reflex.Dynamic.TH as X
 import Reflex.Dynamic.Uniq as X
