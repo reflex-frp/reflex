@@ -42,7 +42,7 @@ import qualified Data.Some as Some
 import Data.Tuple
 import Data.Unique.Tag
 
--- | 'MonadEventWriter' efficiently collects 'Event' values using 'tellEvent'
+-- | 'EventWriter' efficiently collects 'Event' values using 'tellEvent'
 -- and combines them monoidally to provide an 'Event' result.
 class (Monad m, Monoid w) => EventWriter t w m | m -> t w where
   tellEvent :: Event t w -> m ()
