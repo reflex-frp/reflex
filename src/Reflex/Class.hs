@@ -59,6 +59,7 @@ module Reflex.Class
   , switchPromptOnly
     -- ** Using 'Event's to sample 'Behavior's
   , tag
+  , tagMaybe
   , attach
   , attachWith
   , attachWithMaybe
@@ -560,6 +561,12 @@ instance Reflex t => Plus (Event t) where
 tag :: Reflex t => Behavior t b -> Event t a -> Event t b
 tag b = pushAlways $ \_ -> sample b
 
+-- | Replace each occurrence value of the 'Event' with the value of the
+-- 'Behavior' at the time of that occurrence. The occurrence is discarded
+-- if the resulting value is Nothing.
+tagMaybe :: Reflex t => Behavior t (Maybe b) -> Event t a -> Event t b
+tagMaybe b = push $ \_ -> sample b
+
 -- | Create a new 'Event' that combines occurences of supplied 'Event' with the
 -- current value of the 'Behavior'.
 attach :: Reflex t => Behavior t a -> Event t b -> Event t (a, b)
@@ -913,7 +920,7 @@ onceE = headE
 
 -- | Run both sides of a 'These' monadically, combining the results.
 {-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
-{-# ANN sequenceThese "HLint: ignore Use fmap" #-}
+{-# ANN sequenceThese ("HLint: ignore Use fmap"::String) #-}
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
 sequenceThese t = case t of
   This ma -> liftM This ma
