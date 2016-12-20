@@ -118,6 +118,27 @@ test-suite hlint
   if impl(ghcjs)
     buildable: False
 
+test-suite EventWriterT
+  type: exitcode-stdio-1.0
+  main-is: EventWriterT.hs
+  hs-source-dirs: test
+  build-depends: base
+               , dependent-sum
+               , transformers
+               , reflex
+               , ref-tf
+
+test-suite RequesterT
+  type: exitcode-stdio-1.0
+  main-is: RequesterT.hs
+  hs-source-dirs: test
+  build-depends: base
+               , dependent-sum
+               , dependent-map
+               , transformers
+               , reflex
+               , ref-tf
+
 benchmark spider-bench
   type: exitcode-stdio-1.0
   hs-source-dirs: bench
