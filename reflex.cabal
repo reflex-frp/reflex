@@ -31,7 +31,7 @@ library
     bifunctors >= 5.2 && < 5.5,
     containers == 0.5.*,
     data-default >= 0.5 && < 0.8,
-    dependent-map >= 0.2.2 && < 0.3,
+    dependent-map >= 0.2.4 && < 0.3,
     dependent-sum == 0.3.*,
     exception-transformers == 0.4.*,
     haskell-src-exts >= 1.16 && < 1.18,
@@ -57,6 +57,7 @@ library
     Data.WeakBag,
     Reflex,
     Reflex.Class,
+    Reflex.EventWriter,
     Reflex.Dynamic,
     Reflex.Dynamic.TH,
     Reflex.Dynamic.Uniq,
@@ -116,6 +117,27 @@ test-suite hlint
   build-depends: base, hlint == 1.9.*
   if impl(ghcjs)
     buildable: False
+
+test-suite EventWriterT
+  type: exitcode-stdio-1.0
+  main-is: EventWriterT.hs
+  hs-source-dirs: test
+  build-depends: base
+               , dependent-sum
+               , transformers
+               , reflex
+               , ref-tf
+
+test-suite RequesterT
+  type: exitcode-stdio-1.0
+  main-is: RequesterT.hs
+  hs-source-dirs: test
+  build-depends: base
+               , dependent-sum
+               , dependent-map
+               , transformers
+               , reflex
+               , ref-tf
 
 benchmark spider-bench
   type: exitcode-stdio-1.0
