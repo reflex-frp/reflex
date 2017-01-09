@@ -91,12 +91,12 @@ runWithReplaceEventWriterTWith :: forall m t w a b. (Reflex t, MonadHold t m, Mo
 runWithReplaceEventWriterTWith f a0 a' = do
   let g :: EventWriterT t w m c -> m (c, Seq (Event t w))
       g (EventWriterT r) = runStateT r mempty
-  (result0, result') <- f (g a0) $ g <$> a'
-  request <- holdDyn (fmap (mconcat . NonEmpty.toList) $ mergeList $ toList $ snd result0) $ fmap (mconcat . NonEmpty.toList) . mergeList . toList . snd <$> result'
+  (result0, result') <- f (g a0) $ fmap g a'
+  request <- holdDyn (fmapCheap (mconcat . NonEmpty.toList) $ mergeList $ toList $ snd result0) $ fmapCheap (fmapCheap (mconcat . NonEmpty.toList) . mergeList . toList . snd) result'
   -- We add these two separately to take advantage of the free merge being done later.  The coincidence case must come first so that it has precedence if both fire simultaneously.  (Really, we should probably block the 'switch' whenever 'updated' fires, but switchPromptlyDyn has the same issue.)
   EventWriterT $ modify $ flip (|>) $ coincidence $ updated request
   EventWriterT $ modify $ flip (|>) $ switch $ current request
-  return (fst result0, fst <$> result')
+  return (fst result0, fmapCheap fst result')
 
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceDMapWithAdjust'.
 sequenceDMapWithAdjustEventWriterTWith :: (GCompare k, Reflex t, MonadHold t m, Monoid w, Semigroup w)
@@ -113,16 +113,16 @@ sequenceDMapWithAdjustEventWriterTWith f (dm0 :: DMap k (EventWriterT t w m)) dm
       inputTransform = DMapTransform WrapArg (\(EventWriterT v) -> swap <$> runStateT v mempty)
   (children0, children') <- f (mapKeysAndValuesMonotonic inputTransform dm0) $ mapPatchKeysAndValuesMonotonic inputTransform <$> dm'
   let result0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity (_, v)) -> k :=> Identity v) children0
-      result' = ffor children' $ \(PatchDMap p) -> PatchDMap $
+      result' = fforCheap children' $ \(PatchDMap p) -> PatchDMap $
         mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mv) -> k :=> ComposeMaybe (fmap (Identity . snd . runIdentity) mv)) p
       requests0 :: DMap (Const2 (Some k) w) (Event t)
       requests0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity (r, _)) -> Const2 (Some.This k) :=> mconcat (toList r)) children0
       requests' :: Event t (PatchDMap (Const2 (Some k) w) (Event t))
-      requests' = ffor children' $ \(PatchDMap p) -> PatchDMap $
+      requests' = fforCheap children' $ \(PatchDMap p) -> PatchDMap $
         mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mv) -> Const2 (Some.This k) :=> ComposeMaybe (fmap (mconcat . toList . fst . runIdentity) mv)) p
   childRequestMap <- holdIncremental requests0 requests'
   -- We add these two separately to take advantage of the free merge being done later.  The coincidence case must come first so that it has precedence if both fire simultaneously.  (Really, we should probably block the 'switch' whenever 'updated' fires, but switchPromptlyDyn has the same issue.)
-  EventWriterT $ modify $ flip (|>) $ coincidence $ ffor requests' $ \(PatchDMap p) -> mconcat $ toList $ catMaybes $ ffor (DMap.toList p) $ \(Const2 _ :=> ComposeMaybe me) -> me
+  EventWriterT $ modify $ flip (|>) $ coincidence $ fforCheap requests' $ \(PatchDMap p) -> mconcat $ toList $ catMaybes $ ffor (DMap.toList p) $ \(Const2 _ :=> ComposeMaybe me) -> me
   EventWriterT $ modify $ flip (|>) $ ffor (mergeIncremental childRequestMap) $ \m ->
     mconcat $ (\(Const2 _ :=> Identity reqs) -> reqs) <$> DMap.toList m
   return (result0, result')
