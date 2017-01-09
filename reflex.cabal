@@ -51,7 +51,8 @@ library
     syb >= 0.5 && < 0.7,
     these >= 0.4 && < 0.8,
     transformers >= 0.2,
-    transformers-compat >= 0.3
+    transformers-compat >= 0.3,
+    bytestring
 
   exposed-modules:
     Data.Functor.Misc,
