@@ -84,4 +84,4 @@ requesting_ req = withRequesting $ \_ -> return (req, ())
 -- | Emit a request whenever the given 'Event' fires, and unwrap the responses
 -- before returning them.  @Response m@ must be 'Identity'.
 requestingIdentity :: (Requester t m, Response m ~ Identity) => Event t (Request m a) -> m (Event t a)
-requestingIdentity = fmap (fmap runIdentity) . requesting
+requestingIdentity = fmap coerceEvent . requesting
