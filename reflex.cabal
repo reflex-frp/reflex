@@ -77,7 +77,8 @@ library
     Reflex.Spider,
     Reflex.Spider.Internal
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  other-extensions: TemplateHaskell
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fexpose-all-unfoldings
   ghc-prof-options: -auto-all
 
   if flag(specialize-to-spidertimeline-global)
