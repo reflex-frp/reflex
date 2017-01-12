@@ -26,6 +26,7 @@ import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
+import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
 import Control.Monad.Exception
@@ -53,7 +54,7 @@ class (Monad m, Monoid w) => EventWriter t w m | m -> t w where
 
 -- | A basic implementation of 'EventWriter'.
 newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT (Seq (Event t w)) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 -- | Run a 'EventWriterT' action.
 runEventWriterT :: (Reflex t, Monad m, Semigroup w) => EventWriterT t w m a -> m (a, Event t w)
@@ -78,6 +79,12 @@ instance MonadHold t m => MonadHold t (EventWriterT t w m) where
 instance (Reflex t, MonadAdjust t m, MonadHold t m, Monoid w, Semigroup w) => MonadAdjust t (EventWriterT t w m) where
   runWithReplace = runWithReplaceEventWriterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
   sequenceDMapWithAdjust = sequenceDMapWithAdjustEventWriterTWith $ \dm0 dm' -> lift $ sequenceDMapWithAdjust dm0 dm'
+
+instance Requester t m => Requester t (EventWriterT t w m) where
+  type Request (EventWriterT t w m) = Request m
+  type Response (EventWriterT t w m) = Response m
+  withRequesting f = EventWriterT $ withRequesting $ unEventWriterT . f
+
 
 -- | Given a function like 'runWithReplace' for the underlying monad, implement
 -- 'runWithReplace' for 'EventWriterT'.  This is necessary when the underlying
@@ -150,6 +157,9 @@ instance MonadRef m => MonadRef (EventWriterT t w m) where
   newRef = lift . newRef
   readRef = lift . readRef
   writeRef r = lift . writeRef r
+
+instance MonadAtomicRef m => MonadAtomicRef (EventWriterT t w m) where
+  atomicModifyRef r = lift . atomicModifyRef r
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (EventWriterT t w m) where
   newEventWithTrigger = lift . newEventWithTrigger
