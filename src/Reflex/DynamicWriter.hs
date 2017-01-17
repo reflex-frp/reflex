@@ -128,21 +128,21 @@ newtype DynamicWriterTLoweredResult t w v = DynamicWriterTLoweredResult (v, Dyna
 instance (MonadAdjust t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => MonadAdjust t (DynamicWriterT t w m) where
   runWithReplace a0 a' = do
     (result0, result') <- lift $ runWithReplace (runDynamicWriterT a0) $ runDynamicWriterT <$> a'
-    tellDyn . join =<< holdDyn (snd result0) (fmapCheap snd result')
-    return (fst result0, fmapCheap fst result')
+    tellDyn . join =<< holdDyn (snd result0) (snd <$> result')
+    return (fst result0, fst <$> result')
   sequenceDMapWithAdjust (dm0 :: DMap k (DynamicWriterT t w m)) dm' = do
     let loweredDm0 = mapKeyValuePairsMonotonic (\(k :=> v) -> WrapArg k :=> fmap DynamicWriterTLoweredResult (runDynamicWriterT v)) dm0
-    let loweredDm' = fforCheap dm' $ \(PatchDMap p) -> PatchDMap $
+    let loweredDm' = ffor dm' $ \(PatchDMap p) -> PatchDMap $
           mapKeyValuePairsMonotonic (\(k :=> ComposeMaybe mv) -> WrapArg k :=> ComposeMaybe (fmap (fmap DynamicWriterTLoweredResult . runDynamicWriterT) mv)) p
     (result0, result') <- lift $ sequenceDMapWithAdjust loweredDm0 loweredDm'
     let getValue (DynamicWriterTLoweredResult (v, _)) = v
         getWritten (DynamicWriterTLoweredResult (_, w)) = w
         liftedResult0 = mapKeyValuePairsMonotonic (\(WrapArg k :=> Identity r) -> k :=> Identity (getValue r)) result0
-        liftedResult' = fforCheap result' $ \(PatchDMap p) -> PatchDMap $
+        liftedResult' = ffor result' $ \(PatchDMap p) -> PatchDMap $
           mapKeyValuePairsMonotonic (\(WrapArg k :=> ComposeMaybe mr) -> k :=> ComposeMaybe (fmap (Identity . getValue . runIdentity) mr)) p
         liftedWritten0 :: Map (Some k) (Dynamic t w)
         liftedWritten0 = Map.fromDistinctAscList $ (\(WrapArg k :=> Identity r) -> (Some.This k, getWritten r)) <$> DMap.toList result0
-        liftedWritten' = fforCheap result' $ \(PatchDMap p) -> PatchMap $
+        liftedWritten' = ffor result' $ \(PatchDMap p) -> PatchMap $
           Map.fromDistinctAscList $ (\(WrapArg k :=> ComposeMaybe mr) -> (Some.This k, fmap (getWritten . runIdentity) mr)) <$> DMap.toList p
     --TODO: We should be able to improve the performance here by incrementally updating the mconcat of the merged Dynamics
     i <- holdIncremental liftedWritten0 liftedWritten'
