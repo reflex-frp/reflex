@@ -5,11 +5,14 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Reflex.Patch
   ( Patch (..)
   , PatchDMap (..)
   , ComposeMaybe (..)
   , PatchMap (..)
+  , Group (..), Additive
+  , AdditivePatch (..)
   ) where
 
 import Control.Monad.Identity
@@ -95,3 +98,18 @@ instance Ord k => Semigroup (PatchMap k v) where
 instance Ord k => Monoid (PatchMap k v) where
   mempty = PatchMap mempty
   mappend = (<>)
+
+-- Patches based on commutative groups
+
+class (Semigroup q, Monoid q) => Group q where
+  negateG :: q -> q
+  (~~) :: q -> q -> q
+  r ~~ s = r <> negateG s
+
+class Semigroup q => Additive q where
+
+newtype AdditivePatch p = AdditivePatch { unAdditivePatch :: p }
+
+instance Additive p => Patch (AdditivePatch p) where
+  type PatchTarget (AdditivePatch p) = p
+  apply (AdditivePatch p) q = Just $ p <> q
