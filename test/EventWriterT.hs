@@ -14,7 +14,7 @@ import Reflex.EventWriter
 import Reflex.Host.Class
 import Reflex.PerformEvent.Base
 
-import System.Exit (exitFailure, exitSuccess)
+import System.Exit (exitFailure)
 
 main :: IO ()
 main = do
