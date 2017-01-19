@@ -154,6 +154,18 @@ test-suite RequesterT
                , reflex
                , ref-tf
 
+test-suite GC-Semantics
+  type: exitcode-stdio-1.0
+  main-is: PerformEvent.hs
+  hs-source-dirs: test/GC
+  build-depends: base
+               , containers
+               , dependent-sum
+               , dependent-map
+               , transformers
+               , reflex
+               , ref-tf
+
 benchmark spider-bench
   type: exitcode-stdio-1.0
   hs-source-dirs: bench

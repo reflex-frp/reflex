@@ -1651,12 +1651,14 @@ mergeCheap d = Event $ \sub -> do
           , subscriberInvalidateHeight = \_ -> return ()
           , subscriberRecalculateHeight = \_ -> return ()
           }
-    (EventSubscription _ changeSubd, change) <- subscribeAndRead (dynamicUpdated d) s
+    (changeSubscription, change) <- subscribeAndRead (dynamicUpdated d) s
     forM_ change $ \c -> defer $ SomeMergeUpdate (updateMe c) invalidateMyHeight revalidateMyHeight
-    liftIO $ writeIORef changeSubdRef (s, changeSubd)
+    liftIO $ writeIORef changeSubdRef (s, changeSubscription)
   let unsubscribeAll = do
         parents <- readIORef parentsRef
         forM_ (DMap.toList parents) $ \(_ :=> MergeSubscribedParent s) -> unsubscribe s
+        (_, changeSubscription) <- readIORef changeSubdRef
+        unsubscribe changeSubscription
   return ( EventSubscription unsubscribeAll $ EventSubscribed heightRef $ toAny (parentsRef, changeSubdRef)
          , occ
          )
