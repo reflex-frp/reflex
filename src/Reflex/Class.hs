@@ -673,7 +673,7 @@ leftmost = mergeWith const
 -- time.
 mergeList :: Reflex t => [Event t a] -> Event t (NonEmpty a)
 mergeList [] = never
-mergeList es = mergeWith' (:|[]) (<>) es
+mergeList es = mergeWithCheap' (:|[]) (<>) es
 
 -- | Create a new 'Event' combining the map of 'Event's into an 'Event' that
 -- occurs if at least one of them occurs and has a map of values of all 'Event's
