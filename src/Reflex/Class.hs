@@ -913,7 +913,9 @@ onceE = headE
 
 -- | Run both sides of a 'These' monadically, combining the results.
 {-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
+#ifdef USE_TEMPLATE_HASKELL
 {-# ANN sequenceThese "HLint: ignore Use fmap" #-}
+#endif
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
 sequenceThese t = case t of
   This ma -> liftM This ma

@@ -515,7 +515,9 @@ combineDyn f a b = return $ zipDynWith f a b
 -- >                     `apDyn` dynAge
 -- >                     `apDyn` dynAddress
 {-# DEPRECATED apDyn "Use 'ffor m (<*> a)' instead of 'apDyn m a'; consider eliminating monadic style, since Dynamics are now Applicative and can be used with applicative style directly" #-}
+#ifdef USE_TEMPLATE_HASKELL
 {-# ANN apDyn "HLint: ignore Use fmap" #-}
+#endif
 apDyn :: forall t m a b. (Reflex t, Monad m)
       => m (Dynamic t (a -> b))
       -> Dynamic t a
