@@ -158,6 +158,8 @@ test-suite GC-Semantics
   type: exitcode-stdio-1.0
   main-is: GC.hs
   hs-source-dirs: test
+  if flag(specialize-to-spidertimeline-global)
+    buildable: false
   build-depends: base
                , dependent-sum
                , dependent-map
