@@ -522,7 +522,7 @@ apDyn :: forall t m a b. (Reflex t, Monad m)
       => m (Dynamic t (a -> b))
       -> Dynamic t a
       -> m (Dynamic t b)
-apDyn m a = liftM (<*> a) m
+apDyn m a = fmap (<*> a) m
 
 --TODO: The pattern of using hold (sample b0) can be reused in various places as a safe way of building certain kinds of Dynamics; see if we can factor this out
 -- | This function no longer needs to be monadic, so it has been replaced by

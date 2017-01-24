@@ -1369,7 +1369,7 @@ getRootSubscribed k r sub = do
 {-# ANN cleanupRootSubscribed "HLint: ignore Redundant bracket" #-}
 #endif
 cleanupRootSubscribed :: RootSubscribed x a -> IO ()
-cleanupRootSubscribed self@(RootSubscribed { rootSubscribedKey = k, rootSubscribedCachedSubscribed = cached }) = do
+cleanupRootSubscribed self@RootSubscribed { rootSubscribedKey = k, rootSubscribedCachedSubscribed = cached } = do
   rootSubscribedUninit self
   modifyIORef' cached $ DMap.delete k
 

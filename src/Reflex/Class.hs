@@ -975,6 +975,6 @@ onceE = headE
 #endif
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
 sequenceThese t = case t of
-  This ma -> liftM This ma
+  This ma -> fmap This ma
   These ma mb -> liftM2 These ma mb
-  That mb -> liftM That mb
+  That mb -> fmap That mb
