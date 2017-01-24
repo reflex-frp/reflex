@@ -156,12 +156,12 @@ test-suite RequesterT
 
 test-suite GC-Semantics
   type: exitcode-stdio-1.0
-  main-is: PerformEvent.hs
-  hs-source-dirs: test/GC
+  main-is: GC.hs
+  hs-source-dirs: test
   build-depends: base
-               , containers
                , dependent-sum
                , dependent-map
+               , these
                , transformers
                , reflex
                , ref-tf
