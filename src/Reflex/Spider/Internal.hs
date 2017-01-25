@@ -1666,12 +1666,12 @@ mergeCheap d = Event $ \sub -> do
           , subscriberInvalidateHeight = \_ -> return ()
           , subscriberRecalculateHeight = \_ -> return ()
           }
-    (EventSubscription sln changeSubscription, change) <- subscribeAndRead (dynamicUpdated d) s
+    (changeSubscription, change) <- subscribeAndRead (dynamicUpdated d) s
     forM_ change $ \c -> defer $ SomeMergeUpdate (updateMe c) invalidateMyHeight revalidateMyHeight
     -- We explicitly hold on to the unsubscribe function from subscribing to the update event.
     -- If we don't do this, there are certain cases where mergeCheap will fail to properly retain
     -- its subscription.
-    liftIO $ writeIORef changeSubdRef (s, sln, changeSubscription)
+    liftIO $ writeIORef changeSubdRef (s, changeSubscription)
   let unsubscribeAll = do
         parents <- readIORef parentsRef
         forM_ (DMap.toList parents) $ \(_ :=> MergeSubscribedParent s) -> unsubscribe s
@@ -1965,7 +1965,7 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# INLINABLE current #-}
   current = SpiderBehavior . dynamicCurrent . unSpiderDynamic
   {-# INLINABLE updated #-}
-  updated = coerceWith Coercion $ SpiderEvent . dynamicUpdated . unSpiderDynamic
+  updated = coerce $ SpiderEvent . dynamicUpdated . unSpiderDynamic
   {-# INLINABLE unsafeBuildDynamic #-}
   unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ unsafeDyn (coerce readV0) $ coerce $ unSpiderEvent v'
   {-# INLINABLE unsafeBuildIncremental #-}

@@ -234,7 +234,7 @@ class ( MonadHold t (PushM t)
   -- 'Behavior's and hold 'Event's, and use the results to produce a occurring
   -- (Just) or non-occurring (Nothing) result
   push :: (a -> PushM t (Maybe b)) -> Event t a -> Event t b
-  -- | Like 'push' but intended for functions that the implementation can consider cheap to compute for performance considerations.
+  -- | Like 'push' but intended for functions that the implementation can consider cheap to compute for performance considerations. WARNING: The function passed to 'pushCheap' may be run multiple times without any caching.
   pushCheap :: (a -> PushM t (Maybe b)) -> Event t a -> Event t b
   -- | Create a 'Behavior' by reading from other 'Behavior's; the result will be
   -- recomputed whenever any of the read 'Behavior's changes

@@ -11,7 +11,8 @@ module Reflex.Patch
   , PatchDMap (..)
   , ComposeMaybe (..)
   , PatchMap (..)
-  , Group (..), Additive
+  , Group (..)
+  , Additive
   , AdditivePatch (..)
   ) where
 
@@ -87,15 +88,18 @@ instance Ord k => Monoid (PatchMap k v) where
   mempty = PatchMap mempty
   mappend = (<>)
 
--- Patches based on commutative groups
+---- Patches based on commutative groups
 
+-- | A 'Group' is a 'Monoid' where every element has an inverse.
 class (Semigroup q, Monoid q) => Group q where
   negateG :: q -> q
   (~~) :: q -> q -> q
   r ~~ s = r <> negateG s
 
+-- | An 'Additive' 'Semigroup' is one where the multiplication is commutative
 class Semigroup q => Additive q where
 
+-- | The elements of an 'Additive' 'Semigroup' can be considered as patches of their own type.
 newtype AdditivePatch p = AdditivePatch { unAdditivePatch :: p }
 
 instance Additive p => Patch (AdditivePatch p) where
