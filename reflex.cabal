@@ -28,6 +28,16 @@ flag use-template-haskell
   default: True
   manual: True
 
+flag expose-all-unfoldings
+  description: Build the library with -fexpose-all-unfoldings which can help client code specialize better
+  default: False
+  manual: True
+
+flag debug-trace-events
+  description: add instrumentation that outputs the stack trace of the definition of an event whenever it is subscribed to. Warning: It is very slow!
+  default: False
+  manual: True
+
 library
   hs-source-dirs: src
   build-depends:
@@ -84,6 +94,10 @@ library
   else
     exposed-modules: Reflex.Pure
 
+  if flag(debug-trace-events)
+    cpp-options: -DDEBUG_TRACE_EVENTS
+    build-depends: bytestring
+
   if flag(use-reflex-optimizer)
     cpp-options: -DUSE_REFLEX_OPTIMIZER
     build-depends: ghc
@@ -102,6 +116,9 @@ library
   else
     build-depends:
       dependent-sum == 0.4.*
+
+  if flag(expose-all-unfoldings)
+    ghc-options: -fexpose-all-unfoldings
 
 test-suite semantics
   type: exitcode-stdio-1.0
@@ -148,6 +165,20 @@ test-suite RequesterT
   build-depends: base
                , dependent-sum
                , dependent-map
+               , transformers
+               , reflex
+               , ref-tf
+
+test-suite GC-Semantics
+  type: exitcode-stdio-1.0
+  main-is: GC.hs
+  hs-source-dirs: test
+  if flag(specialize-to-spidertimeline-global)
+    buildable: False
+  build-depends: base
+               , dependent-sum
+               , dependent-map
+               , these
                , transformers
                , reflex
                , ref-tf

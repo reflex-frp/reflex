@@ -97,6 +97,14 @@ module Reflex.Class
   , appendEvents
   , onceE
   , sequenceThese
+  , fmapMaybeCheap
+  , fmapCheap
+  , fforCheap
+  , fforMaybeCheap
+  , pushAlwaysCheap
+  , tagCheap
+  , mergeWithCheap
+  , mergeWithCheap'
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
   , Spider
   , SpiderEnv
@@ -109,6 +117,7 @@ module Reflex.Class
   , never
   , constant
   , push
+  , pushCheap
   , pull
   , merge
   , fan
@@ -225,6 +234,8 @@ class ( MonadHold t (PushM t)
   -- 'Behavior's and hold 'Event's, and use the results to produce a occurring
   -- (Just) or non-occurring (Nothing) result
   push :: (a -> PushM t (Maybe b)) -> Event t a -> Event t b
+  -- | Like 'push' but intended for functions that the implementation can consider cheap to compute for performance considerations.
+  pushCheap :: (a -> PushM t (Maybe b)) -> Event t a -> Event t b
   -- | Create a 'Behavior' by reading from other 'Behavior's; the result will be
   -- recomputed whenever any of the read 'Behavior's changes
   pull :: PullM t a -> Behavior t a
@@ -283,6 +294,7 @@ instance t ~ SpiderTimeline Global => Reflex t where
 never :: Reflex t => Event t a
 constant :: Reflex t => a -> Behavior t a
 push :: Reflex t => (a -> PushM t (Maybe b)) -> Event t a -> Event t b
+pushCheap :: Reflex t => (a -> PushM t (Maybe b)) -> Event t a -> Event t b
 pull :: Reflex t => PullM t a -> Behavior t a
 merge :: (Reflex t, GCompare k) => DMap k (Event t) -> Event t (DMap k Identity)
 fan :: (Reflex t, GCompare k) => Event t (DMap k Identity) -> EventSelector t k
@@ -305,6 +317,8 @@ never = SpiderEvent S.eventNever
 constant = SpiderBehavior . S.behaviorConst
 {-# INLINE push #-}
 push f = SpiderEvent . S.push (coerce f) . unSpiderEvent
+{-# INLINE pushCheap #-}
+pushCheap f = SpiderEvent . S.pushCheap (coerce f) . unSpiderEvent
 {-# INLINE pull #-}
 pull = SpiderBehavior . S.pull . coerce
 {-# INLINE merge #-}
@@ -318,7 +332,7 @@ coincidence = SpiderEvent . S.coincidence . (coerce :: S.Event x (Event (SpiderT
 {-# INLINE current #-}
 current = SpiderBehavior . S.dynamicCurrent . unSpiderDynamic
 {-# INLINE updated #-}
-updated = SpiderEvent . fmap runIdentity . dynamicUpdated . unSpiderDynamic
+updated = coerceEvent . SpiderEvent . dynamicUpdated . unSpiderDynamic
 {-# INLINE unsafeBuildDynamic #-}
 unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ unsafeDyn (coerce readV0) $ coerce $ unSpiderEvent v'
 {-# INLINE unsafeBuildIncremental #-}
@@ -638,11 +652,15 @@ instance (Semigroup a, Reflex t) => Monoid (Event t a) where
 -- with the given function.
 {-# INLINE mergeWith #-}
 mergeWith :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
-mergeWith f es = fmap (Prelude.foldl1 f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList)
-               . merge
-               . DMap.fromDistinctAscList
-               . map (\(k, v) -> Const2 k :=> v)
-               $ zip [0 :: Int ..] es
+mergeWith = mergeWith' id
+
+{-# INLINE mergeWith' #-}
+mergeWith' :: Reflex t => (a -> b) -> (b -> b -> b) -> [Event t a] -> Event t b
+mergeWith' f g es = fmap (Prelude.foldl1 g . map (\(Const2 _ :=> Identity v) -> f v) . DMap.toList)
+                  . merge
+                  . DMap.fromDistinctAscList
+                  . map (\(k, v) -> Const2 k :=> v)
+                  $ zip [0 :: Int ..] es
 
 -- | Create a new 'Event' that occurs if at least one of the 'Event's in the
 -- list occurs. If multiple occur at the same time the value is the value of the
@@ -656,7 +674,7 @@ leftmost = mergeWith const
 -- time.
 mergeList :: Reflex t => [Event t a] -> Event t (NonEmpty a)
 mergeList [] = never
-mergeList es = mergeWith (<>) $ map (fmap (:|[])) es
+mergeList es = mergeWithCheap' (:|[]) (<>) es
 
 -- | Create a new 'Event' combining the map of 'Event's into an 'Event' that
 -- occurs if at least one of them occurs and has a map of values of all 'Event's
@@ -896,6 +914,46 @@ instance (Reflex t, MonadAdjust t m) => MonadAdjust t (ReaderT r m) where
           DMap.map (\(ComposeMaybe mv) -> ComposeMaybe $ fmap (`runReaderT` r) mv) p
     lift $ sequenceDMapWithAdjust loweredDm0 loweredDm'
 
+------------------
+-- Cheap Functions
+------------------
+
+{-# INLINE pushAlwaysCheap #-}
+pushAlwaysCheap :: Reflex t => (a -> PushM t b) -> Event t a -> Event t b
+pushAlwaysCheap f = pushCheap (fmap Just . f)
+
+{-# INLINE fmapMaybeCheap #-}
+fmapMaybeCheap :: Reflex t => (a -> Maybe b) -> Event t a -> Event t b
+fmapMaybeCheap f = pushCheap $ return . f
+
+{-# INLINE fforMaybeCheap #-}
+fforMaybeCheap :: Reflex t => Event t a -> (a -> Maybe b) -> Event t b
+fforMaybeCheap = flip fmapMaybeCheap
+
+{-# INLINE fforCheap #-}
+fforCheap :: Reflex t => Event t a -> (a -> b) -> Event t b
+fforCheap = flip fmapCheap
+
+{-# INLINE fmapCheap #-}
+fmapCheap :: Reflex t => (a -> b) -> Event t a -> Event t b
+fmapCheap f = pushCheap $ return . Just . f
+
+{-# INLINE tagCheap #-}
+tagCheap :: Reflex t => Behavior t b -> Event t a -> Event t b
+tagCheap b = pushAlwaysCheap $ \_ -> sample b
+
+{-# INLINE mergeWithCheap #-}
+mergeWithCheap :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
+mergeWithCheap = mergeWithCheap' id
+
+{-# INLINE mergeWithCheap' #-}
+mergeWithCheap' :: Reflex t => (a -> b) -> (b -> b -> b) -> [Event t a] -> Event t b
+mergeWithCheap' f g es = fmapCheap (Prelude.foldl1 g . map (\(Const2 _ :=> Identity v) -> f v) . DMap.toList)
+                       . merge
+                       . DMap.fromDistinctAscList
+                       . map (\(k, v) -> Const2 k :=> v)
+                       $ zip [0 :: Int ..] es
+
 --------------------------------------------------------------------------------
 -- Deprecated functions
 --------------------------------------------------------------------------------
@@ -918,6 +976,6 @@ onceE = headE
 #endif
 sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
 sequenceThese t = case t of
-  This ma -> liftM This ma
+  This ma -> fmap This ma
   These ma mb -> liftM2 These ma mb
-  That mb -> liftM That mb
+  That mb -> fmap That mb

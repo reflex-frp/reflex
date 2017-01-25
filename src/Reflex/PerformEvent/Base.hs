@@ -74,15 +74,15 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => MonadAdjust t (PerformEventT
     where f :: HostFrame t a -> Event t (HostFrame t b) -> RequesterT t (HostFrame t) Identity (HostFrame t) (a, Event t b)
           f a0 a' = do
             result0 <- lift a0
-            result' <- requesting a'
-            return (result0, fmap runIdentity result')
+            result' <- requestingIdentity a'
+            return (result0, result')
   sequenceDMapWithAdjust (outerDm0 :: DMap k (PerformEventT t m)) outerDm' = PerformEventT $ sequenceDMapWithAdjustRequesterTWith f (coerce outerDm0) (coerceEvent outerDm')
     where f :: DMap k' (HostFrame t) -> Event t (PatchDMap k' (HostFrame t)) -> RequesterT t (HostFrame t) Identity (HostFrame t) (DMap k' Identity, Event t (PatchDMap k' Identity))
           f dm0 dm' = do
             result0 <- lift $ DMap.traverseWithKey (\_ v -> Identity <$> v) dm0
-            result' <- requesting $ ffor dm' $ \(PatchDMap p) -> do
+            result' <- requestingIdentity $ ffor dm' $ \(PatchDMap p) -> do
               PatchDMap <$> DMap.traverseWithKey (\_ (ComposeMaybe mv) -> ComposeMaybe <$> mapM (fmap Identity) mv) p
-            return (result0, fmap runIdentity result')
+            return (result0, result')
 
 instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
   {-# INLINABLE newEventWithTrigger #-}

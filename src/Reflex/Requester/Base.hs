@@ -70,7 +70,7 @@ instance (Reflex t, PrimMonad m) => Requester t (RequesterT t request response m
     t <- lift newTag
     s <- RequesterT ask
     (req, result) <- a $ select s $ WrapArg t
-    RequesterT $ tellEvent $ DMap.singleton t <$> req
+    RequesterT $ tellEvent $ fmapCheap (DMap.singleton t) req
     return result
 
 instance MonadTrans (RequesterT t request response) where
@@ -111,7 +111,7 @@ runWithReplaceRequesterTWith f a0 a' =
          -> EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) (a', Event t b')
       f' x y = do
         r <- EventWriterT $ ask
-        unRequesterT (f (runReaderT x r) (fmap (`runReaderT` r) y))
+        unRequesterT (f (runReaderT x r) (fmapCheap (`runReaderT` r) y))
   in RequesterT $ runWithReplaceEventWriterTWith f' (coerce a0) (coerceEvent a')
 
 sequenceDMapWithAdjustRequesterTWith :: (GCompare k, Reflex t, MonadHold t m)
