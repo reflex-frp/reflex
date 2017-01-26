@@ -5,11 +5,15 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Reflex.Patch
   ( Patch (..)
   , PatchDMap (..)
   , ComposeMaybe (..)
   , PatchMap (..)
+  , Group (..)
+  , Additive
+  , AdditivePatch (..)
   ) where
 
 import Control.Monad.Identity
@@ -42,21 +46,9 @@ instance Patch (Identity a) where
 -- deleted.
 newtype PatchDMap k v = PatchDMap (DMap k (ComposeMaybe v))
 
-instance GCompare k => Semigroup (PatchDMap k v) where
-  PatchDMap a <> PatchDMap b = PatchDMap $ a `mappend` b --TODO: Add a semigroup instance for DMap
-  -- PatchDMap is idempotent, so stimes n is id for every n
-#if MIN_VERSION_semigroups(0,17,0)
-  stimes = stimesIdempotentMonoid
-#else
-  times1p n x = case compare n 0 of
-    LT -> error "stimesIdempotentMonoid: negative multiplier"
-    EQ -> mempty
-    GT -> x
-#endif
+deriving instance GCompare k => Semigroup (PatchDMap k v)
 
-instance GCompare k => Monoid (PatchDMap k v) where
-  mempty = PatchDMap mempty
-  mappend = (<>)
+deriving instance GCompare k => Monoid (PatchDMap k v)
 
 instance GCompare k => Patch (PatchDMap k v) where
   type PatchTarget (PatchDMap k v) = DMap k v
@@ -95,3 +87,21 @@ instance Ord k => Semigroup (PatchMap k v) where
 instance Ord k => Monoid (PatchMap k v) where
   mempty = PatchMap mempty
   mappend = (<>)
+
+---- Patches based on commutative groups
+
+-- | A 'Group' is a 'Monoid' where every element has an inverse.
+class (Semigroup q, Monoid q) => Group q where
+  negateG :: q -> q
+  (~~) :: q -> q -> q
+  r ~~ s = r <> negateG s
+
+-- | An 'Additive' 'Semigroup' is one where the multiplication is commutative
+class Semigroup q => Additive q where
+
+-- | The elements of an 'Additive' 'Semigroup' can be considered as patches of their own type.
+newtype AdditivePatch p = AdditivePatch { unAdditivePatch :: p }
+
+instance Additive p => Patch (AdditivePatch p) where
+  type PatchTarget (AdditivePatch p) = p
+  apply (AdditivePatch p) q = Just $ p <> q

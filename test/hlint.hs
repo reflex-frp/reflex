@@ -12,5 +12,6 @@ main = do
     , "--ignore=Use const"
     , "--ignore=Use >=>"
     , "--ignore=Use ."
+    , "--cpp-define=USE_TEMPLATE_HASKELL"
     ]
   if null ideas then exitSuccess else exitFailure

@@ -66,6 +66,9 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   push :: (a -> PushM (Pure t) (Maybe b)) -> Event (Pure t) a -> Event (Pure t) b
   push f e = Event $ memo $ \t -> unEvent e t >>= \o -> f o t
 
+  pushCheap :: (a -> PushM (Pure t) (Maybe b)) -> Event (Pure t) a -> Event (Pure t) b
+  pushCheap = push
+
   pull :: PullM (Pure t) a -> Behavior (Pure t) a
   pull = Behavior . memo
 

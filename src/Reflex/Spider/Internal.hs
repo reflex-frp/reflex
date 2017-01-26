@@ -26,7 +26,7 @@
 #endif
 -- | This module is the implementation of the 'Spider' 'Reflex' engine.  It uses
 -- a graph traversal algorithm to propagate 'Event's and 'Behavior's.
-module Reflex.Spider.Internal where
+module Reflex.Spider.Internal (module Reflex.Spider.Internal) where
 
 import Control.Applicative
 import Control.Concurrent
@@ -88,6 +88,20 @@ import Reflex.Patch
 
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
 import Prelude hiding (any, concat, mapM, mapM_, sequence)
+
+#ifdef DEBUG_TRACE_EVENTS
+import System.IO (stderr)
+import qualified Data.ByteString.Char8 as BS8
+#endif
+
+#ifdef DEBUG_TRACE_EVENTS
+
+withStackOneLine :: (BS8.ByteString -> a) -> a
+withStackOneLine expr = unsafePerformIO $ do
+  stack <- currentCallStack
+  return (expr (BS8.pack (unwords (reverse stack))))
+
+#endif
 
 debugPropagate :: Bool
 
@@ -191,6 +205,20 @@ unsafeNodeId a = unsafePerformIO $ do
 #endif
 
 --------------------------------------------------------------------------------
+-- EventSubscription
+--------------------------------------------------------------------------------
+
+--NB: Once you subscribe to an Event, you must always hold on the the WHOLE EventSubscription you get back
+-- If you do not retain the subscription, you may be prematurely unsubscribed from the parent event.
+data EventSubscription x = EventSubscription
+  { _eventSubscription_unsubscribe :: !(IO ())
+  , _eventSubscription_subscribed :: {-# UNPACK #-} !(EventSubscribed x)
+  }
+
+unsubscribe :: EventSubscription x -> IO ()
+unsubscribe (EventSubscription u _) = u
+
+--------------------------------------------------------------------------------
 -- Event
 --------------------------------------------------------------------------------
 
@@ -236,44 +264,53 @@ data CacheSubscribed x a
 --subscriber joins
 {-# NOINLINE cacheEvent #-}
 cacheEvent :: HasSpiderTimeline x => Event x a -> Event x a
-cacheEvent e = Event $ \sub -> {-# SCC "cacheEvent" #-} do
-  let !mSubscribedRef = unsafeNewIORef e Nothing
-  mSubscribed <- liftIO $ readIORef mSubscribedRef
-  case mSubscribed of
-    Just subscribed -> liftIO $ do
-      ticket <- WeakBag.insert sub (_cacheSubscribed_subscribers subscribed) (_cacheSubscribed_weakSelf subscribed) cleanupCacheSubscribed
-      occ <- readIORef $ _cacheSubscribed_occurrence subscribed
-      let es = EventSubscribed
-            { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ _cacheSubscribed_parent subscribed
-            , eventSubscribedRetained = toAny subscribed
-            }
-      return (EventSubscription (WeakBag.remove ticket >> touch ticket) es, occ)
-    Nothing -> do
-      weakSelf <- liftIO $ newIORef $ error "cacheEvent: weakSelf not yet intialized"
-      (subscribers, ticket) <- liftIO $ WeakBag.singleton sub weakSelf cleanupCacheSubscribed
-      occRef <- liftIO $ newIORef undefined
-      (parentSub, occ) <- subscribeAndRead e $ Subscriber
-        { subscriberPropagate = \a -> do
-            liftIO $ writeIORef occRef $ Just a
-            scheduleClear occRef
-            propagate a subscribers
-        , subscriberInvalidateHeight = \old -> do
-            WeakBag.traverse subscribers $ invalidateSubscriberHeight old
-        , subscriberRecalculateHeight = \new -> do
-            WeakBag.traverse subscribers $ recalculateSubscriberHeight new
-        }
-      liftIO $ writeIORef occRef occ
-      when (isJust occ) $ scheduleClear occRef
-      let !subscribed = CacheSubscribed
-            { _cacheSubscribed_subscribers = subscribers
-            , _cacheSubscribed_weakSelf = weakSelf
-            , _cacheSubscribed_parent = parentSub
-            , _cacheSubscribed_cached = mSubscribedRef
-            , _cacheSubscribed_occurrence = occRef
-            }
-      liftIO $ writeIORef mSubscribedRef $ Just subscribed
-      liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "PushSubscribed"
-      return (EventSubscription (WeakBag.remove ticket >> touch ticket) (EventSubscribed (eventSubscribedHeightRef $ _eventSubscription_subscribed parentSub) (toAny subscribed)), occ)
+cacheEvent e =
+#ifdef DEBUG_TRACE_EVENTS
+  withStackOneLine $ \callSite -> Event $
+#else
+  Event $
+#endif
+    let !mSubscribedRef = unsafeNewIORef e Nothing
+    in \sub -> {-# SCC "cacheEvent" #-} do
+#ifdef DEBUG_TRACE_EVENTS
+          unless (BS8.null callSite) $ liftIO $ BS8.hPutStrLn stderr callSite
+#endif
+          mSubscribed <- liftIO $ readIORef mSubscribedRef
+          case mSubscribed of
+            Just subscribed -> liftIO $ do
+              ticket <- WeakBag.insert sub (_cacheSubscribed_subscribers subscribed) (_cacheSubscribed_weakSelf subscribed) cleanupCacheSubscribed
+              occ <- readIORef $ _cacheSubscribed_occurrence subscribed
+              let es = EventSubscribed
+                    { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ _cacheSubscribed_parent subscribed
+                    , eventSubscribedRetained = toAny subscribed
+                    }
+              return (EventSubscription (WeakBag.remove ticket >> touch ticket) es, occ)
+            Nothing -> do
+              weakSelf <- liftIO $ newIORef $ error "cacheEvent: weakSelf not yet intialized"
+              (subscribers, ticket) <- liftIO $ WeakBag.singleton sub weakSelf cleanupCacheSubscribed
+              occRef <- liftIO $ newIORef undefined
+              (parentSub, occ) <- subscribeAndRead e $ Subscriber
+                { subscriberPropagate = \a -> do
+                    liftIO $ writeIORef occRef $ Just a
+                    scheduleClear occRef
+                    propagate a subscribers
+                , subscriberInvalidateHeight = \old -> do
+                    WeakBag.traverse subscribers $ invalidateSubscriberHeight old
+                , subscriberRecalculateHeight = \new -> do
+                    WeakBag.traverse subscribers $ recalculateSubscriberHeight new
+                }
+              liftIO $ writeIORef occRef occ
+              when (isJust occ) $ scheduleClear occRef
+              let !subscribed = CacheSubscribed
+                    { _cacheSubscribed_subscribers = subscribers
+                    , _cacheSubscribed_weakSelf = weakSelf
+                    , _cacheSubscribed_parent = parentSub
+                    , _cacheSubscribed_cached = mSubscribedRef
+                    , _cacheSubscribed_occurrence = occRef
+                    }
+              liftIO $ writeIORef mSubscribedRef $ Just subscribed
+              liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "PushSubscribed"
+              return (EventSubscription (WeakBag.remove ticket >> touch ticket) (EventSubscribed (eventSubscribedHeightRef $ _eventSubscription_subscribed parentSub) (toAny subscribed)), occ)
 
 cleanupCacheSubscribed :: CacheSubscribed x a -> IO ()
 cleanupCacheSubscribed self = do
@@ -557,18 +594,6 @@ walkInvalidHeightParents s0 = do
 {-# INLINE subscribeHoldEvent #-}
 subscribeHoldEvent :: CanSubscribe x m => Hold x p -> Subscriber x p -> m (EventSubscription x, Maybe p)
 subscribeHoldEvent = subscribeAndRead . holdEvent
-
---------------------------------------------------------------------------------
--- EventSubscription
---------------------------------------------------------------------------------
-
-data EventSubscription x = EventSubscription
-  { _eventSubscription_unsubscribe :: !(IO ())
-  , _eventSubscription_subscribed :: {-# UNPACK #-} !(EventSubscribed x)
-  }
-
-unsubscribe :: EventSubscription x -> IO ()
-unsubscribe (EventSubscription u _) = u
 
 --------------------------------------------------------------------------------
 -- Behavior
@@ -1344,7 +1369,7 @@ getRootSubscribed k r sub = do
 {-# ANN cleanupRootSubscribed "HLint: ignore Redundant bracket" #-}
 #endif
 cleanupRootSubscribed :: RootSubscribed x a -> IO ()
-cleanupRootSubscribed self@(RootSubscribed { rootSubscribedKey = k, rootSubscribedCachedSubscribed = cached }) = do
+cleanupRootSubscribed self@RootSubscribed { rootSubscribedKey = k, rootSubscribedCachedSubscribed = cached } = do
   rootSubscribedUninit self
   modifyIORef' cached $ DMap.delete k
 
@@ -1641,9 +1666,12 @@ mergeCheap d = Event $ \sub -> do
           , subscriberInvalidateHeight = \_ -> return ()
           , subscriberRecalculateHeight = \_ -> return ()
           }
-    (EventSubscription _ changeSubd, change) <- subscribeAndRead (dynamicUpdated d) s
+    (changeSubscription, change) <- subscribeAndRead (dynamicUpdated d) s
     forM_ change $ \c -> defer $ SomeMergeUpdate (updateMe c) invalidateMyHeight revalidateMyHeight
-    liftIO $ writeIORef changeSubdRef (s, changeSubd)
+    -- We explicitly hold on to the unsubscribe function from subscribing to the update event.
+    -- If we don't do this, there are certain cases where mergeCheap will fail to properly retain
+    -- its subscription.
+    liftIO $ writeIORef changeSubdRef (s, changeSubscription)
   let unsubscribeAll = do
         parents <- readIORef parentsRef
         forM_ (DMap.toList parents) $ \(_ :=> MergeSubscribedParent s) -> unsubscribe s
@@ -1922,6 +1950,8 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   constant = SpiderBehavior . behaviorConst
   {-# INLINE push #-}
   push f = SpiderEvent . push (coerce f) . unSpiderEvent
+  {-# INLINE pushCheap #-}
+  pushCheap f = SpiderEvent . pushCheap (coerce f) . unSpiderEvent
   {-# INLINABLE pull #-}
   pull = SpiderBehavior . pull . coerce
   {-# INLINABLE merge #-}
@@ -1935,7 +1965,7 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# INLINABLE current #-}
   current = SpiderBehavior . dynamicCurrent . unSpiderDynamic
   {-# INLINABLE updated #-}
-  updated = SpiderEvent . fmap runIdentity . dynamicUpdated . unSpiderDynamic
+  updated = coerce $ SpiderEvent . dynamicUpdated . unSpiderDynamic
   {-# INLINABLE unsafeBuildDynamic #-}
   unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ unsafeDyn (coerce readV0) $ coerce $ unSpiderEvent v'
   {-# INLINABLE unsafeBuildIncremental #-}
