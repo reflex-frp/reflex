@@ -87,7 +87,7 @@ library
     Reflex.Spider.Internal
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
-  ghc-prof-options: -auto-all
+  ghc-prof-options: -fprof-auto
 
   if flag(specialize-to-spidertimeline-global)
     cpp-options: -DSPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
@@ -206,7 +206,7 @@ benchmark saulzar-bench
   c-sources: bench-cbits/checkCapability.c
   main-is: RunAll.hs
   ghc-options: -Wall -O2 -rtsopts -threaded
-  ghc-prof-options: -auto-all
+  ghc-prof-options: -fprof-auto
   build-depends:
     base,
     containers == 0.5.*,
