@@ -211,10 +211,8 @@ class ( MonadHold t (PushM t)
   -- occurring or not occurring; if it is occurring, it will contain a value of
   -- the given type (its "occurrence type")
   data Event t :: * -> *
-  -- | A container for a value that can change over time and allows
-  -- notifications on changes.  Basically a combination of a 'Behavior' and an
-  -- 'Event', with a rule that the 'Behavior' will change if and only if the
-  -- 'Event' fires.
+  -- | A 'Dynamic' is just an 'Incremental' whose patch type always completely
+  -- replaces the value (rather than doing some potentially-smaller change).
   data Dynamic t :: * -> *
   -- | A container for a value that can change over time and allows
   -- notifications on changes.  Basically a combination of a 'Behavior' and an
