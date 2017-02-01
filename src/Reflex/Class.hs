@@ -216,10 +216,10 @@ class ( MonadHold t (PushM t)
   -- 'Event', with a rule that the 'Behavior' will change if and only if the
   -- 'Event' fires.
   data Dynamic t :: * -> *
-  -- | A container for a value that can change over time and allows
-  -- notifications on changes.  Basically a combination of a 'Behavior' and an
-  -- 'Event', with a rule that the 'Behavior' will change if and only if the
-  -- 'Event' fires.
+  -- | An 'Incremental' is a more general form of  a 'Dynamic'.
+  -- Instead of always fully replacing the value, only parts of it can be patched.
+  -- This is only needed for performance critical code via `mergeIncremental` to make small
+  -- changes to large values.
   data Incremental t :: * -> *
   -- | A monad for doing complex push-based calculations efficiently
   type PushM t :: * -> *
