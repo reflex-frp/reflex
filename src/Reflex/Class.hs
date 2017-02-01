@@ -216,7 +216,7 @@ class ( MonadHold t (PushM t)
   -- 'Event', with a rule that the 'Behavior' will change if and only if the
   -- 'Event' fires.
   data Dynamic t :: * -> *
-  -- | An 'Incremental' is a more general form of  an 'Dynamic'.
+  -- | An 'Incremental' is a more general form of  a 'Dynamic'.
   -- Instead of always fully replacing the value, only parts of it can be patched.
   -- This is only needed for performance critical code via `mergeIncremental` to make small
   -- changes to large values.
