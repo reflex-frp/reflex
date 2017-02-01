@@ -211,13 +211,15 @@ class ( MonadHold t (PushM t)
   -- occurring or not occurring; if it is occurring, it will contain a value of
   -- the given type (its "occurrence type")
   data Event t :: * -> *
-  -- | A 'Dynamic' is just an 'Incremental' whose patch type always completely
-  -- replaces the value (rather than doing some potentially-smaller change).
-  data Dynamic t :: * -> *
   -- | A container for a value that can change over time and allows
   -- notifications on changes.  Basically a combination of a 'Behavior' and an
   -- 'Event', with a rule that the 'Behavior' will change if and only if the
   -- 'Event' fires.
+  data Dynamic t :: * -> *
+  -- | An 'Incremental' is a more general form of  an 'Dynamic'.
+  -- Instead of always fully replacing the value, only parts of it can be patched.
+  -- This is only needed for performance critical code via `mergeIncremental` to make small
+  -- changes to large values.
   data Incremental t :: * -> *
   -- | A monad for doing complex push-based calculations efficiently
   type PushM t :: * -> *
