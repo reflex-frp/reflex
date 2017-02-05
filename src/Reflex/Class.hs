@@ -42,6 +42,8 @@ module Reflex.Class
     -- ** Combining 'Event's
   , leftmost
   , mergeMap
+  , mergeMapIncremental
+  , mergeMapIncrementalWithMove
   , mergeList
   , mergeWith
   , difference
@@ -86,6 +88,7 @@ module Reflex.Class
   , traceEventWith
     -- * Unsafe functions
   , unsafeDynamic
+  , unsafeMapIncremental
     -- * 'FunctorMaybe'
   , FunctorMaybe (..)
   , fforMaybe
@@ -93,6 +96,8 @@ module Reflex.Class
     -- * Miscellaneous convenience functions
   , ffor
   , MonadAdjust (..)
+  , sequenceDMapWithAdjust
+  , sequenceDMapWithAdjustWithMove
     -- * Deprecated functions
   , appendEvents
   , onceE
@@ -266,6 +271,8 @@ class ( MonadHold t (PushM t)
   unsafeBuildIncremental :: Patch p => PullM t (PatchTarget p) -> Event t p -> Incremental t p
   -- | Create a merge whose parents can change over time
   mergeIncremental :: GCompare k => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
+  -- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental
+  mergeIncrementalWithMove :: GCompare k => Incremental t (PatchDMapWithMove k (Event t)) -> Event t (DMap k Identity)
   -- | Extract the 'Behavior' component of an 'Incremental'
   currentIncremental :: Patch p => Incremental t p -> Behavior t (PatchTarget p)
   -- | Extract the 'Event' component of an 'Incremental'
@@ -676,11 +683,22 @@ mergeList :: Reflex t => [Event t a] -> Event t (NonEmpty a)
 mergeList [] = never
 mergeList es = mergeWithCheap' (:|[]) (<>) es
 
+unsafeMapIncremental :: (Reflex t, Patch p, Patch p') => (PatchTarget p -> PatchTarget p') -> (p -> p') -> Incremental t p -> Incremental t p'
+unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIncremental a) $ g <$> updatedIncremental a
+
 -- | Create a new 'Event' combining the map of 'Event's into an 'Event' that
 -- occurs if at least one of them occurs and has a map of values of all 'Event's
 -- occuring at that time.
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
+
+-- | Create a merge whose parents can change over time
+mergeMapIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Event t a)) -> Event t (Map k a)
+mergeMapIncremental = fmap dmapToMap . mergeIncremental . unsafeMapIncremental mapWithFunctorToDMap (const2PatchDMapWith id)
+
+-- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental
+mergeMapIncrementalWithMove :: (Reflex t, Ord k) => Incremental t (PatchMapWithMove k (Event t a)) -> Event t (Map k a)
+mergeMapIncrementalWithMove = fmap dmapToMap . mergeIncrementalWithMove . unsafeMapIncremental mapWithFunctorToDMap (const2PatchDMapWithMoveWith id)
 
 -- | Split the event into separate events for 'Left' and 'Right' values.
 fanEither :: Reflex t => Event t (Either a b) -> (Event t a, Event t b)
@@ -901,18 +919,25 @@ zipListWithEvent f l e = do
 -- to determine what the best meaning for this class is in such cases.
 class (Reflex t, Monad m) => MonadAdjust t m | m -> t where
   runWithReplace :: m a -> Event t (m b) -> m (a, Event t b)
-  sequenceDMapWithAdjust :: GCompare k => DMap k m -> Event t (PatchDMap k m) -> m (DMap k Identity, Event t (PatchDMap k Identity))
+  traverseDMapWithKeyWithAdjust :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> m (DMap k v', Event t (PatchDMap k v'))
+  traverseDMapWithKeyWithAdjustWithMove :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> m (DMap k v', Event t (PatchDMapWithMove k v'))
 
 instance (Reflex t, MonadAdjust t m) => MonadAdjust t (ReaderT r m) where
   runWithReplace a0 a' = do
     r <- ask
     lift $ runWithReplace (runReaderT a0 r) $ fmap (`runReaderT` r) a'
-  sequenceDMapWithAdjust dm0 dm' = do
+  traverseDMapWithKeyWithAdjust f dm0 dm' = do
     r <- ask
-    let loweredDm0 = DMap.map (`runReaderT` r) dm0
-        loweredDm' = ffor dm' $ \(PatchDMap p) -> PatchDMap $
-          DMap.map (\(ComposeMaybe mv) -> ComposeMaybe $ fmap (`runReaderT` r) mv) p
-    lift $ sequenceDMapWithAdjust loweredDm0 loweredDm'
+    lift $ traverseDMapWithKeyWithAdjust (\k v -> runReaderT (f k v) r) dm0 dm'
+  traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = do
+    r <- ask
+    lift $ traverseDMapWithKeyWithAdjustWithMove (\k v -> runReaderT (f k v) r) dm0 dm'
+
+sequenceDMapWithAdjust :: (GCompare k, MonadAdjust t m) => DMap k m -> Event t (PatchDMap k m) -> m (DMap k Identity, Event t (PatchDMap k Identity))
+sequenceDMapWithAdjust = traverseDMapWithKeyWithAdjust $ \_ -> fmap Identity
+
+sequenceDMapWithAdjustWithMove :: (GCompare k, MonadAdjust t m) => DMap k m -> Event t (PatchDMapWithMove k m) -> m (DMap k Identity, Event t (PatchDMapWithMove k Identity))
+sequenceDMapWithAdjustWithMove = traverseDMapWithKeyWithAdjustWithMove $ \_ -> fmap Identity
 
 ------------------
 -- Cheap Functions

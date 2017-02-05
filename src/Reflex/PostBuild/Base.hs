@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -25,11 +26,14 @@ import Reflex.PostBuild.Class
 import Reflex.TriggerEvent.Class
 
 import Control.Monad.Exception
+import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.Trans.Control
+import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Functor.Compose
 
 -- | Provides a basic implementation of 'PostBuild'.
 newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event t ()) m a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans, MonadException, MonadAsyncException)
@@ -108,12 +112,31 @@ instance (Reflex t, MonadHold t m, MonadFix m, MonadAdjust t m, PerformEvent t m
       rec result@(_, result') <- runWithReplace (runPostBuildT a0 postBuild) $ fmap (\v -> runPostBuildT v =<< headE voidResult') a'
           let voidResult' = fmapCheap (\_ -> ()) result'
       return result
-  sequenceDMapWithAdjust dm0 dm' = do
-    postBuild <- getPostBuild
-    let loweredDm0 = DMap.map (`runPostBuildT` postBuild) dm0
-    lift $ do
-      rec (result0, result') <- sequenceDMapWithAdjust loweredDm0 loweredDm'
-          let voidResult' = fmapCheap (\_ -> ()) result'
-          let loweredDm' = ffor dm' $ \(PatchDMap p) -> PatchDMap $
-                DMap.map (ComposeMaybe . fmap (\v -> runPostBuildT v =<< headE voidResult') . getComposeMaybe) p --TODO: Avoid doing this headE so many times; once per loweredDm' firing ought to be OK, but it's not totally trivial to do because result' might be firing at the same time, and we don't want *that* to be the postBuild occurrence
-      return (result0, result')
+  traverseDMapWithKeyWithAdjust = mapDMapWithAdjustImpl traverseDMapWithKeyWithAdjust mapPatchDMap
+  traverseDMapWithKeyWithAdjustWithMove = mapDMapWithAdjustImpl traverseDMapWithKeyWithAdjustWithMove mapPatchDMapWithMove
+
+mapDMapWithAdjustImpl :: forall t m k v v' p. (Reflex t, MonadFix m, MonadHold t m)
+  => (   (forall a. k a -> Compose ((,) (Bool, Event t ())) v a -> m (v' a))
+      -> DMap k (Compose ((,) (Bool, Event t ())) v)
+      -> Event t (p k (Compose ((,) (Bool, Event t ())) v))
+      -> m (DMap k v', Event t (p k v'))
+     )
+  -> ((forall a. v a -> Compose ((,) (Bool, Event t ())) v a) -> p k v -> p k (Compose ((,) (Bool, Event t ())) v))
+  -> (forall a. k a -> v a -> PostBuildT t m (v' a))
+  -> DMap k v
+  -> Event t (p k v)
+  -> PostBuildT t m (DMap k v', Event t (p k v'))
+mapDMapWithAdjustImpl base mapPatch f dm0 dm' = do
+  postBuild <- getPostBuild
+  let loweredDm0 = DMap.map (Compose . (,) (False, postBuild)) dm0
+      f' :: forall a. k a -> Compose ((,) (Bool, Event t ())) v a -> m (v' a)
+      f' k (Compose ((shouldHeadE, e), v)) = do
+        eOnce <- if shouldHeadE
+          then headE e --TODO: Avoid doing this headE so many times; once per loweredDm' firing ought to be OK, but it's not totally trivial to do because result' might be firing at the same time, and we don't want *that* to be the postBuild occurrence
+          else return e
+        runPostBuildT (f k v) eOnce
+  lift $ do
+    rec (result0, result') <- base f' loweredDm0 loweredDm'
+        let voidResult' = fmapCheap (\_ -> ()) result'
+        let loweredDm' = ffor dm' $ mapPatch (Compose . (,) (True, voidResult'))
+    return (result0, result')

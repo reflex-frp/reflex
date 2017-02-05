@@ -20,7 +20,9 @@ module Data.Functor.Misc
   ( -- * Const2
     Const2 (..)
   , dmapToMap
+  , dmapToMapWith
   , mapToDMap
+  , weakenDMapWith
     -- * WrapArg
   , WrapArg (..)
     -- * Convenience functions for DMap
@@ -49,6 +51,8 @@ import Data.GADT.Compare
 import Data.GADT.Show
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Some (Some)
+import qualified Data.Some as Some
 import Data.These
 import Data.Typeable hiding (Refl)
 
@@ -86,6 +90,9 @@ instance Ord k => GCompare (Const2 k v) where
 dmapToMap :: DMap (Const2 k v) Identity -> Map k v
 dmapToMap = Map.fromDistinctAscList . map (\(Const2 k :=> Identity v) -> (k, v)) . DMap.toAscList
 
+dmapToMapWith :: (f v -> v') -> DMap (Const2 k v) f -> Map k v'
+dmapToMapWith f = Map.fromDistinctAscList . map (\(Const2 k :=> v) -> (k, f v)) . DMap.toAscList
+
 -- | Convert a regular 'Map' to a 'DMap'
 mapToDMap :: Map k v -> DMap (Const2 k v) Identity
 mapToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> Identity v) . Map.toAscList
@@ -94,6 +101,9 @@ mapToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> Identity v) 
 -- to a 'DMap'
 mapWithFunctorToDMap :: Map k (f v) -> DMap (Const2 k v) f
 mapWithFunctorToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> v) . Map.toAscList
+
+weakenDMapWith :: (forall a. v a -> v') -> DMap k v -> Map (Some k) v'
+weakenDMapWith f = Map.fromDistinctAscList . map (\(k :=> v) -> (Some.This k, f v)) . DMap.toAscList
 
 --------------------------------------------------------------------------------
 -- WrapArg

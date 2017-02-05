@@ -960,6 +960,11 @@ runComputeM (ComputeM a) = liftIO . runReaderT a =<< getDeferralQueue
 
 newtype MergeSubscribedParent x a = MergeSubscribedParent { unMergeSubscribedParent :: EventSubscription x }
 
+data MergeSubscribedParentWithMove x k a = MergeSubscribedParentWithMove
+  { _mergeSubscribedParentWithMove_subscription :: !(EventSubscription x)
+  , _mergeSubscribedParentWithMove_key :: !(IORef (k a))
+  }
+
 data HeightBag = HeightBag
   { _heightBag_size :: {-# UNPACK #-} !Int
   , _heightBag_contents :: !(IntMap Word) -- Number of excess in each bucket
@@ -1550,14 +1555,121 @@ subscribeCoincidenceSubscribed subscribed sub = WeakBag.insert sub (coincidenceS
 merge :: forall k x. (HasSpiderTimeline x, GCompare k) => Dynamic x (PatchDMap k (Event x)) -> Event x (DMap k Identity)
 merge d = cacheEvent (mergeCheap d)
 
+{-# INLINE mergeWithMove #-}
+mergeWithMove :: forall k x. (HasSpiderTimeline x, GCompare k) => Dynamic x (PatchDMapWithMove k (Event x)) -> Event x (DMap k Identity)
+mergeWithMove d = cacheEvent (mergeCheapWithMove d)
+
 {-# INLINE [1] mergeCheap #-}
 mergeCheap :: forall k x. (HasSpiderTimeline x, GCompare k) => Dynamic x (PatchDMap k (Event x)) -> Event x (DMap k Identity)
-mergeCheap d = Event $ \sub -> do
+mergeCheap = mergeCheap' getInitialSubscribers updateMe destroy DMap.size
+  where
+      updateMe :: MergeUpdateFunc k x (PatchDMap k (Event x)) (MergeSubscribedParent x)
+      updateMe subscriber heightBagRef oldParents (PatchDMap p) = do
+        let f (subscriptionsToKill, ps) (k :=> ComposeMaybe me) = do
+              (mOldSubd, newPs) <- case me of
+                Nothing -> return $ DMap.updateLookupWithKey (\_ _ -> Nothing) k ps
+                Just e -> do
+                  let s = subscriber $ return k
+                  subscription@(EventSubscription _ subd) <- subscribe e s
+                  newParentHeight <- liftIO $ getEventSubscribedHeight subd
+                  let newParent = MergeSubscribedParent subscription
+                  liftIO $ modifyIORef' heightBagRef $ heightBagAdd newParentHeight
+                  return $ DMap.insertLookupWithKey' (\_ new _ -> new) k newParent ps
+              forM_ mOldSubd $ \oldSubd -> do
+                oldHeight <- liftIO $ getEventSubscribedHeight $ _eventSubscription_subscribed $ unMergeSubscribedParent oldSubd
+                liftIO $ modifyIORef heightBagRef $ heightBagRemove oldHeight
+              return (maybeToList (unMergeSubscribedParent <$> mOldSubd) ++ subscriptionsToKill, newPs)
+        foldM f ([], oldParents) $ DMap.toList p
+      getInitialSubscribers :: MergeInitFunc k x (MergeSubscribedParent x)
+      getInitialSubscribers initialParents subscriber = do
+        subscribers <- forM (DMap.toList initialParents) $ \(k :=> e) -> do
+          let s = subscriber $ return k
+          (subscription@(EventSubscription _ parentSubd), parentOcc) <- subscribeAndRead e s
+          height <- liftIO $ getEventSubscribedHeight parentSubd
+          return (fmap (\x -> k :=> Identity x) parentOcc, height, k :=> MergeSubscribedParent subscription)
+        return ( DMap.fromDistinctAscList $ mapMaybe (\(x, _, _) -> x) subscribers
+               , fmap (\(_, h, _) -> h) subscribers --TODO: Assert that there's no invalidHeight in here
+               , DMap.fromDistinctAscList $ map (\(_, _, x) -> x) subscribers
+               )
+      destroy :: MergeDestroyFunc k (MergeSubscribedParent x)
+      destroy s = forM_ (DMap.toList s) $ \(_ :=> MergeSubscribedParent sub) -> unsubscribe sub
+
+{-# INLINE [1] mergeCheapWithMove #-}
+mergeCheapWithMove :: forall k x. (HasSpiderTimeline x, GCompare k) => Dynamic x (PatchDMapWithMove k (Event x)) -> Event x (DMap k Identity)
+mergeCheapWithMove = mergeCheap' getInitialSubscribers updateMe destroy DMap.size
+  where
+      updateMe :: MergeUpdateFunc k x (PatchDMapWithMove k (Event x)) (MergeSubscribedParentWithMove x k)
+      updateMe subscriber heightBagRef oldParents pWrapped = do
+        let p = unPatchDMapWithMove pWrapped
+        let f (subscriptionsToKill, ps) (k :=> edit) = do
+              let deleteHere = return $ DMap.updateLookupWithKey (\_ _ -> Nothing) k ps
+                  insertHere e = do
+                    keyRef <- liftIO $ newIORef k
+                    let s = subscriber $ liftIO $ readIORef keyRef
+                    subscription@(EventSubscription _ subd) <- subscribe e s
+                    liftIO $ do
+                      newParentHeight <- getEventSubscribedHeight subd
+                      let newParent = MergeSubscribedParentWithMove subscription keyRef
+                      modifyIORef' heightBagRef $ heightBagAdd newParentHeight
+                      return $ DMap.insertLookupWithKey' (\_ new _ -> new) k newParent ps
+              (mOldSubd, newPs) <- case edit of
+                DMapEdit_Delete moved -> do
+                  (toDelete, newPs) <- deleteHere
+                  return (if moved then Nothing else toDelete, newPs)
+                DMapEdit_Insert moved e -> do
+                  (toDelete, newPs) <- insertHere e
+                  return (if moved then Nothing else toDelete, newPs)
+                DMapEdit_Move moved sourceKey -> do
+                  (toDelete, newPs) <- case DMap.lookup sourceKey ps of
+                    Nothing -> deleteHere
+                    Just s@(MergeSubscribedParentWithMove _ keyRef) -> do
+                      liftIO $ writeIORef keyRef k
+                      return $ DMap.insertLookupWithKey' (\_ new _ -> new) k s ps
+                  return (if moved then Nothing else toDelete, newPs)
+              forM_ mOldSubd $ \oldSubd -> do
+                oldHeight <- liftIO $ getEventSubscribedHeight $ _eventSubscription_subscribed $ _mergeSubscribedParentWithMove_subscription oldSubd
+                liftIO $ modifyIORef heightBagRef $ heightBagRemove oldHeight
+              return (maybeToList (_mergeSubscribedParentWithMove_subscription <$> mOldSubd) ++ subscriptionsToKill, newPs)
+        foldM f ([], oldParents) $ DMap.toList p
+      getInitialSubscribers :: MergeInitFunc k x (MergeSubscribedParentWithMove x k)
+      getInitialSubscribers initialParents subscriber = do
+        subscribers <- forM (DMap.toList initialParents) $ \(k :=> e) -> do
+          keyRef <- liftIO $ newIORef k
+          let s = subscriber $ liftIO $ readIORef keyRef
+          (subscription@(EventSubscription _ parentSubd), parentOcc) <- subscribeAndRead e s
+          height <- liftIO $ getEventSubscribedHeight parentSubd
+          return (fmap (\x -> k :=> Identity x) parentOcc, height, k :=> MergeSubscribedParentWithMove subscription keyRef)
+        return ( DMap.fromDistinctAscList $ mapMaybe (\(x, _, _) -> x) subscribers
+               , fmap (\(_, h, _) -> h) subscribers --TODO: Assert that there's no invalidHeight in here
+               , DMap.fromDistinctAscList $ map (\(_, _, x) -> x) subscribers
+               )
+      destroy :: MergeDestroyFunc k (MergeSubscribedParentWithMove x k)
+      destroy s = forM_ (DMap.toList s) $ \(_ :=> MergeSubscribedParentWithMove sub _) -> unsubscribe sub
+
+type MergeUpdateFunc k x p s
+   = (forall a. EventM x (k a) -> Subscriber x a)
+  -> IORef HeightBag
+  -> DMap k s
+  -> p
+  -> EventM x ([EventSubscription x], DMap k s)
+
+type MergeInitFunc k x s
+   = DMap k (Event x)
+  -> (forall a. EventM x (k a) -> Subscriber x a)
+  -> EventM x (DMap k Identity, [Height], DMap k s)
+
+type MergeDestroyFunc k s
+   = DMap k s
+  -> IO ()
+
+{-# INLINE mergeCheap' #-}
+mergeCheap' :: forall k x p s. (HasSpiderTimeline x, GCompare k, PatchTarget p ~ DMap k (Event x)) => MergeInitFunc k x s -> MergeUpdateFunc k x p s -> MergeDestroyFunc k s -> (DMap k s -> Int) -> Dynamic x p -> Event x (DMap k Identity)
+mergeCheap' getInitialSubscribers updateFunc destroy numParents d = Event $ \sub -> do
   initialParents <- readBehaviorUntracked $ dynamicCurrent d
   accumRef <- liftIO $ newIORef $ error "merge: accumRef not yet initialized"
   heightRef <- liftIO $ newIORef $ error "merge: heightRef not yet initialized"
   heightBagRef <- liftIO $ newIORef $ error "merge: heightBagRef not yet initialized"
-  parentsRef <- liftIO $ newIORef $ error "merge: parentsRef not yet initialized"
+  parentsRef :: IORef (DMap k s) <- liftIO $ newIORef $ error "merge: parentsRef not yet initialized"
   let scheduleSelf height = scheduleMerge' height heightRef $ do
         m <- liftIO $ readIORef accumRef
         liftIO $ writeIORef accumRef $! DMap.empty
@@ -1574,7 +1686,7 @@ mergeCheap d = Event $ \sub -> do
           heights <- readIORef heightBagRef
           parents <- readIORef parentsRef
           -- When the number of heights in the bag reaches the number of parents, we should have a valid height
-          case heightBagSize heights `compare` DMap.size parents of
+          case heightBagSize heights `compare` numParents parents of
             LT -> return ()
             EQ -> do
               let height = succHeight $ heightBagMax heights
@@ -1582,10 +1694,11 @@ mergeCheap d = Event $ \sub -> do
               writeIORef heightRef $! height
               subscriberRecalculateHeight sub height
             GT -> error $ "revalidateMergeHeight: more heights than parents for Merge"
-      subscriber :: forall a. k a -> Subscriber x a
-      subscriber k = Subscriber
+      subscriber :: forall a. EventM x (k a) -> Subscriber x a
+      subscriber getKey = Subscriber
         { subscriberPropagate = \a -> do
             oldM <- liftIO $ readIORef accumRef
+            k <- getKey
             let newM = DMap.insertWith (error $ "Same key fired multiple times for Merge") k (Identity a) oldM
             tracePropagate (Proxy :: Proxy x) $ "  DMap.size oldM = " <> show (DMap.size oldM) <> "; DMap.size newM = " <> show (DMap.size newM)
             liftIO $ writeIORef accumRef $! newM
@@ -1615,14 +1728,13 @@ mergeCheap d = Event $ \sub -> do
             modifyIORef' heightBagRef $ heightBagAdd new
             revalidateMyHeight
         }
-  subscribers :: [(Maybe (DSum k Identity), Height, DSum k (MergeSubscribedParent x))] <- forM (DMap.toList initialParents) $ \(k :=> e) -> do
-    let s = subscriber k
-    (subscription@(EventSubscription _ parentSubd), parentOcc) <- subscribeAndRead e s
-    height <- liftIO $ getEventSubscribedHeight parentSubd
-    return $ (fmap (\x -> k :=> Identity x) parentOcc, height, k :=> MergeSubscribedParent subscription)
-  let dm = DMap.fromDistinctAscList $ mapMaybe (\(x, _, _) -> x) subscribers
-      heights = fmap (\(_, h, _) -> h) subscribers --TODO: Assert that there's no invalidHeight in here
-      myHeightBag = heightBagFromList $ filter (/= invalidHeight) heights
+  let updateMe x = do
+        oldParents <- liftIO $ readIORef parentsRef
+        (subscriptionsToKill, newParents) <- updateFunc subscriber heightBagRef oldParents x
+        liftIO $ writeIORef parentsRef $! newParents
+        return subscriptionsToKill
+  (dm, heights, initialParentState) <- getInitialSubscribers initialParents subscriber
+  let myHeightBag = heightBagFromList $ filter (/= invalidHeight) heights
       myHeight = if invalidHeight `elem` heights
                  then invalidHeight
                  else succHeight $ heightBagMax myHeightBag
@@ -1638,26 +1750,7 @@ mergeCheap d = Event $ \sub -> do
   liftIO $ writeIORef heightRef $! myHeight
   liftIO $ writeIORef heightBagRef $! myHeightBag
   changeSubdRef <- liftIO $ newIORef $ error "getMergeSubscribed: changeSubdRef not yet initialized"
-  liftIO $ writeIORef parentsRef $! DMap.fromDistinctAscList $ map (\(_, _, x) -> x) subscribers
-  let updateMe (PatchDMap p) = do
-        oldParents <- liftIO $ readIORef parentsRef
-        let f (subscriptionsToKill, ps) (k :=> ComposeMaybe me) = do
-              (mOldSubd, newPs) <- case me of
-                Nothing -> return $ DMap.updateLookupWithKey (\_ _ -> Nothing) k ps
-                Just e -> do
-                  let s = subscriber k
-                  subscription@(EventSubscription _ subd) <- subscribe e s
-                  newParentHeight <- liftIO $ getEventSubscribedHeight subd
-                  let newParent = MergeSubscribedParent subscription
-                  liftIO $ modifyIORef' heightBagRef $ heightBagAdd newParentHeight
-                  return $ DMap.insertLookupWithKey' (\_ new _ -> new) k newParent ps
-              forM_ mOldSubd $ \oldSubd -> do
-                oldHeight <- liftIO $ getEventSubscribedHeight $ _eventSubscription_subscribed $ unMergeSubscribedParent oldSubd
-                liftIO $ modifyIORef heightBagRef $ heightBagRemove oldHeight
-              return (maybeToList (unMergeSubscribedParent <$> mOldSubd) ++ subscriptionsToKill, newPs)
-        (subscriptionsToKill, newParents) <- foldM f ([], oldParents) $ DMap.toList p --TODO: I think this runEventM is OK, since no events are firing at this time, but it might not be
-        liftIO $ writeIORef parentsRef $! newParents
-        return subscriptionsToKill
+  liftIO $ writeIORef parentsRef $! initialParentState
   defer $ SomeMergeInit $ do
     let s = Subscriber
           { subscriberPropagate = \a -> {-# SCC "traverseMergeChange" #-} do
@@ -1672,9 +1765,7 @@ mergeCheap d = Event $ \sub -> do
     -- If we don't do this, there are certain cases where mergeCheap will fail to properly retain
     -- its subscription.
     liftIO $ writeIORef changeSubdRef (s, changeSubscription)
-  let unsubscribeAll = do
-        parents <- readIORef parentsRef
-        forM_ (DMap.toList parents) $ \(_ :=> MergeSubscribedParent s) -> unsubscribe s
+  let unsubscribeAll = destroy =<< readIORef parentsRef
   return ( EventSubscription unsubscribeAll $ EventSubscribed heightRef $ toAny (parentsRef, changeSubdRef)
          , occ
          )
@@ -1972,6 +2063,8 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   unsafeBuildIncremental readV0 dv = SpiderIncremental $ dynamicDyn $ unsafeDyn (coerce readV0) $ unSpiderEvent dv
   {-# INLINABLE mergeIncremental #-}
   mergeIncremental = SpiderEvent . merge . (unsafeCoerce :: Dynamic x (PatchDMap k (R.Event (SpiderTimeline x))) -> Dynamic x (PatchDMap k (Event x))) . unSpiderIncremental
+  {-# INLINABLE mergeIncrementalWithMove #-}
+  mergeIncrementalWithMove = SpiderEvent . mergeWithMove . (unsafeCoerce :: Dynamic x (PatchDMapWithMove k (R.Event (SpiderTimeline x))) -> Dynamic x (PatchDMapWithMove k (Event x))) . unSpiderIncremental
   {-# INLINABLE currentIncremental #-}
   currentIncremental = SpiderBehavior . dynamicCurrent . unSpiderIncremental
   {-# INLINABLE updatedIncremental #-}
