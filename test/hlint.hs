@@ -8,6 +8,7 @@ main = do
     , "--ignore=Redundant do"
     , "--ignore=Use camelCase"
     , "--ignore=Redundant $"
+    , "--ignore=Use &&"
     , "--ignore=Use &&&"
     , "--ignore=Use const"
     , "--ignore=Use >=>"

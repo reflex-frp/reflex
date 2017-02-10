@@ -108,11 +108,8 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   --a) -> Incremental (Pure t) p a
   unsafeBuildIncremental readV0 p = Incremental $ \t -> (readV0 t, unEvent p t)
 
-  mergeIncremental i = Event $ \t ->
-    let results = DMap.mapMaybeWithKey (\_ (Event e) -> Identity <$> e t) $ fst $ unIncremental i t
-    in if DMap.null results
-       then Nothing
-       else Just results
+  mergeIncremental = mergeIncrementalImpl
+  mergeIncrementalWithMove = mergeIncrementalImpl
 
   currentIncremental i = Behavior $ \t -> fst $ unIncremental i t
 
@@ -127,6 +124,13 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   behaviorCoercion Coercion = Coercion
   eventCoercion Coercion = Coercion
   dynamicCoercion Coercion = Coercion
+
+mergeIncrementalImpl :: (PatchTarget p ~ DMap k (Event (Pure t)), GCompare k) => Incremental (Pure t) p -> Event (Pure t) (DMap k Identity)
+mergeIncrementalImpl i = Event $ \t ->
+  let results = DMap.mapMaybeWithKey (\_ (Event e) -> Identity <$> e t) $ fst $ unIncremental i t
+  in if DMap.null results
+     then Nothing
+     else Just results
 
 instance Functor (Dynamic (Pure t)) where
   fmap f d = Dynamic $ \t -> let (cur, upd) = unDynamic d t

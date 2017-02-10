@@ -38,7 +38,9 @@ import Data.Coerce
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc
+import Data.Map (Map)
 import Data.Unique.Tag
+import Data.Some (Some)
 
 -- | A basic implementation of 'Requester'.
 newtype RequesterT t request response m a = RequesterT { unRequesterT :: EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) a }
@@ -98,7 +100,8 @@ instance MonadReader r m => MonadReader r (RequesterT t request response m) wher
 
 instance (Reflex t, MonadAdjust t m, MonadHold t m) => MonadAdjust t (RequesterT t request response m) where
   runWithReplace (RequesterT a) em = RequesterT $ runWithReplace a (coerceEvent em)
-  sequenceDMapWithAdjust dm edm = RequesterT $ sequenceDMapWithAdjust (coerce dm) (coerceEvent edm)
+  traverseDMapWithKeyWithAdjust f dm edm = RequesterT $ traverseDMapWithKeyWithAdjust (\k v -> unRequesterT $ f k v) (coerce dm) (coerceEvent edm)
+  traverseDMapWithKeyWithAdjustWithMove f dm edm = RequesterT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> unRequesterT $ f k v) (coerce dm) (coerceEvent edm)
 
 runWithReplaceRequesterTWith :: forall m t request response a b. (Reflex t, MonadHold t m)
                              => (forall a' b'. m a' -> Event t (m b') -> RequesterT t request response m (a', Event t b'))
@@ -114,20 +117,34 @@ runWithReplaceRequesterTWith f a0 a' =
         unRequesterT (f (runReaderT x r) (fmapCheap (`runReaderT` r) y))
   in RequesterT $ runWithReplaceEventWriterTWith f' (coerce a0) (coerceEvent a')
 
-sequenceDMapWithAdjustRequesterTWith :: (GCompare k, Reflex t, MonadHold t m)
-                                     => (forall k'. GCompare k' => DMap k' m -> Event t (PatchDMap k' m) -> RequesterT t request response m (DMap k' Identity, Event t (PatchDMap k' Identity)))
-                                     -> DMap k (RequesterT t request response m)
-                                     -> Event t (PatchDMap k (RequesterT t request response m))
-                                     -> RequesterT t request response m (DMap k Identity, Event t (PatchDMap k Identity))
-sequenceDMapWithAdjustRequesterTWith f (dm0 :: DMap k (RequesterT t request response m)) dm' =
-  let dmapUnwrap r = mapKeyValuePairsMonotonic $ \(k :=> v) -> k :=> runReaderT v r
-      patchDmapUnwrap r (PatchDMap p) = PatchDMap $ mapKeyValuePairsMonotonic
-        (\(k :=> ComposeMaybe mv) -> k :=> ComposeMaybe (fmap (`runReaderT` r) mv)) p
-      f' :: forall k'. GCompare k'
-         => DMap k' (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m)
-         -> Event t (PatchDMap k' (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m))
-         -> EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) (DMap k' Identity, Event t (PatchDMap k' Identity))
-      f' x y = do
-        r <- EventWriterT $ ask
-        unRequesterT (f (dmapUnwrap r x) (fmap (patchDmapUnwrap r) y))
-  in RequesterT $ sequenceDMapWithAdjustEventWriterTWith f' (coerce dm0) (coerceEvent dm')
+sequenceDMapWithAdjustRequesterTWith :: forall k t request response m v v' p p'.
+                                        ( GCompare k
+                                        , Reflex t
+                                        , MonadHold t m
+                                        , PatchTarget (p' (Some k) (Event t (DMap (Tag (PrimState m)) request))) ~ Map (Some k) (Event t (DMap (Tag (PrimState m)) request))
+                                        , Patch (p' (Some k) (Event t (DMap (Tag (PrimState m)) request)))
+                                        )
+                                     => (forall k' v1 v2. GCompare k'
+                                         => (forall a. k' a -> v1 a -> m (v2 a))
+                                         -> DMap k' v1
+                                         -> Event t (p k' v1)
+                                         -> RequesterT t request response m (DMap k' v2, Event t (p k' v2))
+                                        )
+                                     -> (forall v1. (forall a. v1 a -> v' a) -> p k v1 -> p k v')
+                                     -> (forall v1 v2. (forall a. v1 a -> v2) -> p k v1 -> p' (Some k) v2)
+                                     -> (forall v2. p' (Some k) v2 -> [v2])
+                                     -> (forall a. Incremental t (p' (Some k) (Event t a)) -> Event t (Map (Some k) a))
+                                     -> (forall a. k a -> v a -> RequesterT t request response m (v' a))
+                                     -> DMap k v
+                                     -> Event t (p k v)
+                                     -> RequesterT t request response m (DMap k v', Event t (p k v'))
+sequenceDMapWithAdjustRequesterTWith base mapPatch weakenPatchWith patchNewElements mergePatchIncremental f dm0 dm' =
+  let base' :: forall v1 v2.
+           (forall a. k a -> v1 a -> ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m (v2 a))
+        -> DMap k v1
+        -> Event t (p k v1)
+        -> EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) (DMap k v2, Event t (p k v2))
+      base' f' x y = do
+        r <- EventWriterT ask
+        unRequesterT $ base (\k v -> runReaderT (f' k v) r) x y
+  in RequesterT $ sequenceDMapWithAdjustEventWriterTWith base' mapPatch weakenPatchWith patchNewElements mergePatchIncremental (\k v -> unRequesterT $ f k v) (coerce dm0) (coerceEvent dm')

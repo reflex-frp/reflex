@@ -76,13 +76,19 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => MonadAdjust t (PerformEventT
             result0 <- lift a0
             result' <- requestingIdentity a'
             return (result0, result')
-  sequenceDMapWithAdjust (outerDm0 :: DMap k (PerformEventT t m)) outerDm' = PerformEventT $ sequenceDMapWithAdjustRequesterTWith f (coerce outerDm0) (coerceEvent outerDm')
-    where f :: DMap k' (HostFrame t) -> Event t (PatchDMap k' (HostFrame t)) -> RequesterT t (HostFrame t) Identity (HostFrame t) (DMap k' Identity, Event t (PatchDMap k' Identity))
-          f dm0 dm' = do
-            result0 <- lift $ DMap.traverseWithKey (\_ v -> Identity <$> v) dm0
-            result' <- requestingIdentity $ ffor dm' $ \(PatchDMap p) -> do
-              PatchDMap <$> DMap.traverseWithKey (\_ (ComposeMaybe mv) -> ComposeMaybe <$> mapM (fmap Identity) mv) p
-            return (result0, result')
+  traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ sequenceDMapWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElements mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
+  traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ sequenceDMapWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElements mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
+
+defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
+  => ((forall a. k' a -> v a -> HostFrame t (v2 a)) -> p k' v -> HostFrame t (p k' v2))
+  -> (forall a. k' a -> v a -> HostFrame t (v2 a))
+  -> DMap k' v
+  -> Event t (p k' v)
+  -> RequesterT t (HostFrame t) Identity (HostFrame t) (DMap k' v2, Event t (p k' v2))
+defaultAdjustBase traversePatchWithKey f' dm0 dm' = do
+  result0 <- lift $ DMap.traverseWithKey f' dm0
+  result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
+  return (result0, result')
 
 instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
   {-# INLINABLE newEventWithTrigger #-}
