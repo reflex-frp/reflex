@@ -4,6 +4,7 @@
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
@@ -33,10 +34,12 @@ module Reflex.Patch
   , patchMapWithMoveNewElements
   , MapEdit (..)
   , mapEditMoved
+  , mapEditSetMoved
   , PatchDMapWithMove
   , unPatchDMapWithMove
   , unsafePatchDMapWithMove
   , patchThatSortsMapWith
+  , patchThatChangesAndSortsMapWith
   , mapPatchDMapWithMove
   , traversePatchDMapWithMove
   , traversePatchDMapWithMoveWithKey
@@ -51,9 +54,12 @@ module Reflex.Patch
   , knownInvalidPatchMapWithMove
   ) where
 
+import Control.Arrow
 import Control.Monad.Identity
+import Control.Monad.State
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
 import qualified Data.Dependent.Map as DMap
+import Data.Foldable
 import Data.Function
 import Data.Functor.Constant
 import Data.Functor.Misc
@@ -62,8 +68,11 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup (Semigroup (..), stimesIdempotentMonoid, (<>))
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Some (Some)
 import qualified Data.Some as Some
+import Data.Tuple
 
 -- | A 'Patch' type represents a kind of change made to a datastructure.
 class Patch p where
@@ -178,7 +187,7 @@ data MapEdit k v
    = MapEdit_Insert Bool v -- ^ Insert the given value here
    | MapEdit_Delete Bool -- ^ Delete the existing value, if any, from here
    | MapEdit_Move Bool k -- ^ Move the value here from the given key
-   deriving (Functor, Foldable, Traversable)
+   deriving (Show, Read, Eq, Ord, Functor, Foldable, Traversable)
 
 mapEditMoved :: MapEdit k v -> Bool
 mapEditMoved = \case
@@ -186,12 +195,18 @@ mapEditMoved = \case
   MapEdit_Delete moved -> moved
   MapEdit_Move moved _ -> moved
 
+mapEditSetMoved :: Bool -> MapEdit k v -> MapEdit k v
+mapEditSetMoved moved = \case
+  MapEdit_Insert _ v -> MapEdit_Insert moved v
+  MapEdit_Delete _ -> MapEdit_Delete moved
+  MapEdit_Move _ k -> MapEdit_Move moved k
+
 -- | Patch a DMap with additions, deletions, and moves.
 -- Invariants:
 --   * The same source key may not be moved to two destination keys.
 --   * Any key that is the source of a Move must also be edited
 --     (otherwise, the Move would duplicate it)
-data PatchMapWithMove k v = PatchMapWithMove (Map k (MapEdit k v)) deriving (Functor, Foldable, Traversable)
+data PatchMapWithMove k v = PatchMapWithMove (Map k (MapEdit k v)) deriving (Show, Eq, Ord, Functor, Foldable, Traversable)
 
 unPatchMapWithMove :: PatchMapWithMove k v -> Map k (MapEdit k v)
 unPatchMapWithMove (PatchMapWithMove p) = p
@@ -209,8 +224,8 @@ instance Ord k => Patch (PatchMapWithMove k v) where
             MapEdit_Move _ k -> Map.lookup k old
             MapEdit_Delete _ -> Nothing
           deletions = flip Map.mapMaybeWithKey p $ const $ \case
-            MapEdit_Delete _ -> Nothing
-            _ -> Just ()
+            MapEdit_Delete _ -> Just ()
+            _ -> Nothing
 
 -- | Returns all the new elements that will be added to the 'Map'
 patchMapWithMoveNewElements :: PatchMapWithMove k v -> [v]
@@ -258,6 +273,36 @@ patchThatSortsMapWith cmp m = PatchMapWithMove $ Map.fromList $ catMaybes $ zipW
         g (to, _) (from, _) = if to == from
           then Nothing
           else Just (to, MapEdit_Move True from)
+
+patchThatChangesAndSortsMapWith :: (Ord k, Ord v) => (v -> v -> Ordering) -> Map k v -> Map k v -> PatchMapWithMove k v
+patchThatChangesAndSortsMapWith cmp oldByIndex newByIndexUnsorted = patch
+  where oldByValue = Map.fromListWith Set.union $ swap . first Set.singleton <$> Map.toList oldByIndex
+        newList = Map.toList newByIndexUnsorted
+        newByIndex = Map.fromList $ zip (fst <$> newList) $ sortBy cmp $ snd <$> newList
+        (insertsAndMoves, unusedValuesByValue) = flip runState oldByValue $ do
+          let f k v = do
+                remainingValues <- get
+                let putRemainingKeys remainingKeys = put $ if Set.null remainingKeys
+                      then Map.delete v remainingValues
+                      else Map.insert v remainingKeys remainingValues
+                case Map.lookup v remainingValues of
+                  Nothing -> return $ MapEdit_Insert True v -- There's no existing value we can take
+                  Just fromKs ->
+                    if k `Set.member` fromKs
+                    then do
+                      putRemainingKeys $ Set.delete k fromKs
+                      return $ MapEdit_Move True k -- There's an existing value, and it's here, so no patch necessary
+                    else do
+                      Just (fromK, remainingKeys) <- return $ Set.minView fromKs -- There's an existing value, but it's not here; move it here
+                      putRemainingKeys remainingKeys
+                      return $ MapEdit_Move True fromK
+          Map.traverseWithKey f newByIndex
+        unusedOldKeys = fold unusedValuesByValue
+        pointlessMove k = \case
+          MapEdit_Move _ k' | k == k' -> True
+          _ -> False
+        keyWasMoved k = k `Map.member` oldByIndex && not (k `Set.member` unusedOldKeys)
+        patch = unsafePatchMapWithMove $ Map.filterWithKey (\k v -> not $ pointlessMove k v) $ Map.mergeWithKey (\k a _ -> Just $ mapEditSetMoved (keyWasMoved k) a) (Map.mapWithKey $ \k -> mapEditSetMoved $ keyWasMoved k) (Map.mapWithKey $ \k _ -> MapEdit_Delete $ keyWasMoved k) insertsAndMoves oldByIndex
 
 data DMapEdit (k :: a -> *) (v :: a -> *) :: a -> * where
   -- | Insert the given value here
@@ -339,5 +384,5 @@ instance GCompare k => Patch (PatchDMapWithMove k v) where
           deletions = DMap.mapMaybeWithKey deleteFunc p
           deleteFunc :: forall a. k a -> DMapEdit k v a -> Maybe (Constant () a)
           deleteFunc _ = \case
-            DMapEdit_Delete _ -> Nothing
-            _ -> Just $ Constant ()
+            DMapEdit_Delete _ -> Just $ Constant ()
+            _ -> Nothing

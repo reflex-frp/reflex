@@ -98,6 +98,7 @@ module Reflex.Class
   , MonadAdjust (..)
   , sequenceDMapWithAdjust
   , sequenceDMapWithAdjustWithMove
+  , mapMapWithAdjustWithMove
     -- * Deprecated functions
   , appendEvents
   , onceE
@@ -160,6 +161,7 @@ import Data.Either
 import Data.Foldable
 import Data.Functor.Bind hiding (join)
 import qualified Data.Functor.Bind as Bind
+import Data.Functor.Constant
 import Data.Functor.Misc
 import Data.Functor.Plus
 import Data.List.NonEmpty (NonEmpty (..))
@@ -938,6 +940,11 @@ sequenceDMapWithAdjust = traverseDMapWithKeyWithAdjust $ \_ -> fmap Identity
 
 sequenceDMapWithAdjustWithMove :: (GCompare k, MonadAdjust t m) => DMap k m -> Event t (PatchDMapWithMove k m) -> m (DMap k Identity, Event t (PatchDMapWithMove k Identity))
 sequenceDMapWithAdjustWithMove = traverseDMapWithKeyWithAdjustWithMove $ \_ -> fmap Identity
+
+mapMapWithAdjustWithMove :: forall t m k v v'. (MonadAdjust t m, Ord k) => (k -> v -> m v') -> Map k v -> Event t (PatchMapWithMove k v) -> m (Map k v', Event t (PatchMapWithMove k v'))
+mapMapWithAdjustWithMove f m0 m' = do
+  (out0 :: DMap (Const2 k v) (Constant v'), out') <- traverseDMapWithKeyWithAdjustWithMove (\(Const2 k) (Identity v) -> Constant <$> f k v) (mapToDMap m0) (const2PatchDMapWithMoveWith Identity <$> m')
+  return (dmapToMapWith (\(Constant v') -> v') out0, patchDMapWithMoveToPatchMapWithMoveWith (\(Constant v') -> v') <$> out')
 
 ------------------
 -- Cheap Functions
