@@ -68,7 +68,6 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup (Semigroup (..), stimesIdempotentMonoid, (<>))
-import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Some (Some)
 import qualified Data.Some as Some
