@@ -1354,7 +1354,7 @@ getRootSubscribed k r sub = do
       when debugPropagate $ putStrLn $ "getRootSubscribed: calling rootInit"
       uninit <- rootInit r k $ RootTrigger (subs, rootOccurrence r, k)
       writeIORef uninitRef $! uninit
-      let subscribed = RootSubscribed
+      let !subscribed = RootSubscribed
             { rootSubscribedKey = k
             , rootSubscribedCachedSubscribed = cached
             , rootSubscribedOccurrence = getOcc
