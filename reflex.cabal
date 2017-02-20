@@ -183,6 +183,13 @@ test-suite GC-Semantics
                , reflex
                , ref-tf
 
+test-suite rootCleanup
+  type: exitcode-stdio-1.0
+  main-is: rootCleanup.hs
+  hs-source-dirs: test
+  build-depends: base
+               , reflex
+
 benchmark spider-bench
   type: exitcode-stdio-1.0
   hs-source-dirs: bench

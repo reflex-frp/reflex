@@ -73,7 +73,7 @@ import Data.Monoid (mempty)
 import Data.Tree (Forest, Tree (..), drawForest)
 #endif
 
-import Data.WeakBag (WeakBag, WeakBagTicket)
+import Data.WeakBag (WeakBag, WeakBagTicket, _weakBag_children)
 import qualified Data.WeakBag as WeakBag
 #ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 import Data.Reflection
@@ -1365,7 +1365,17 @@ getRootSubscribed k r sub = do
             , rootSubscribedNodeId = unsafeNodeId (k, r, subs)
 #endif
             }
-      writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "RootSubscribed"
+          -- If we die at the same moment that all our children die, they will
+          -- try to clean us up but will fail because their Weak reference to us
+          -- will also be dead.  So, if we are dying, check if there are any
+          -- children; since children don't bother cleaning themselves up if
+          -- their parents are already dead, I don't think there's a race
+          -- condition here.  However, if there are any children, then we can
+          -- infer that we need to clean ourselves up, so we do.
+          finalCleanup = do
+            cs <- readIORef $ _weakBag_children subs
+            when (not $ IntMap.null cs) (cleanupRootSubscribed subscribed)
+      writeIORef weakSelf =<< evaluate =<< mkWeakPtr subscribed (Just finalCleanup)
       modifyIORef' (rootSubscribed r) $ DMap.insertWith (error $ "getRootSubscribed: duplicate key inserted into Root") k subscribed --TODO: I think we can just write back mSubscribed rather than re-reading it
       occ <- getOcc
       return (sln, subscribed, occ)
