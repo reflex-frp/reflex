@@ -1,5 +1,6 @@
 -- | This module provides 'RequesterT', the standard implementation of
 -- 'Requester'.
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -67,7 +68,7 @@ instance (Reflex t, PrimMonad m) => Requester t (RequesterT t request response m
   type Request (RequesterT t request response m) = request
   type Response (RequesterT t request response m) = response
   withRequesting a = do
-    t <- lift newTag
+    !t <- lift newTag --TODO: Fix this upstream
     s <- RequesterT ask
     (req, result) <- a $ select s $ WrapArg t
     RequesterT $ tellEvent $ fmapCheap (DMap.singleton t) req
