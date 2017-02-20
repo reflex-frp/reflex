@@ -128,6 +128,7 @@ module Reflex.Class
   , unsafeBuildDynamic
   , unsafeBuildIncremental
   , mergeIncremental
+  , mergeIncrementalWithMove
   , currentIncremental
   , updatedIncremental
   , incrementalToDynamic
@@ -305,6 +306,7 @@ updated :: Reflex t => Dynamic t a -> Event t a
 unsafeBuildDynamic :: Reflex t => PullM t a -> Event t a -> Dynamic t a
 unsafeBuildIncremental :: (Reflex t, Patch p) => PullM t (PatchTarget p) -> Event t p -> Incremental t p
 mergeIncremental :: (Reflex t, GCompare k) => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
+mergeIncrementalWithMove :: (Reflex t, GCompare k) => Incremental t (PatchDMapWithMove k (Event t)) -> Event t (DMap k Identity)
 currentIncremental :: (Reflex t, Patch p) => Incremental t p -> Behavior t (PatchTarget p)
 updatedIncremental :: (Reflex t, Patch p) => Incremental t p -> Event t p
 incrementalToDynamic :: (Reflex t, Patch p) => Incremental t p -> Dynamic t (PatchTarget p)
@@ -339,6 +341,8 @@ unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ unsafeDyn (c
 unsafeBuildIncremental readV0 dv = SpiderIncremental $ S.dynamicDyn $ unsafeDyn (coerce readV0) $ unSpiderEvent dv
 {-# INLINE mergeIncremental #-}
 mergeIncremental = SpiderEvent . S.merge . (unsafeCoerce :: S.Dynamic x (PatchDMap k (Event (SpiderTimeline x))) -> S.Dynamic x (PatchDMap k (S.Event x))) . unSpiderIncremental
+{-# INLINE mergeIncrementalWithMove #-}
+mergeIncrementalWithMove = SpiderEvent . S.mergeWithMove . (unsafeCoerce :: S.Dynamic x (PatchDMapWithMove k (Event (SpiderTimeline x))) -> S.Dynamic x (PatchDMapWithMove k (S.Event x))) . unSpiderIncremental
 {-# INLINE currentIncremental #-}
 currentIncremental = SpiderBehavior . dynamicCurrent . unSpiderIncremental
 {-# INLINE updatedIncremental #-}
