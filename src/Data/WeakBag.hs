@@ -16,6 +16,9 @@ module Data.WeakBag
   , insert
   , traverse
   , remove
+  -- * Internal functions
+  -- These will not always be available.
+  , _weakBag_children --TODO: Don't export this
   ) where
 
 import Control.Exception
