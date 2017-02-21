@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Building..."
+ghc -isrc -O2 iorefMaybeTest.hs -DUSE_IOREF_MAYBE=0 -o iorefMaybeTest-ioref
+ghc -isrc -O2 iorefMaybeTest.hs -DUSE_IOREF_MAYBE=1 -o iorefMaybeTest-iorefMaybe
+echo "Done building"
+
+echo "Running with regular IORef"
+time ./iorefMaybeTest-ioref
+
+echo "Running with IORefMaybe"
+time ./iorefMaybeTest-iorefMaybe
