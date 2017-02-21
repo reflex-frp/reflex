@@ -17,9 +17,9 @@ nothingSurrogate = error "Data.IORef.Maybe.nothingSurrogate evaluated"
 
 {-# INLINE newIORefMaybe #-}
 newIORefMaybe :: Maybe a -> IO (IORefMaybe a)
-newIORefMaybe ma = case ma of
-  Just a -> coerce $ newIORef $ unsafeCoerce a
-  Nothing -> coerce $ newIORef nothingSurrogate
+newIORefMaybe ma = IORefMaybe <$> case ma of
+  Just a -> newIORef $ unsafeCoerce a
+  Nothing -> newIORef nothingSurrogate
 
 {-# INLINE readIORefMaybe #-}
 readIORefMaybe :: IORefMaybe a -> IO (Maybe a)
