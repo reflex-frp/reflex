@@ -63,6 +63,9 @@ runEventWriterT (EventWriterT a) = do
 instance (Reflex t, Monad m, Monoid w) => EventWriter t w (EventWriterT t w m) where
   tellEvent w = EventWriterT $ modify (|> w)
 
+instance EventWriter t w m => EventWriter t w (ReaderT r m) where
+  tellEvent = lift . tellEvent
+
 instance MonadTrans (EventWriterT t w) where
   lift = EventWriterT . lift
 
