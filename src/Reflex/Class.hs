@@ -47,6 +47,7 @@ module Reflex.Class
   , mergeList
   , mergeWith
   , difference
+  , alignEventWithMaybe
     -- ** Breaking up 'Event's
   , splitE
   , fanEither
@@ -751,7 +752,7 @@ switchPromptOnly e0 e' = do
 
 instance Reflex t => Align (Event t) where
   nil = never
-  align = alignWithMaybe Just
+  align = alignEventWithMaybe Just
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and
 -- the 'Behavior' is true at the time of occurence.
@@ -818,14 +819,12 @@ distributeListOverDynWith f = fmap (f . map (\(Const2 _ :=> Identity v) -> v) . 
 -- | Create a new 'Event' that occurs when the first supplied 'Event' occurs
 -- unless the second supplied 'Event' occurs simultaneously.
 difference :: Reflex t => Event t a -> Event t b -> Event t a
-difference = alignWithMaybe $ \case
+difference = alignEventWithMaybe $ \case
   This a -> Just a
   _      -> Nothing
 
--- (intentially not exported, for now)
-alignWithMaybe
-  :: Reflex t => (These a b -> Maybe c) -> Event t a -> Event t b -> Event t c
-alignWithMaybe f ea eb =
+alignEventWithMaybe :: Reflex t => (These a b -> Maybe c) -> Event t a -> Event t b -> Event t c
+alignEventWithMaybe f ea eb =
   fmapMaybe (f <=< dmapToThese)
     $ merge
     $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
