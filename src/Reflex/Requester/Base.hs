@@ -26,6 +26,7 @@ import Reflex.EventWriter
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
+import Reflex.Postpone.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
@@ -149,3 +150,10 @@ sequenceDMapWithAdjustRequesterTWith base mapPatch weakenPatchWith patchNewEleme
         r <- EventWriterT ask
         unRequesterT $ base (\k v -> runReaderT (f' k v) r) x y
   in RequesterT $ sequenceDMapWithAdjustEventWriterTWith base' mapPatch weakenPatchWith patchNewElements mergePatchIncremental (\k v -> unRequesterT $ f k v) (coerce dm0) (coerceEvent dm')
+
+instance (MonadPostpone m, Reflex t) => MonadPostpone (RequesterT t request response m) where
+  postpone a = RequesterT $ do
+    r <- ask
+    (result, w) <- lift $ lift $ postpone $ runReaderT (runEventWriterT $ unRequesterT a) r
+    tellEvent w
+    return result

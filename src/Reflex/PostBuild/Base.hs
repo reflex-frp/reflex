@@ -23,6 +23,7 @@ import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
+import Reflex.Postpone.Class
 import Reflex.TriggerEvent.Class
 
 import Control.Monad.Exception
@@ -140,3 +141,8 @@ mapDMapWithAdjustImpl base mapPatch f dm0 dm' = do
         let voidResult' = fmapCheap (\_ -> ()) result'
         let loweredDm' = ffor dm' $ mapPatch (Compose . (,) (True, voidResult'))
     return (result0, result')
+
+instance (Reflex t, MonadPostpone m) => MonadPostpone (PostBuildT t m) where
+  postpone a = do
+    r <- getPostBuild
+    lift $ postpone $ runPostBuildT a r

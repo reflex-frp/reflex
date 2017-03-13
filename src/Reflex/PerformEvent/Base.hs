@@ -27,6 +27,8 @@ module Reflex.PerformEvent.Base
 import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
+import Reflex.Postpone.Base
+import Reflex.Postpone.Class
 import Reflex.Requester.Base
 import Reflex.Requester.Class
 
@@ -49,7 +51,7 @@ newtype FireCommand t m = FireCommand { runFireCommand :: forall a. [DSum (Event
 
 -- | Provides a basic implementation of 'PerformEvent'.  Note that, despite the
 -- name, 'PerformEventT' is not an instance of 'MonadTrans'.
-newtype PerformEventT t m a = PerformEventT { unPerformEventT :: RequesterT t (HostFrame t) Identity (HostFrame t) a }
+newtype PerformEventT t m a = PerformEventT { unPerformEventT :: RequesterT t (HostFrame t) Identity (PostponeT (HostFrame t)) a }
 
 deriving instance ReflexHost t => Functor (PerformEventT t m)
 deriving instance ReflexHost t => Applicative (PerformEventT t m)
@@ -71,23 +73,23 @@ instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent
 
 instance (ReflexHost t, PrimMonad (HostFrame t)) => MonadAdjust t (PerformEventT t m) where
   runWithReplace outerA0 outerA' = PerformEventT $ runWithReplaceRequesterTWith f (coerce outerA0) (coerceEvent outerA')
-    where f :: HostFrame t a -> Event t (HostFrame t b) -> RequesterT t (HostFrame t) Identity (HostFrame t) (a, Event t b)
+    where f :: PostponeT (HostFrame t) a -> Event t (PostponeT (HostFrame t) b) -> RequesterT t (HostFrame t) Identity (PostponeT (HostFrame t)) (a, Event t b)
           f a0 a' = do
             result0 <- lift a0
-            result' <- requestingIdentity a'
+            result' <- requestingIdentity $ fmapCheap runPostponeT a' --TODO: Avoid this fmap
             return (result0, result')
   traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ sequenceDMapWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElements mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
   traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ sequenceDMapWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElements mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
 
-defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
+defaultAdjustBase :: forall t v v2 k' p. (PrimMonad (HostFrame t), Reflex t)
   => ((forall a. k' a -> v a -> HostFrame t (v2 a)) -> p k' v -> HostFrame t (p k' v2))
-  -> (forall a. k' a -> v a -> HostFrame t (v2 a))
+  -> (forall a. k' a -> v a -> PostponeT (HostFrame t) (v2 a))
   -> DMap k' v
   -> Event t (p k' v)
-  -> RequesterT t (HostFrame t) Identity (HostFrame t) (DMap k' v2, Event t (p k' v2))
+  -> RequesterT t (HostFrame t) Identity (PostponeT (HostFrame t)) (DMap k' v2, Event t (p k' v2))
 defaultAdjustBase traversePatchWithKey f' dm0 dm' = do
   result0 <- lift $ DMap.traverseWithKey f' dm0
-  result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
+  result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey $ \k v -> runPostponeT $ f' k v
   return (result0, result')
 
 instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
@@ -111,7 +113,7 @@ hostPerformEventT :: forall t m a.
                   -> m (a, FireCommand t m)
 hostPerformEventT a = do
   (response, responseTrigger) <- newEventWithTriggerRef
-  (result, eventToPerform) <- runHostFrame $ runRequesterT (unPerformEventT a) response
+  (result, eventToPerform) <- runHostFrame $ runPostponeT $ runRequesterT (unPerformEventT a) response
   eventToPerformHandle <- subscribeEvent eventToPerform
   return $ (,) result $ FireCommand $ \triggers (readPhase :: ReadPhase m a') -> do
     let go :: [DSum (EventTrigger t) Identity] -> m [a']
@@ -155,3 +157,6 @@ instance (MonadRef (HostFrame t), ReflexHost t) => MonadRef (PerformEventT t m) 
 instance (MonadAtomicRef (HostFrame t), ReflexHost t) => MonadAtomicRef (PerformEventT t m) where
   {-# INLINABLE atomicModifyRef #-}
   atomicModifyRef r = PerformEventT . lift . atomicModifyRef r
+
+instance (ReflexHost t, MonadIO (HostFrame t)) => MonadPostpone (PerformEventT t m) where
+  postpone = PerformEventT . postpone . unPerformEventT
