@@ -14,6 +14,7 @@
 #endif
 module Reflex.Requester.Class
  ( Requester (..)
+ , ExhaustibleRequester (..)
  , requesting
  , requesting_
  , requestingIdentity
@@ -43,12 +44,28 @@ class (Reflex t, Monad m) => Requester t m | m -> t where
   -- 'Control.Monad.Fix.MonadFix'.
   withRequesting :: (Event t (Response m a) -> m (Event t (Request m a), r)) -> m r
 
+class Requester t m => ExhaustibleRequester t m where
+  -- | Run a 'Requester', and fire an output event whenever that 'Requester'
+  -- does not produce any new 'Request's in response to a batch of incoming
+  -- 'Response's.
+  --
+  -- WARNING: If you use the resulting 'Event' to trigger a 'Request' inside the
+  -- child 'Requester', it will produce a causality loop, i.e. that "this
+  -- 'Requester' makes a 'Request' whenever it is done making 'Request's".  It
+  -- is safe to use the 'Event' to make a 'Request' in the parent context.
+  withRequestsExhausted :: m a -> m (Event t (), a)
+
 instance Requester t m => Requester t (ReaderT r m) where
   type Request (ReaderT r m) = Request m
   type Response (ReaderT r m) = Response m
   withRequesting f = do
     r <- ask
     lift $ withRequesting $ (`runReaderT` r) . f
+
+instance ExhaustibleRequester t m => ExhaustibleRequester t (ReaderT r m) where
+  withRequestsExhausted a = do
+    r <- ask
+    lift $ withRequestsExhausted $ runReaderT a r
 
 instance Requester t m => Requester t (StateT s m) where
   type Request (StateT s m) = Request m
@@ -61,6 +78,13 @@ instance Requester t m => Requester t (StateT s m) where
     put new
     return result
 
+instance ExhaustibleRequester t m => ExhaustibleRequester t (StateT s m) where
+  withRequestsExhausted a = do
+    old <- get
+    (exhausted, (result, new)) <- lift $ withRequestsExhausted $ runStateT a old
+    put new
+    return (exhausted, result)
+
 instance Requester t m => Requester t (Lazy.StateT s m) where
   type Request (Lazy.StateT s m) = Request m
   type Response (Lazy.StateT s m) = Response m
@@ -71,6 +95,13 @@ instance Requester t m => Requester t (Lazy.StateT s m) where
       return (request, (result, new))
     Lazy.put new
     return result
+
+instance ExhaustibleRequester t m => ExhaustibleRequester t (Lazy.StateT s m) where
+  withRequestsExhausted a = do
+    old <- Lazy.get
+    (exhausted, (result, new)) <- lift $ withRequestsExhausted $ Lazy.runStateT a old
+    Lazy.put new
+    return (exhausted, result)
 
 -- | Emit a request whenever the given 'Event' fires, and return responses in
 -- the resulting 'Event'.

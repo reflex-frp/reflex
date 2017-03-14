@@ -16,6 +16,7 @@
 #endif
 module Reflex.PerformEvent.Class
   ( PerformEvent (..)
+  , ExhaustiblePerformEvent (..)
   , performEventAsync
   ) where
 
@@ -23,6 +24,8 @@ import Reflex.Class
 import Reflex.TriggerEvent.Class
 
 import Control.Monad.Reader
+import Control.Monad.State.Strict
+import qualified Control.Monad.State as Lazy
 
 -- | 'PerformEvent' represents actions that can trigger other actions based on
 -- 'Event's.
@@ -38,6 +41,18 @@ class (Reflex t, Monad (Performable m), Monad m) => PerformEvent t m | m -> t wh
   -- | Like 'performEvent', but do not return the result.  May have slightly
   -- better performance.
   performEvent_ :: Event t (Performable m ()) -> m ()
+
+class PerformEvent t m => ExhaustiblePerformEvent t m where
+  -- | Run a 'PerformEvent', and fire an output event whenever that
+  -- 'PerformEvent' does not produce any new action events in response to a
+  -- batch of incoming action responses.
+  --
+  -- WARNING: If you use the resulting 'Event' to trigger a 'performEvent' (or
+  -- any other function based on it) inside the child 'PerformEvent', it will
+  -- produce a causality loop, i.e. that "this 'PerformEvent' takes an action
+  -- whenever it is done taking actions".  It is safe to use the 'Event' to
+  -- perform an action in the parent context.
+  withPerformEventExhausted :: m a -> m (Event t (), a)
 
 -- | Like 'performEvent', but the resulting 'Event' occurs only when the
 -- callback (@a -> IO ()@) is called, not when the included action finishes.
@@ -62,3 +77,32 @@ instance PerformEvent t m => PerformEvent t (ReaderT r m) where
   performEvent e = do
     r <- ask
     lift $ performEvent $ flip runReaderT r <$> e
+
+instance ExhaustiblePerformEvent t m => ExhaustiblePerformEvent t (ReaderT r m) where
+  withPerformEventExhausted a = do
+    r <- ask
+    lift $ withPerformEventExhausted $ runReaderT a r
+
+instance PerformEvent t m => PerformEvent t (StateT s m) where
+  type Performable (StateT s m) = Performable m
+  performEvent_ = lift . performEvent_
+  performEvent = lift . performEvent
+
+instance ExhaustiblePerformEvent t m => ExhaustiblePerformEvent t (StateT r m) where
+  withPerformEventExhausted a = do
+    old <- get
+    (exhausted, (result, new)) <- lift $ withPerformEventExhausted $ runStateT a old
+    put new
+    return (exhausted, result)
+
+instance PerformEvent t m => PerformEvent t (Lazy.StateT s m) where
+  type Performable (Lazy.StateT s m) = Performable m
+  performEvent_ = lift . performEvent_
+  performEvent = lift . performEvent
+
+instance ExhaustiblePerformEvent t m => ExhaustiblePerformEvent t (Lazy.StateT r m) where
+  withPerformEventExhausted a = do
+    old <- Lazy.get
+    (exhausted, (result, new)) <- lift $ withPerformEventExhausted $ Lazy.runStateT a old
+    Lazy.put new
+    return (exhausted, result)

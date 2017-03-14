@@ -5,12 +5,13 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE StandaloneDeriving #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
@@ -19,6 +20,9 @@ module Reflex.Requester.Base
   , runRequesterT
   , runWithReplaceRequesterTWith
   , sequenceDMapWithAdjustRequesterTWith
+  , withRequestsExhausted
+  , Nest (..)
+  , Unnest (..)
   ) where
 
 import Reflex.Class
@@ -43,9 +47,14 @@ import Data.Functor.Misc
 import Data.Map (Map)
 import Data.Unique.Tag
 import Data.Some (Some)
+import Data.These
+
+type RequesterTEnv t response m = (Event t (DMap (Tag (PrimState m)) response), EventSelector t (WrapArg response (Tag (PrimState m))))
+
+type RequesterTInternal t request response m = EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (RequesterTEnv t response m) m)
 
 -- | A basic implementation of 'Requester'.
-newtype RequesterT t request response m a = RequesterT { unRequesterT :: EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) a }
+newtype RequesterT t request response m a = RequesterT { unRequesterT :: RequesterTInternal t request response m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException)
 
 deriving instance MonadSample t m => MonadSample t (RequesterT t request response m)
@@ -63,7 +72,7 @@ runRequesterT :: (Reflex t, Monad m)
               -> Event t (DMap (Tag (PrimState m)) response)
               -> m (a, Event t (DMap (Tag (PrimState m)) request))
 runRequesterT (RequesterT a) responses = do
-  (result, requests) <- runReaderT (runEventWriterT a) $ fan $
+  (result, requests) <- runReaderT (runEventWriterT a) $ (,) responses $ fan $
     mapKeyValuePairsMonotonic (\(t :=> e) -> WrapArg t :=> Identity e) <$> responses
   return (result, requests)
 
@@ -72,10 +81,38 @@ instance (Reflex t, PrimMonad m) => Requester t (RequesterT t request response m
   type Response (RequesterT t request response m) = response
   withRequesting a = do
     !t <- lift newTag --TODO: Fix this upstream
-    s <- RequesterT ask
+    s <- RequesterT $ asks snd
     (req, result) <- a $ select s $ WrapArg t
     RequesterT $ tellEvent $ fmapCheap (DMap.singleton t) req
     return result
+
+instance Monad m => Nest m where
+  nest = DMap.traverseWithKey $ \_ v -> Identity <$> v
+
+class Nest f where
+  nest :: DMap k f -> f (DMap k Identity)
+
+instance Unnest Identity where
+  unnest = runIdentity
+
+class Unnest f where
+  unnest :: f (DMap k Identity) -> DMap k f
+
+instance (Reflex t, PrimMonad m, Nest request, Unnest response) => ExhaustibleRequester t (RequesterT t request response m) where
+  --TODO: This doesn't quite work.  It doesn't know which occurrences are
+  --actually targeting inside the child.
+  withRequestsExhausted a = do
+    withRequesting $ \response -> do
+      (result, request) <- lift $ runRequesterT a $ unnest <$> response
+      let exhausted = alignEventWithMaybe g response request
+          g = \case
+            This _ -> Just ()
+            _ -> Nothing
+      return (nest <$> request, (exhausted, result))
+--    (responses, _) <- ask
+--    (result, requests) <- lift $ runEventWriterT $ unRequesterT a
+--    tellEvent requests
+--    return (exhausted, result)
 
 instance MonadTrans (RequesterT t request response) where
   lift = RequesterT . lift . lift
@@ -111,11 +148,11 @@ runWithReplaceRequesterTWith :: forall m t request response a b. (Reflex t, Mona
                              -> Event t (RequesterT t request response m b)
                              -> RequesterT t request response m (a, Event t b)
 runWithReplaceRequesterTWith f a0 a' =
-  let f' :: forall a' b'. ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m a'
-         -> Event t (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m b')
-         -> EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) (a', Event t b')
+  let f' :: forall a' b'. ReaderT (RequesterTEnv t response m) m a'
+         -> Event t (ReaderT (RequesterTEnv t response m) m b')
+         -> RequesterTInternal t request response m (a', Event t b')
       f' x y = do
-        r <- EventWriterT $ ask
+        r <- EventWriterT ask
         unRequesterT (f (runReaderT x r) (fmapCheap (`runReaderT` r) y))
   in RequesterT $ runWithReplaceEventWriterTWith f' (coerce a0) (coerceEvent a')
 
@@ -142,10 +179,10 @@ sequenceDMapWithAdjustRequesterTWith :: forall k t request response m v v' p p'.
                                      -> RequesterT t request response m (DMap k v', Event t (p k v'))
 sequenceDMapWithAdjustRequesterTWith base mapPatch weakenPatchWith patchNewElements mergePatchIncremental f dm0 dm' =
   let base' :: forall v1 v2.
-           (forall a. k a -> v1 a -> ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m (v2 a))
+           (forall a. k a -> v1 a -> ReaderT (RequesterTEnv t response m) m (v2 a))
         -> DMap k v1
         -> Event t (p k v1)
-        -> EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) (DMap k v2, Event t (p k v2))
+        -> RequesterTInternal t request response m (DMap k v2, Event t (p k v2))
       base' f' x y = do
         r <- EventWriterT ask
         unRequesterT $ base (\k v -> runReaderT (f' k v) r) x y

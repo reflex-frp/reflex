@@ -74,11 +74,14 @@ instance MonadHold t m => MonadHold t (PostBuildT t m) where
   holdIncremental v0 = lift . holdIncremental v0
 
 instance PerformEvent t m => PerformEvent t (PostBuildT t m) where
-  type Performable (PostBuildT t m) = PostBuildT t (Performable m)
+  type Performable (PostBuildT t m) = PostBuildT t (Performable m) --TODO: Can we cut this?
   {-# INLINABLE performEvent_ #-}
   performEvent_ e = liftWith $ \run -> performEvent_ $ fmap run e
   {-# INLINABLE performEvent #-}
   performEvent e = liftWith $ \run -> performEvent $ fmap run e
+
+instance ExhaustiblePerformEvent t m => ExhaustiblePerformEvent t (PostBuildT t m) where
+  withPerformEventExhausted a = liftWith $ \run -> withPerformEventExhausted $ run a
 
 instance (ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigger t (PostBuildT t m) where
   {-# INLINABLE newEventWithTrigger #-}

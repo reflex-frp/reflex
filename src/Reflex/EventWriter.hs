@@ -87,6 +87,12 @@ instance Requester t m => Requester t (EventWriterT t w m) where
   type Response (EventWriterT t w m) = Response m
   withRequesting f = EventWriterT $ withRequesting $ unEventWriterT . f
 
+instance ExhaustibleRequester t m => ExhaustibleRequester t (EventWriterT t w m) where
+  withRequestsExhausted a = EventWriterT $ withRequestsExhausted $ unEventWriterT a
+
+instance ExhaustiblePerformEvent t m => ExhaustiblePerformEvent t (EventWriterT t w m) where
+  withPerformEventExhausted a = EventWriterT $ withPerformEventExhausted $ unEventWriterT a
+
 
 -- | Given a function like 'runWithReplace' for the underlying monad, implement
 -- 'runWithReplace' for 'EventWriterT'.  This is necessary when the underlying

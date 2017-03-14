@@ -71,6 +71,9 @@ instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent
   {-# INLINABLE performEvent #-}
   performEvent = PerformEventT . requestingIdentity
 
+instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => ExhaustiblePerformEvent t (PerformEventT t m) where
+  withPerformEventExhausted (PerformEventT a) = PerformEventT $ withRequestsExhausted a
+
 instance (ReflexHost t, PrimMonad (HostFrame t)) => MonadAdjust t (PerformEventT t m) where
   runWithReplace outerA0 outerA' = PerformEventT $ runWithReplaceRequesterTWith f (coerce outerA0) (coerceEvent outerA')
     where f :: PostponeT (HostFrame t) a -> Event t (PostponeT (HostFrame t) b) -> RequesterT t (HostFrame t) Identity (PostponeT (HostFrame t)) (a, Event t b)

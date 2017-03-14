@@ -191,3 +191,6 @@ instance Requester t m => Requester t (DynamicWriterT t w m) where
   type Request (DynamicWriterT t w m) = Request m
   type Response (DynamicWriterT t w m) = Response m
   withRequesting f = DynamicWriterT $ withRequesting $ unDynamicWriterT . f
+
+instance ExhaustibleRequester t m => ExhaustibleRequester t (DynamicWriterT t w m) where
+  withRequestsExhausted a = DynamicWriterT $ withRequestsExhausted $ unDynamicWriterT a
