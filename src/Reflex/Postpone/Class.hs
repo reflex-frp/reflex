@@ -2,6 +2,7 @@ module Reflex.Postpone.Class where
 
 import Control.Monad.Trans.Control
 import Control.Monad.Trans.Reader
+import Control.Monad.Trans.State
 import Control.Monad.Trans.Writer
 
 class Monad m => MonadPostpone m where
@@ -14,4 +15,7 @@ instance MonadPostpone m => MonadPostpone (ReaderT r m) where
 
 instance (MonadPostpone m, Monoid w) => MonadPostpone (WriterT w m) where
   postpone = liftThrough postpone
+
+instance (MonadPostpone m) => MonadPostpone (StateT s m) where
+  postpone ma = StateT $ \s -> postpone $ runStateT ma s
 

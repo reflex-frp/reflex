@@ -40,6 +40,7 @@ import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
+import Reflex.Postpone.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
@@ -133,6 +134,10 @@ instance MonadDynamicWriter t w m => MonadDynamicWriter t w (ReaderT r m) where
 instance MonadState s m => MonadState s (DynamicWriterT t w m) where
   get = lift get
   put = lift . put
+
+instance (MonadPostpone m) => MonadPostpone (DynamicWriterT t w m) where
+  postpone (DynamicWriterT ma) = DynamicWriterT $ StateT $ \s -> do
+    postpone $ runStateT ma s
 
 newtype DynamicWriterTLoweredResult t w v a = DynamicWriterTLoweredResult (v a, Dynamic t w)
 

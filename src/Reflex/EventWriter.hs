@@ -25,6 +25,7 @@ import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
+import Reflex.Postpone.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
@@ -168,3 +169,8 @@ instance MonadAtomicRef m => MonadAtomicRef (EventWriterT t w m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (EventWriterT t w m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
+
+instance (MonadPostpone m) => MonadPostpone (EventWriterT t w m) where
+  postpone (EventWriterT ma) = EventWriterT $ StateT $ \s -> do
+    postpone $ runStateT ma s
+
