@@ -185,8 +185,9 @@ distributeListOverDynPure =
 joinDynThroughMap :: forall t k a. (Reflex t, Ord k) => Dynamic t (Map k (Dynamic t a)) -> Dynamic t (Map k a)
 joinDynThroughMap = joinDyn . fmap distributeMapOverDynPure
 
--- | Print the value of the 'Dynamic' on each change and prefix it
--- with the provided string. This should /only/ be used for debugging.
+-- | Print the value of the 'Dynamic' when it is first read and on each
+-- subsequent change that is observed (as traceEvent), prefixed with the
+-- provided string. This should /only/ be used for debugging.
 --
 -- Note: Just like Debug.Trace.trace, the value will only be shown if something
 -- else in the system is depending on it.
@@ -194,7 +195,8 @@ traceDyn :: (Reflex t, Show a) => String -> Dynamic t a -> Dynamic t a
 traceDyn s = traceDynWith $ \x -> s <> ": " <> show x
 
 -- | Print the result of applying the provided function to the value
--- of the 'Dynamic' on each change. This should /only/ be used for
+-- of the 'Dynamic' when it is first read and on each subsequent change
+-- that is observed (as traceEvent). This should /only/ be used for
 -- debugging.
 --
 -- Note: Just like Debug.Trace.trace, the value will only be shown if something
