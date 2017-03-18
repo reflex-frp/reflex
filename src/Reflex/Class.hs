@@ -688,7 +688,7 @@ leftmost = mergeWith const
 -- time.
 mergeList :: Reflex t => [Event t a] -> Event t (NonEmpty a)
 mergeList [] = never
-mergeList es = mergeWithCheap' (:|[]) (<>) es
+mergeList es = mergeWithFoldCheap' id es
 
 unsafeMapIncremental :: (Reflex t, Patch p, Patch p') => (PatchTarget p -> PatchTarget p') -> (p -> p') -> Incremental t p -> Incremental t p'
 unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIncremental a) $ g <$> updatedIncremental a
@@ -983,11 +983,16 @@ mergeWithCheap = mergeWithCheap' id
 
 {-# INLINE mergeWithCheap' #-}
 mergeWithCheap' :: Reflex t => (a -> b) -> (b -> b -> b) -> [Event t a] -> Event t b
-mergeWithCheap' f g es = fmapCheap (Prelude.foldl1 g . map (\(Const2 _ :=> Identity v) -> f v) . DMap.toList)
-                       . merge
-                       . DMap.fromDistinctAscList
-                       . map (\(k, v) -> Const2 k :=> v)
-                       $ zip [0 :: Int ..] es
+mergeWithCheap' f g = mergeWithFoldCheap' $ foldl1 g . fmap f
+
+{-# INLINE mergeWithFoldCheap' #-}
+mergeWithFoldCheap' :: Reflex t => (NonEmpty a -> b) -> [Event t a] -> Event t b
+mergeWithFoldCheap' f es =
+  fmapCheap (f . (\(h : t) -> h :| t) . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList)
+  . merge
+  . DMap.fromDistinctAscList
+  . map (\(k, v) -> Const2 k :=> v)
+  $ zip [0 :: Int ..] es
 
 --------------------------------------------------------------------------------
 -- Deprecated functions
