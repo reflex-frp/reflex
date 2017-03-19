@@ -89,10 +89,10 @@ mkDynExp s = case Hs.parseExpWithMode (Hs.defaultParseMode { Hs.extensions = [ H
   Hs.ParseOk e -> qDynPure $ return $ everywhere (id `extT` reinstateUnqDyn) $ Hs.toExp $ everywhere (id `extT` antiE) e
     where TH.Name (TH.OccName occName) (TH.NameG _ _ (TH.ModName modName)) = 'unqMarker
           antiE x = case x of
-            Hs.SpliceExp se ->
-              Hs.App (Hs.Var $ Hs.Qual (Hs.ModuleName modName) (Hs.Ident occName)) $ case se of
-                Hs.IdSplice v -> Hs.Var $ Hs.UnQual $ Hs.Ident v
-                Hs.ParenSplice ps -> ps
+            Hs.SpliceExp _ se ->
+              Hs.App Hs.noLoc (Hs.Var Hs.noLoc $ Hs.Qual Hs.noLoc (Hs.ModuleName Hs.noLoc modName) (Hs.Ident Hs.noLoc occName)) $ case se of
+                Hs.IdSplice _ v -> Hs.Var Hs.noLoc $ Hs.UnQual Hs.noLoc $ Hs.Ident Hs.noLoc v
+                Hs.ParenSplice _ ps -> ps
             _ -> x
           reinstateUnqDyn (TH.Name (TH.OccName occName') (TH.NameQ (TH.ModName modName')))
             | modName == modName' && occName == occName' = 'unqMarker
