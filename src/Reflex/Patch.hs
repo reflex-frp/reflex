@@ -205,7 +205,7 @@ mapEditSetMoved moved = \case
 --   * The same source key may not be moved to two destination keys.
 --   * Any key that is the source of a Move must also be edited
 --     (otherwise, the Move would duplicate it)
-data PatchMapWithMove k v = PatchMapWithMove (Map k (MapEdit k v)) deriving (Show, Eq, Ord, Functor, Foldable, Traversable)
+newtype PatchMapWithMove k v = PatchMapWithMove (Map k (MapEdit k v)) deriving (Show, Eq, Ord, Functor, Foldable, Traversable)
 
 unPatchMapWithMove :: PatchMapWithMove k v -> Map k (MapEdit k v)
 unPatchMapWithMove (PatchMapWithMove p) = p
