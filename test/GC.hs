@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, FlexibleContexts, GADTs, TypeFamilies, RankNTypes, ScopedTypeVariables, LambdaCase #-}
+{-# LANGUAGE OverloadedStrings, FlexibleContexts, GADTs, TypeFamilies, RankNTypes, ScopedTypeVariables #-}
 module Main where
 
 import Control.Monad

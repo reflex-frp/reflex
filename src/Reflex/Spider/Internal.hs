@@ -8,7 +8,9 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+#if defined(DEBUG) || defined(DEBUG_CYCLES)
 {-# LANGUAGE LambdaCase #-}
+#endif
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
