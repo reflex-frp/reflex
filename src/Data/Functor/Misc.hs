@@ -19,6 +19,7 @@
 module Data.Functor.Misc
   ( -- * Const2
     Const2 (..)
+  , unConst2
   , dmapToMap
   , dmapToMapWith
   , mapToDMap
@@ -66,25 +67,27 @@ data Const2 :: * -> x -> x -> * where
   Const2 :: k -> Const2 k v v
   deriving (Typeable)
 
-deriving instance Show k => Show (Const2 k v v)
+unConst2 :: Const2 k v v' -> k
+unConst2 (Const2 k) = k
+
+deriving instance Eq k => Eq (Const2 k v v')
+deriving instance Ord k => Ord (Const2 k v v')
+deriving instance Show k => Show (Const2 k v v')
+deriving instance Read k => Read (Const2 k v v)
 
 instance Show k => GShow (Const2 k v) where
-  gshowsPrec n x@(Const2 _) = showsPrec n x
+  gshowToShow (Const2 _) = id
 
 instance (Show k, Show (f v)) => ShowTag (Const2 k v) f where
-  showTaggedPrec (Const2 _) = showsPrec
+  showTagToShow (Const2 _) _ = id
 
 instance Eq k => GEq (Const2 k v) where
-  geq (Const2 a) (Const2 b) =
-    if a == b
-    then Just Refl
-    else Nothing
+  geqToEq _ = id
+  geqUnify (Const2 _) (Const2 _) _ = id
 
 instance Ord k => GCompare (Const2 k v) where
-  gcompare (Const2 a) (Const2 b) = case compare a b of
-    LT -> GLT
-    EQ -> GEQ
-    GT -> GGT
+  gcompareToOrd (Const2 _) = id
+  gcompare (Const2 a) (Const2 b) = strengthenOrdering $ compare a b
 
 -- | Convert a 'DMap' to a regular 'Map'
 dmapToMap :: DMap (Const2 k v) Identity -> Map k v
@@ -115,10 +118,17 @@ weakenDMapWith f = Map.fromDistinctAscList . map (\(k :=> v) -> (Some.This k, f 
 data WrapArg :: (k -> *) -> (k -> *) -> * -> * where
   WrapArg :: f a -> WrapArg g f (g a)
 
+deriving instance Eq (f a) => Eq (WrapArg g f (g' a))
+deriving instance Ord (f a) => Ord (WrapArg g f (g' a))
+deriving instance Show (f a) => Show (WrapArg g f (g' a))
+deriving instance Read (f a) => Read (WrapArg g f (g a))
+
 instance GEq f => GEq (WrapArg g f) where
-  geq (WrapArg a) (WrapArg b) = (\Refl -> Refl) <$> geq a b
+  geqToEq (WrapArg f) r = geqToEq f r
+  geqUnify (WrapArg a) (WrapArg b) = geqUnify a b
 
 instance GCompare f => GCompare (WrapArg g f) where
+  gcompareToOrd (WrapArg f) = gcompareToOrd f
   gcompare (WrapArg a) (WrapArg b) = case gcompare a b of
     GLT -> GLT
     GEQ -> GEQ
@@ -164,29 +174,37 @@ dmapToThese m = case (DMap.lookup LeftTag m, DMap.lookup RightTag m) of
 data EitherTag l r a where
   LeftTag :: EitherTag l r l
   RightTag :: EitherTag l r r
+  deriving (Typeable)
+
+deriving instance Show (EitherTag l r a)
+deriving instance Eq (EitherTag l r a)
+deriving instance Ord (EitherTag l r a)
 
 instance GEq (EitherTag l r) where
+  geqToEq _ = id
+  geqUnify LeftTag LeftTag _ same = same
+  geqUnify RightTag RightTag _ same = same
+  geqUnify _ _ unknown _ = unknown
   geq a b = case (a, b) of
     (LeftTag, LeftTag) -> Just Refl
     (RightTag, RightTag) -> Just Refl
     _ -> Nothing
 
 instance GCompare (EitherTag l r) where
+  gcompareToOrd _ = id
   gcompare a b = case (a, b) of
     (LeftTag, LeftTag) -> GEQ
     (LeftTag, RightTag) -> GLT
     (RightTag, LeftTag) -> GGT
     (RightTag, RightTag) -> GEQ
 
-instance GShow (EitherTag l r) where
-  gshowsPrec _ a = case a of
-    LeftTag -> showString "LeftTag"
-    RightTag -> showString "RightTag"
+instance {-# INCOHERENT #-} GShow (EitherTag l r) where
+  gshowToShow _ = id
 
 instance (Show l, Show r) => ShowTag (EitherTag l r) Identity where
-  showTaggedPrec t n (Identity a) = case t of
-    LeftTag -> showsPrec n a
-    RightTag -> showsPrec n a
+  showTagToShow t _ = case t of
+    LeftTag -> id
+    RightTag -> id
 
 -- | Convert 'Either' to a 'DSum'. Inverse of 'dsumToEither'.
 eitherToDSum :: Either a b -> DSum (EitherTag a b) Identity
