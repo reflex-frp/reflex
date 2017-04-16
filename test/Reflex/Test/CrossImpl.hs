@@ -110,8 +110,9 @@ testAgreement builder inputs = do
   tracePerf "---------" $ return ()
   let resultsAgree = identityResult == spiderResult
   if resultsAgree
-    then do putStrLn "Success:"
-            print identityResult
+    then do --putStrLn "Success:"
+            --print identityResult
+            return ()
     else do putStrLn "Failure:"
             putStrLn $ "Pure result: " <> show identityResult
             putStrLn $ "Spider result:   " <> show spiderResult
