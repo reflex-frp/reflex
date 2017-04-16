@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -41,6 +42,7 @@ module Data.Functor.Misc
   , unwrapDMap
   , unwrapDMapMaybe
   , extractFunctorDMap
+  , ComposeMaybe (..)
   ) where
 
 import Control.Applicative (Applicative, (<$>))
@@ -52,6 +54,7 @@ import Data.GADT.Compare
 import Data.GADT.Show
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe
 import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.These
@@ -89,6 +92,12 @@ instance Ord k => GCompare (Const2 k v) where
   gcompareToOrd (Const2 _) = id
   gcompare (Const2 a) (Const2 b) = strengthenOrdering $ compare a b
 
+instance {-# INCOHERENT #-} (Eq k, Eq v) => EqTag (Const2 k v) Identity where
+  eqTagToEq (Const2 _) _ = id
+
+instance {-# INCOHERENT #-} Eq k => EqTag (Const2 k v) (Const2 k v) where
+  eqTagToEq (Const2 _) _ = id
+
 -- | Convert a 'DMap' to a regular 'Map'
 dmapToMap :: DMap (Const2 k v) Identity -> Map k v
 dmapToMap = Map.fromDistinctAscList . map (\(Const2 k :=> Identity v) -> (k, v)) . DMap.toAscList
@@ -124,7 +133,7 @@ deriving instance Show (f a) => Show (WrapArg g f (g' a))
 deriving instance Read (f a) => Read (WrapArg g f (g a))
 
 instance GEq f => GEq (WrapArg g f) where
-  geqToEq (WrapArg f) r = geqToEq f r
+  geqToEq (WrapArg f) = geqToEq f
   geqUnify (WrapArg a) (WrapArg b) = geqUnify a b
 
 instance GCompare f => GCompare (WrapArg g f) where
@@ -180,6 +189,16 @@ deriving instance Show (EitherTag l r a)
 deriving instance Eq (EitherTag l r a)
 deriving instance Ord (EitherTag l r a)
 
+instance {-# INCOHERENT #-} (Show (f l), Show (f r)) => ShowTag (EitherTag l r) f where
+  showTagToShow e _ = case e of
+    LeftTag -> id
+    RightTag -> id
+
+instance {-# INCOHERENT #-} (Eq (f l), Eq (f r)) => EqTag (EitherTag l r) f where
+  eqTagToEq e _ = case e of
+    LeftTag -> id
+    RightTag -> id
+
 instance GEq (EitherTag l r) where
   geqToEq _ = id
   geqUnify LeftTag LeftTag _ same = same
@@ -219,11 +238,28 @@ dsumToEither = \case
   (RightTag :=> Identity b) -> Right b
 
 --------------------------------------------------------------------------------
+-- ComposeMaybe
+--------------------------------------------------------------------------------
+
+-- | We can't use @Compose Maybe@ instead of 'ComposeMaybe', because that would
+-- make the 'f' parameter have a nominal type role.  We need f to be
+-- representational so that we can use safe 'coerce'.
+newtype ComposeMaybe f a = ComposeMaybe { getComposeMaybe :: Maybe (f a) } deriving (Show, Eq, Ord)
+
+instance EqTag f g => EqTag f (ComposeMaybe g) where
+  eqTagToEq f _ = eqTagToEq f (Proxy :: Proxy g)
+
+deriving instance Functor f => Functor (ComposeMaybe f)
+
+instance {-# INCOHERENT #-} GShow k => ShowTag k (ComposeMaybe k) where
+  showTagToShow k _ r = gshowToShow k (showTagToShow k (Proxy :: Proxy k) r)
+
+--------------------------------------------------------------------------------
 -- Deprecated functions
 --------------------------------------------------------------------------------
 
 {-# INLINE sequenceDmap #-}
-{-# DEPRECATED sequenceDmap "Use 'Data.Dependent.Map.traverseWithKey (\\_ t -> fmap Identity t)' instead" #-}
+{-# DEPRECATED sequenceDmap "Use 'Data.Dependent.Map.traverseWithKey (\\_ -> fmap Identity)' instead" #-}
 -- | Run the actions contained in the 'DMap'
 sequenceDmap :: Applicative t => DMap f t -> t (DMap f Identity)
 sequenceDmap = DMap.traverseWithKey $ \_ t -> Identity <$> t

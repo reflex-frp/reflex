@@ -9,6 +9,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -333,12 +334,17 @@ data FHList f l where
   FHCons :: f e -> FHList f l -> FHList f (e ': l)
 
 instance GEq (HListPtr l) where
+  geqToEq _ = id
+  geqUnify HHeadPtr HHeadPtr _ same = same
+  geqUnify (HTailPtr a) (HTailPtr b) different same = geqUnify a b different same
+  geqUnify _ _ different _ = different
   HHeadPtr `geq` HHeadPtr = Just Refl
   HHeadPtr `geq` HTailPtr _ = Nothing
   HTailPtr _ `geq` HHeadPtr = Nothing
   HTailPtr a `geq` HTailPtr b = a `geq` b
 
 instance GCompare (HListPtr l) where -- Warning: This ordering can't change, dmapTo*HList will break
+  gcompareToOrd _ = id
   HHeadPtr `gcompare` HHeadPtr = GEQ
   HHeadPtr `gcompare` HTailPtr _ = GLT
   HTailPtr _ `gcompare` HHeadPtr = GGT
@@ -348,6 +354,9 @@ instance GCompare (HListPtr l) where -- Warning: This ordering can't change, dma
 data HListPtr l a where
   HHeadPtr :: HListPtr (h ': t) h
   HTailPtr :: HListPtr t a -> HListPtr (h ': t) a
+
+deriving instance Eq (HListPtr l a)
+deriving instance Ord (HListPtr l a)
 
 fhlistToDMap :: forall (f :: * -> *) l. FHList f l -> DMap (HListPtr l) f
 fhlistToDMap = DMap.fromList . go

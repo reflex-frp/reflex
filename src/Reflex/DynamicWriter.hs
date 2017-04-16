@@ -38,6 +38,7 @@ import Data.Some (Some)
 import Data.These
 import Reflex.Class
 import Reflex.Host.Class
+import qualified Reflex.Patch.MapWithMove as MapWithMove
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Requester.Class
@@ -54,29 +55,26 @@ mergeDynIncremental a = unsafeBuildIncremental (mapM (sample . current) =<< samp
   where changedValues = fmap (PatchMap . fmap Just) $ mergeMapIncremental $ mapIncrementalMapValues updated a
         addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ \(PatchMap m) -> PatchMap <$> mapM (mapM (sample . current)) m
 
-mergeDynIncrementalWithMove :: (Reflex t, Ord k) => Incremental t (PatchMapWithMove k (Dynamic t v)) -> Incremental t (PatchMapWithMove k v)
+mergeDynIncrementalWithMove :: forall t k v. (Reflex t, Ord k) => Incremental t (PatchMapWithMove k (Dynamic t v)) -> Incremental t (PatchMapWithMove k v)
 mergeDynIncrementalWithMove a = unsafeBuildIncremental (mapM (sample . current) =<< sample (currentIncremental a)) $ alignWith f addedAndRemovedValues changedValues
   where changedValues = mergeMapIncrementalWithMove $ mapIncrementalMapValues updated a
         addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ fmap unsafePatchMapWithMove . mapM (mapM (sample . current)) . unPatchMapWithMove
+        f :: These (PatchMapWithMove k v) (Map k v) -> PatchMapWithMove k v
         f x = unsafePatchMapWithMove $
           let (p, changed) = case x of
                 This p_ -> (unPatchMapWithMove p_, mempty)
                 That c -> (mempty, c)
                 These p_ c -> (unPatchMapWithMove p_, c)
-              (pWithNewVals, noLongerMoved) = flip runState [] $ forM p $ \case
-                MapEdit_Insert moved v -> return $ MapEdit_Insert moved v
-                MapEdit_Delete moved -> return $ MapEdit_Delete moved
-                MapEdit_Move moved k -> case Map.lookup k changed of
-                  Nothing -> return $ MapEdit_Move moved k
+              (pWithNewVals, noLongerMoved) = flip runState [] $ forM p $ MapWithMove.nodeInfoMapMFrom $ \case
+                MapWithMove.From_Insert v -> return $ MapWithMove.From_Insert v
+                MapWithMove.From_Delete -> return $ MapWithMove.From_Delete
+                MapWithMove.From_Move k -> case Map.lookup k changed of
+                  Nothing -> return $ MapWithMove.From_Move k
                   Just v -> do
                     modify (k:)
-                    return $ MapEdit_Insert moved v
+                    return $ MapWithMove.From_Insert v
               noLongerMovedMap = Map.fromList $ fmap (\k -> (k, ())) noLongerMoved
-              removeMovedFlag = \case --TODO: Check if moved was true before, in each case?
-                MapEdit_Insert _ v -> MapEdit_Insert False v
-                MapEdit_Delete _ -> MapEdit_Delete False
-                MapEdit_Move _ k -> MapEdit_Move False k
-          in Map.differenceWith (\e _ -> Just $ removeMovedFlag e) pWithNewVals noLongerMovedMap --TODO: Check if any in the second map are not covered?
+          in Map.differenceWith (\e _ -> Just $ MapWithMove.nodeInfoSetTo Nothing e) pWithNewVals noLongerMovedMap --TODO: Check if any in the second map are not covered?
 
 -- | A basic implementation of 'MonadDynamicWriter'.
 newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic t w] m a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadHold t, MonadSample t, MonadAsyncException, MonadException) -- The list is kept in reverse order
