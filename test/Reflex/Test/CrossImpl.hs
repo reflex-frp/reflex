@@ -130,8 +130,8 @@ testCases =
        e' <- updated <$> count e
        b' <- hold (0 :: Int) e'
        return (b', e')
-  , (,) "onceE-1" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       e' <- onceE $ leftmost [e, e]
+  , (,) "headE-1" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+       e' <- headE $ leftmost [e, e]
        return (b, e')
   , (,) "switch-1" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = fmap (const e) e
@@ -176,7 +176,7 @@ testCases =
        return (b, e'')
   , (,) "switchPromptly-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip push e $ \_ -> do
-             Just <$> onceE e
+             Just <$> headE e
        e'' <- switchPromptly never e'
        return (b, e'')
   , (,) "switchPromptly-6" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
@@ -197,7 +197,7 @@ testCases =
            e'' = coincidence e'
        return (b, e'')
   , (,) "coincidence-4" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj"), (3, "asdf")]) $ \(b, e) -> do
-       let e' = flip pushAlways e $ \_ -> onceE e
+       let e' = flip pushAlways e $ \_ -> headE e
            e'' = coincidence e'
        return (b, e'')
   , (,) "coincidence-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer")]) $ \(b, e) -> do
@@ -217,14 +217,14 @@ testCases =
            eCoincidences = coincidence $ fmap (const e') e
        return (b, eCoincidences)
   , (,) "holdWhileFiring" $ TestCase (Map.singleton 0 "zxc", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       eo <- onceE e
+       eo <- headE e
        bb <- hold b $ pushAlways (const $ hold "asdf" eo) eo
        let b' = pull $ sample =<< sample bb
        return (b', e)
   , (,) "joinDyn" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        bb <- hold "b" e
-       bd <- hold never . fmap (const e) =<< onceE e
-       eOuter <- pushAlways sample . fmap (const bb) <$> onceE e
+       bd <- hold never . fmap (const e) =<< headE e
+       eOuter <- pushAlways sample . fmap (const bb) <$> headE e
        let eInner = switch bd
            e' = leftmost [eOuter, eInner]
        return (b, e')
