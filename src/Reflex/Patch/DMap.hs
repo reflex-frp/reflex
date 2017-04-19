@@ -20,7 +20,7 @@ import Data.Some (Some)
 
 -- | A set of changes to a 'DMap'.  Any element may be inserted/updated or
 -- deleted.
-newtype PatchDMap k v = PatchDMap (DMap k (ComposeMaybe v))
+newtype PatchDMap k v = PatchDMap { unPatchDMap :: DMap k (ComposeMaybe v) }
 
 deriving instance GCompare k => Semigroup (PatchDMap k v)
 
@@ -55,3 +55,7 @@ const2PatchDMapWith f (PatchMap p) = PatchDMap $ DMap.fromDistinctAscList $ g <$
   where g :: (k, Maybe v) -> DSum (Const2 k a) (ComposeMaybe f)
         g (k, e) = Const2 k :=> ComposeMaybe (f <$> e)
 
+-- | Get the values that will be deleted if the given patch is applied to the
+-- given 'DMap'.  Includes values that will be replaced.
+getDeletions :: GCompare k => PatchDMap k v -> DMap k v' -> DMap k v'
+getDeletions (PatchDMap p) m = DMap.intersectionWithKey (\_ v _ -> v) m p

@@ -54,7 +54,6 @@ import Data.GADT.Compare
 import Data.GADT.Show
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe
 import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.These

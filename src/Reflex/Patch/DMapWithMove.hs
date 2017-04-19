@@ -22,6 +22,7 @@ import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (ShowTag (..), EqTag (..))
 import Data.Functor.Constant
 import Data.Functor.Misc
+import Data.Functor.Product
 import Data.GADT.Compare (GEq (..))
 import Data.GADT.Show (GShow (..))
 import qualified Data.Map as Map
@@ -266,10 +267,8 @@ instance GCompare k => Patch (PatchDMapWithMove k v) where
             From_Delete -> Just $ Constant ()
             _ -> Nothing
 
--- | Get the values that will be deleted if the given patch is applied to the
--- given 'DMap'
-getDeletions :: GCompare k => PatchDMapWithMove k v -> DMap k v' -> DMap k v'
-getDeletions (PatchDMapWithMove p) m = DMap.mapMaybeWithKey (\_ -> getComposeMaybe) $ DMap.intersectionWithKey f p m
-  where f _ ni v = ComposeMaybe $ case getComposeMaybe $ _nodeInfo_to ni of
-          Just _ -> Nothing
-          Nothing -> Just v
+-- | Get the values that will be deleted or moved if the given patch is applied
+-- to the given 'DMap'.
+getDeletionsAndMoves :: GCompare k => PatchDMapWithMove k v -> DMap k v' -> DMap k (Product v' (ComposeMaybe k))
+getDeletionsAndMoves (PatchDMapWithMove p) m = DMap.intersectionWithKey f m p
+  where f _ v ni = Pair v $ _nodeInfo_to ni
