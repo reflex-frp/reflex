@@ -117,8 +117,8 @@ library
     cpp-options: -DUSE_TEMPLATE_HASKELL
     build-depends:
       dependent-sum >= 0.3 && < 0.5,
-      haskell-src-exts >= 1.16 && < 1.18,
-      haskell-src-meta == 0.6.*,
+      haskell-src-exts >= 1.16 && < 1.19,
+      haskell-src-meta >= 0.6 && < 0.8,
       template-haskell >= 2.9 && < 2.12
     exposed-modules:
       Reflex.Dynamic.TH
