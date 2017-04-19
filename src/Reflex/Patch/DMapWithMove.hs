@@ -1,5 +1,4 @@
--- | This module defines the 'Patch' class, which is used by Reflex to manage
--- changes to 'Reflex.Class.Incremental' values.
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -19,23 +18,29 @@ import qualified Reflex.Patch.MapWithMove as MapWithMove
 
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
 import qualified Data.Dependent.Map as DMap
-import Data.Dependent.Sum (ShowTag (..), EqTag (..))
+import Data.Dependent.Sum (EqTag (..))
 import Data.Functor.Constant
 import Data.Functor.Misc
 import Data.Functor.Product
 import Data.GADT.Compare (GEq (..))
-import Data.GADT.Show (GShow (..))
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup (Semigroup (..), (<>))
 import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.These
+
+#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
+import Data.Dependent.Sum (ShowTag (..))
+import Data.GADT.Show (GShow (..))
 import Data.Typeable (Proxy (..))
+#endif
 
 -- | Like 'PatchMapWithMove', but for 'DMap'.
 data PatchDMapWithMove k v = PatchDMapWithMove (DMap k (NodeInfo k v))
+#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
   deriving (Show)
+#endif
 
 data NodeInfo k v a = NodeInfo
   { _nodeInfo_from :: !(From k v a)
@@ -43,11 +48,13 @@ data NodeInfo k v a = NodeInfo
   }
   deriving (Show)
 
+#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
 instance {-# INCOHERENT #-} (GShow k, ShowTag k v) => ShowTag k (NodeInfo k v) where
   showTagToShow k _ r = gshowToShow k $ showTagToShow k (Proxy :: Proxy v) r
 
 instance {-# INCOHERENT #-} (GEq k, EqTag k v) => EqTag k (From k v) where
   eqTagToEq k _ r = eqTagToEq k (Proxy :: Proxy v) (geqToEq k r)
+#endif
 
 data From (k :: a -> *) (v :: a -> *) :: a -> * where
   From_Insert :: v a -> From k v a

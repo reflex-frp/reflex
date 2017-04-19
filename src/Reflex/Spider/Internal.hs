@@ -730,11 +730,17 @@ instance Eq (SpiderTimelineEnv x) where
   _ == _ = True -- Since only one exists of each type
 
 instance GEq SpiderTimelineEnv where
+#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
   geqToEq _ = id
   geqUnify (a :: SpiderTimelineEnv a) (b :: SpiderTimelineEnv b) different same = if _spiderTimeline_lock a == _spiderTimeline_lock b
     then case unsafeCoerce Refl :: a :~: b of
            Refl -> same -- This unsafeCoerce is safe because the same SpiderTimelineEnv can't have two different 'x' arguments
     else different
+#else
+  a `geq` b = if _spiderTimeline_lock a == _spiderTimeline_lock b
+              then Just $ unsafeCoerce Refl -- This unsafeCoerce is safe because the same SpiderTimelineEnv can't have two different 'x' arguments
+              else Nothing
+#endif
 
 data EventEnv x
    = EventEnv { eventEnvAssignments :: !(IORef [SomeAssignment x]) -- Needed for Subscribe
