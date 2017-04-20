@@ -950,7 +950,7 @@ infixl 4 <@>
 --
 -- A more suggestive example might be:
 --
--- > handleMouse <$> bPlayerState <*> bMousePosition <*> eMouseClick :: Event t (GameState -> GameState)
+-- > handleMouse <$> bPlayerState <*> bMousePosition <@> eMouseClick :: Event t (GameState -> GameState)
 --
 (<@>) :: Reflex t => Behavior t (a -> b) -> Event t a -> Event t b
 (<@>) b = push $ \x -> do
