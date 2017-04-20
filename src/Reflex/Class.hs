@@ -80,6 +80,8 @@ module Reflex.Class
   , mapAccumMaybe_
   , mapAccumMaybeM_
   , zipListWithEvent
+  , numberOccurrences
+  , numberOccurrencesFrom
   , headE
   , tailE
   , headTailE
@@ -915,6 +917,14 @@ zipListWithEvent f l e = do
         h:t -> (Just t, Just $ f h b)
         _ -> (Nothing, Nothing) --TODO: Unsubscribe the event?
   mapAccumMaybe_ f' l e
+
+-- | Assign a number to each occurence of the given 'Event', starting from 0
+numberOccurrences :: (Reflex t, MonadHold t m, MonadFix m, Num b) => Event t a -> m (Event t (b, a))
+numberOccurrences = numberOccurrencesFrom 0
+
+-- | Assign a number to each occurence of the given 'Event'
+numberOccurrencesFrom :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t (b, a))
+numberOccurrencesFrom = mapAccum_ (\n a -> (n + 1, (n, a)))
 
 -- | A 'Monad' that supports adjustment over time.  After an action has been
 -- run, if the given events fire, it will adjust itself so that its net effect
