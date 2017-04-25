@@ -287,174 +287,6 @@ demuxed d k =
   let e = select (demuxSelector d) (Const2 k)
   in unsafeBuildDynamic (fmap (==k) $ sample $ demuxValue d) e
 
---------------------------------------------------------------------------------
--- collectDyn
---------------------------------------------------------------------------------
-
---TODO: This whole section is badly in need of cleanup
-
--- | A heterogeneous list whose type and length are fixed statically.  This is
--- reproduced from the 'HList' package due to integration issues, and because
--- very little other functionality from that library is needed.
-data HList (l::[*]) where
-  HNil  :: HList '[]
-  HCons :: e -> HList l -> HList (e ': l)
-
-infixr 2 `HCons`
-
-type family HRevApp (l1 :: [k]) (l2 :: [k]) :: [k]
-type instance HRevApp '[] l = l
-type instance HRevApp (e ': l) l' = HRevApp l (e ': l')
-
-hRevApp :: HList l1 -> HList l2 -> HList (HRevApp l1 l2)
-hRevApp HNil l = l
-hRevApp (HCons x l) l' = hRevApp l (HCons x l')
-
-hReverse :: HList l -> HList (HRevApp l '[])
-hReverse l = hRevApp l HNil
-
-hBuild :: (HBuild' '[] r) => r
-hBuild =  hBuild' HNil
-
-class HBuild' l r where
-    hBuild' :: HList l -> r
-
-instance (l' ~ HRevApp l '[])
-      => HBuild' l (HList l') where
-  hBuild' = hReverse
-
-instance HBuild' (a ': l) r
-      => HBuild' l (a->r) where
-  hBuild' l x = hBuild' (HCons x l)
-
--- | Like 'HList', but with a functor wrapping each element.
-data FHList f l where
-  FHNil :: FHList f '[]
-  FHCons :: f e -> FHList f l -> FHList f (e ': l)
-
-instance GEq (HListPtr l) where
-  HHeadPtr `geq` HHeadPtr = Just Refl
-  HHeadPtr `geq` HTailPtr _ = Nothing
-  HTailPtr _ `geq` HHeadPtr = Nothing
-  HTailPtr a `geq` HTailPtr b = a `geq` b
-
-instance GCompare (HListPtr l) where -- Warning: This ordering can't change, dmapTo*HList will break
-  HHeadPtr `gcompare` HHeadPtr = GEQ
-  HHeadPtr `gcompare` HTailPtr _ = GLT
-  HTailPtr _ `gcompare` HHeadPtr = GGT
-  HTailPtr a `gcompare` HTailPtr b = a `gcompare` b
-
--- | A typed index into a typed heterogeneous list.
-data HListPtr l a where
-  HHeadPtr :: HListPtr (h ': t) h
-  HTailPtr :: HListPtr t a -> HListPtr (h ': t) a
-
-fhlistToDMap :: forall (f :: * -> *) l. FHList f l -> DMap (HListPtr l) f
-fhlistToDMap = DMap.fromList . go
-  where go :: forall l'. FHList f l' -> [DSum (HListPtr l') f]
-        go = \case
-          FHNil -> []
-          FHCons h t -> (HHeadPtr :=> h) : map (\(p :=> v) -> HTailPtr p :=> v) (go t)
-
--- | This class allows 'HList's and 'FHlist's to be built from regular lists;
--- they must be contiguous and sorted.
-class RebuildSortedHList l where
-  rebuildSortedFHList :: [DSum (HListPtr l) f] -> FHList f l
-  rebuildSortedHList :: [DSum (HListPtr l) Identity] -> HList l
-
-instance RebuildSortedHList '[] where
-  rebuildSortedFHList l = case l of
-    [] -> FHNil
-    _ : _ -> error "rebuildSortedFHList{'[]}: empty list expected"
-  rebuildSortedHList l = case l of
-    [] -> HNil
-    _ : _ -> error "rebuildSortedHList{'[]}: empty list expected"
-
-instance RebuildSortedHList t => RebuildSortedHList (h ': t) where
-  rebuildSortedFHList l = case l of
-    ((HHeadPtr :=> h) : t) -> FHCons h . rebuildSortedFHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
-    _ -> error "rebuildSortedFHList{h':t}: non-empty list with HHeadPtr expected"
-  rebuildSortedHList l = case l of
-    ((HHeadPtr :=> Identity h) : t) -> HCons h . rebuildSortedHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
-    _ -> error "rebuildSortedHList{h':t}: non-empty list with HHeadPtr expected"
-
-dmapToHList :: forall l. RebuildSortedHList l => DMap (HListPtr l) Identity -> HList l
-dmapToHList = rebuildSortedHList . DMap.toList
-
--- | Collect a hetereogeneous list whose elements are all 'Dynamic's into a
--- single 'Dynamic' whose value represents the current values of all of the
--- input 'Dynamic's.
-distributeFHListOverDynPure :: (Reflex t, RebuildSortedHList l) => FHList (Dynamic t) l -> Dynamic t (HList l)
-distributeFHListOverDynPure l = fmap dmapToHList $ distributeDMapOverDynPure $ fhlistToDMap l
-
--- | Indicates that all elements in a type-level list are applications of the
--- same functor.
-class AllAreFunctors (f :: a -> *) (l :: [a]) where
-  type FunctorList f l :: [*]
-  toFHList :: HList (FunctorList f l) -> FHList f l
-  fromFHList :: FHList f l -> HList (FunctorList f l)
-
-instance AllAreFunctors f '[] where
-  type FunctorList f '[] = '[]
-  toFHList l = case l of
-    HNil -> FHNil
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
-  fromFHList FHNil = HNil
-
-instance AllAreFunctors f t => AllAreFunctors f (h ': t) where
-  type FunctorList f (h ': t) = f h ': FunctorList f t
-  toFHList l = case l of
-    a `HCons` b -> a `FHCons` toFHList b
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
-  fromFHList (a `FHCons` b) = a `HCons` fromFHList b
-
--- | Convert a datastructure whose constituent parts are all 'Dynamic's into a
--- single 'Dynamic' whose value represents all the current values of the input's
--- consitutent 'Dynamic's.
-collectDynPure :: ( RebuildSortedHList (HListElems b)
-                  , IsHList a, IsHList b
-                  , AllAreFunctors (Dynamic t) (HListElems b)
-                  , Reflex t
-                  , HListElems a ~ FunctorList (Dynamic t) (HListElems b)
-                  ) => a -> Dynamic t b
-collectDynPure ds = fmap fromHList $ distributeFHListOverDynPure $ toFHList $ toHList ds
-
--- | Poor man's 'Generic's for product types only.
-class IsHList a where
-  type HListElems a :: [*]
-  toHList :: a -> HList (HListElems a)
-  fromHList :: HList (HListElems a) -> a
-
-instance IsHList (a, b) where
-  type HListElems (a, b) = [a, b]
-  toHList (a, b) = hBuild a b
-  fromHList l = case l of
-    a `HCons` b `HCons` HNil -> (a, b)
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
-
-instance IsHList (a, b, c, d) where
-  type HListElems (a, b, c, d) = [a, b, c, d]
-  toHList (a, b, c, d) = hBuild a b c d
-  fromHList l = case l of
-    a `HCons` b `HCons` c `HCons` d `HCons` HNil -> (a, b, c, d)
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
-
-instance IsHList (a, b, c, d, e, f) where
-  type HListElems (a, b, c, d, e, f) = [a, b, c, d, e, f]
-  toHList (a, b, c, d, e, f) = hBuild a b c d e f
-  fromHList l = case l of
-    a `HCons` b `HCons` c `HCons` d `HCons` e `HCons` f `HCons` HNil -> (a, b, c, d, e, f)
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
 
 --------------------------------------------------------------------------------
 -- Deprecated functions
@@ -586,3 +418,186 @@ joinDyn = join
 {-# DEPRECATED nubDyn "Use 'uniqDyn' instead" #-}
 nubDyn :: (Reflex t, Eq a) => Dynamic t a -> Dynamic t a
 nubDyn = uniqDyn
+
+
+--------------------------------------------------------------------------------
+-- collectDyn
+--------------------------------------------------------------------------------
+
+-- | This is now deprecated in favor of types from the generics-sop library and
+-- functions provided in Reflex.Dynamic.CollectDynGeneric
+-- The generics-sop 'NP' product type takes the place of FHList and HList.
+-- Utilities to manipulate the NP types (shifting functors from the type into and out of the type-list
+-- and convert from NP to DMap and DMap to NP are all in Generics.SOP.DMapUtilities
+-- Equivalent "distribute" and "collect" functions are now in Reflex.Dynamic.CollectDynGeneric
+
+-- | A heterogeneous list whose type and length are fixed statically.  This is
+-- reproduced from the 'HList' package due to integration issues, and because
+-- very little other functionality from that library is needed.
+{-# DEPRECATED HList, HRevApp, hRevApp, hReverse, hBuild, HBuild' "This interface for type-level lists is being deprecated in favor of the 'NP' type from generics-sop" #-}
+data HList (l::[*]) where
+  HNil  :: HList '[]
+  HCons :: e -> HList l -> HList (e ': l)
+
+infixr 2 `HCons`
+
+type family HRevApp (l1 :: [k]) (l2 :: [k]) :: [k]
+type instance HRevApp '[] l = l
+type instance HRevApp (e ': l) l' = HRevApp l (e ': l')
+
+hRevApp :: HList l1 -> HList l2 -> HList (HRevApp l1 l2)
+hRevApp HNil l = l
+hRevApp (HCons x l) l' = hRevApp l (HCons x l')
+
+hReverse :: HList l -> HList (HRevApp l '[])
+hReverse l = hRevApp l HNil
+
+hBuild :: (HBuild' '[] r) => r
+hBuild =  hBuild' HNil
+
+class HBuild' l r where
+    hBuild' :: HList l -> r
+
+instance (l' ~ HRevApp l '[])
+      => HBuild' l (HList l') where
+  hBuild' = hReverse
+
+instance HBuild' (a ': l) r
+      => HBuild' l (a->r) where
+  hBuild' l x = hBuild' (HCons x l)
+
+-- | Like 'HList', but with a functor wrapping each element.
+{-# DEPRECATED FHList,RebuildSortedHList "This interface for type-level lists is being deprecated in favor of the 'NP' type from generics-sop" #-}
+data FHList f l where
+  FHNil :: FHList f '[]
+  FHCons :: f e -> FHList f l -> FHList f (e ': l)
+
+instance GEq (HListPtr l) where
+  HHeadPtr `geq` HHeadPtr = Just Refl
+  HHeadPtr `geq` HTailPtr _ = Nothing
+  HTailPtr _ `geq` HHeadPtr = Nothing
+  HTailPtr a `geq` HTailPtr b = a `geq` b
+
+instance GCompare (HListPtr l) where -- Warning: This ordering can't change, dmapTo*HList will break
+  HHeadPtr `gcompare` HHeadPtr = GEQ
+  HHeadPtr `gcompare` HTailPtr _ = GLT
+  HTailPtr _ `gcompare` HHeadPtr = GGT
+  HTailPtr a `gcompare` HTailPtr b = a `gcompare` b
+
+-- | A typed index into a typed heterogeneous list.
+{-# DEPRECATED HListPtr "Use Generics.SOP.DMapUtiltiies.TypeListTag instead" #-}
+data HListPtr l a where
+  HHeadPtr :: HListPtr (h ': t) h
+  HTailPtr :: HListPtr t a -> HListPtr (h ': t) a
+
+{-# DEPRECATED fhlistToDMap "Use generics-sop NP for your functor wrapped type-list and then Generics.SOP.DMapUtilities.npToDMap" #-}
+fhlistToDMap :: forall (f :: * -> *) l. FHList f l -> DMap (HListPtr l) f
+fhlistToDMap = DMap.fromList . go
+  where go :: forall l'. FHList f l' -> [DSum (HListPtr l') f]
+        go = \case
+          FHNil -> []
+          FHCons h t -> (HHeadPtr :=> h) : map (\(p :=> v) -> HTailPtr p :=> v) (go t)
+
+-- | This class allows 'HList's and 'FHlist's to be built from regular lists;
+-- they must be contiguous and sorted.
+class RebuildSortedHList l where
+  rebuildSortedFHList :: [DSum (HListPtr l) f] -> FHList f l
+  rebuildSortedHList :: [DSum (HListPtr l) Identity] -> HList l
+
+instance RebuildSortedHList '[] where
+  rebuildSortedFHList l = case l of
+    [] -> FHNil
+    _ : _ -> error "rebuildSortedFHList{'[]}: empty list expected"
+  rebuildSortedHList l = case l of
+    [] -> HNil
+    _ : _ -> error "rebuildSortedHList{'[]}: empty list expected"
+
+instance RebuildSortedHList t => RebuildSortedHList (h ': t) where
+  rebuildSortedFHList l = case l of
+    ((HHeadPtr :=> h) : t) -> FHCons h . rebuildSortedFHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
+    _ -> error "rebuildSortedFHList{h':t}: non-empty list with HHeadPtr expected"
+  rebuildSortedHList l = case l of
+    ((HHeadPtr :=> Identity h) : t) -> HCons h . rebuildSortedHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
+    _ -> error "rebuildSortedHList{h':t}: non-empty list with HHeadPtr expected"
+
+{-# DEPRECATED dmapToHList "Use generics-sop NP for your functor wrapped type-list and then Generics.SOP.DMapUtilities.dMapToNP" #-}
+dmapToHList :: forall l. RebuildSortedHList l => DMap (HListPtr l) Identity -> HList l
+dmapToHList = rebuildSortedHList . DMap.toList
+
+-- | Collect a hetereogeneous list whose elements are all 'Dynamic's into a
+-- single 'Dynamic' whose value represents the current values of all of the
+-- input 'Dynamic's.
+{-# DEPRECATED distributeFHListOverDynPure "Use generics-sop NP types for functor-wrapped type-lists and then Reflex.Dynamic.CollectDynGeneric.collectDynPureNP " #-}
+distributeFHListOverDynPure :: (Reflex t, RebuildSortedHList l) => FHList (Dynamic t) l -> Dynamic t (HList l)
+distributeFHListOverDynPure l = fmap dmapToHList $ distributeDMapOverDynPure $ fhlistToDMap l
+
+-- | Indicates that all elements in a type-level list are applications of the
+-- same functor.
+{-# DEPRECATED AllAreFunctors "This functionality is provided for generics-op NPs via Generics.SOP.DMapUtilties.npUnCompose and Generics.SOP.DMapUtilities.npReCompose" #-}
+class AllAreFunctors (f :: a -> *) (l :: [a]) where
+  type FunctorList f l :: [*]
+  toFHList :: HList (FunctorList f l) -> FHList f l
+  fromFHList :: FHList f l -> HList (FunctorList f l)
+
+instance AllAreFunctors f '[] where
+  type FunctorList f '[] = '[]
+  toFHList l = case l of
+    HNil -> FHNil
+#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
+    _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
+#endif
+  fromFHList FHNil = HNil
+
+instance AllAreFunctors f t => AllAreFunctors f (h ': t) where
+  type FunctorList f (h ': t) = f h ': FunctorList f t
+  toFHList l = case l of
+    a `HCons` b -> a `FHCons` toFHList b
+#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
+    _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
+#endif
+  fromFHList (a `FHCons` b) = a `HCons` fromFHList b
+
+-- | Convert a datastructure whose constituent parts are all 'Dynamic's into a
+-- single 'Dynamic' whose value represents all the current values of the input's
+-- consitutent 'Dynamic's.
+{-# DEPRECATED collectDynPure "Use Reflex.Dynamic.CollectDynGeneric.collectDynGeneric instead." #-}
+collectDynPure :: ( RebuildSortedHList (HListElems b)
+                  , IsHList a, IsHList b
+                  , AllAreFunctors (Dynamic t) (HListElems b)
+                  , Reflex t
+                  , HListElems a ~ FunctorList (Dynamic t) (HListElems b)
+                  ) => a -> Dynamic t b
+collectDynPure ds = fmap fromHList $ distributeFHListOverDynPure $ toFHList $ toHList ds
+
+-- | Poor man's 'Generic's for product types only.
+class IsHList a where
+  type HListElems a :: [*]
+  toHList :: a -> HList (HListElems a)
+  fromHList :: HList (HListElems a) -> a
+
+instance IsHList (a, b) where
+  type HListElems (a, b) = [a, b]
+  toHList (a, b) = hBuild a b
+  fromHList l = case l of
+    a `HCons` b `HCons` HNil -> (a, b)
+#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
+    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
+#endif
+
+instance IsHList (a, b, c, d) where
+  type HListElems (a, b, c, d) = [a, b, c, d]
+  toHList (a, b, c, d) = hBuild a b c d
+  fromHList l = case l of
+    a `HCons` b `HCons` c `HCons` d `HCons` HNil -> (a, b, c, d)
+#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
+    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
+#endif
+
+instance IsHList (a, b, c, d, e, f) where
+  type HListElems (a, b, c, d, e, f) = [a, b, c, d, e, f]
+  toHList (a, b, c, d, e, f) = hBuild a b c d e f
+  fromHList l = case l of
+    a `HCons` b `HCons` c `HCons` d `HCons` e `HCons` f `HCons` HNil -> (a, b, c, d, e, f)
+#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
+    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
+#endif

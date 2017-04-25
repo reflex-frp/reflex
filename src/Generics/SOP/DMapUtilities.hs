@@ -1,14 +1,15 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-|
 Module           : Generics.SOP.DMapUtilities
 Description      : Utilities for converting between the NS/NP types of generics-sop and Dependent Maps.
@@ -20,10 +21,10 @@ module Generics.SOP.DMapUtilities
     -- ** Add functors around types in a typelist or typelist of typelists
     FunctorWrapTypeList
   , FunctorWrapTypeListOfLists
-  
+
     -- * Types
   , TypeListTag
-  
+
     -- * Conversions
     -- ** NP <-> DMap
   , npToDMap
@@ -31,35 +32,33 @@ module Generics.SOP.DMapUtilities
     -- ** NS <-> DSum
   , nsToDSum
   , dSumToNS
-  
-  -- * Functor wrapping/unwrapping utilities for 'NP' 
+
+  -- * Functor wrapping/unwrapping utilities for 'NP'
   , npUnCompose
   , npReCompose
   , nsOfnpReCompose
-  
+
   -- * Utilities
   , npSequenceViaDMap
   -- * Proofs
-  
+
   , functorWrappedSListIsSList
   )where
 
-import           Generics.SOP          (hmap,hcollapse,NS(..),NP(..),SListI(..)
-                                       ,SListI2,SList(..),K(..)
-                                       , type (-.->)(Fn), (:.:)(Comp), unComp,Proxy(..))
-import           Generics.SOP.NP       (sequence'_NP)
-import           Generics.SOP.NS       (ap_NS)
-import           Generics.SOP.Dict     (Dict(Dict),withDict)
+import Generics.SOP ((:.:) (Comp), K (..), NP (..), NS (..), Proxy (..), SList (..), SListI (..), SListI2, fn,
+                     hcollapse, hmap, unComp)
+import Generics.SOP.Dict (Dict (Dict), withDict)
+import Generics.SOP.NP (sequence'_NP)
+import Generics.SOP.NS (ap_NS)
 
 import qualified Data.Dependent.Map as DM
-import           Data.Dependent.Sum    (DSum ((:=>)))
+import Data.Dependent.Sum (DSum ((:=>)))
 import qualified Data.Dependent.Sum as DS
 
-import           Data.GADT.Compare     ((:~:) (..), GCompare (..), GEq (..),
-                                        GOrdering (..))
+import Data.GADT.Compare ((:~:) (..), GCompare (..), GEq (..), GOrdering (..))
 
 
-import Data.Functor.Identity           (Identity(runIdentity))
+import Data.Functor.Identity (Identity (runIdentity))
 
 
 -- |A Tag type for making DMaps of type-level lists
@@ -90,14 +89,15 @@ npToDMap (fx :* np') = DM.insert Here fx $ DM.mapKeysMonotonic There $ npToDMap 
 dMapToNP::forall xs f.SListI xs=>DM.DMap (TypeListTag xs) f -> Maybe (NP f xs)
 dMapToNP dm = sequence'_NP $ hmap (\tag -> Comp $ DM.lookup tag dm) makeTypeListTagNP
 
--- |Convert a 'NS' indexed by a typelist xs to a 'DS.DSum' indexed by 'TypeListTag' xs 
+-- |Convert a 'NS' indexed by a typelist xs to a 'DS.DSum' indexed by 'TypeListTag' xs
 nsToDSum::SListI xs=>NS f xs -> DS.DSum (TypeListTag xs) f
-nsToDSum ns =
-  let nsFToNSDSum::SListI xs=>NS f xs -> NS (K (DS.DSum (TypeListTag xs) f)) xs
+nsToDSum = hcollapse . ap_NS (hmap (\tag -> (fn $ \val -> K (tag :=> val))) makeTypeListTagNP)
+{-  let nsFToNSDSum::SListI xs=>NS f xs -> NS (K (DS.DSum (TypeListTag xs) f)) xs
       nsFToNSDSum ns' = ap_NS (tagsToFs makeTypeListTagNP) ns'
       tagsToFs::SListI xs=>NP (TypeListTag xs) xs -> NP (f -.-> K (DS.DSum (TypeListTag xs) f)) xs
       tagsToFs = hmap (\tag -> (Fn $ \val -> K (tag :=> val)))
-  in hcollapse $ nsFToNSDSum ns
+  in hcollapse . nsFToNSDSum
+-}
 
 -- |Convert a 'DS.DSum' indexed by 'TypeListTag' xs into a 'NS' indexed by xs
 dSumToNS::SListI xs=>DS.DSum (TypeListTag xs) f -> NS f xs
@@ -123,7 +123,7 @@ type family FunctorWrapTypeListOfLists (f :: * -> *) (xss :: [[*]]) :: [[*]] whe
   FunctorWrapTypeListOfLists f (xs ': xss') = FunctorWrapTypeList f xs ': FunctorWrapTypeListOfLists f xss'
 
 npUnCompose::forall f g xs.SListI xs=>NP (f :.: g) xs -> NP f (FunctorWrapTypeList g xs)
-npUnCompose np = go np where
+npUnCompose = go where
   go::NP (f :.: g) ys -> NP f (FunctorWrapTypeList g ys)
   go Nil = Nil
   go (fgx :* np') = unComp fgx :* go np'
@@ -155,7 +155,7 @@ functorWrappedSListIsSList pf SCons = goCons (sList :: SList xs)
 
 -- NB: THe fromJust in there is safe!
 -- dMapToNP has to return Maybe NP since the DMap could be incomplete.
--- But since we built this DMap from an NP, we know it's complete and dMapToNp will return a Just.  
+-- But since we built this DMap from an NP, we know it's complete and dMapToNp will return a Just.
 npSequenceViaDMap::forall k (f:: * -> *)  (g:: * -> *) (xs::[*]).(Functor f
                                                                  , SListI xs
                                                                  , DM.GCompare k

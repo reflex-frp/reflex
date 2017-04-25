@@ -3,7 +3,6 @@
 module Reflex.Test.TH (testCases) where
 
 import Reflex
-import Reflex.Dynamic.TH
 
 import Reflex.TestPlan
 
@@ -13,7 +12,7 @@ testCases =
     testE "mkDynPure" $ do
       dyn1 <- holdDyn 0 =<< events1
       dyn2 <- holdDyn 0 =<< events2
-      let dynResult = [mkDynPure|($dyn1, $dyn2)|]
+      let dynResult = [mkDynPure|$dyn1 + $dyn2|]
       return $ updated dynResult
   ] where
 
