@@ -5,7 +5,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
-
 module Reflex.TriggerEvent.Base
   ( TriggerEventT (..)
   , runTriggerEventT
