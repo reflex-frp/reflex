@@ -927,7 +927,7 @@ class (Reflex t, Monad m) => MonadAdjust t m | m -> t where
   traverseDMapWithKeyWithAdjust :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> m (DMap k v', Event t (PatchDMap k v'))
   traverseDMapWithKeyWithAdjustWithMove :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> m (DMap k v', Event t (PatchDMapWithMove k v'))
 
-instance (Reflex t, MonadAdjust t m) => MonadAdjust t (ReaderT r m) where
+instance MonadAdjust t m => MonadAdjust t (ReaderT r m) where
   runWithReplace a0 a' = do
     r <- ask
     lift $ runWithReplace (runReaderT a0 r) $ fmap (`runReaderT` r) a'
