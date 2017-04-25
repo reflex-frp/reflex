@@ -367,13 +367,13 @@ getDemuxed d = return . demuxed d
 
 -- | This function no longer needs to be monadic, so it has been replaced by
 -- 'distributeFHListOverDynPure', which is pure.
-{-# DEPRECATED distributeFHListOverDyn "Use 'return . distributeFHListOverDynPure' instead; consider eliminating monadic style" #-}
+{-# DEPRECATED distributeFHListOverDyn "Use functions provided in Reflex.Dynamic.CollectDynGeneric; consider eliminating monadic style" #-}
 distributeFHListOverDyn :: forall t m l. (Reflex t, Monad m, RebuildSortedHList l) => FHList (Dynamic t) l -> m (Dynamic t (HList l))
 distributeFHListOverDyn = return . distributeFHListOverDynPure
 
 -- | This function no longer needs to be monadic, so it has been replaced by
 -- 'collectDynPure', which is pure.
-{-# DEPRECATED collectDyn "Use 'return . collectDynPure' instead; consider eliminating monadic style" #-}
+{-# DEPRECATED collectDyn "Use return . Reflex.Dynamic.CollectDynGeneric.collectDynGeneric instead; consider eliminating monadic style." #-}
 collectDyn :: ( RebuildSortedHList (HListElems b)
               , IsHList a, IsHList b
               , AllAreFunctors (Dynamic t) (HListElems b)

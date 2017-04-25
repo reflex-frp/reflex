@@ -1,5 +1,6 @@
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE GADTs       #-}
 module Reflex.Test.TH (testCases) where
 
 import Reflex
