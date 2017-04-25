@@ -1,10 +1,10 @@
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes #-}
-
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE CPP                   #-}
 module Main (main) where
 
 import Reflex.Test
@@ -39,7 +39,9 @@ main = do
   where
     allTests = concat
      [ makeGroup "micro" Micro.testCases
+#ifdef USE_TEMPLATE_HASKELL     
      , makeGroup "TH"    TH.testCases
+#endif
      , makeGroup "subscribing (100,40)" (Focused.subscribing 100 40)
      , makeGroup "firing 1000" (Focused.firing 1000)
      , makeGroup "merge 100" (Focused.merging 100)

@@ -52,7 +52,9 @@ extra-deps:
 - ref-tf-0.4.0.1
 
 # Override default flag values for local packages and extra-deps
-flags: {}
+flags:
+  reflex:
+    use-template-haskell: true
 
 # Extra package databases containing global packages
 extra-package-dbs: []

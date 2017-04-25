@@ -67,6 +67,7 @@ library
   exposed-modules:
     Data.Functor.Misc,
     Data.WeakBag,
+    Generics.SOP.DMapUtilities,              
     Reflex,
     Reflex.Class,
     Reflex.EventWriter,
@@ -87,7 +88,7 @@ library
     Reflex.Requester.Class,
     Reflex.Spider,
     Reflex.Spider.Internal
-
+    
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
   ghc-prof-options: -fprof-auto
 
@@ -127,6 +128,8 @@ test-suite semantics
   main-is: semantics.hs
   hs-source-dirs: test
   ghc-options: -O2 -Wall -rtsopts
+  if flag(use-template-haskell)
+    cpp-options: -DUSE_TEMPLATE_HASKELL
   build-depends:
     base,
     bifunctors,

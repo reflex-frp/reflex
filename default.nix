@@ -1,10 +1,10 @@
 { mkDerivation, ghc, base, bifunctors, containers, deepseq
 , dependent-map, dependent-sum, exception-transformers
-, haskell-src-exts, haskell-src-meta, hlint, lens, MemoTrie
-, monad-control, mtl, primitive, ref-tf, semigroupoids
-, semigroups, split, stdenv, stm, syb, template-haskell
-, these, transformers, transformers-compat, prim-uniq
-, data-default
+, generics-sop, haskell-src-exts, haskell-src-meta, hlint
+, lens, MemoTrie, monad-control, mtl, primitive, ref-tf
+, semigroupoids, semigroups, split, stdenv, stm, syb
+, template-haskell, these, transformers
+, transformers-compat, prim-uniq , data-default
 , useTemplateHaskell ? true
 }:
 mkDerivation {
@@ -18,7 +18,7 @@ mkDerivation {
     semigroups stm syb template-haskell these transformers
     transformers-compat prim-uniq
     base bifunctors containers deepseq dependent-map dependent-sum
-    mtl ref-tf split transformers data-default
+    mtl ref-tf split transformers data-default generics-sop
   ] ++ (if !useTemplateHaskell then [] else [
     haskell-src-exts haskell-src-meta
   ]);
