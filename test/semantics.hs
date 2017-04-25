@@ -14,6 +14,7 @@ import Data.Functor
 import Data.List
 import qualified Reflex.Bench.Focused as Focused
 import qualified Reflex.Test.Micro as Micro
+import qualified Reflex.Test.TH as TH
 
 import System.Environment
 import System.Exit
@@ -38,6 +39,7 @@ main = do
   where
     allTests = concat
      [ makeGroup "micro" Micro.testCases
+     , makeGroup "TH"    TH.testCases
      , makeGroup "subscribing (100,40)" (Focused.subscribing 100 40)
      , makeGroup "firing 1000" (Focused.firing 1000)
      , makeGroup "merge 100" (Focused.merging 100)

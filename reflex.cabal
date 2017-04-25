@@ -48,6 +48,7 @@ library
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.2.4 && < 0.3,
     exception-transformers == 0.4.*,
+    generics-sop >= 0.2.4.0,            
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
@@ -71,6 +72,7 @@ library
     Reflex.EventWriter,
     Reflex.Dynamic,
     Reflex.Dynamic.Uniq,
+    Reflex.Dynamic.CollectDynGeneric              
     Reflex.DynamicWriter,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,

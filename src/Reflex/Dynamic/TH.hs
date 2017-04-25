@@ -20,6 +20,9 @@ module Reflex.Dynamic.TH
 
 import Reflex.Dynamic
 
+import Reflex.Dynamic.CollectDynGeneric
+import Generics.SOP (NP(..),I(..))
+
 import Control.Monad.State
 import Data.Data
 import Data.Generics
@@ -33,6 +36,7 @@ import qualified Language.Haskell.TH.Syntax as TH
 -- | Quote a 'Dynamic' expression.  Within the quoted expression, you can use
 -- @$(unqDyn [| x |])@ to refer to any expression @x@ of type @Dynamic t a@; the
 -- unquoted result will be of type @a@
+{-
 qDynPure :: Q Exp -> Q Exp
 qDynPure qe = do
   e <- qe
@@ -50,6 +54,26 @@ qDynPure qe = do
       arg = foldr (\a b -> ConE 'FHCons `AppE` a `AppE` b) (ConE 'FHNil) $ map snd exprs
       param = foldr (\a b -> ConP 'HCons [VarP a, b]) (ConP 'HNil []) $ map fst exprs
   [| $(return $ LamE [param] e') <$> distributeFHListOverDynPure $(return arg) |]
+-}
+
+qDynPure :: Q Exp -> Q Exp
+qDynPure qe = do
+  e <- qe
+  let f :: forall d. Data d => d -> StateT [(Name, Exp)] Q d
+      f d = case eqT of
+        Just (Refl :: d :~: Exp)
+          | AppE (VarE m) eInner <- d
+          , m == 'unqMarker
+          -> do n <- lift $ newName "dynamicQuotedExpressionVariable"
+                modify ((n, eInner):)
+                return $ VarE n
+        _ -> gmapM f d
+  (e', exprsReversed) <- runStateT (gmapM f e) []
+  let exprs = reverse exprsReversed
+      arg = foldr (\a b -> ConE '(:*) `AppE` a `AppE` b) (ConE 'Nil) $ map snd exprs
+      param = foldr (\a b -> ConP '(:*) [ConP 'I [VarP a], b]) (ConP 'Nil []) $ map fst exprs
+  [| $(return $ LamE [param] e') <$> collectDynPureNP $(return arg) |]
+
 
 -- | Antiquote a 'Dynamic' expression.  This can /only/ be used inside of a
 -- 'qDyn' quotation.
