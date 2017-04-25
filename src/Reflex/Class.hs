@@ -163,7 +163,6 @@ import Data.Either
 import Data.Foldable
 import Data.Functor.Bind hiding (join)
 import qualified Data.Functor.Bind as Bind
-import Data.Functor.Compose (Compose(..))
 import Data.Functor.Constant
 import Data.Functor.Misc
 import Data.Functor.Plus
@@ -253,7 +252,6 @@ class ( MonadHold t (PushM t)
   -- least one input event is occuring, and will contain all of the input keys
   -- that are occurring simultaneously
   merge :: GCompare k => DMap k (Event t) -> Event t (DMap k Identity) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
---  mergeWithFunctor :: (GCompare k, Functor f) => DMap k (Compose (Event t) f) -> Event t (DMap k f)
   -- | Efficiently fan-out an event to many destinations.  This function should
   -- be partially applied, and then the result applied repeatedly to create
   -- child events
@@ -310,7 +308,6 @@ push :: Reflex t => (a -> PushM t (Maybe b)) -> Event t a -> Event t b
 pushCheap :: Reflex t => (a -> PushM t (Maybe b)) -> Event t a -> Event t b
 pull :: Reflex t => PullM t a -> Behavior t a
 merge :: (Reflex t, GCompare k) => DMap k (Event t) -> Event t (DMap k Identity)
-mergeWithFunctor :: (Reflex t, GCompare k, Functor f) => DMap k (Compose (Event t) f) -> Event t (DMap k f)
 fan :: (Reflex t, GCompare k) => Event t (DMap k Identity) -> EventSelector t k
 switch :: Reflex t => Behavior t (Event t a) -> Event t a
 coincidence :: Reflex t => Event t (Event t a) -> Event t a
@@ -338,8 +335,6 @@ pushCheap f = SpiderEvent . S.pushCheap (coerce f) . unSpiderEvent
 pull = SpiderBehavior . S.pull . coerce
 {-# INLINE merge #-}
 merge = SpiderEvent . S.merge . S.dynamicConst . (coerce :: DMap k (Event (SpiderTimeline x)) -> DMap k (S.Event x))
---{-# INLINE mergeWithFunctor #-}
---mergeWithFunctor = SpiderEvent . S.merge . S.dynamicConst . 
 {-# INLINE fan #-}
 fan e = EventSelector $ SpiderEvent . S.select (S.fan (unSpiderEvent e))
 {-# INLINE switch #-}
@@ -801,20 +796,6 @@ instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
 -- | This function converts a 'DMap' whose elements are 'Dynamic's into a
 -- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same
 -- through the use of multiple uses of 'zipWithDyn' or 'Applicative' operators.
-{-
-distributeDMapOverDynPureWithFunctor :: forall t k f.(Reflex t, GCompare k, Functor f) => DMap k (Compose (Dynamic t) f) -> Dynamic t (DMap k f)
-distributeDMapOverDynPureWithFunctor dm = case DMap.toList dm of
-  [] -> constDyn DMap.empty
-  [k :=> fv] -> fmap (DMap.singleton k) fv
-  _ ->
-    let getInitial = DMap.traverseWithKey (\_ ->  sample . current . getCompose) dm --uses the applicative instance of MonadSample?
-        edmPre = merge $ DMap.map (updated . getCompose) dm
-        result = unsafeBuildDynamic getInitial $ flip pushAlways edmPre $ \news -> do
-          olds <- sample $ current result
-          return $ DMap.unionWithKey (\_ _ new -> new) olds news
-    in result
--}
-
 distributeDMapOverDynPure :: forall t k. (Reflex t, GCompare k) => DMap k (Dynamic t) -> Dynamic t (DMap k Identity)
 distributeDMapOverDynPure dm = case DMap.toList dm of
   [] -> constDyn DMap.empty
