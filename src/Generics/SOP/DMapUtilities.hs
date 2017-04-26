@@ -18,7 +18,6 @@ Description      : Utilities for converting between the NS/NP types of generics-
 module Generics.SOP.DMapUtilities
   (
     -- * Type Functions
-    -- ** Add functors around types in a typelist or typelist of typelists
     FunctorWrapTypeList
   , FunctorWrapTypeListOfLists
 
@@ -26,10 +25,10 @@ module Generics.SOP.DMapUtilities
   , TypeListTag
 
     -- * Conversions
-    -- ** NP <-> DMap
+    -- ** 'NP' \<-\> 'DM.DMap'
   , npToDMap
   , dMapToNP
-    -- ** NS <-> DSum
+    -- ** 'NS' \<-\> 'DSum'
   , nsToDSum
   , dSumToNS
 
@@ -40,8 +39,8 @@ module Generics.SOP.DMapUtilities
 
   -- * Utilities
   , npSequenceViaDMap
-  -- * Proofs
 
+  -- * Proofs
   , functorWrappedSListIsSList
   )where
 
@@ -76,8 +75,6 @@ instance GCompare (TypeListTag xs) where
   gcompare Here (There _) = GLT
   gcompare (There _) Here = GGT
   gcompare (There x) (There y) = gcompare x y
-
-
 
 -- |Convert an 'NP' indexed by typelist xs into a 'DM.DMap' indexed by 'TypeListTag' xs
 npToDMap::NP f xs -> DM.DMap (TypeListTag xs) f
@@ -122,6 +119,10 @@ type family FunctorWrapTypeListOfLists (f :: * -> *) (xss :: [[*]]) :: [[*]] whe
   FunctorWrapTypeListOfLists f '[] = '[]
   FunctorWrapTypeListOfLists f (xs ': xss') = FunctorWrapTypeList f xs ': FunctorWrapTypeListOfLists f xss'
 
+-- | Transform a type-list indexed product of composed functorial values into a type-list indexed product of functorial values where the inner part of the functor
+-- composition has been moved to the type-list.  The values in the product remain the same (up to types representing composition of the functors). E.g.,
+--
+-- > (f :.: g) 2 :* (f :.: g) 3.0 :* 'Nil :: NP (f :.: g) '[Int,Double] -> f (g 2) :* f (g 3.0) :* 'Nil :: NP f '[g Int, g Double]
 npUnCompose::forall f g xs.SListI xs=>NP (f :.: g) xs -> NP f (FunctorWrapTypeList g xs)
 npUnCompose = go where
   go::NP (f :.: g) ys -> NP f (FunctorWrapTypeList g ys)
@@ -129,12 +130,16 @@ npUnCompose = go where
   go (fgx :* np') = unComp fgx :* go np'
 
 
-npReCompose::forall f g xs.SListI xs=>NP f (FunctorWrapTypeList g xs) -> NP (f :.: g) xs -- (RemoveFunctor g (AddFunctor g xs))
+-- | The inverse of 'npUnCompose'.  Given a type-list indexed product where all the types in the list are applications of the same functor,
+-- remove that functor from all the types in the list and put it in the functor parameter of the 'NP'.  The values in the product itself remain the same up
+-- to types representing composition of the functors.
+npReCompose::forall f g xs.SListI xs=>NP f (FunctorWrapTypeList g xs) -> NP (f :.: g) xs
 npReCompose = go sList where
   go::forall ys.SListI ys=>SList ys ->  NP f (FunctorWrapTypeList g ys) -> NP (f :.: g) ys
   go SNil Nil = Nil
   go SCons (fgx :* np') = Comp fgx :* go sList np'
 
+-- | ReCompose all the 'NP's in an "NS (NP f) xss".
 nsOfnpReCompose::forall f g xss.(SListI xss, SListI2 xss)=>NS (NP f) (FunctorWrapTypeListOfLists g xss) -> NS (NP (f :.: g)) xss
 nsOfnpReCompose = go sList
   where
@@ -143,8 +148,7 @@ nsOfnpReCompose = go sList
     go SCons (Z np) = Z (npReCompose np)
     go SCons (S ns') = S (go sList ns')
 
-
--- required to prove the wrapped typelist is an instance of SListI
+-- | Prove that "SListI xs=>(FunctorWrapTypeList f xs)" is also an instance of SListI
 functorWrappedSListIsSList :: forall f xs . SListI xs=>Proxy f -> SList xs -> Dict SListI (FunctorWrapTypeList f xs)
 functorWrappedSListIsSList _ SNil  = Dict
 functorWrappedSListIsSList pf SCons = goCons (sList :: SList xs)
@@ -153,9 +157,10 @@ functorWrappedSListIsSList pf SCons = goCons (sList :: SList xs)
     goCons SCons = withDict (functorWrappedSListIsSList  pf (sList :: SList ys)) Dict
 
 
--- NB: The (\(Just x)->x) in there is safe!
--- dMapToNP has to return Maybe NP since the DMap could be incomplete.
--- But since we built this DMap from an NP, we know it's complete and dMapToNp will return a Just.
+
+-- | sequence (in the sense of 'Data.Traversable.sequenceA') a functor f inside an 'NP' using a function defined over a 'DM.DMap' indexed by the same type-level-list.
+-- This is useful in cases where an efficient general solution exists for DMaps.
+-- This can be done more simply for Applicative f but the efficiency will depend on the particular functor and given function over 'DM.DMap'.
 npSequenceViaDMap::forall k (f:: * -> *)  (g:: * -> *) (xs::[*]).(Functor f
                                                                  , SListI xs
                                                                  , DM.GCompare k
@@ -164,3 +169,6 @@ npSequenceViaDMap::forall k (f:: * -> *)  (g:: * -> *) (xs::[*]).(Functor f
 npSequenceViaDMap sequenceDMap =
   withDict (functorWrappedSListIsSList (Proxy :: Proxy g) (sList :: SList xs)) $
   fmap (hmap (runIdentity . unComp) . npReCompose . (\(Just x)->x) . dMapToNP) .  sequenceDMap . npToDMap . npUnCompose
+-- NB: The (\(Just x)->x) in there is safe!
+-- dMapToNP has to return Maybe NP since the DMap could be incomplete.
+-- But since we built this DMap from an NP, we know it's complete and dMapToNp will return a Just.

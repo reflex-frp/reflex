@@ -16,9 +16,9 @@ Description: Generic (generics-sop) implementation of CollectDynPure and distrib
 -}
 module Reflex.Dynamic.CollectDynGeneric
   (
-    distributeNPOverDyn
-  , collectDynGeneric
+    collectDynGeneric
   , collectDynNP
+  , distributeNPOverDyn
   ) where
 
 import Generics.SOP ((:.:) (Comp), Code, Generic, I (I), NP, NS, Proxy (..), SListI, SListI2, SOP (..), from,
@@ -35,13 +35,16 @@ import Reflex.Dynamic (Dynamic, distributeDMapOverDynPure)
 collectDynNP::(Reflex t, SListI xs)=>NP (Dynamic t) xs -> Dynamic t (NP I xs)
 collectDynNP = npSequenceViaDMap distributeDMapOverDynPure . hliftA (Comp . fmap I)
 
--- | Given a pair of types a and b where a is like b except each field of each constructor is dynamic
--- (e.g., ('Dynamic' t x, 'Dynamic' t y) and (x,y) or Either ('Dynamic' t x) ('Dynamic' t y) and Either x y)
--- convert the former into a Dynamic of the latter.
+-- | Given a pair of types a and b, each of which is an instance of 'Generics.SOP.Generic' (which is easily derived from GHC 'GHC.Generics.Generic')
+-- and  where a is "like" b except each field of each constructor is a Dynamic,
+-- convert the former into a Dynamic of the latter. E.g.,
+--
+-- > (Dynamic t x, Dynamic t y) -> Dynamic t (x,y)
+-- > Either (Dynamic t x) (Dynamic t y) -> Dynamic t (Either x y)
 collectDynGeneric::(Reflex t,Generic a, Generic b, (Code a) ~ FunctorWrapTypeListOfLists (Dynamic t) (Code b))=>a -> Dynamic t b
 collectDynGeneric = fmap (to . SOP) . hsequence' . collectDynNSNP . aToNSNPI
 
--- | A variation on 'collectDynPureNP' which more closely mirrors the structure of (deprecated) 'Reflex.Dynamic.distributeFHlistOverDynPure'
+-- | A variation on 'collectDynNP' which more closely mirrors the structure of (deprecated) 'Reflex.Dynamic.distributeFHlistOverDynPure'
 distributeNPOverDyn::(Reflex t, SListI xs)=>NP I (FunctorWrapTypeList (Dynamic t) xs) -> Dynamic t (NP I xs)
 distributeNPOverDyn = collectDynNP . hliftA (unI . unComp) . npReCompose
 

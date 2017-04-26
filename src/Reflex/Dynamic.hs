@@ -47,15 +47,6 @@ module Reflex.Dynamic
   , Demux
   , demux
   , demuxed
-    -- Things that probably aren't very useful:
-  , HList (..)
-  , FHList (..)
-  , collectDynPure
-  , RebuildSortedHList (..)
-  , IsHList (..)
-  , AllAreFunctors (..)
-  , HListPtr (..)
-  , distributeFHListOverDynPure
     -- Unsafe
   , unsafeDynamic
     -- * Deprecated functions
@@ -77,6 +68,16 @@ module Reflex.Dynamic
   , nubDyn
   , splitDyn
   , tagDyn
+    -- Things that probably aren't very useful, and are also deprecated
+  , HList (..)
+  , FHList (..)
+  , collectDynPure
+  , RebuildSortedHList (..)
+  , IsHList (..)
+  , AllAreFunctors (..)
+  , HListPtr (..)
+  , distributeFHListOverDynPure
+
   ) where
 
 import Prelude hiding (mapM, mapM_)
