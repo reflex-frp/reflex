@@ -82,6 +82,8 @@ module Reflex.Class
   , zipListWithEvent
   , numberOccurrences
   , numberOccurrencesFrom
+  , (<@>)
+  , (<@)
   , headE
   , tailE
   , headTailE
@@ -925,6 +927,74 @@ numberOccurrences = numberOccurrencesFrom 0
 -- | Assign a number to each occurence of the given 'Event'
 numberOccurrencesFrom :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t (b, a))
 numberOccurrencesFrom = mapAccum_ (\n a -> (n + 1, (n, a)))
+
+-- | This is used to sample the value of a 'Behavior' using an 'Event'.
+--
+-- The '<@>' operator is intended to be used in conjunction with 
+-- the 'Applicative' instance for 'Behavior'.
+--
+-- This is useful when we want to combine the values of one 'Event' and 
+-- the value of several 'Behavior's at the time the 'Event' is firing.
+--
+-- If we have:
+--
+-- > f  :: a -> b -> c -> d
+-- > b1 :: Behavior t a
+-- > b2 :: Behavior t b
+-- > e  :: Event t c
+--
+-- then we can do:
+--
+-- > f <$> b1 <*> b2 <@> e :: Event t d
+--
+-- in order to apply the function 'f' to the relevant values.
+--
+-- The alternative would be something like:
+--
+-- > attachWith (\(x1, x2) y -> f x1 x2 y) ((,) <$> b1 <*> b2) e :: Event t d
+--
+-- or a variation involing a custom data type to hold the combination of 
+-- 'Behavior's even when that combination might only ever be used by 'f'.
+--
+-- A more suggestive example might be:
+--
+-- > handleMouse <$> bPlayerState <*> bMousePosition <@> eMouseClick :: Event t (GameState -> GameState)
+--
+(<@>) :: Reflex t => Behavior t (a -> b) -> Event t a -> Event t b
+(<@>) b = push $ \x -> do
+  f <- sample b
+  return . Just . f $ x
+infixl 4 <@>
+
+-- | An version of '<@>' that does not use the value of the 'Event'.
+--
+-- Alternatively, it is 'tag' in operator form.
+--
+-- This is useful when we want to combine the values of several 
+-- 'Behavior's at particular points in time using an 'Applicative' 
+-- style syntax.
+--
+-- If we have:
+--
+-- > g  :: a -> b -> d
+-- > b1 :: Behavior t a
+-- > b2 :: Behavior t b
+-- > e  :: Event t c
+--
+-- where 'e' is firing at the points in time of interest.
+-- 
+-- Then we can use '<@':
+--
+-- > g <$> b1 <*> b2 <@  e :: Event t d
+--
+-- to combine the values of 'b1' and 'b2' at each of those points of time, 
+-- with the function 'g' being used to combine the values.
+--
+-- This is the same as '<@>' except that the 'Event' is being used only
+-- to act as a trigger. 
+(<@) :: (Reflex t) => Behavior t b -> Event t a -> Event t b
+(<@) = tag
+infixl 4 <@
 
 -- | A 'Monad' that supports adjustment over time.  After an action has been
 -- run, if the given events fire, it will adjust itself so that its net effect
