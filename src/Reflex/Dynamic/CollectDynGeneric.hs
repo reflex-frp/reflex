@@ -22,7 +22,7 @@ module Reflex.Dynamic.CollectDynGeneric
   ) where
 
 import Generics.SOP ((:.:) (Comp), Code, Generic, I (I), NP, NS, Proxy (..), SListI, SListI2, SOP (..), from,
-                     hcliftA, hliftA, hmap, hsequence', to, unComp, unI, unSOP)
+                     hcliftA, hliftA, hsequence', to, unComp, unI, unSOP)
 
 import Generics.SOP.DMapUtilities (FunctorWrapTypeList, FunctorWrapTypeListOfLists, npReCompose,
                                    npSequenceViaDMap, nsOfnpReCompose)

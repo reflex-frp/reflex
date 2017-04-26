@@ -195,6 +195,18 @@ test-suite rootCleanup
   build-depends: base
                , reflex
 
+test-suite mkDyn
+  type: exitcode-stdio-1.0
+  main-is: MkDyn.hs
+  hs-source-dirs: test
+  if !flag(use-template-haskell)
+    buildable: False
+  build-depends: base
+               , reflex
+               , deepseq
+               , mtl
+               , containers
+               
 benchmark spider-bench
   type: exitcode-stdio-1.0
   hs-source-dirs: bench

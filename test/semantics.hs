@@ -1,10 +1,10 @@
-{-# LANGUAGE ConstraintKinds       #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE RankNTypes #-}
 module Main (main) where
 
 import Reflex.Test
@@ -14,8 +14,9 @@ import Data.Functor
 import Data.List
 import qualified Reflex.Bench.Focused as Focused
 import qualified Reflex.Test.Micro as Micro
+#ifdef USE_TEMPLATE_HASKELL
 import qualified Reflex.Test.TH as TH
-
+#endif
 import System.Environment
 import System.Exit
 
@@ -39,7 +40,7 @@ main = do
   where
     allTests = concat
      [ makeGroup "micro" Micro.testCases
-#ifdef USE_TEMPLATE_HASKELL     
+#ifdef USE_TEMPLATE_HASKELL
      , makeGroup "TH"    TH.testCases
 #endif
      , makeGroup "subscribing (100,40)" (Focused.subscribing 100 40)
