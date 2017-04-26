@@ -61,7 +61,7 @@ import Data.GADT.Compare ((:~:) (..), GCompare (..), GEq (..), GOrdering (..))
 import Data.Functor.Identity (Identity (runIdentity))
 
 
--- |A Tag type for making DMaps of type-level lists
+-- |A Tag type for making a 'DM.DMap' keyed by a type-level list
 data TypeListTag (xs :: [k]) (x :: k) where -- x is in xs
   Here  :: TypeListTag (x ': xs) x          -- x begins xs
   There :: TypeListTag xs x -> TypeListTag (y ': xs) x -- given that x is in xs, x is also in (y ': xs)
@@ -139,7 +139,7 @@ nsOfnpReCompose::forall f g xss.(SListI xss, SListI2 xss)=>NS (NP f) (FunctorWra
 nsOfnpReCompose = go sList
   where
     go::forall yss.(SListI2 yss, SListI yss)=>SList yss->NS (NP f) (FunctorWrapTypeListOfLists g yss) -> NS (NP (f :.: g)) yss
-    go SNil _ = undefined -- this shouldn't' happen since an NS can't be empty
+    go SNil _ = undefined -- this shouldn't happen since an NS can't be empty
     go SCons (Z np) = Z (npReCompose np)
     go SCons (S ns') = S (go sList ns')
 
@@ -153,7 +153,7 @@ functorWrappedSListIsSList pf SCons = goCons (sList :: SList xs)
     goCons SCons = withDict (functorWrappedSListIsSList  pf (sList :: SList ys)) Dict
 
 
--- NB: THe fromJust in there is safe!
+-- NB: The (\(Just x)->x) in there is safe!
 -- dMapToNP has to return Maybe NP since the DMap could be incomplete.
 -- But since we built this DMap from an NP, we know it's complete and dMapToNp will return a Just.
 npSequenceViaDMap::forall k (f:: * -> *)  (g:: * -> *) (xs::[*]).(Functor f

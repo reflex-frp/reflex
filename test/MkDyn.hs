@@ -31,6 +31,8 @@ main = do
       testPassed = resMkDyn == resZipDyn
   putStrLn $ "MkDynPure: " ++ show resMkDyn
   putStrLn $ "zipDynWith: " ++ show resZipDyn
+  putStr "MkDyn: "
+  if testPassed then putStrLn "Succeeded" else putStrLn "Failed"
   exitWith $ if testPassed then ExitSuccess else ExitFailure 1
 
 

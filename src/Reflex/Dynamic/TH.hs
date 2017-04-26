@@ -18,10 +18,8 @@ module Reflex.Dynamic.TH
   , mkDyn
   ) where
 
-import Reflex.Dynamic
-
-import Reflex.Dynamic.CollectDynGeneric
-import Generics.SOP (NP(..),I(..))
+import Generics.SOP (I (..), NP (..))
+import Reflex.Dynamic.CollectDynGeneric (collectDynNP)
 
 import Control.Monad.State
 import Data.Data
@@ -52,7 +50,7 @@ qDynPure qe = do
   let exprs = reverse exprsReversed
       arg = foldr (\a b -> ConE '(:*) `AppE` a `AppE` b) (ConE 'Nil) $ map snd exprs
       param = foldr (\a b -> ConP '(:*) [ConP 'I [VarP a], b]) (ConP 'Nil []) $ map fst exprs
-  [| $(return $ LamE [param] e') <$> collectDynPureNP $(return arg) |]
+  [| $(return $ LamE [param] e') <$> collectDynNP $(return arg) |]
 
 
 -- | Antiquote a 'Dynamic' expression.  This can /only/ be used inside of a
