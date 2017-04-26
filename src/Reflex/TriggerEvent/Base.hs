@@ -15,9 +15,12 @@ module Reflex.TriggerEvent.Base
 
 import Control.Concurrent
 import Control.Monad.Exception
+import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
+import Data.Coerce
 import Data.Dependent.Sum
+import Data.IORef
 import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
@@ -29,20 +32,27 @@ import Reflex.TriggerEvent.Class
 data TriggerInvocation a = TriggerInvocation a (IO ())
 
 -- | A reference to an 'EventTrigger' suitable for firing with 'TriggerEventT'.
-newtype EventTriggerRef t m a = EventTriggerRef { unEventTriggerRef :: Ref m (Maybe (EventTrigger t a)) }
+newtype EventTriggerRef t a = EventTriggerRef { unEventTriggerRef :: IORef (Maybe (EventTrigger t a)) }
 
 -- | A basic implementation of 'TriggerEvent'.
-newtype TriggerEventT t m a = TriggerEventT { unTriggerEventT :: ReaderT (Chan [DSum (EventTriggerRef t m) TriggerInvocation]) m a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
+newtype TriggerEventT t m a = TriggerEventT { unTriggerEventT :: ReaderT (Chan [DSum (EventTriggerRef t) TriggerInvocation]) m a }
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 -- | Run a 'TriggerEventT' action.  The argument should be a 'Chan' into which
 -- 'TriggerInvocation's can be passed; it is expected that some other thread
 -- will be responsible for popping values out of the 'Chan' and firing their
 -- 'EventTrigger's.
-runTriggerEventT :: TriggerEventT t m a -> Chan [DSum (EventTriggerRef t m) TriggerInvocation] -> m a
+runTriggerEventT :: TriggerEventT t m a -> Chan [DSum (EventTriggerRef t) TriggerInvocation] -> m a
 runTriggerEventT = runReaderT . unTriggerEventT
 
 instance MonadTrans (TriggerEventT t) where
+  {-# INLINABLE lift #-}
   lift = TriggerEventT . lift
+
+instance PrimMonad m => PrimMonad (TriggerEventT t m) where
+  type PrimState (TriggerEventT t m) = PrimState m
+  {-# INLINABLE primitive #-}
+  primitive = lift . primitive
 
 instance PerformEvent t m => PerformEvent t (TriggerEventT t m) where
   type Performable (TriggerEventT t m) = Performable m
@@ -105,7 +115,15 @@ instance MonadHold t m => MonadHold t (TriggerEventT t m) where
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 v' = lift $ holdIncremental v0 v'
 
+instance MonadAdjust t m => MonadAdjust t (TriggerEventT t m) where
+  {-# INLINABLE runWithReplace #-}
+  runWithReplace (TriggerEventT a0) a' = TriggerEventT $ runWithReplace a0 (coerceEvent a')
+  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
+  traverseDMapWithKeyWithAdjust f dm0 dm' = TriggerEventT $ traverseDMapWithKeyWithAdjust (coerce . f) dm0 dm'
+  {-# INLINABLE traverseDMapWithKeyWithAdjustWithMove #-}
+  traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = TriggerEventT $ traverseDMapWithKeyWithAdjustWithMove (coerce . f) dm0 dm'
+
 -- | Retrieve the current 'Chan'; event trigger invocations pushed into it will
 -- be fired.
-askEvents :: Monad m => TriggerEventT t m (Chan [DSum (EventTriggerRef t m) TriggerInvocation])
+askEvents :: Monad m => TriggerEventT t m (Chan [DSum (EventTriggerRef t) TriggerInvocation])
 askEvents = TriggerEventT ask
