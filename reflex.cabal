@@ -34,7 +34,12 @@ flag expose-all-unfoldings
   manual: True
 
 flag debug-trace-events
-  description: add instrumentation that outputs the stack trace of the definition of an event whenever it is subscribed to. Warning: It is very slow!
+  description: Add instrumentation that outputs the stack trace of the definition of an event whenever it is subscribed to. Warning: It is very slow!
+  default: False
+  manual: True
+
+flag experimental-dependent-sum-instances
+  description: Use experimental incoherent instances for certain forked dependent-sum typeclasses
   default: False
   manual: True
 
@@ -75,6 +80,11 @@ library
     Reflex.FunctorMaybe,
     Reflex.Host.Class,
     Reflex.Patch,
+    Reflex.Patch.Class,
+    Reflex.Patch.DMap,
+    Reflex.Patch.DMapWithMove,
+    Reflex.Patch.Map,
+    Reflex.Patch.MapWithMove,
     Reflex.TriggerEvent.Base,
     Reflex.TriggerEvent.Class,
     Reflex.PerformEvent.Base,
@@ -119,6 +129,9 @@ library
 
   if flag(expose-all-unfoldings)
     ghc-options: -fexpose-all-unfoldings
+
+  if flag(experimental-dependent-sum-instances)
+    ghc-options: -DEXPERIMENTAL_DEPENDENT_SUM_INSTANCES
 
 test-suite semantics
   type: exitcode-stdio-1.0

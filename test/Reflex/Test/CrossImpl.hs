@@ -19,6 +19,7 @@ import Control.Monad.Ref
 import Reflex.Class
 import Reflex.Dynamic
 import Reflex.Host.Class
+import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
 import qualified Reflex.Pure as P
 import qualified Reflex.Spider.Internal as S
 
@@ -26,8 +27,10 @@ import Control.Arrow (second, (&&&))
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.Writer hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Data.Dependent.Map (DSum (..))
+import Data.Dependent.Map (DMap, DSum (..))
+import qualified Data.Dependent.Map as DMap
 import Data.Foldable
+import Data.Functor.Misc
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -106,8 +109,9 @@ testAgreement builder inputs = do
   tracePerf "---------" $ return ()
   let resultsAgree = identityResult == spiderResult
   if resultsAgree
-    then do putStrLn "Success:"
-            print identityResult
+    then do --putStrLn "Success:"
+            --print identityResult
+            return ()
     else do putStrLn "Failure:"
             putStrLn $ "Pure result: " <> show identityResult
             putStrLn $ "Spider result:   " <> show spiderResult
@@ -126,8 +130,8 @@ testCases =
        e' <- updated <$> count e
        b' <- hold (0 :: Int) e'
        return (b', e')
-  , (,) "onceE-1" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       e' <- onceE $ leftmost [e, e]
+  , (,) "headE-1" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+       e' <- headE $ leftmost [e, e]
        return (b, e')
   , (,) "switch-1" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = fmap (const e) e
@@ -172,7 +176,7 @@ testCases =
        return (b, e'')
   , (,) "switchPromptly-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip push e $ \_ -> do
-             Just <$> onceE e
+             Just <$> headE e
        e'' <- switchPromptly never e'
        return (b, e'')
   , (,) "switchPromptly-6" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
@@ -193,7 +197,7 @@ testCases =
            e'' = coincidence e'
        return (b, e'')
   , (,) "coincidence-4" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj"), (3, "asdf")]) $ \(b, e) -> do
-       let e' = flip pushAlways e $ \_ -> onceE e
+       let e' = flip pushAlways e $ \_ -> headE e
            e'' = coincidence e'
        return (b, e'')
   , (,) "coincidence-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer")]) $ \(b, e) -> do
@@ -213,16 +217,20 @@ testCases =
            eCoincidences = coincidence $ fmap (const e') e
        return (b, eCoincidences)
   , (,) "holdWhileFiring" $ TestCase (Map.singleton 0 "zxc", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       eo <- onceE e
+       eo <- headE e
        bb <- hold b $ pushAlways (const $ hold "asdf" eo) eo
        let b' = pull $ sample =<< sample bb
        return (b', e)
   , (,) "joinDyn" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        bb <- hold "b" e
-       bd <- hold never . fmap (const e) =<< onceE e
-       eOuter <- pushAlways sample . fmap (const bb) <$> onceE e
+       bd <- hold never . fmap (const e) =<< headE e
+       eOuter <- pushAlways sample . fmap (const bb) <$> headE e
        let eInner = switch bd
            e' = leftmost [eOuter, eInner]
+       return (b, e')
+  , (,) "mergeIncrementalWithMove" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, PatchDMapWithMove.moveDMapKey LeftTag RightTag), (2, mempty)]) $ \(b, e :: Event t (PatchDMapWithMove (EitherTag () ()) (Const2 () ()))) -> do
+       x <- holdIncremental (DMap.singleton LeftTag $ void e) $ PatchDMapWithMove.mapPatchDMapWithMove (\(Const2 _) -> void e) <$> e
+       let e' = mergeIncrementalWithMove x :: Event t (DMap (EitherTag () ()) Identity)
        return (b, e')
   ]
 

@@ -80,6 +80,8 @@ module Reflex.Class
   , mapAccumMaybe_
   , mapAccumMaybeM_
   , zipListWithEvent
+  , numberOccurrences
+  , numberOccurrencesFrom
   , (<@>)
   , (<@)
   , headE
@@ -918,7 +920,13 @@ zipListWithEvent f l e = do
         _ -> (Nothing, Nothing) --TODO: Unsubscribe the event?
   mapAccumMaybe_ f' l e
 
-infixl 4 <@>
+-- | Assign a number to each occurence of the given 'Event', starting from 0
+numberOccurrences :: (Reflex t, MonadHold t m, MonadFix m, Num b) => Event t a -> m (Event t (b, a))
+numberOccurrences = numberOccurrencesFrom 0
+
+-- | Assign a number to each occurence of the given 'Event'
+numberOccurrencesFrom :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t (b, a))
+numberOccurrencesFrom = mapAccum_ (\n a -> (n + 1, (n, a)))
 
 -- | This is used to sample the value of a 'Behavior' using an 'Event'.
 --
@@ -956,8 +964,7 @@ infixl 4 <@>
 (<@>) b = push $ \x -> do
   f <- sample b
   return . Just . f $ x
-
-infixl 4 <@
+infixl 4 <@>
 
 -- | An version of '<@>' that does not use the value of the 'Event'.
 --
@@ -987,6 +994,7 @@ infixl 4 <@
 -- to act as a trigger. 
 (<@) :: (Reflex t) => Behavior t b -> Event t a -> Event t b
 (<@) = tag
+infixl 4 <@
 
 -- | A 'Monad' that supports adjustment over time.  After an action has been
 -- run, if the given events fire, it will adjust itself so that its net effect
