@@ -37,7 +37,7 @@ import Data.Typeable (Proxy (..))
 #endif
 
 -- | Like 'PatchMapWithMove', but for 'DMap'.
-data PatchDMapWithMove k v = PatchDMapWithMove (DMap k (NodeInfo k v))
+newtype PatchDMapWithMove k v = PatchDMapWithMove (DMap k (NodeInfo k v))
 #ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
   deriving (Show)
 #endif

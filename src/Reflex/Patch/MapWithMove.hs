@@ -25,7 +25,7 @@ import Data.Tuple
 --   * The same source key may not be moved to two destination keys.
 --   * Any key that is the source of a Move must also be edited
 --     (otherwise, the Move would duplicate it)
-data PatchMapWithMove k v = PatchMapWithMove (Map k (NodeInfo k v)) deriving (Show, Eq, Ord, Functor, Foldable, Traversable)
+newtype PatchMapWithMove k v = PatchMapWithMove (Map k (NodeInfo k v)) deriving (Show, Eq, Ord, Functor, Foldable, Traversable)
 
 data NodeInfo k v = NodeInfo
   { _nodeInfo_from :: !(From k v)
