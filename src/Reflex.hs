@@ -17,6 +17,8 @@ import Reflex.PerformEvent.Base as X
 import Reflex.PerformEvent.Class as X
 import Reflex.PostBuild.Base as X
 import Reflex.PostBuild.Class as X
+import Reflex.Query.Base as X
+import Reflex.Query.Class as X
 import Reflex.Requester.Base as X
 import Reflex.Requester.Class as X
 import Reflex.Spider as X
