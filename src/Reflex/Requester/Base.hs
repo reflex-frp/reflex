@@ -45,7 +45,7 @@ import Data.Some (Some)
 
 -- | A basic implementation of 'Requester'.
 newtype RequesterT t request response m a = RequesterT { unRequesterT :: EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException)
 
 deriving instance MonadSample t m => MonadSample t (RequesterT t request response m)
 deriving instance MonadHold t m => MonadHold t (RequesterT t request response m)
