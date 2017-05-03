@@ -67,13 +67,15 @@ library
   exposed-modules:
     Data.Functor.Misc,
     Data.WeakBag,
-    Generics.SOP.DMapUtilities,              
+    Generics.SOP.DMapUtilities,
+    Generics.SOP.Distribute,                        
     Reflex,
     Reflex.Class,
     Reflex.EventWriter,
     Reflex.Dynamic,
     Reflex.Dynamic.Uniq,
-    Reflex.Dynamic.CollectDynGeneric              
+    Reflex.Dynamic.CollectDynGeneric
+    Reflex.Dynamic.FactorDynGeneric                            
     Reflex.DynamicWriter,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,

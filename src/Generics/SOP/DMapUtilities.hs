@@ -34,6 +34,7 @@ module Generics.SOP.DMapUtilities
 
   -- * Functor wrapping/unwrapping utilities for 'NP'
   , npUnCompose
+  , nsOfnpUnCompose
   , npReCompose
   , nsOfnpReCompose
 
@@ -130,13 +131,21 @@ npUnCompose = go
     go Nil = Nil
     go (fgx :* npTail) = unComp fgx :* go npTail
 
+-- | UnCompose all of the 'NP's in an "NS (NP f) xss".
+nsOfnpUnCompose :: forall f g xss. (SListI xss, SListI2 xss) => NS (NP (f :.: g)) xss -> NS (NP f) (FunctorWrapTypeListOfLists g xss)
+nsOfnpUnCompose = go sList where
+  go :: forall yss. (SListI yss, SListI2 yss) => SList yss -> NS (NP (f :.: g)) yss -> NS (NP f) (FunctorWrapTypeListOfLists g yss)
+  go SNil _ = error "An NS cannot be empty"
+  go SCons (Z np) = Z (npUnCompose np)
+  go SCons (S ns') = S (go sList ns')
+
 -- | The inverse of 'npUnCompose'.  Given a type-list indexed product where all the types in the list are applications of the same functor,
 -- remove that functor from all the types in the list and put it in the functor parameter of the 'NP'.  The values in the product itself remain the same up
 -- to types representing composition of the functors.
 npReCompose :: forall f g xs. SListI xs => NP f (FunctorWrapTypeList g xs) -> NP (f :.: g) xs
 npReCompose = go sList
   where
-    go::forall ys. SListI ys => SList ys ->  NP f (FunctorWrapTypeList g ys) -> NP (f :.: g) ys
+    go :: forall ys. SListI ys => SList ys ->  NP f (FunctorWrapTypeList g ys) -> NP (f :.: g) ys
     go SNil Nil = Nil
     go SCons (fgx :* npTail) = Comp fgx :* go sList npTail
 
