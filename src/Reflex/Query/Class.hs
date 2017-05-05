@@ -9,7 +9,7 @@
 module Reflex.Query.Class
   ( Query (..)
   , QueryMorphism (..)
-  , unSelectedCount
+  , SelectedCount (..)
   , combineSelectedCounts
 
   , MonadQuery (..)
