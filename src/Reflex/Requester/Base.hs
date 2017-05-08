@@ -45,7 +45,12 @@ import Data.Some (Some)
 
 -- | A basic implementation of 'Requester'.
 newtype RequesterT t request response m a = RequesterT { unRequesterT :: EventWriterT t (DMap (Tag (PrimState m)) request) (ReaderT (EventSelector t (WrapArg response (Tag (PrimState m)))) m) a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException
+-- MonadAsyncException can't be derived on ghc-8.0.1; we use base-4.9.1 as a proxy for ghc-8.0.2
+#if MIN_VERSION_base(4,9,1)
+           , MonadAsyncException
+#endif
+           )
 
 deriving instance MonadSample t m => MonadSample t (RequesterT t request response m)
 deriving instance MonadHold t m => MonadHold t (RequesterT t request response m)
