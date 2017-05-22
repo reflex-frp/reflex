@@ -34,6 +34,7 @@ module Reflex.Dynamic
   , attachPromptlyDyn
   , attachPromptlyDynWith
   , attachPromptlyDynWithMaybe
+  , improvingMaybe
   , foldDyn
   , foldDynM
   , foldDynMaybe
@@ -84,6 +85,7 @@ import Prelude hiding (mapM, mapM_)
 
 import Data.Functor.Misc
 import Reflex.Class
+import Reflex.PostBuild.Class
 
 import Control.Applicative ((<*>))
 import Control.Monad hiding (forM, forM_, mapM, mapM_)
@@ -250,6 +252,14 @@ attachPromptlyDynWithMaybe f d e =
        This (a, b) -> f a b -- Only the tagging event is firing, so use that
        These (_, b) a -> f a b -- Both events are firing, so use the newer value
        That _ -> Nothing -- The tagging event isn't firing, so don't fire
+
+-- | Dynamic Maybe that can only update from Nothing to Just or Just to Just (i.e., cannot revert to Nothing)
+improvingMaybe :: (MonadHold t m, PostBuild t m) => Dynamic t (Maybe a) -> m (Dynamic t (Maybe a))
+improvingMaybe a = do
+  postBuild <- getPostBuild
+  holdDyn Nothing $ fmapMaybe (fmap Just) $ leftmost [ updated a
+                                                     , tagPromptlyDyn a postBuild
+                                                     ]
 
 --------------------------------------------------------------------------------
 -- Demux
