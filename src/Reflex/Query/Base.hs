@@ -46,8 +46,6 @@ import qualified Reflex.Patch.MapWithMove as MapWithMove
 newtype QueryT t q m a = QueryT { unQueryT :: StateT [Behavior t q] (EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m)) a }
   deriving (Functor, Applicative, Monad, MonadException, MonadFix, MonadIO, MonadHold t, MonadSample t, MonadAtomicRef)
 
--- deriving instance DomRenderHook t m => DomRenderHook t (QueryT t q m)
-
 runQueryT :: (MonadFix m, Additive q, Group q, Reflex t) => QueryT t q m a -> Dynamic t (QueryResult q) -> m (a, Incremental t (AdditivePatch q))
 runQueryT (QueryT a) qr = do
   ((r, bs), es) <- runReaderT (runEventWriterT (runStateT a mempty)) qr
@@ -191,44 +189,11 @@ instance PerformEvent t m => PerformEvent t (QueryT t q m) where
   performEvent_ = lift . performEvent_
   performEvent = lift . performEvent
 
--- instance HasJS x m => HasJS x (QueryT t q m) where
---   type JSX (QueryT t q m) = JSX m
---   liftJS = lift . liftJS
-
--- instance (DomBuilder t m, MonadFix m, MonadHold t m, Group q, Query q, Additive q) => DomBuilder t (QueryT t q m) where
---   type DomBuilderSpace (QueryT t q m) = DomBuilderSpace m
---   textNode = liftTextNode
---   element elementTag cfg (QueryT child) = QueryT $ do
---     s <- get
---     let cfg' = cfg
---           { _elementConfig_eventSpec = _elementConfig_eventSpec cfg }
---     (e, (a, newS)) <- lift $ element elementTag cfg' $ runStateT child s
---     put newS
---     return (e, a)
-
---   inputElement cfg = lift $ inputElement $ cfg & inputElementConfig_elementConfig %~ liftElementConfig
---   textAreaElement cfg = lift $ textAreaElement $ cfg & textAreaElementConfig_elementConfig %~ liftElementConfig
---   selectElement cfg (QueryT child) = QueryT $ do
---     s <- get
---     let cfg' = cfg & selectElementConfig_elementConfig %~ \c ->
---           c { _elementConfig_eventSpec = _elementConfig_eventSpec c }
---     (e, (a, newS)) <- lift $ selectElement cfg' $ runStateT child s
---     put newS
---     return (e, a)
---   placeRawElement = lift . placeRawElement
---   wrapRawElement e cfg = lift $ wrapRawElement e $ cfg
---     { _rawElementConfig_eventSpec = _rawElementConfig_eventSpec cfg
---     }
-
 instance MonadRef m => MonadRef (QueryT t q m) where
   type Ref (QueryT t q m) = Ref m
   newRef = QueryT . newRef
   readRef = QueryT . readRef
   writeRef r = QueryT . writeRef r
-
--- instance HasJSContext m => HasJSContext (QueryT t q m) where
---   type JSContextPhantom (QueryT t q m) = JSContextPhantom m
---   askJSContext = QueryT askJSContext
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (QueryT t q m) where
   newEventWithTrigger = QueryT . newEventWithTrigger

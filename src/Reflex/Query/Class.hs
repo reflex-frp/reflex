@@ -37,20 +37,9 @@ data QueryMorphism q q' = QueryMorphism
   , _queryMorphism_mapQueryResult :: QueryResult q' -> QueryResult q
   }
 
--- instance (Ord k, Query v) => Query (AppendMap k v) where
---   type QueryResult (AppendMap k v) = AppendMap k (QueryResult v)
---   crop q r = AppendMap.intersectionWith (flip crop) r q
-
--- singletonQuery :: (Monoid (QueryResult q), Ord k) => k -> QueryMorphism q (AppendMap k q)
--- singletonQuery k = QueryMorphism { _queryMorphism_mapQuery = AppendMap.singleton k
---                                  , _queryMorphism_mapQueryResult = AppendMap.findWithDefault mempty k
---                                  }
-
 -- | This type keeps track of the multiplicity of elements of the view selector that are being used by the app
 newtype SelectedCount = SelectedCount { unSelectedCount :: Int }
-  deriving (Eq, Ord, Show, Read, Integral, Num, Bounded, Enum, Real, Ix, Bits, FiniteBits, Storable, Data
-           -- , ToJSON, FromJSON
-           )
+  deriving (Eq, Ord, Show, Read, Integral, Num, Bounded, Enum, Real, Ix, Bits, FiniteBits, Storable, Data)
 
 instance Semigroup SelectedCount where
   SelectedCount a <> SelectedCount b = SelectedCount (a + b)
@@ -67,20 +56,6 @@ instance Additive SelectedCount
 -- | The Semigroup/Monoid/Group instances for a ViewSelector should use this function which returns Nothing if the result is 0. This allows the pruning of leaves that are no longer wanted.
 combineSelectedCounts :: SelectedCount -> SelectedCount -> Maybe SelectedCount
 combineSelectedCounts (SelectedCount i) (SelectedCount j) = if i == negate j then Nothing else Just $ SelectedCount (i + j)
-
--- class ( ToJSON (ViewSelector app SelectedCount), FromJSON (ViewSelector app SelectedCount)
---       , ToJSON (View app), FromJSON (View app)
---       , Monoid (ViewSelector app SelectedCount), Semigroup (ViewSelector app SelectedCount)
---       , Query (ViewSelector app SelectedCount), QueryResult (ViewSelector app SelectedCount) ~ View app
---       , Align (ViewSelector app)
---       , Eq (View app)
---       , Show (View app)
---       ) => HasView app where
---   type View app
---   type ViewSelector app :: * -> *
-
--- cropView :: (Query q) => q -> QueryResult q -> QueryResult q
--- cropView = crop
 
 class (Group q, Additive q, Query q) => MonadQuery t q m | m -> q t where
   tellQueryIncremental :: Incremental t (AdditivePatch q) -> m ()
