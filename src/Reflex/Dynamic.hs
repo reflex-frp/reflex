@@ -8,6 +8,7 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -25,8 +26,6 @@ module Reflex.Dynamic
   , updated
   , holdDyn
   , constDyn
-  , uniqDyn
-  , uniqDynBy
   , count
   , toggle
   , switchPromptlyDyn
@@ -34,6 +33,10 @@ module Reflex.Dynamic
   , attachPromptlyDyn
   , attachPromptlyDynWith
   , attachPromptlyDynWithMaybe
+  , scanDyn
+  , scanDynMaybe
+  , holdUniqDyn
+  , holdUniqDynBy
   , foldDyn
   , foldDynM
   , foldDynMaybe
@@ -78,6 +81,8 @@ module Reflex.Dynamic
   , nubDyn
   , splitDyn
   , tagDyn
+  , uniqDyn
+  , uniqDynBy
   ) where
 
 import Prelude hiding (mapM, mapM_)
@@ -102,16 +107,29 @@ import Debug.Trace
 
 -- | Create a new 'Dynamic' that only signals changes if the values actually
 -- changed.
-uniqDyn :: (Reflex t, Eq a) => Dynamic t a -> Dynamic t a
-uniqDyn = uniqDynBy (==)
+holdUniqDyn :: (Reflex t, MonadHold t m, MonadFix m, Eq a) => Dynamic t a -> m (Dynamic t a)
+holdUniqDyn = holdUniqDynBy (==)
 
 -- | Create a new 'Dynamic' that changes only when the underlying 'Dynamic'
 -- changes and the given function returns 'False' when given both the old and
 -- the new values.
-uniqDynBy :: Reflex t => (a -> a -> Bool) -> Dynamic t a -> Dynamic t a
-uniqDynBy eq d =
-  let e' = attachWithMaybe (\x x' -> if x' `eq` x then Nothing else Just x') (current d) (updated d)
-  in unsafeDynamic (current d) e'
+holdUniqDynBy :: (Reflex t, MonadHold t m, MonadFix m) => (a -> a -> Bool) -> Dynamic t a -> m (Dynamic t a)
+holdUniqDynBy eq = scanDynMaybe id (\new old -> if new `eq` old then Nothing else Just new)
+
+-- | Create a 'Dynamic' that accumulates values from another 'Dynamic'.  This
+-- function does not force its input 'Dynamic' until the output 'Dynamic' is
+-- forced.
+scanDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b) -> (a -> b -> b) -> Dynamic t a -> m (Dynamic t b)
+scanDyn z f = scanDynMaybe z (\a b -> Just $ f a b)
+
+-- | Like 'scanDyn', but the the accumulator function may decline to update the
+-- result 'Dynamic''s value.
+scanDynMaybe :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b) -> (a -> b -> Maybe b) -> Dynamic t a -> m (Dynamic t b)
+scanDynMaybe z f d = do
+  rec d' <- buildDynamic (z <$> sample (current d)) $ flip push (updated d) $ \a -> do
+        b <- sample $ current d'
+        return $ f a b
+  return d'
 
 -- | Create a 'Dynamic' using the initial value and change it each time the
 -- 'Event' occurs using a folding function on the previous value and the value
@@ -594,8 +612,24 @@ attachDynWithMaybe = attachPromptlyDynWithMaybe
 joinDyn :: Reflex t => Dynamic t (Dynamic t a) -> Dynamic t a
 joinDyn = join
 
--- | 'nubDyn''s behavior is not quite analogous to 'nub''s behavior, so it has
--- been renamed to 'uniqDyn'
-{-# DEPRECATED nubDyn "Use 'uniqDyn' instead" #-}
+-- | WARNING: This function is only pure if @a@'s 'Eq' instance tests
+-- representational equality.  Use 'holdUniqDyn' instead, which is pure in all
+-- circumstances.  Also, note that, unlike 'nub', this function does not prevent
+-- all recurrences of a value, only consecutive recurrences.
+{-# DEPRECATED nubDyn "Use 'holdUniqDyn' instead; note that it returns a MonadHold action rather than a pure Dynamic" #-}
 nubDyn :: (Reflex t, Eq a) => Dynamic t a -> Dynamic t a
 nubDyn = uniqDyn
+
+-- | WARNING: This function is only pure if @a@'s 'Eq' instance tests
+-- representational equality.  Use 'holdUniqDyn' instead, which is pure in all
+-- circumstances.
+{-# DEPRECATED uniqDyn "Use 'holdUniqDyn' instead; note that it returns a MonadHold action rather than a pure Dynamic" #-}
+uniqDyn :: (Reflex t, Eq a) => Dynamic t a -> Dynamic t a
+uniqDyn = uniqDynBy (==)
+
+-- | WARNING: This function is impure.  Use 'holdUniqDynBy' instead.
+{-# DEPRECATED uniqDynBy "Use 'holdUniqDynBy' instead; note that it returns a MonadHold action rather than a pure Dynamic" #-}
+uniqDynBy :: Reflex t => (a -> a -> Bool) -> Dynamic t a -> Dynamic t a
+uniqDynBy eq d =
+  let e' = attachWithMaybe (\x x' -> if x' `eq` x then Nothing else Just x') (current d) (updated d)
+  in unsafeDynamic (current d) e'

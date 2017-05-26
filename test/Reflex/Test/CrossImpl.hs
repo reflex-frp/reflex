@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -228,10 +229,16 @@ testCases =
        let eInner = switch bd
            e' = leftmost [eOuter, eInner]
        return (b, e')
+  , (,) "holdUniqDyn-laziness" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList (zip [1 :: Int ..] [1 :: Int, 2, 2, 3, 3, 3, 4, 4, 4, 4])) $ \(_, e :: Event t Int) -> do
+      rec result <- holdUniqDyn d
+          d <- holdDyn (0 :: Int) e
+      return (current result, updated result)
+  {-
   , (,) "mergeIncrementalWithMove" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, PatchDMapWithMove.moveDMapKey LeftTag RightTag), (2, mempty)]) $ \(b, e :: Event t (PatchDMapWithMove (EitherTag () ()) (Const2 () ()))) -> do
        x <- holdIncremental (DMap.singleton LeftTag $ void e) $ PatchDMapWithMove.mapPatchDMapWithMove (\(Const2 _) -> void e) <$> e
        let e' = mergeIncrementalWithMove x :: Event t (DMap (EitherTag () ()) Identity)
        return (b, e')
+  -}
   ]
 
 splitRecombineEvent :: Reflex t => Event t a -> Event t String

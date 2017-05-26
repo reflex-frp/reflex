@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
@@ -187,7 +188,7 @@ import Reflex.Spider.Internal (EventM, Global, HasSpiderTimeline, SpiderHost (..
                                SpiderPullM, SpiderPushM (..), behaviorHoldIdentity, dynamicConst,
                                dynamicCurrent, dynamicDynIdentity, dynamicHold, dynamicHoldIdentity,
                                dynamicUpdated, newMapDyn, readBehaviorTracked, readBehaviorUntracked,
-                               runFrame, runSpiderHostFrame, unsafeDyn)
+                               runFrame, runSpiderHostFrame)
 import qualified Reflex.Spider.Internal
 import qualified Reflex.Spider.Internal as S
 import Unsafe.Coerce
@@ -350,9 +351,9 @@ current = SpiderBehavior . S.dynamicCurrent . unSpiderDynamic
 {-# INLINE updated #-}
 updated = coerceEvent . SpiderEvent . dynamicUpdated . unSpiderDynamic
 {-# INLINE unsafeBuildDynamic #-}
-unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ unsafeDyn (coerce readV0) $ coerce $ unSpiderEvent v'
+unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ S.unsafeBuildDynamic (coerce readV0) $ coerce $ unSpiderEvent v'
 {-# INLINE unsafeBuildIncremental #-}
-unsafeBuildIncremental readV0 dv = SpiderIncremental $ S.dynamicDyn $ unsafeDyn (coerce readV0) $ unSpiderEvent dv
+unsafeBuildIncremental readV0 dv = SpiderIncremental $ S.dynamicDyn $ S.unsafeBuildDynamic (coerce readV0) $ unSpiderEvent dv
 {-# INLINE mergeIncremental #-}
 mergeIncremental = SpiderEvent . S.merge . (unsafeCoerce :: S.Dynamic x (PatchDMap k (Event (SpiderTimeline x))) -> S.Dynamic x (PatchDMap k (S.Event x))) . unSpiderIncremental
 {-# INLINE mergeIncrementalWithMove #-}
@@ -362,7 +363,7 @@ currentIncremental = SpiderBehavior . dynamicCurrent . unSpiderIncremental
 {-# INLINE updatedIncremental #-}
 updatedIncremental = SpiderEvent . dynamicUpdated . unSpiderIncremental
 {-# INLINE incrementalToDynamic #-}
-incrementalToDynamic (SpiderIncremental i) = SpiderDynamic $ dynamicDynIdentity $ unsafeDyn (readBehaviorUntracked $ dynamicCurrent i) $ flip S.push (dynamicUpdated i) $ \p -> do
+incrementalToDynamic (SpiderIncremental i) = SpiderDynamic $ dynamicDynIdentity $ S.unsafeBuildDynamic (readBehaviorUntracked $ dynamicCurrent i) $ flip S.push (dynamicUpdated i) $ \p -> do
   c <- readBehaviorUntracked $ dynamicCurrent i
   return $ Identity <$> apply p c
 eventCoercion Coercion = Coercion
@@ -414,12 +415,21 @@ class MonadSample t m => MonadHold t m where
   -- the 'Behavior', it will see the _old_ value of the 'Behavior', not the new
   -- one.
   hold :: a -> Event t a -> m (Behavior t a)
+  default hold :: (m ~ f m', MonadTrans f, MonadHold t m') => a -> Event t a -> m (Behavior t a)
+  hold v0 = lift . hold v0
   -- | Create a 'Dynamic' value using the given initial value that changes every
   -- time the 'Event' occurs.
   holdDyn :: a -> Event t a -> m (Dynamic t a)
+  default holdDyn :: (m ~ f m', MonadTrans f, MonadHold t m') => a -> Event t a -> m (Dynamic t a)
+  holdDyn v0 = lift . holdDyn v0
   -- | Create an 'Incremental' value using the given initial value that changes
   -- every time the 'Event' occurs.
   holdIncremental :: Patch p => PatchTarget p -> Event t p -> m (Incremental t p)
+  default holdIncremental :: (Patch p, m ~ f m', MonadTrans f, MonadHold t m') => PatchTarget p -> Event t p -> m (Incremental t p)
+  holdIncremental v0 = lift . holdIncremental v0
+  buildDynamic :: PullM t a -> Event t a -> m (Dynamic t a)
+  default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PullM t a -> Event t a -> m (Dynamic t a)
+  buildDynamic getV0 = lift . buildDynamic getV0
 
 -- | An 'EventSelector' allows you to efficiently 'select' an 'Event' based on a
 -- key.  This is much more efficient than filtering for each key with
@@ -446,6 +456,7 @@ instance MonadHold t m => MonadHold t (ReaderT r m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
+  buildDynamic a0 = lift . buildDynamic a0
 
 instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
   sample = lift . sample
@@ -454,6 +465,7 @@ instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
+  buildDynamic a0 = lift . buildDynamic a0
 
 instance MonadSample t m => MonadSample t (StateT s m) where
   sample = lift . sample
@@ -462,6 +474,7 @@ instance MonadHold t m => MonadHold t (StateT s m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
+  buildDynamic a0 = lift . buildDynamic a0
 
 instance MonadSample t m => MonadSample t (ExceptT e m) where
   sample = lift . sample

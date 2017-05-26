@@ -17,7 +17,6 @@ module Reflex.Dynamic.Uniq
 import Control.Applicative (Applicative (..))
 import GHC.Exts
 import Reflex.Class
-import Reflex.Dynamic
 
 -- | A 'Dynamic' whose 'updated' 'Event' will never fire with the same value as
 -- the 'current' 'Behavior''s contents.  In order to maintain this constraint,
@@ -47,7 +46,7 @@ uniqDynamic d = UniqDynamic $ unsafeBuildDynamic (sample $ current d) $ flip pus
 -- instance, but can be equal by pointer equality.  This may cause 'UniqDynamic'
 -- to lose changes from NaN to NaN.
 fromUniqDynamic :: (Reflex t, Eq a) => UniqDynamic t a -> Dynamic t a
-fromUniqDynamic (UniqDynamic d) = uniqDynBy superEq d
+fromUniqDynamic (UniqDynamic d) = unsafeDynamic (current d) e'
   where
     -- Only consider values different if they fail both pointer equality /and/
     -- 'Eq' equality.  This is to make things a bit more deterministic in the
@@ -57,6 +56,7 @@ fromUniqDynamic (UniqDynamic d) = uniqDynBy superEq d
     -- nonequal by pointer quality.  I suspect that it is impossible to make the
     -- behavior deterministic in this case.
     superEq a b = a `unsafePtrEq` b || a == b
+    e' = attachWithMaybe (\x x' -> if x' `superEq` x then Nothing else Just x') (current d) (updated d)
 
 -- | Create a UniqDynamic without uniqing it on creation.  This will be slightly
 -- faster than uniqDynamic when used with a Dynamic whose values are always (or

@@ -153,6 +153,21 @@ test-suite semantics
   if flag(specialize-to-spidertimeline-global)
     buildable: False
 
+test-suite CrossImpl
+  type: exitcode-stdio-1.0
+  main-is: Reflex/Test/CrossImpl.hs
+  hs-source-dirs: test
+  ghc-options: -O2 -Wall -rtsopts -main-is Reflex.Test.CrossImpl.test
+  build-depends:
+    base,
+    containers,
+    dependent-map,
+    mtl,
+    ref-tf,
+    reflex
+  if flag(specialize-to-spidertimeline-global)
+    buildable: False
+
 test-suite hlint
   type: exitcode-stdio-1.0
   main-is: hlint.hs

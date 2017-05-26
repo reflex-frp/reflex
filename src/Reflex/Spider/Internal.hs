@@ -747,6 +747,7 @@ instance GEq SpiderTimelineEnv where
 data EventEnv x
    = EventEnv { eventEnvAssignments :: !(IORef [SomeAssignment x]) -- Needed for Subscribe
               , eventEnvHoldInits :: !(IORef [SomeHoldInit x]) -- Needed for Subscribe
+              , eventEnvDynInits :: !(IORef [SomeDynInit x])
               , eventEnvMergeUpdates :: !(IORef [SomeMergeUpdate x])
               , eventEnvMergeInits :: !(IORef [SomeMergeInit x]) -- Needed for Subscribe
               , eventEnvClears :: !(IORef [SomeClear]) -- Needed for Subscribe
@@ -779,6 +780,10 @@ instance HasSpiderTimeline x => Defer (SomeAssignment x) (EventM x) where
 instance HasSpiderTimeline x => Defer (SomeHoldInit x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
   getDeferralQueue = asksEventEnv eventEnvHoldInits
+
+instance HasSpiderTimeline x => Defer (SomeDynInit x) (EventM x) where
+  {-# INLINE getDeferralQueue #-}
+  getDeferralQueue = asksEventEnv eventEnvDynInits
 
 instance Defer (SomeHoldInit x) (BehaviorM x) where
   {-# INLINE getDeferralQueue #-}
@@ -952,6 +957,8 @@ data Root x (k :: * -> *)
 
 data SomeHoldInit x = forall p. Patch p => SomeHoldInit !(Hold x p)
 
+data SomeDynInit x = forall p. Patch p => SomeDynInit !(Dyn x p)
+
 data SomeMergeUpdate x = SomeMergeUpdate
   { _someMergeUpdate_update :: !(EventM x [EventSubscription x])
   , _someMergeUpdate_invalidateHeight :: !(IO ())
@@ -963,14 +970,20 @@ newtype SomeMergeInit x = SomeMergeInit { unSomeMergeInit :: EventM x () }
 -- EventM can do everything BehaviorM can, plus create holds
 newtype EventM x a = EventM { unEventM :: IO a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadException, MonadAsyncException) -- The environment should be Nothing if we are not in a frame, and Just if we are - in which case it is a list of assignments to be done after the frame is over
 
-newtype ComputeM x a = ComputeM (ReaderT (IORef [SomeHoldInit x]) IO a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
+newtype ComputeM x a = ComputeM (ReaderT (IORef [SomeHoldInit x], IORef [SomeDynInit x]) IO a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
 instance Defer (SomeHoldInit x) (ComputeM x) where
-  getDeferralQueue = ComputeM ask
+  getDeferralQueue = ComputeM $ asks fst
+
+instance Defer (SomeDynInit x) (ComputeM x) where
+  getDeferralQueue = ComputeM $ asks snd
 
 {-# INLINABLE runComputeM #-}
-runComputeM :: Defer (SomeHoldInit x) m => ComputeM x a -> m a
-runComputeM (ComputeM a) = liftIO . runReaderT a =<< getDeferralQueue
+runComputeM :: (Defer (SomeHoldInit x) m, Defer (SomeDynInit x) m) => ComputeM x a -> m a
+runComputeM (ComputeM a) = do
+  holds <- getDeferralQueue
+  dyns <- getDeferralQueue
+  liftIO $ runReaderT a (holds, dyns)
 
 newtype MergeSubscribedParent x a = MergeSubscribedParent { unMergeSubscribedParent :: EventSubscription x }
 
@@ -1103,7 +1116,7 @@ instance HasSpiderTimeline x => Align (Event x) where
 newtype Dyn x p = Dyn { unDyn :: IORef (Either (BehaviorM x (PatchTarget p), Event x p) (Hold x p)) }
 
 newMapDyn :: HasSpiderTimeline x => (a -> b) -> Dynamic x (Identity a) -> Dynamic x (Identity b)
-newMapDyn f d = dynamicDynIdentity $ unsafeDyn (fmap f $ readBehaviorTracked $ dynamicCurrent d) (Identity . f . runIdentity <$> dynamicUpdated d)
+newMapDyn f d = dynamicDynIdentity $ unsafeBuildDynamic (fmap f $ readBehaviorTracked $ dynamicCurrent d) (Identity . f . runIdentity <$> dynamicUpdated d)
 
 --TODO: Avoid the duplication between this and R.zipDynWith
 zipDynWith :: HasSpiderTimeline x => (a -> b -> c) -> Dynamic x (Identity a) -> Dynamic x (Identity b) -> Dynamic x (Identity c)
@@ -1119,10 +1132,17 @@ zipDynWith f da db =
             return (a, b)
           These (Identity a) (Identity b) -> return (a, b)
         return $ Just $ Identity $ f a b
-  in dynamicDynIdentity $ unsafeDyn (f <$> readBehaviorUntracked (dynamicCurrent da) <*> readBehaviorUntracked (dynamicCurrent db)) ec
+  in dynamicDynIdentity $ unsafeBuildDynamic (f <$> readBehaviorUntracked (dynamicCurrent da) <*> readBehaviorUntracked (dynamicCurrent db)) ec
 
-unsafeDyn :: BehaviorM x (PatchTarget p) -> Event x p -> Dyn x p
-unsafeDyn readV0 v' = Dyn $ unsafeNewIORef x $ Left x
+buildDynamic :: (Defer (SomeDynInit x) m, Patch p) => BehaviorM x (PatchTarget p) -> Event x p -> m (Dyn x p)
+buildDynamic readV0 v' = do
+  result <- liftIO $ newIORef $ Left (readV0, v')
+  let !d = Dyn result
+  defer $ SomeDynInit d
+  return d
+
+unsafeBuildDynamic :: BehaviorM x (PatchTarget p) -> Event x p -> Dyn x p
+unsafeBuildDynamic readV0 v' = Dyn $ unsafeNewIORef x $ Left x
   where x = (readV0, v')
 
 -- ResultM can read behaviors and events
@@ -1796,24 +1816,31 @@ fan e =
         }
   in EventSelector $ \k -> eventFan k f
 
-runHoldInits :: HasSpiderTimeline x => IORef [SomeHoldInit x] -> IORef [SomeMergeInit x] -> EventM x ()
-runHoldInits holdInitRef mergeInitRef = do
+runHoldInits :: HasSpiderTimeline x => IORef [SomeHoldInit x] -> IORef [SomeDynInit x] -> IORef [SomeMergeInit x] -> EventM x ()
+runHoldInits holdInitRef dynInitRef mergeInitRef = do
   holdInits <- liftIO $ readIORef holdInitRef
+  dynInits <- liftIO $ readIORef dynInitRef
   mergeInits <- liftIO $ readIORef mergeInitRef
-  unless (null holdInits && null mergeInits) $ do
+  unless (null holdInits && null dynInits && null mergeInits) $ do
     liftIO $ writeIORef holdInitRef []
+    liftIO $ writeIORef dynInitRef []
     liftIO $ writeIORef mergeInitRef []
     mapM_ initHold holdInits
+    mapM_ initDyn dynInits
     mapM_ unSomeMergeInit mergeInits
-    runHoldInits holdInitRef mergeInitRef
+    runHoldInits holdInitRef dynInitRef mergeInitRef
 
 initHold :: HasSpiderTimeline x => SomeHoldInit x -> EventM x ()
 initHold (SomeHoldInit h) = void $ getHoldEventSubscription h
+
+initDyn :: HasSpiderTimeline x => SomeDynInit x -> EventM x ()
+initDyn (SomeDynInit d) = void $ getDynHold d
 
 newEventEnv :: IO (EventEnv x)
 newEventEnv = do
   toAssignRef <- newIORef [] -- This should only actually get used when events are firing
   holdInitRef <- newIORef []
+  dynInitRef <- newIORef []
   mergeUpdateRef <- newIORef []
   mergeInitRef <- newIORef []
   heightRef <- newIORef zeroHeight
@@ -1821,12 +1848,13 @@ newEventEnv = do
   toClearRootRef <- newIORef []
   coincidenceInfosRef <- newIORef []
   delayedRef <- newIORef IntMap.empty
-  return $ EventEnv toAssignRef holdInitRef mergeUpdateRef mergeInitRef toClearRef toClearRootRef heightRef coincidenceInfosRef delayedRef
+  return $ EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeInitRef toClearRef toClearRootRef heightRef coincidenceInfosRef delayedRef
 
 clearEventEnv :: EventEnv x -> IO ()
-clearEventEnv (EventEnv toAssignRef holdInitRef mergeUpdateRef mergeInitRef toClearRef toClearRootRef heightRef coincidenceInfosRef delayedRef) = do
+clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeInitRef toClearRef toClearRootRef heightRef coincidenceInfosRef delayedRef) = do
   writeIORef toAssignRef []
   writeIORef holdInitRef []
+  writeIORef dynInitRef []
   writeIORef mergeUpdateRef []
   writeIORef mergeInitRef []
   writeIORef heightRef zeroHeight
@@ -1841,7 +1869,7 @@ runFrame a = SpiderHost $ ask >>= \_ -> lift $ do
   let env = _spiderTimeline_eventEnv (spiderTimeline :: SpiderTimelineEnv x)
   let go = do
         result <- a
-        runHoldInits (eventEnvHoldInits env) (eventEnvMergeInits env) -- This must happen before doing the assignments, in case subscribing a Hold causes existing Holds to be read by the newly-propagated events
+        runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) -- This must happen before doing the assignments, in case subscribing a Hold causes existing Holds to be read by the newly-propagated events
         return result
   result <- runEventM go
   toClear <- readIORef $ eventEnvClears env
@@ -1873,7 +1901,7 @@ runFrame a = SpiderHost $ ask >>= \_ -> lift $ do
     writeIORef (switchSubscribedBehaviorParents subscribed) []
     writeIORef (eventEnvHoldInits env) [] --TODO: Should we reuse this?
     e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi', switchSubscribedBehaviorParents subscribed)) $ eventEnvHoldInits env
-    runEventM $ runHoldInits (eventEnvHoldInits env) (eventEnvMergeInits env) --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
+    runEventM $ runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
     --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
     sub <- newSubscriberSwitch subscribed
     subscription <- runReaderT (unSpiderHost (runFrame ({-# SCC "subscribeSwitch" #-} subscribe e sub))) spiderTimeline --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
@@ -2074,9 +2102,9 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# INLINABLE updated #-}
   updated = coerce $ SpiderEvent . dynamicUpdated . unSpiderDynamic
   {-# INLINABLE unsafeBuildDynamic #-}
-  unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ unsafeDyn (coerce readV0) $ coerce $ unSpiderEvent v'
+  unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ unsafeBuildDynamic (coerce readV0) $ coerce $ unSpiderEvent v'
   {-# INLINABLE unsafeBuildIncremental #-}
-  unsafeBuildIncremental readV0 dv = SpiderIncremental $ dynamicDyn $ unsafeDyn (coerce readV0) $ unSpiderEvent dv
+  unsafeBuildIncremental readV0 dv = SpiderIncremental $ dynamicDyn $ unsafeBuildDynamic (coerce readV0) $ unSpiderEvent dv
   {-# INLINABLE mergeIncremental #-}
   mergeIncremental = SpiderEvent . merge . (unsafeCoerce :: Dynamic x (PatchDMap k (R.Event (SpiderTimeline x))) -> Dynamic x (PatchDMap k (Event x))) . unSpiderIncremental
   {-# INLINABLE mergeIncrementalWithMove #-}
@@ -2086,7 +2114,7 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# INLINABLE updatedIncremental #-}
   updatedIncremental = SpiderEvent . dynamicUpdated . unSpiderIncremental
   {-# INLINABLE incrementalToDynamic #-}
-  incrementalToDynamic (SpiderIncremental i) = SpiderDynamic $ dynamicDynIdentity $ unsafeDyn (readBehaviorUntracked $ dynamicCurrent i) $ flip push (dynamicUpdated i) $ \p -> do
+  incrementalToDynamic (SpiderIncremental i) = SpiderDynamic $ dynamicDynIdentity $ unsafeBuildDynamic (readBehaviorUntracked $ dynamicCurrent i) $ flip push (dynamicUpdated i) $ \p -> do
     c <- readBehaviorUntracked $ dynamicCurrent i
     return $ Identity <$> apply p c --TODO: Avoid the redundant 'apply'
   eventCoercion Coercion = Coercion
