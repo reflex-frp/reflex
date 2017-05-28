@@ -40,6 +40,7 @@ import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Query.Class
+import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 import qualified Reflex.Patch.MapWithMove as MapWithMove
 
@@ -253,3 +254,8 @@ instance (Monad m, Group q, Additive q, Query q, Reflex t) => MonadQuery t q (Qu
     tellQueryIncremental q
     r <- askQueryResult
     return $ zipDynWith crop (incrementalToDynamic q) r
+
+instance Requester t m => Requester t (QueryT t q m) where
+  type Request (QueryT t q m) = Request m
+  type Response (QueryT t q m) = Response m
+  withRequesting f = QueryT $ withRequesting $ unQueryT . f
