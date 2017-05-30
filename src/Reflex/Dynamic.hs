@@ -33,6 +33,7 @@ module Reflex.Dynamic
   , attachPromptlyDyn
   , attachPromptlyDynWith
   , attachPromptlyDynWithMaybe
+  , maybeDyn
   , scanDyn
   , scanDynMaybe
   , holdUniqDyn
@@ -85,21 +86,20 @@ module Reflex.Dynamic
   , uniqDynBy
   ) where
 
-import Prelude hiding (mapM, mapM_)
-
 import Data.Functor.Misc
 import Reflex.Class
 
 import Control.Applicative ((<*>))
-import Control.Monad hiding (forM, forM_, mapM, mapM_)
+import Control.Monad
 import Control.Monad.Fix
-import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_)
+import Control.Monad.Identity
 import Data.Align
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare ((:~:) (..), GCompare (..), GEq (..), GOrdering (..))
 import Data.Map (Map)
+import Data.Maybe
 import Data.Monoid
 import Data.These
 
@@ -268,6 +268,24 @@ attachPromptlyDynWithMaybe f d e =
        This (a, b) -> f a b -- Only the tagging event is firing, so use that
        These (_, b) a -> f a b -- Both events are firing, so use the newer value
        That _ -> Nothing -- The tagging event isn't firing, so don't fire
+
+-- | Factor a @Dynamic t (Maybe a)@ into a @Dynamic t (Maybe (Dynamic t a))@,
+-- such that the outer 'Dynamic' is updated only when the 'Maybe''s constructor
+-- chages from 'Nothing' to 'Just' or vice-versa.  Whenever the constructor
+-- becomes 'Just', an inner 'Dynamic' will be provided, whose value will track
+-- the 'a' inside the 'Just'; when the constructor becomes 'Nothing', the
+-- existing inner 'Dynamic' will become constant, and will not change when the
+-- outer constructor changes back to 'Nothing'.
+maybeDyn :: forall t a m. (Reflex t, MonadFix m, MonadHold t m) => Dynamic t (Maybe a) -> m (Dynamic t (Maybe (Dynamic t a)))
+maybeDyn d = do
+  ma <- sample $ current d
+  let inner :: forall m'. (MonadFix m', MonadHold t m') => a -> m' (Dynamic t a)
+      inner a = holdDyn a . fmapMaybe id =<< takeWhileE isJust (updated d)
+  mInner0 :: Maybe (Dynamic t a) <- mapM inner ma
+  rec result <- holdDyn mInner0 $ flip push (updated d) $ \new -> do
+        old <- sample $ current d
+        if isJust old == isJust new then return Nothing else Just <$> mapM inner new
+  return result
 
 --------------------------------------------------------------------------------
 -- Demux

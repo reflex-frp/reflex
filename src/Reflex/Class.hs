@@ -88,6 +88,7 @@ module Reflex.Class
   , headE
   , tailE
   , headTailE
+  , takeWhileE
   , switcher
     -- * Debugging functions
   , traceEvent
@@ -642,6 +643,19 @@ headTailE e = do
   eHead <- headE e
   be <- hold never $ fmap (const e) eHead
   return (eHead, switch be)
+
+-- | Starting at the current time, fire all the occurrences of the 'Event' for
+-- which the given predicate returns 'True'.  When 'False' is returned, do not
+-- fire, and permanently stop firing, even if 'True' values are encountered
+-- later.
+takeWhileE :: forall t m a. (Reflex t, MonadFix m, MonadHold t m) => (a -> Bool) -> Event t a -> m (Event t a)
+takeWhileE f e = do
+  rec let (eFalse, eTrue) = fanEither $ ffor e' $ \a -> if f a
+            then Right a
+            else Left never
+      be <- hold e eFalse
+      let e' = switch be
+  return eTrue
 
 -- | Split the supplied 'Event' into two individual 'Event's occuring at the
 -- same time with the respective values from the tuple.
