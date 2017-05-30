@@ -69,7 +69,7 @@ library
     transformers-compat >= 0.3
 
   exposed-modules:
-    Data.AppendMap
+    Data.AppendMap,
     Data.Functor.Misc,
     Data.WeakBag,
     Reflex,

@@ -407,9 +407,3 @@ instance AppendMap k' v' ~ t => Rewrapped (AppendMap k a) t
 instance Wrapped (AppendMap k a) where
   type Unwrapped (AppendMap k a) = Map k a
   _Wrapped' = iso (\(AppendMap m) -> m) AppendMap
-
--- | Operator for creating a singleton 'Map'
-(=:) :: k -> a -> AppendMap k a
-k =: v = singleton k v
-infixr 7 =:
-
