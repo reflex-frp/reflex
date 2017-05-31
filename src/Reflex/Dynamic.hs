@@ -38,6 +38,7 @@ module Reflex.Dynamic
   , scanDynMaybe
   , holdUniqDyn
   , holdUniqDynBy
+  , improvingMaybe
   , foldDyn
   , foldDynM
   , foldDynMaybe
@@ -115,6 +116,10 @@ holdUniqDyn = holdUniqDynBy (==)
 -- the new values.
 holdUniqDynBy :: (Reflex t, MonadHold t m, MonadFix m) => (a -> a -> Bool) -> Dynamic t a -> m (Dynamic t a)
 holdUniqDynBy eq = scanDynMaybe id (\new old -> if new `eq` old then Nothing else Just new)
+
+-- | Dynamic Maybe that can only update from Nothing to Just or Just to Just (i.e., cannot revert to Nothing)
+improvingMaybe :: (Reflex t, MonadHold t m, MonadFix m) => Dynamic t (Maybe a) -> m (Dynamic t (Maybe a))
+improvingMaybe = scanDynMaybe id (\new _ -> if isJust new then Just new else Nothing)
 
 -- | Create a 'Dynamic' that accumulates values from another 'Dynamic'.  This
 -- function does not force its input 'Dynamic' until the output 'Dynamic' is
