@@ -4,7 +4,7 @@
 , monad-control, mtl, primitive, ref-tf, semigroupoids
 , semigroups, split, stdenv, stm, syb, template-haskell
 , these, transformers, transformers-compat, prim-uniq
-, data-default
+, data-default, filepath, directory, filemanip
 , useTemplateHaskell ? true
 }:
 mkDerivation {
@@ -23,7 +23,7 @@ mkDerivation {
     haskell-src-exts haskell-src-meta
   ]);
   testHaskellDepends = if ghc.isGhcjs or false then [] else [
-    hlint
+    hlint filepath directory filemanip
   ];
   configureFlags = if useTemplateHaskell then [] else [
     "-f-use-template-haskell"
