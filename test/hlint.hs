@@ -31,7 +31,7 @@ main = do
         , let notElem' = liftOp notElem
           in filePath `notElem'` filePathExceptions pwd
         ]
-  files <- find always matchFile pwd
+  files <- find recurseInto matchFile pwd
   ideas <- fmap concat $ forM files $ \f -> do
     putStr $ "linting file " ++ drop (length pwd + 1) f ++ "... "
     runHlint f
