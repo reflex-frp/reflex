@@ -208,6 +208,20 @@ test-suite RequesterT
                , reflex
                , ref-tf
 
+test-suite QueryT
+  type: exitcode-stdio-1.0
+  main-is: QueryT.hs
+  hs-source-dirs: test
+  build-depends: base
+               , containers
+               , dependent-sum
+               , dependent-map
+               , lens
+               , these
+               , transformers
+               , reflex
+               , ref-tf
+
 test-suite GC-Semantics
   type: exitcode-stdio-1.0
   main-is: GC.hs
