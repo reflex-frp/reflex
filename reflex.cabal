@@ -189,6 +189,8 @@ test-suite EventWriterT
   hs-source-dirs: test
   build-depends: base
                , dependent-sum
+               , lens
+               , these
                , transformers
                , reflex
                , ref-tf
@@ -200,6 +202,8 @@ test-suite RequesterT
   build-depends: base
                , dependent-sum
                , dependent-map
+               , lens
+               , these
                , transformers
                , reflex
                , ref-tf

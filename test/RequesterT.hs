@@ -24,6 +24,12 @@ data RequestInt a where
 
 main :: IO ()
 main = do
+  return ()
+
+{-
+
+main :: IO ()
+main = do
   (Just out1, Nothing) <- runApp $ unwrapApp app1
   print out1
   (Just out2, Just (out3, out4)) <- runApp $ unwrapApp app2
@@ -53,3 +59,4 @@ app2 e = do
   forM_ [1,3..9] $ \i -> runWithReplace (requestingIdentity (RequestInt i <$ e)) $ ffor pulse $ \_ -> requestingIdentity (RequestInt (i+1) <$ e)
   return (Just pulseTriggerRef)
 
+-}
