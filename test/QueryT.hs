@@ -4,6 +4,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+
+import Control.Lens
+import Control.Monad.Fix
 import Data.Align
 import qualified Data.AppendMap as Map
 import Data.Semigroup
@@ -46,14 +49,26 @@ instance (Eq a, Ord k, Group a) => Group (Selector k a) where
 instance (Eq a, Ord k, Group a) => Additive (Selector k a)
 
 main :: IO ()
-main = mainWidget $ do
-  let w = do
-        n <- count =<< button "Increment"
-        display n
+main = do
+  [0, 1, 1, 0] <- fmap (map fst . concat) $ runApp app () $ map (Just . That) $
+    [ That ()
+    , This ()
+    , That ()
+    ]
+  return ()
+
+app :: (Reflex t, MonadHold t m, MonadAdjust t m, MonadFix m)
+    =>  AppIn t () (These () ())
+    -> m (AppOut t Int Int)
+app (AppIn _ pulse) = do
+  let replace = fmapMaybe (^? here) pulse
+      increment = fmapMaybe (^? there) pulse
+      w = do
+        n <- count increment
         queryDyn $ zipDynWith (\x y -> Selector (Map.singleton (x :: Int) y)) n $ pure $ MyQuery $ SelectedCount 1
-        return ()
-      outer = do
-        replace <- button "Replace"
-        widgetHold w $ w <$ replace
-  (_, q) <- runQueryT outer $ pure mempty
-  display $ incrementalToDynamic q
+  (_, q) <- runQueryT (runWithReplace w $ w <$ replace) $ pure mempty
+  let qDyn = fmap (head . Map.keys . unSelector) $ incrementalToDynamic q
+  return $ AppOut
+    { _appOut_behavior = current qDyn
+    , _appOut_event = updated qDyn
+    }
