@@ -78,6 +78,7 @@ library
     Reflex.Dynamic,
     Reflex.Dynamic.Uniq,
     Reflex.DynamicWriter,
+    Reflex.FastWeak,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,
     Reflex.Patch,
@@ -135,6 +136,9 @@ library
 
   if flag(experimental-dependent-sum-instances)
     ghc-options: -DEXPERIMENTAL_DEPENDENT_SUM_INSTANCES
+
+  if impl(ghcjs)
+    build-depends: ghcjs-base
 
 test-suite semantics
   type: exitcode-stdio-1.0

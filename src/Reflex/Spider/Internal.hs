@@ -8,9 +8,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-#if defined(DEBUG) || defined(DEBUG_CYCLES)
 {-# LANGUAGE LambdaCase #-}
-#endif
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
@@ -62,6 +60,7 @@ import Data.Word
 import GHC.Exts
 import GHC.IORef (IORef (..))
 import GHC.Stack
+import Reflex.FastWeak
 import Reflex.FunctorMaybe
 import System.IO.Unsafe
 import System.Mem.Weak
@@ -75,6 +74,8 @@ import Data.Monoid (mempty)
 import Data.Tree (Forest, Tree (..), drawForest)
 #endif
 
+import Data.FastWeakBag (FastWeakBag)
+import qualified Data.FastWeakBag as FastWeakBag
 import Data.WeakBag (WeakBag, WeakBagTicket, _weakBag_children)
 import qualified Data.WeakBag as WeakBag
 #ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
@@ -252,10 +253,9 @@ pushCheap f e = Event $ \sub -> do
   return (subscription, occ')
 
 data CacheSubscribed x a
-   = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
-                     , _cacheSubscribed_weakSelf :: {-# UNPACK #-} !(IORef (Weak (CacheSubscribed x a)))
+   = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
                      , _cacheSubscribed_parent :: {-# UNPACK #-} !(EventSubscription x)
-                     , _cacheSubscribed_cached :: {-# UNPACK #-} !(IORef (Maybe (CacheSubscribed x a)))
+                     , _cacheSubscribed_cached :: {-# UNPACK #-} !(IORef (Maybe (FastWeakTicket (CacheSubscribed x a))))
                      , _cacheSubscribed_occurrence :: {-# UNPACK #-} !(IORef (Maybe a))
                      }
 
@@ -263,57 +263,59 @@ data CacheSubscribed x a
 -- repeatedly
 --
 --TODO: Try a caching strategy where we subscribe directly to the parent when
---there's only one subscriber, and then build our own WeakBag only when a second
+--there's only one subscriber, and then build our own FastWeakBag only when a second
 --subscriber joins
 {-# NOINLINE cacheEvent #-}
-cacheEvent :: HasSpiderTimeline x => Event x a -> Event x a
+cacheEvent :: forall x a. HasSpiderTimeline x => Event x a -> Event x a
 cacheEvent e =
 #ifdef DEBUG_TRACE_EVENTS
   withStackOneLine $ \callSite -> Event $
 #else
   Event $
 #endif
-    let !mSubscribedRef = unsafeNewIORef e Nothing
+    let mSubscribedRef :: IORef (Maybe (FastWeakTicket (CacheSubscribed x a)))
+        !mSubscribedRef = unsafeNewIORef e Nothing
     in \sub -> {-# SCC "cacheEvent" #-} do
 #ifdef DEBUG_TRACE_EVENTS
           unless (BS8.null callSite) $ liftIO $ BS8.hPutStrLn stderr callSite
 #endif
-          mSubscribed <- liftIO $ readIORef mSubscribedRef
-          case mSubscribed of
-            Just subscribed -> liftIO $ do
-              ticket <- WeakBag.insert sub (_cacheSubscribed_subscribers subscribed) (_cacheSubscribed_weakSelf subscribed) cleanupCacheSubscribed
-              occ <- readIORef $ _cacheSubscribed_occurrence subscribed
-              let es = EventSubscribed
-                    { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ _cacheSubscribed_parent subscribed
-                    , eventSubscribedRetained = toAny subscribed
-                    }
-              return (EventSubscription (WeakBag.remove ticket >> touch ticket) es, occ)
+          subscribedTicket <- liftIO (readIORef mSubscribedRef) >>= \case
+            Just subscribedTicket -> return subscribedTicket
             Nothing -> do
-              weakSelf <- liftIO $ newIORef $ error "cacheEvent: weakSelf not yet intialized"
-              (subscribers, ticket) <- liftIO $ WeakBag.singleton sub weakSelf cleanupCacheSubscribed
-              occRef <- liftIO $ newIORef undefined
+              subscribers <- liftIO FastWeakBag.empty
+              occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
               (parentSub, occ) <- subscribeAndRead e $ Subscriber
                 { subscriberPropagate = \a -> do
                     liftIO $ writeIORef occRef $ Just a
                     scheduleClear occRef
-                    propagate a subscribers
+                    propagateFast a subscribers
                 , subscriberInvalidateHeight = \old -> do
-                    WeakBag.traverse subscribers $ invalidateSubscriberHeight old
+                    FastWeakBag.traverse subscribers $ invalidateSubscriberHeight old
                 , subscriberRecalculateHeight = \new -> do
-                    WeakBag.traverse subscribers $ recalculateSubscriberHeight new
+                    FastWeakBag.traverse subscribers $ recalculateSubscriberHeight new
                 }
-              liftIO $ writeIORef occRef occ
-              when (isJust occ) $ scheduleClear occRef
+              when (isJust occ) $ do
+                liftIO $ writeIORef occRef occ -- Set the initial value of occRef; we don't need to do this if occ is Nothing
+                scheduleClear occRef
               let !subscribed = CacheSubscribed
                     { _cacheSubscribed_subscribers = subscribers
-                    , _cacheSubscribed_weakSelf = weakSelf
                     , _cacheSubscribed_parent = parentSub
                     , _cacheSubscribed_cached = mSubscribedRef
                     , _cacheSubscribed_occurrence = occRef
                     }
-              liftIO $ writeIORef mSubscribedRef $ Just subscribed
-              liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "PushSubscribed"
-              return (EventSubscription (WeakBag.remove ticket >> touch ticket) (EventSubscribed (eventSubscribedHeightRef $ _eventSubscription_subscribed parentSub) (toAny subscribed)), occ)
+                  !subscribedTicket = fastWeakTicket subscribed
+              liftIO $ writeIORef mSubscribedRef $ Just subscribedTicket
+              return subscribedTicket
+          liftIO $ do
+            let subscribed = fastWeakTicketValue subscribedTicket
+            subscribedWeak <- getFastWeakTicketWeak subscribedTicket
+            ticket <- FastWeakBag.insert sub (_cacheSubscribed_subscribers subscribed) subscribedWeak cleanupCacheSubscribed
+            occ <- readIORef $ _cacheSubscribed_occurrence subscribed
+            let es = EventSubscribed
+                  { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ _cacheSubscribed_parent subscribed
+                  , eventSubscribedRetained = toAny subscribed
+                  }
+            return (EventSubscription (FastWeakBag.remove ticket >> touch ticket) es, occ)
 
 cleanupCacheSubscribed :: CacheSubscribed x a -> IO ()
 cleanupCacheSubscribed self = do
@@ -496,6 +498,13 @@ propagate a subscribers = withIncreasedDepth $ do
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
   WeakBag.traverse subscribers $ \s -> subscriberPropagate s a
+
+-- | Propagate everything at the current height
+propagateFast :: a -> FastWeakBag (Subscriber x a) -> EventM x ()
+propagateFast a subscribers = withIncreasedDepth $ do
+  -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
+  --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
+  FastWeakBag.traverse subscribers $ \s -> subscriberPropagate s a
 
 --------------------------------------------------------------------------------
 -- EventSubscribed
