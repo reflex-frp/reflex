@@ -303,7 +303,7 @@ cacheEvent e =
                     , _cacheSubscribed_cached = mSubscribedRef
                     , _cacheSubscribed_occurrence = occRef
                     }
-                  !subscribedTicket = fastWeakTicket subscribed
+              subscribedTicket <- liftIO $ mkFastWeakTicket subscribed
               liftIO $ writeIORef mSubscribedRef $ Just subscribedTicket
               return subscribedTicket
           liftIO $ do
