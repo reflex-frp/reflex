@@ -12,7 +12,7 @@ module Data.FastWeakBag
   ( FastWeakBag
   , FastWeakBagTicket
   , empty
-  , singleton
+  , isEmpty
   , insert
   , traverse
   , remove
@@ -28,7 +28,6 @@ import Data.Foldable (forM_, mapM_)
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
-import Reflex.FastWeak
 import System.Mem.Weak
 
 import Prelude hiding (mapM_, traverse)
@@ -54,25 +53,12 @@ data FastWeakBagTicket = forall a. FastWeakBagTicket
 {-# INLINE insert #-}
 insert :: a -- ^ The item
        -> FastWeakBag a -- ^ The 'FastWeakBag' to insert into
-       -> FastWeak b -- ^ An arbitrary value to be used in the following
-                             -- callback
-       -> (b -> IO ()) -- ^ A callback to be invoked when the item is removed
-                       -- (whether automatically by the item being garbage
-                       -- collected or manually via 'remove')
        -> IO FastWeakBagTicket -- ^ Returns a 'FastWeakBagTicket' that ensures the item
                            -- is retained and allows the item to be removed.
-insert a (FastWeakBag nextId children) wb finalizer = {-# SCC "insert" #-} do
+insert a (FastWeakBag nextId children) = {-# SCC "insert" #-} do
   a' <- evaluate a
   myId <- atomicModifyIORef' nextId $ \n -> (succ n, n)
-  let cleanup = do
-        mb <- getFastWeakValue wb
-        forM_ mb $ \b -> do
-          csWithoutMe <- atomicModifyIORef children $ \cs ->
-            let !csWithoutMe = IntMap.delete myId cs
-            in (csWithoutMe, csWithoutMe)
-          when (IntMap.null csWithoutMe) $ finalizer b
-          return ()
-        return ()
+  let cleanup = atomicModifyIORef' children $ \cs -> (IntMap.delete myId cs, ())
   wa <- mkWeakPtr a' $ Just cleanup
   atomicModifyIORef' children $ \cs -> (IntMap.insert myId wa cs, ())
   return $ FastWeakBagTicket
@@ -92,14 +78,10 @@ empty = {-# SCC "empty" #-} do
         }
   return bag
 
--- | Create a 'FastWeakBag' with one item; equivalent to creating the 'FastWeakBag' with
--- 'empty', then using 'insert'.
-{-# INLINE singleton #-}
-singleton :: a -> FastWeak b -> (b -> IO ()) -> IO (FastWeakBag a, FastWeakBagTicket)
-singleton a wb finalizer = {-# SCC "singleton" #-} do
-  bag <- empty
-  ticket <- insert a bag wb finalizer
-  return (bag, ticket)
+-- | Check whether a 'FastWeakBag' is empty.
+{-# INLINE isEmpty #-}
+isEmpty :: FastWeakBag a -> IO Bool
+isEmpty bag = {-# SCC "isEmpty" #-} IntMap.null <$> readIORef (_weakBag_children bag)
 
 {-# INLINE traverse #-}
 -- | Visit every node in the given list.  If new nodes are appended during the

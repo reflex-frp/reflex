@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 #ifdef ghcjs_HOST_OS
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE JavaScriptFFI #-}
@@ -7,16 +9,21 @@ module Reflex.FastWeak
   ( FastWeakTicket
   , FastWeak
   , mkFastWeakTicket
-  , fastWeakTicketValue
+  , getFastWeakTicketValue
   , getFastWeakTicketWeak
   , getFastWeakValue
+  , getFastWeakTicket
+  , emptyFastWeak
   ) where
+
+import GHC.Exts (Any)
+import Unsafe.Coerce
 
 #ifdef ghcjs_HOST_OS
 import GHCJS.Types
-import Unsafe.Coerce
 #else
 import Control.Exception (evaluate)
+import System.IO.Unsafe
 import System.Mem.Weak
 #endif
 
@@ -37,14 +44,16 @@ data FastWeakTicket a = FastWeakTicket
 type FastWeak a = Weak a
 #endif
 
--- Do we have a concern about accidentally retaining the ticket here?
-fastWeakTicketValue :: FastWeakTicket a -> a
+-- This needs to be in IO so we know that we've relinquished the ticket
+getFastWeakTicketValue :: FastWeakTicket a -> IO a
 #ifdef ghcjs_HOST_OS
-fastWeakTicketValue t = unVal (unsafeCoerce (js_ticketVal t))
+getFastWeakTicketValue t = do
+  v <- js_ticketVal t
+  return $ unVal (unsafeCoerce v)
 
-foreign import javascript unsafe "$r = $1.val;" js_ticketVal :: FastWeakTicket a -> JSVal
+foreign import javascript unsafe "$r = $1.val;" js_ticketVal :: FastWeakTicket a -> IO JSVal
 #else
-fastWeakTicketValue = _fastWeakTicket_val
+getFastWeakTicketValue = return . _fastWeakTicket_val
 #endif
 
 getFastWeakValue :: FastWeak a -> IO (Maybe a)
@@ -53,13 +62,32 @@ getFastWeakValue w = do
   r <- js_weakVal w
   case js_isNull r of
     True -> return Nothing
-    False -> return (unsafeCoerce r)
+    False -> return $ Just $ unVal (unsafeCoerce r)
 
 foreign import javascript unsafe "$1 === null" js_isNull :: JSVal -> Bool
 
 foreign import javascript unsafe "$r = ($1.ticket === null) ? null : $1.ticket.val;" js_weakVal :: FastWeak a -> IO JSVal
 #else
 getFastWeakValue = deRefWeak
+#endif
+
+getFastWeakTicket :: forall a. FastWeak a -> IO (Maybe (FastWeakTicket a))
+#ifdef ghcjs_HOST_OS
+getFastWeakTicket w = do
+  r <- js_weakTicket w
+  case js_isNull r of
+    True -> return Nothing
+    False -> return $ Just $ FastWeakTicket r
+
+foreign import javascript unsafe "$r = $1.ticket;" js_weakTicket :: FastWeak a -> IO JSVal
+#else
+getFastWeakTicket w = do
+  deRefWeak w >>= \case
+    Nothing -> return Nothing
+    Just v -> return $ Just $ FastWeakTicket
+      { _fastWeakTicket_val = v
+      , _fastWeakTicket_weak = w
+      }
 #endif
 
 -- I think it's fine if this is lazy - it'll retain the 'a', but so would the output; we just need to make sure it's forced before we start relying on the associated FastWeak to actually be weak
@@ -84,4 +112,18 @@ foreign import javascript unsafe "$r = $1.weak;" getFastWeakTicketWeak :: FastWe
 #else
 getFastWeakTicketWeak :: FastWeakTicket a -> IO (FastWeak a)
 getFastWeakTicketWeak = return . _fastWeakTicket_weak
+#endif
+
+-- | A weak reference that is always empty
+emptyFastWeak :: FastWeak a
+emptyFastWeak = unsafeCoerce w
+  where w :: FastWeak Any
+#ifdef ghcjs_HOST_OS
+        w = js_emptyWeak
+foreign import javascript unsafe "$r = new h$FastWeak(null);" js_emptyWeak :: FastWeak Any
+#else
+        w = unsafePerformIO $ do
+          w' <- mkWeakPtr undefined Nothing
+          finalize w'
+          return w'
 #endif

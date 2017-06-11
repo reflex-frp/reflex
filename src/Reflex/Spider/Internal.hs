@@ -255,7 +255,6 @@ pushCheap f e = Event $ \sub -> do
 data CacheSubscribed x a
    = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
                      , _cacheSubscribed_parent :: {-# UNPACK #-} !(EventSubscription x)
-                     , _cacheSubscribed_cached :: {-# UNPACK #-} !(IORef (Maybe (FastWeakTicket (CacheSubscribed x a))))
                      , _cacheSubscribed_occurrence :: {-# UNPACK #-} !(IORef (Maybe a))
                      }
 
@@ -273,13 +272,13 @@ cacheEvent e =
 #else
   Event $
 #endif
-    let mSubscribedRef :: IORef (Maybe (FastWeakTicket (CacheSubscribed x a)))
-        !mSubscribedRef = unsafeNewIORef e Nothing
+    let mSubscribedRef :: IORef (FastWeak (CacheSubscribed x a))
+        !mSubscribedRef = unsafeNewIORef e emptyFastWeak
     in \sub -> {-# SCC "cacheEvent" #-} do
 #ifdef DEBUG_TRACE_EVENTS
           unless (BS8.null callSite) $ liftIO $ BS8.hPutStrLn stderr callSite
 #endif
-          subscribedTicket <- liftIO (readIORef mSubscribedRef) >>= \case
+          subscribedTicket <- liftIO (readIORef mSubscribedRef >>= getFastWeakTicket) >>= \case
             Just subscribedTicket -> return subscribedTicket
             Nothing -> do
               subscribers <- liftIO FastWeakBag.empty
@@ -300,27 +299,30 @@ cacheEvent e =
               let !subscribed = CacheSubscribed
                     { _cacheSubscribed_subscribers = subscribers
                     , _cacheSubscribed_parent = parentSub
-                    , _cacheSubscribed_cached = mSubscribedRef
                     , _cacheSubscribed_occurrence = occRef
                     }
               subscribedTicket <- liftIO $ mkFastWeakTicket subscribed
-              liftIO $ writeIORef mSubscribedRef $ Just subscribedTicket
+              liftIO $ writeIORef mSubscribedRef =<< getFastWeakTicketWeak subscribedTicket
               return subscribedTicket
           liftIO $ do
-            let subscribed = fastWeakTicketValue subscribedTicket
-            subscribedWeak <- getFastWeakTicketWeak subscribedTicket
-            ticket <- FastWeakBag.insert sub (_cacheSubscribed_subscribers subscribed) subscribedWeak cleanupCacheSubscribed
+            subscribed <- getFastWeakTicketValue subscribedTicket
+            ticket <- FastWeakBag.insert sub $ _cacheSubscribed_subscribers subscribed
             occ <- readIORef $ _cacheSubscribed_occurrence subscribed
-            let es = EventSubscribed
-                  { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ _cacheSubscribed_parent subscribed
-                  , eventSubscribedRetained = toAny subscribed
+            let es = EventSubscription
+                  { _eventSubscription_unsubscribe = do
+                      FastWeakBag.remove ticket
+                      isEmpty <- FastWeakBag.isEmpty $ _cacheSubscribed_subscribers subscribed
+                      when isEmpty $ do
+                        writeIORef mSubscribedRef emptyFastWeak
+                        unsubscribe $ _cacheSubscribed_parent subscribed
+                      touch ticket
+                      touch subscribedTicket
+                  , _eventSubscription_subscribed = EventSubscribed
+                      { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ _cacheSubscribed_parent subscribed
+                      , eventSubscribedRetained = toAny subscribedTicket
+                      }
                   }
-            return (EventSubscription (FastWeakBag.remove ticket >> touch ticket) es, occ)
-
-cleanupCacheSubscribed :: CacheSubscribed x a -> IO ()
-cleanupCacheSubscribed self = do
-  unsubscribe $ _cacheSubscribed_parent self
-  writeIORef (_cacheSubscribed_cached self) Nothing
+            return (es, occ)
 
 subscribe :: Event x a -> Subscriber x a -> EventM x (EventSubscription x)
 subscribe e s = fst <$> subscribeAndRead e s
