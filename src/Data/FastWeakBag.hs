@@ -62,7 +62,7 @@ data FastWeakBag a = FastWeakBag
 #ifdef ghcjs_HOST_OS
 newtype FastWeakBagTicket a = FastWeakBagTicket JSVal
 #else
-data FastWeakBagTicket a = forall FastWeakBagTicket
+data FastWeakBagTicket a = FastWeakBagTicket
   { _weakBagTicket_weakItem :: {-# UNPACK #-} !(Weak a)
   , _weakBagTicket_item :: {-# NOUNPACK #-} !a
   }
