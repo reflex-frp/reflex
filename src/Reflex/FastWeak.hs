@@ -140,3 +140,4 @@ foreign import javascript unsafe "$r = new h$FastWeak(null);" js_emptyWeak :: Fa
           finalize w'
           return w'
 #endif
+{-# NOINLINE emptyFastWeak #-}
