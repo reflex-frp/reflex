@@ -324,13 +324,13 @@ isSubmapOf :: forall k a. (Ord k, Eq a) => AppendMap k a -> AppendMap k a -> Boo
 isSubmapOf = coerce (Map.isSubmapOf :: Map k a -> Map k a -> Bool)
 
 isSubmapOfBy :: forall k a b. Ord k => (a -> b -> Bool) -> AppendMap k a -> AppendMap k b -> Bool
-isSubmapOfBy = coerce (Map.isSubmapOfBy:: (a -> b -> Bool) -> Map k a -> Map k b -> Bool)
+isSubmapOfBy = coerce (Map.isSubmapOfBy :: (a -> b -> Bool) -> Map k a -> Map k b -> Bool)
 
 isProperSubmapOf :: forall k a. (Ord k, Eq a) => AppendMap k a -> AppendMap k a -> Bool
 isProperSubmapOf = coerce (Map.isProperSubmapOf :: Map k a -> Map k a -> Bool)
 
 isProperSubmapOfBy :: forall k a b. Ord k => (a -> b -> Bool) -> AppendMap k a -> AppendMap k b -> Bool
-isProperSubmapOfBy = coerce (Map.isProperSubmapOfBy:: (a -> b -> Bool) -> Map k a -> Map k b -> Bool)
+isProperSubmapOfBy = coerce (Map.isProperSubmapOfBy :: (a -> b -> Bool) -> Map k a -> Map k b -> Bool)
 
 lookupIndex :: forall k a. Ord k => k -> AppendMap k a -> Maybe Int
 lookupIndex = coerce (Map.lookupIndex :: k -> Map k a -> Maybe Int)
@@ -366,16 +366,16 @@ deleteFindMax :: forall k a. AppendMap k a -> ((k, a), AppendMap k a)
 deleteFindMax = coerce (Map.deleteFindMax :: Map k a -> ((k, a), Map k a))
 
 updateMin :: forall k a. (a -> Maybe a) -> AppendMap k a -> AppendMap k a
-updateMin = coerce (Map.updateMin:: (a -> Maybe a) -> Map k a -> Map k a)
+updateMin = coerce (Map.updateMin :: (a -> Maybe a) -> Map k a -> Map k a)
 
 updateMax :: forall k a. (a -> Maybe a) -> AppendMap k a -> AppendMap k a
-updateMax = coerce (Map.updateMax:: (a -> Maybe a) -> Map k a -> Map k a)
+updateMax = coerce (Map.updateMax :: (a -> Maybe a) -> Map k a -> Map k a)
 
 updateMinWithKey :: forall k a. (k -> a -> Maybe a) -> AppendMap k a -> AppendMap k a
-updateMinWithKey = coerce (Map.updateMinWithKey:: (k -> a -> Maybe a) -> Map k a -> Map k a)
+updateMinWithKey = coerce (Map.updateMinWithKey :: (k -> a -> Maybe a) -> Map k a -> Map k a)
 
 updateMaxWithKey :: forall k a. (k -> a -> Maybe a) -> AppendMap k a -> AppendMap k a
-updateMaxWithKey = coerce (Map.updateMaxWithKey:: (k -> a -> Maybe a) -> Map k a -> Map k a)
+updateMaxWithKey = coerce (Map.updateMaxWithKey :: (k -> a -> Maybe a) -> Map k a -> Map k a)
 
 minView :: forall k a. AppendMap k a -> Maybe (a, AppendMap k a)
 minView = coerce (Map.minView :: Map k a -> Maybe (a, Map k a))
@@ -393,7 +393,7 @@ showTree :: forall k a. (Show k, Show a) => AppendMap k a -> String
 showTree = coerce (Map.showTree :: (Show k, Show a) => Map k a -> String)
 
 showTreeWith :: forall k a. (k -> a -> String) -> Bool -> Bool -> AppendMap k a -> String
-showTreeWith = coerce (Map.showTreeWith:: (k -> a -> String) -> Bool -> Bool -> Map k a -> String)
+showTreeWith = coerce (Map.showTreeWith :: (k -> a -> String) -> Bool -> Bool -> Map k a -> String)
 
 valid :: forall k a. Ord k => AppendMap k a -> Bool
 valid = coerce (Map.valid :: Ord k => Map k a -> Bool)
