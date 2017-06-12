@@ -73,11 +73,11 @@ instance MonadHold t m => MonadHold t (PostBuildT t m) where
   holdIncremental v0 = lift . holdIncremental v0
 
 instance PerformEvent t m => PerformEvent t (PostBuildT t m) where
-  type Performable (PostBuildT t m) = PostBuildT t (Performable m)
+  type Performable (PostBuildT t m) = Performable m
   {-# INLINABLE performEvent_ #-}
-  performEvent_ e = liftWith $ \run -> performEvent_ $ fmap run e
+  performEvent_ = lift . performEvent_
   {-# INLINABLE performEvent #-}
-  performEvent e = liftWith $ \run -> performEvent $ fmap run e
+  performEvent = lift . performEvent
 
 instance (ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigger t (PostBuildT t m) where
   {-# INLINABLE newEventWithTrigger #-}
@@ -106,10 +106,10 @@ instance MonadAtomicRef m => MonadAtomicRef (PostBuildT t m) where
   atomicModifyRef r = lift . atomicModifyRef r
 
 instance (Reflex t, MonadHold t m, MonadFix m, MonadAdjust t m, PerformEvent t m) => MonadAdjust t (PostBuildT t m) where
-  runWithReplace a0 a' = do
+  mapMWithReplace f g a0 a' = do
     postBuild <- getPostBuild
     lift $ do
-      rec result@(_, result') <- runWithReplace (runPostBuildT a0 postBuild) $ fmap (\v -> runPostBuildT v =<< headE voidResult') a'
+      rec result@(_, result') <- mapMWithReplace ((`runPostBuildT` postBuild) . f) (\v -> runPostBuildT (g v) =<< headE voidResult') a0 a'
           let voidResult' = fmapCheap (\_ -> ()) result'
       return result
   traverseDMapWithKeyWithAdjust = mapDMapWithAdjustImpl traverseDMapWithKeyWithAdjust mapPatchDMap

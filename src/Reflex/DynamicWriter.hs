@@ -138,8 +138,8 @@ newtype DynamicWriterTLoweredResult t w v a = DynamicWriterTLoweredResult (v a, 
 -- 'MonadAdjust', the 'Dynamic' output of that action will also be updated to
 -- match.
 instance (MonadAdjust t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => MonadAdjust t (DynamicWriterT t w m) where
-  runWithReplace a0 a' = do
-    (result0, result') <- lift $ runWithReplace (runDynamicWriterT a0) $ runDynamicWriterT <$> a'
+  mapMWithReplace f g a0 a' = do
+    (result0, result') <- lift $ mapMWithReplace (runDynamicWriterT . f) (runDynamicWriterT . g) a0 a'
     tellDyn . join =<< holdDyn (snd result0) (snd <$> result')
     return (fst result0, fst <$> result')
   traverseDMapWithKeyWithAdjust = traverseDMapWithKeyWithAdjustImpl traverseDMapWithKeyWithAdjust mapPatchDMap weakenPatchDMapWith mergeDynIncremental

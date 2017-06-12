@@ -17,7 +17,7 @@ module Reflex.EventWriter
   ( EventWriterT (..)
   , runEventWriterT
   , EventWriter (..)
-  , runWithReplaceEventWriterTWith
+  , mapMWithReplaceEventWriterTWith
   , sequenceDMapWithAdjustEventWriterTWith
   ) where
 
@@ -78,7 +78,7 @@ instance MonadHold t m => MonadHold t (EventWriterT t w m) where
   holdIncremental v0 = lift . holdIncremental v0
 
 instance (Reflex t, MonadAdjust t m, MonadHold t m, Semigroup w, Semigroup w) => MonadAdjust t (EventWriterT t w m) where
-  runWithReplace = runWithReplaceEventWriterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
+  mapMWithReplace = mapMWithReplaceEventWriterTWith $ \f g dm0 dm' -> lift $ mapMWithReplace f g dm0 dm'
   traverseDMapWithKeyWithAdjust = sequenceDMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjust f dm0 dm') mapPatchDMap weakenPatchDMapWith patchMapNewElements mergeMapIncremental
   traverseDMapWithKeyWithAdjustWithMove = sequenceDMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjustWithMove f dm0 dm') mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElements mergeMapIncrementalWithMove
 
@@ -88,19 +88,27 @@ instance Requester t m => Requester t (EventWriterT t w m) where
   withRequesting f = EventWriterT $ withRequesting $ unEventWriterT . f
 
 
--- | Given a function like 'runWithReplace' for the underlying monad, implement
--- 'runWithReplace' for 'EventWriterT'.  This is necessary when the underlying
+-- | Given a function like 'mapMWithReplace' for the underlying monad, implement
+-- 'mapMWithReplace' for 'EventWriterT'.  This is necessary when the underlying
 -- monad doesn't have a 'MonadAdjust' instance or to override the default
 -- 'MonadAdjust' behavior.
-runWithReplaceEventWriterTWith :: forall m t w a b. (Reflex t, MonadHold t m, Semigroup w)
-                               => (forall a' b'. m a' -> Event t (m b') -> EventWriterT t w m (a', Event t b'))
-                               -> EventWriterT t w m a
-                               -> Event t (EventWriterT t w m b)
-                               -> EventWriterT t w m (a, Event t b)
-runWithReplaceEventWriterTWith f a0 a' = do
-  let g :: EventWriterT t w m c -> m (c, Seq (Event t w))
-      g (EventWriterT r) = runStateT r mempty
-  (result0, result') <- f (g a0) $ fmap g a'
+mapMWithReplaceEventWriterTWith :: forall m t w a a' b b'. (Reflex t, MonadHold t m, Semigroup w)
+                                => (forall aa aa' bb bb'.
+                                     (aa -> m bb) ->
+                                     (aa' -> m bb') ->
+                                     aa ->
+                                     Event t aa' ->
+                                     EventWriterT t w m (bb, Event t bb')
+                                   )
+                                -> (a -> EventWriterT t w m b)
+                                -> (a' -> EventWriterT t w m b')
+                                -> a
+                                -> Event t a'
+                                -> EventWriterT t w m (b, Event t b')
+mapMWithReplaceEventWriterTWith base f g a0 a' = do
+  let runInternal :: EventWriterT t w m c -> m (c, Seq (Event t w))
+      runInternal (EventWriterT r) = runStateT r mempty
+  (result0, result') <- base (runInternal . f) (runInternal . g) a0 a'
   request <- holdDyn (fmapCheap sconcat $ mergeList $ toList $ snd result0) $ fmapCheap (fmapCheap sconcat . mergeList . toList . snd) result'
   -- We add these two separately to take advantage of the free merge being done later.  The coincidence case must come first so that it has precedence if both fire simultaneously.  (Really, we should probably block the 'switch' whenever 'updated' fires, but switchPromptlyDyn has the same issue.)
   EventWriterT $ modify $ flip (|>) $ coincidence $ updated request

@@ -1113,16 +1113,24 @@ instance HasSpiderTimeline x => Align (Event x) where
   nil = eventNever
   align ea eb = fmapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
 
+{-# INLINE mapEventCheap #-}
+mapEventCheap :: HasSpiderTimeline x => (a -> b) -> Event x a -> Event x b
+mapEventCheap f = pushCheap $ return . Just . f
+
+{-# INLINE alignCheap #-}
+alignCheap :: HasSpiderTimeline x => Event x a -> Event x b -> Event x (These a b)
+alignCheap ea eb = fmapMaybe dmapToThese $ mergeCheap $ dynamicConst $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
+
 newtype Dyn x p = Dyn { unDyn :: IORef (Either (BehaviorM x (PatchTarget p), Event x p) (Hold x p)) }
 
 newMapDyn :: HasSpiderTimeline x => (a -> b) -> Dynamic x (Identity a) -> Dynamic x (Identity b)
-newMapDyn f d = dynamicDynIdentity $ unsafeBuildDynamic (fmap f $ readBehaviorTracked $ dynamicCurrent d) (Identity . f . runIdentity <$> dynamicUpdated d)
+newMapDyn f d = dynamicDynIdentity $ unsafeBuildDynamic (fmap f $ readBehaviorTracked $ dynamicCurrent d) (mapEventCheap (Identity . f . runIdentity) $ dynamicUpdated d)
 
 --TODO: Avoid the duplication between this and R.zipDynWith
 zipDynWith :: HasSpiderTimeline x => (a -> b -> c) -> Dynamic x (Identity a) -> Dynamic x (Identity b) -> Dynamic x (Identity c)
 zipDynWith f da db =
-  let eab = align (dynamicUpdated da) (dynamicUpdated db)
-      ec = flip push eab $ \o -> do
+  let eab = alignCheap (dynamicUpdated da) (dynamicUpdated db)
+      ec = flip pushCheap eab $ \o -> do
         (a, b) <- case o of
           This (Identity a) -> do
             b <- readBehaviorUntracked $ dynamicCurrent db

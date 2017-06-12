@@ -103,6 +103,7 @@ module Reflex.Class
     -- * Miscellaneous convenience functions
   , ffor
   , MonadAdjust (..)
+  , runWithReplace
   , sequenceDMapWithAdjust
   , sequenceDMapWithAdjustWithMove
   , mapMapWithAdjustWithMove
@@ -701,6 +702,8 @@ mergeWith = mergeWith' id
 
 {-# INLINE mergeWith' #-}
 mergeWith' :: Reflex t => (a -> b) -> (b -> b -> b) -> [Event t a] -> Event t b
+mergeWith' _ _ [] = never
+mergeWith' f _ [e] = fmap f e
 mergeWith' f g es = fmap (Prelude.foldl1 g . map (\(Const2 _ :=> Identity v) -> f v) . DMap.toList)
                   . merge
                   . DMap.fromDistinctAscList
@@ -1023,6 +1026,9 @@ infixl 4 <@>
 (<@) = tag
 infixl 4 <@
 
+runWithReplace :: MonadAdjust t m => m a -> Event t (m b) -> m (a, Event t b)
+runWithReplace = mapMWithReplace id id
+
 -- | A 'Monad' that supports adjustment over time.  After an action has been
 -- run, if the given events fire, it will adjust itself so that its net effect
 -- is as though it had originally been run with the new value.  Note that there
@@ -1030,14 +1036,14 @@ infixl 4 <@
 -- other side-effects) cannot be undone, so it is up to the instance implementer
 -- to determine what the best meaning for this class is in such cases.
 class (Reflex t, Monad m) => MonadAdjust t m | m -> t where
-  runWithReplace :: m a -> Event t (m b) -> m (a, Event t b)
+  mapMWithReplace :: (a -> m b) -> (a' -> m b') -> a -> Event t a' -> m (b, Event t b')
   traverseDMapWithKeyWithAdjust :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> m (DMap k v', Event t (PatchDMap k v'))
   traverseDMapWithKeyWithAdjustWithMove :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> m (DMap k v', Event t (PatchDMapWithMove k v'))
 
 instance MonadAdjust t m => MonadAdjust t (ReaderT r m) where
-  runWithReplace a0 a' = do
+  mapMWithReplace f g a0 a' = do
     r <- ask
-    lift $ runWithReplace (runReaderT a0 r) $ fmap (`runReaderT` r) a'
+    lift $ mapMWithReplace ((`runReaderT` r) . f) ((`runReaderT` r) . g) a0 a'
   traverseDMapWithKeyWithAdjust f dm0 dm' = do
     r <- ask
     lift $ traverseDMapWithKeyWithAdjust (\k v -> runReaderT (f k v) r) dm0 dm'
@@ -1094,6 +1100,8 @@ mergeWithCheap' f g = mergeWithFoldCheap' $ foldl1 g . fmap f
 
 {-# INLINE mergeWithFoldCheap' #-}
 mergeWithFoldCheap' :: Reflex t => (NonEmpty a -> b) -> [Event t a] -> Event t b
+mergeWithFoldCheap' _ [] = never
+mergeWithFoldCheap' f [e] = fmapCheap (f . (:|[])) e
 mergeWithFoldCheap' f es =
   fmapCheap (f . (\(h : t) -> h :| t) . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList)
   . merge

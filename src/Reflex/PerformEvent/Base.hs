@@ -70,11 +70,11 @@ instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent
   performEvent = PerformEventT . requestingIdentity
 
 instance (ReflexHost t, PrimMonad (HostFrame t)) => MonadAdjust t (PerformEventT t m) where
-  runWithReplace outerA0 outerA' = PerformEventT $ runWithReplaceRequesterTWith f (coerce outerA0) (coerceEvent outerA')
-    where f :: HostFrame t a -> Event t (HostFrame t b) -> RequesterT t (HostFrame t) Identity (HostFrame t) (a, Event t b)
-          f a0 a' = do
-            result0 <- lift a0
-            result' <- requestingIdentity a'
+  mapMWithReplace f g outerA0 outerA' = PerformEventT $ mapMWithReplaceRequesterTWith base (coerce f) (coerce g) outerA0 outerA'
+    where base :: (a -> HostFrame t b) -> (a' -> HostFrame t b') -> a -> Event t a' -> RequesterT t (HostFrame t) Identity (HostFrame t) (b, Event t b')
+          base f' g' a0 a' = do
+            result0 <- lift $ f' a0
+            result' <- requestingIdentity $ fmapCheap g' a'
             return (result0, result')
   traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ sequenceDMapWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElements mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
   traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ sequenceDMapWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElements mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')

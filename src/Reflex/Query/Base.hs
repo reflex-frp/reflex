@@ -71,8 +71,8 @@ let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
 -}
 
 instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, MonadAdjust t m) => MonadAdjust t (QueryT t q m) where
-  runWithReplace (QueryT a0) a' = do
-    ((r0, bs0), r') <- QueryT $ lift $ runWithReplace (runStateT a0 []) $ fmapCheap (flip runStateT [] . unQueryT) a'
+  mapMWithReplace f g a0 a' = do
+    ((r0, bs0), r') <- QueryT $ lift $ mapMWithReplace ((`runStateT` []) . unQueryT . f) ((`runStateT` []) . unQueryT . g) a0 a'
     let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
         sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
         bs' = fmapCheap snd $ r'
