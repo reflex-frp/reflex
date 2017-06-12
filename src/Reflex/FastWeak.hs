@@ -14,6 +14,12 @@ module Reflex.FastWeak
   , getFastWeakValue
   , getFastWeakTicket
   , emptyFastWeak
+#ifdef ghcjs_HOST_OS
+  --TODO: Move these elsewhere
+  , unsafeFromRawJSVal
+  , unsafeToRawJSVal
+  , js_isNull
+#endif
   ) where
 
 import GHC.Exts (Any)
@@ -35,6 +41,13 @@ newtype FastWeak a = FastWeak JSVal
 
 -- Just designed to mirror JSVal, so that we can unsafeCoerce between the two
 data Val a = Val { unVal :: a }
+
+-- | Coerce a JSVal that represents the heap object of a value of type 'a' into a value of type 'a'
+unsafeFromRawJSVal :: JSVal -> a
+unsafeFromRawJSVal v = unVal (unsafeCoerce v)
+
+unsafeToRawJSVal :: a -> JSVal
+unsafeToRawJSVal v = unsafeCoerce (Val v)
 #else
 data FastWeakTicket a = FastWeakTicket
   { _fastWeakTicket_val :: !a
@@ -49,7 +62,7 @@ getFastWeakTicketValue :: FastWeakTicket a -> IO a
 #ifdef ghcjs_HOST_OS
 getFastWeakTicketValue t = do
   v <- js_ticketVal t
-  return $ unVal (unsafeCoerce v)
+  return $ unsafeFromRawJSVal v
 
 foreign import javascript unsafe "$r = $1.val;" js_ticketVal :: FastWeakTicket a -> IO JSVal
 #else
@@ -62,7 +75,7 @@ getFastWeakValue w = do
   r <- js_weakVal w
   case js_isNull r of
     True -> return Nothing
-    False -> return $ Just $ unVal (unsafeCoerce r)
+    False -> return $ Just $ unsafeFromRawJSVal r
 
 foreign import javascript unsafe "$1 === null" js_isNull :: JSVal -> Bool
 
@@ -93,7 +106,7 @@ getFastWeakTicket w = do
 -- I think it's fine if this is lazy - it'll retain the 'a', but so would the output; we just need to make sure it's forced before we start relying on the associated FastWeak to actually be weak
 mkFastWeakTicket :: a -> IO (FastWeakTicket a)
 #ifdef ghcjs_HOST_OS
-mkFastWeakTicket v = js_fastWeakTicket (unsafeCoerce (Val v))
+mkFastWeakTicket v = js_fastWeakTicket (unsafeToRawJSVal v)
 
 foreign import javascript unsafe "$r = new h$FastWeakTicket($1);" js_fastWeakTicket :: JSVal -> IO (FastWeakTicket a)
 #else
