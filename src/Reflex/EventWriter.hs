@@ -172,7 +172,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (EventWriter
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
 
-instance (MonadQuery t q m, Monad m) => MonadQuery t q (EventWriterT t q m) where
+instance (MonadQuery t q m, Monad m) => MonadQuery t q (EventWriterT t w m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
