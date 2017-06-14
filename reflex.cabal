@@ -47,7 +47,7 @@ library
   hs-source-dirs: src
   build-depends:
     MemoTrie == 0.6.*,
-    base >= 4.7 && < 4.11,
+    base >= 4.9 && < 4.11,
     bifunctors >= 5.2 && < 5.5,
     containers == 0.5.*,
     data-default >= 0.5 && < 0.8,

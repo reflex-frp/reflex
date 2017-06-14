@@ -5,7 +5,6 @@ cache:
     - /nix
 matrix:
   include:
-  - env: COMPILER=ghc7103
   - env: COMPILER=ghc801
   - env: COMPILER=ghcjs
 script:
