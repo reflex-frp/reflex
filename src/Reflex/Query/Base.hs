@@ -269,3 +269,6 @@ instance Requester t m => Requester t (QueryT t q m) where
   type Request (QueryT t q m) = Request m
   type Response (QueryT t q m) = Response m
   withRequesting f = QueryT $ withRequesting $ unQueryT . f
+
+instance EventWriter t w m => EventWriter t w (QueryT t q m) where
+  tellEvent = lift . tellEvent
