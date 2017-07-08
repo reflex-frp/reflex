@@ -135,9 +135,9 @@ instance MonadState s m => MonadState s (DynamicWriterT t w m) where
 newtype DynamicWriterTLoweredResult t w v a = DynamicWriterTLoweredResult (v a, Dynamic t w)
 
 -- | When the execution of a 'DynamicWriterT' action is adjusted using
--- 'MonadAdjust', the 'Dynamic' output of that action will also be updated to
+-- 'Adjustable', the 'Dynamic' output of that action will also be updated to
 -- match.
-instance (MonadAdjust t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => MonadAdjust t (DynamicWriterT t w m) where
+instance (Adjustable t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => Adjustable t (DynamicWriterT t w m) where
   runWithReplace a0 a' = do
     (result0, result') <- lift $ runWithReplace (runDynamicWriterT a0) $ runDynamicWriterT <$> a'
     tellDyn . join =<< holdDyn (snd result0) (snd <$> result')

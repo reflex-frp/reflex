@@ -299,7 +299,7 @@ instance MonadReader r m => MonadReader r (RequesterT t request response m) wher
   local f (RequesterT a) = RequesterT $ mapStateT (mapReaderT $ local f) a
   reader = lift . reader
 
-instance (Reflex t, MonadAdjust t m, MonadHold t m, MonadFix m) => MonadAdjust t (RequesterT t request response m) where
+instance (Reflex t, Adjustable t m, MonadHold t m, MonadFix m) => Adjustable t (RequesterT t request response m) where
   runWithReplace = runWithReplaceRequesterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
   traverseIntMapWithKeyWithAdjust = traverseIntMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseIntMapWithKeyWithAdjust f dm0 dm') patchIntMapNewElementsMap mergeIntIncremental
   {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
@@ -358,7 +358,7 @@ traverseIntMapWithKeyWithAdjustRequesterTWith base patchNewElements mergePatchIn
             (result, myRequests) <- runRequesterT (f k v) $ fmapMaybeCheap (IntMap.lookup n) $ selectInt responses k --TODO: Instead of doing fmapMaybeCheap, can we share a fanInt across all instances of a given key, or at least the ones that are adjacent in time?
             return (fmapCheap (IntMap.singleton n) myRequests, result)
       ndm' <- numberOccurrencesFrom 1 dm'
-      (children0, children') <- base f' (fmap ((,) 0) dm0) $ fmap (\(n, dm) -> fmap ((,) n) dm) ndm' --TODO: Avoid this somehow, probably by adding some sort of per-cohort information passing to MonadAdjust
+      (children0, children') <- base f' (fmap ((,) 0) dm0) $ fmap (\(n, dm) -> fmap ((,) n) dm) ndm' --TODO: Avoid this somehow, probably by adding some sort of per-cohort information passing to Adjustable
       let result0 = fmap snd children0
           result' = fforCheap children' $ fmap snd
           requests0 :: IntMap (Event t (IntMap (RequesterData request)))

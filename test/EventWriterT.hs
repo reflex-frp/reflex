@@ -35,7 +35,7 @@ testOrdering pulse = do
   forM_ [10,9..1] $ \i -> tellEvent ([i] <$ pulse)
   return ()
 
-testSimultaneous :: (Reflex t, MonadAdjust t m, MonadHold t m) => Event t (These () ()) -> EventWriterT t [Int] m ()
+testSimultaneous :: (Reflex t, Adjustable t m, MonadHold t m) => Event t (These () ()) -> EventWriterT t [Int] m ()
 testSimultaneous pulse = do
   let e0 = fmapMaybe (^? here) pulse
       e1 = fmapMaybe (^? there) pulse

@@ -119,7 +119,7 @@ instance MonadHold t m => MonadHold t (TriggerEventT t m) where
   {-# INLINABLE headE #-}
   headE = lift . headE
 
-instance MonadAdjust t m => MonadAdjust t (TriggerEventT t m) where
+instance Adjustable t m => Adjustable t (TriggerEventT t m) where
   {-# INLINABLE runWithReplace #-}
   runWithReplace (TriggerEventT a0) a' = TriggerEventT $ runWithReplace a0 (coerceEvent a')
   {-# INLINABLE traverseIntMapWithKeyWithAdjust #-}

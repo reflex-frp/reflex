@@ -79,12 +79,14 @@ library
 
   exposed-modules:
     Data.AppendMap,
+    Data.Map.Misc,
     Data.Functor.Misc,
     Data.WeakBag,
     Data.FastWeakBag,
     Data.FastMutableIntMap,
     Reflex,
     Reflex.Class,
+    Reflex.Collection,
     Reflex.EventWriter,
     Reflex.Dynamic,
     Reflex.Dynamic.Uniq,

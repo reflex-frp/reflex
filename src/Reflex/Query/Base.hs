@@ -70,7 +70,7 @@ let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
         return (Just (AdditivePatch p))
 -}
 
-instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, MonadAdjust t m) => MonadAdjust t (QueryT t q m) where
+instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, Adjustable t m) => Adjustable t (QueryT t q m) where
   runWithReplace (QueryT a0) a' = do
     ((r0, bs0), r') <- QueryT $ lift $ runWithReplace (runStateT a0 []) $ fmapCheap (flip runStateT [] . unQueryT) a'
     let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q

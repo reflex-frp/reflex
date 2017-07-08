@@ -45,7 +45,7 @@ unwrapApp x appIn = do
 testOrdering :: ( Response m ~ Identity
                 , Request m ~ RequestInt
                 , Requester t m
-                , MonadAdjust t m)
+                , Adjustable t m)
              => Event t ()
              -> m ()
 testOrdering pulse = do
@@ -55,7 +55,7 @@ testOrdering pulse = do
 testSimultaneous :: ( Response m ~ Identity
                     , Request m ~ RequestInt
                     , Requester t m
-                    , MonadAdjust t m)
+                    , Adjustable t m)
                  => Event t (These () ())
                  -> m ()
 testSimultaneous pulse = do
