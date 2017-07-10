@@ -214,6 +214,8 @@ test-suite GC-Semantics
                , transformers
                , reflex
                , ref-tf
+  if impl(ghc < 8)
+    build-depends: semigroups
 
 test-suite rootCleanup
   type: exitcode-stdio-1.0

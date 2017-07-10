@@ -291,7 +291,12 @@ dsumToEither = \case
 -- | We can't use @Compose Maybe@ instead of 'ComposeMaybe', because that would
 -- make the 'f' parameter have a nominal type role.  We need f to be
 -- representational so that we can use safe 'coerce'.
-newtype ComposeMaybe f a = ComposeMaybe { getComposeMaybe :: Maybe (f a) } deriving (Show, Eq, Ord)
+#if MIN_VERSION_transformers(5,2,0)
+newtype ComposeMaybe f a =
+#else
+newtype ComposeMaybe (f :: * -> *) (a :: *) =
+#endif
+   ComposeMaybe { getComposeMaybe :: Maybe (f a) } deriving (Show, Eq, Ord)
 
 deriving instance Functor f => Functor (ComposeMaybe f)
 
