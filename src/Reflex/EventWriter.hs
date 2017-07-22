@@ -9,6 +9,7 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
@@ -36,6 +37,7 @@ import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
+import Data.GADT.Compare (GEq (..), GCompare (..), GOrdering (..))
 import Data.Foldable
 import Data.Functor.Compose
 import Data.Functor.Misc
@@ -44,15 +46,51 @@ import Data.Map (Map)
 import Data.Semigroup
 import Data.Some (Some)
 import Data.Tuple
+import Data.Type.Equality
+
+import Unsafe.Coerce
 
 -- | 'EventWriter' efficiently collects 'Event' values using 'tellEvent'
 -- and combines them monoidally to provide an 'Event' result.
 class (Monad m, Semigroup w) => EventWriter t w m | m -> t w where
   tellEvent :: Event t w -> m ()
 
+{-# DEPRECATED TellId "Do not construct this directly; use tellId instead" #-}
+newtype TellId w x
+  = TellId Int -- ^ WARNING: Do not construct this directly; use 'TellId' instead
+  deriving (Show, Read, Eq, Ord, Enum)
+
+tellId :: Int -> TellId w w
+tellId = TellId
+{-# INLINE tellId #-}
+
+tellIdRefl :: TellId w x -> w :~: x
+tellIdRefl _ = unsafeCoerce Refl
+
+withTellIdRefl :: TellId w x -> (w ~ x => r) -> r
+withTellIdRefl tid r = case tellIdRefl tid of
+  Refl -> r
+
+instance GEq (TellId w) where
+  a `geq` b =
+    withTellIdRefl a $
+    withTellIdRefl b $
+    if a == b
+    then Just Refl
+    else Nothing
+
+instance GCompare (TellId w) where
+  a `gcompare` b =
+    withTellIdRefl a $
+    withTellIdRefl b $
+    case a `compare` b of
+      LT -> GLT
+      EQ -> GEQ
+      GT -> GGT
+
 data EventWriterState t w = EventWriterState
   { _eventWriterState_nextId :: {-# UNPACK #-} !Int -- Always negative (and decreasing over time)
-  , _eventWriterState_told :: ![DSum (Const2 Int w) (Event t)] -- In increasing order
+  , _eventWriterState_told :: ![DSum (TellId w) (Event t)] -- In increasing order
   }
 
 -- | A basic implementation of 'EventWriter'.
@@ -63,10 +101,10 @@ newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT (EventWri
 runEventWriterT :: forall t m w a. (Reflex t, Monad m, Semigroup w) => EventWriterT t w m a -> m (a, Event t w)
 runEventWriterT (EventWriterT a) = do
   (result, requests) <- runStateT a $ EventWriterState (-1) []
-  let combineResults :: DMap (Const2 Int w) Identity -> w
+  let combineResults :: DMap (TellId w) Identity -> w
       combineResults = sconcat
         . (\(h : t) -> h :| t) -- Unconditional; 'merge' guarantees that it will only fire with non-empty DMaps
-        . DMap.foldlWithKey (\vs (Const2 _) (Identity v) -> v : vs) [] -- This is where we finally reverse the DMap to get things in the correct order
+        . DMap.foldlWithKey (\vs tid (Identity v) -> withTellIdRefl tid $ v : vs) [] -- This is where we finally reverse the DMap to get things in the correct order
   return (result, fmap combineResults $ merge $ DMap.fromDistinctAscList $ _eventWriterState_told requests)
 
 instance (Reflex t, Monad m, Semigroup w) => EventWriter t w (EventWriterT t w m) where
@@ -74,7 +112,7 @@ instance (Reflex t, Monad m, Semigroup w) => EventWriter t w (EventWriterT t w m
     let myId = _eventWriterState_nextId old
     in EventWriterState
        { _eventWriterState_nextId = pred myId
-       , _eventWriterState_told = (Const2 myId :=> w) : _eventWriterState_told old
+       , _eventWriterState_told = (tellId myId :=> w) : _eventWriterState_told old
        }
 
 instance EventWriter t w m => EventWriter t w (ReaderT r m) where
