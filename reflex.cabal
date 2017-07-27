@@ -212,6 +212,7 @@ test-suite RequesterT
                , transformers
                , reflex
                , ref-tf
+  buildable: False
 
 test-suite QueryT
   type: exitcode-stdio-1.0

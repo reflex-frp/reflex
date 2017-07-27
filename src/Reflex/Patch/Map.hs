@@ -46,3 +46,6 @@ instance Functor (PatchMap k) where
 patchMapNewElements :: PatchMap k v -> [v]
 patchMapNewElements (PatchMap p) = catMaybes $ Map.elems p
 
+-- | Returns all the new elements that will be added to the 'Map'
+patchMapNewElementsMap :: PatchMap k v -> Map k v
+patchMapNewElementsMap (PatchMap p) = Map.mapMaybe id p

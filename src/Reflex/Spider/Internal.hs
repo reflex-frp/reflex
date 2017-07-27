@@ -241,9 +241,9 @@ subscribeAndRead = unEvent
 -- | Construct an 'Event' equivalent to that constructed by 'push', but with no
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
-{-# NOINLINE pushCheap #-}
+{-# INLINE [1] pushCheap #-}
 pushCheap :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
-pushCheap f e = Event $ \sub -> do
+pushCheap !f e = Event $ \sub -> do
   (subscription, occ) <- subscribeAndRead e $ sub
     { subscriberPropagate = \a -> do
         mb <- runComputeM $ f a
@@ -1122,7 +1122,7 @@ instance HasSpiderTimeline x => FunctorMaybe (Event x) where
 
 instance HasSpiderTimeline x => Align (Event x) where
   nil = eventNever
-  align ea eb = fmapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
+  align ea eb = fmapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 
 newtype Dyn x p = Dyn { unDyn :: IORef (Either (BehaviorM x (PatchTarget p), Event x p) (Hold x p)) }
 

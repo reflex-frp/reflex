@@ -26,18 +26,19 @@ module Data.FastWeakBag
 #endif
   ) where
 
-import Control.Exception
 import Control.Monad hiding (forM_, mapM_)
 import Control.Monad.IO.Class
+
+#ifdef ghcjs_HOST_OS
+import GHCJS.Types
+import Reflex.FastWeak (unsafeFromRawJSVal, unsafeToRawJSVal, js_isNull)
+#else
+import Control.Exception
 import Data.Foldable (forM_, mapM_)
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
 import System.Mem.Weak
-
-#ifdef ghcjs_HOST_OS
-import GHCJS.Types
-import Reflex.FastWeak (unsafeFromRawJSVal, unsafeToRawJSVal, js_isNull)
 #endif
 
 import Prelude hiding (mapM_, traverse)

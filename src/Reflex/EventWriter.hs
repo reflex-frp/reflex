@@ -58,7 +58,7 @@ class (Monad m, Semigroup w) => EventWriter t w m | m -> t w where
 {-# DEPRECATED TellId "Do not construct this directly; use tellId instead" #-}
 newtype TellId w x
   = TellId Int -- ^ WARNING: Do not construct this directly; use 'TellId' instead
-  deriving (Show, Read, Eq, Ord, Enum)
+  deriving (Show, Eq, Ord, Enum)
 
 tellId :: Int -> TellId w w
 tellId = TellId
@@ -105,7 +105,7 @@ runEventWriterT (EventWriterT a) = do
       combineResults = sconcat
         . (\(h : t) -> h :| t) -- Unconditional; 'merge' guarantees that it will only fire with non-empty DMaps
         . DMap.foldlWithKey (\vs tid (Identity v) -> withTellIdRefl tid $ v : vs) [] -- This is where we finally reverse the DMap to get things in the correct order
-  return (result, fmap combineResults $ merge $ DMap.fromDistinctAscList $ _eventWriterState_told requests)
+  return (result, fmap combineResults $ merge $ DMap.fromDistinctAscList $ _eventWriterState_told requests) --TODO: We can probably make this fromDistinctAscList more efficient by knowing the length in advance, but this will require exposing internals of DMap; also converting it to use a strict list might help
 
 instance (Reflex t, Monad m, Semigroup w) => EventWriter t w (EventWriterT t w m) where
   tellEvent w = EventWriterT $ modify $ \old ->
@@ -137,8 +137,8 @@ instance (Reflex t, MonadAdjust t m, MonadHold t m, Semigroup w, Semigroup w) =>
 instance Requester t m => Requester t (EventWriterT t w m) where
   type Request (EventWriterT t w m) = Request m
   type Response (EventWriterT t w m) = Response m
-  withRequesting f = EventWriterT $ withRequesting $ unEventWriterT . f
-
+  requesting = lift . requesting
+  requesting_ = lift . requesting_
 
 -- | Given a function like 'runWithReplace' for the underlying monad, implement
 -- 'runWithReplace' for 'EventWriterT'.  This is necessary when the underlying

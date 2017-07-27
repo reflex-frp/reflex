@@ -76,8 +76,8 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => MonadAdjust t (PerformEventT
             result0 <- lift a0
             result' <- requestingIdentity a'
             return (result0, result')
-  traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ sequenceDMapWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElements mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
-  traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ sequenceDMapWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElements mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
+  traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
+  traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
 
 defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
   => ((forall a. k' a -> v a -> HostFrame t (v2 a)) -> p k' v -> HostFrame t (p k' v2))
@@ -123,7 +123,7 @@ hostPerformEventT a = do
           case mToPerform of
             Nothing -> return [result']
             Just toPerform -> do
-              responses <- runHostFrame $ DMap.traverseWithKey (\_ v -> Identity <$> v) toPerform
+              responses <- runHostFrame $ traverseRequesterData (\v -> Identity <$> v) toPerform
               mrt <- readRef responseTrigger
               let followupEventTriggers = case mrt of
                     Just rt -> [rt :=> Identity responses]
