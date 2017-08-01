@@ -63,7 +63,7 @@ library
     semigroupoids >= 4.0 && < 6,
     semigroups >= 0.16 && < 0.19,
     stm == 2.4.*,
-    syb >= 0.5 && < 0.7,
+    syb >= 0.5 && < 0.8,
     these >= 0.4 && < 0.8,
     transformers >= 0.2,
     transformers-compat >= 0.3
@@ -122,8 +122,8 @@ library
     build-depends:
       dependent-sum >= 0.3 && < 0.5,
       haskell-src-exts >= 1.16 && < 1.19,
-      haskell-src-meta >= 0.6 && < 0.8,
-      template-haskell >= 2.9 && < 2.12
+      haskell-src-meta >= 0.6 && < 0.9,
+      template-haskell >= 2.9 && < 2.13
     exposed-modules:
       Reflex.Dynamic.TH
     other-extensions: TemplateHaskell
