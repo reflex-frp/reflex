@@ -1457,7 +1457,9 @@ newFanInt = do
 
 {-# NOINLINE unsafeNewFanInt #-}
 unsafeNewFanInt :: b -> FanInt x a
-unsafeNewFanInt _ = unsafePerformIO newFanInt
+unsafeNewFanInt b = unsafePerformIO $ do
+  touch b
+  newFanInt
 
 {-# NOINLINE fanInt #-}
 fanInt :: HasSpiderTimeline x => Event x (IntMap a) -> EventSelectorInt x a

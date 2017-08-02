@@ -25,7 +25,10 @@ module Reflex.Requester.Base
   , traverseIntMapWithKeyWithAdjustRequesterTWith
   , traverseDMapWithKeyWithAdjustRequesterTWith
   , RequesterData
+  , RequesterDataKey
   , traverseRequesterData
+  , requesterDataToList
+  , singletonRequesterData
   ) where
 
 import Reflex.Class
@@ -43,7 +46,7 @@ import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Bits
 import Data.Coerce
-import Data.Dependent.Map (DMap)
+import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import qualified Data.Some as Some
 import Data.FastMutableIntMap
@@ -52,6 +55,7 @@ import Data.Functor.Misc
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Unique.Tag
 import Data.Some (Some)
@@ -65,6 +69,44 @@ import Unsafe.Coerce
 newtype TagMap (f :: * -> *) = TagMap (IntMap Any)
 
 newtype RequesterData f = RequesterData (TagMap (Entry f))
+
+data RequesterDataKey a where
+  RequesterDataKey_Single :: {-# UNPACK #-} !(MyTag (Single a)) -> RequesterDataKey a
+  RequesterDataKey_Multi :: {-# UNPACK #-} !(MyTag Multi) -> !(RequesterDataKey a) -> RequesterDataKey a
+  RequesterDataKey_Multi2 :: {-# UNPACK #-} !(MyTag (Multi2 k)) -> {-# UNPACK #-} !(Some k) -> !(RequesterDataKey a) -> RequesterDataKey a
+  RequesterDataKey_Multi3 :: {-# UNPACK #-} !(MyTag Multi3) -> Int -> !(RequesterDataKey a) -> RequesterDataKey a
+
+singletonRequesterData :: RequesterDataKey a -> f a -> RequesterData f
+singletonRequesterData rdk v = case rdk of
+  RequesterDataKey_Single k -> RequesterData $ singletonTagMap k $ Entry v
+  RequesterDataKey_Multi k k' -> RequesterData $ singletonTagMap k $ Entry $ singletonRequesterData k' v
+  RequesterDataKey_Multi2 k k' k'' -> RequesterData $ singletonTagMap k $ Entry $ Map.singleton k' $ singletonRequesterData k'' v
+  RequesterDataKey_Multi3 k k' k'' -> RequesterData $ singletonTagMap k $ Entry $ IntMap.singleton k' $ singletonRequesterData k'' v
+
+requesterDataToList :: RequesterData f -> [DSum RequesterDataKey f]
+requesterDataToList (RequesterData m) = do
+  k :=> Entry e <- tagMapToList m
+  case myKeyType k of
+    MyTagType_Single -> return $ RequesterDataKey_Single k :=> e
+    MyTagType_Multi -> do
+      k' :=> e' <- requesterDataToList e
+      return $ RequesterDataKey_Multi k k' :=> e'
+    MyTagType_Multi2 -> do
+      (k', e') <- Map.toList e
+      k'' :=> e'' <- requesterDataToList e'
+      return $ RequesterDataKey_Multi2 k k' k'' :=> e''
+    MyTagType_Multi3 -> do
+      (k', e') <- IntMap.toList e
+      k'' :=> e'' <- requesterDataToList e'
+      return $ RequesterDataKey_Multi3 k k' k'' :=> e''
+
+singletonTagMap :: forall f a. MyTag a -> f a -> TagMap f
+singletonTagMap (MyTag k) v = TagMap $ IntMap.singleton k $ (unsafeCoerce :: f a -> Any) v
+
+tagMapToList :: forall f. TagMap f -> [DSum MyTag f]
+tagMapToList (TagMap m) = fmap f $ IntMap.toList m
+  where f :: (Int, Any) -> DSum MyTag f
+        f (k, v) = MyTag k :=> ((unsafeCoerce :: Any -> f a) v)
 
 traverseTagMapWithKey :: forall t f g. Applicative t => (forall a. MyTag a -> f a -> t (g a)) -> TagMap f -> t (TagMap g)
 traverseTagMapWithKey f (TagMap m) = TagMap <$> IntMap.traverseWithKey g m
@@ -131,6 +173,10 @@ singleEntry = Entry
 {-# INLINE multiEntry #-}
 multiEntry :: RequesterData f -> Entry f Multi
 multiEntry = Entry
+
+{-# INLINE unMultiEntry #-}
+unMultiEntry :: Entry f Multi -> RequesterData f
+unMultiEntry = unEntry
 
 -- | We use a hack here to pretend we have x ~ request a; we don't want to use a GADT, because GADTs (even with zero-size existential contexts) can't be newtypes
 -- WARNING: This type should never be exposed.  In particular, this is extremely unsound if a MyTag from one run of runRequesterT is ever compared against a MyTag from another
@@ -267,7 +313,7 @@ runWithReplaceRequesterTWith :: forall m t request response a b. (Reflex t, Mona
                              -> Event t (RequesterT t request response m b)
                              -> RequesterT t request response m (a, Event t b)
 runWithReplaceRequesterTWith f a0 a' = do
-  rec response <- fmap (fmapCheap unEntry) $ requesting' $ fmapCheap multiEntry $ switchPromptlyDyn requests --TODO: Investigate whether we can really get rid of the prompt stuff here
+  rec response <- fmap (fmapCheap unMultiEntry) $ requesting' $ fmapCheap multiEntry $ switchPromptlyDyn requests --TODO: Investigate whether we can really get rid of the prompt stuff here
       ((result0, requests0), v') <- f (runRequesterT a0 response) $ fmapCheap (`runRequesterT` response) a'
       requests <- holdDyn requests0 $ fmapCheap snd v'
   return (result0, fmapCheap fst v')
