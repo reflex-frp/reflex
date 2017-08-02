@@ -17,6 +17,9 @@
 module Reflex.PostBuild.Base
   ( PostBuildT (..)
   , runPostBuildT
+  -- * Internal
+  , mapIntMapWithAdjustImpl
+  , mapDMapWithAdjustImpl
   ) where
 
 import Reflex.Class
@@ -34,6 +37,8 @@ import Control.Monad.Trans.Control
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Compose
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 
 -- | Provides a basic implementation of 'PostBuild'.
 newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event t ()) m a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans, MonadException, MonadAsyncException)
@@ -112,9 +117,39 @@ instance (Reflex t, MonadHold t m, MonadFix m, MonadAdjust t m, PerformEvent t m
       rec result@(_, result') <- runWithReplace (runPostBuildT a0 postBuild) $ fmap (\v -> runPostBuildT v =<< headE voidResult') a'
           let voidResult' = fmapCheap (\_ -> ()) result'
       return result
+  {-# INLINABLE traverseIntMapWithKeyWithAdjust #-}
+  traverseIntMapWithKeyWithAdjust = mapIntMapWithAdjustImpl traverseIntMapWithKeyWithAdjust
+  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
   traverseDMapWithKeyWithAdjust = mapDMapWithAdjustImpl traverseDMapWithKeyWithAdjust mapPatchDMap
   traverseDMapWithKeyWithAdjustWithMove = mapDMapWithAdjustImpl traverseDMapWithKeyWithAdjustWithMove mapPatchDMapWithMove
 
+{-# INLINABLE mapIntMapWithAdjustImpl #-}
+mapIntMapWithAdjustImpl :: forall t m v v' p. (Reflex t, MonadFix m, MonadHold t m, Functor p)
+  => (   (IntMap.Key -> ((Bool, Event t ()), v) -> m v')
+      -> IntMap ((Bool, Event t ()), v)
+      -> Event t (p ((Bool, Event t ()), v))
+      -> m (IntMap v', Event t (p v'))
+     )
+  -> (IntMap.Key -> v -> PostBuildT t m v')
+  -> IntMap v
+  -> Event t (p v)
+  -> PostBuildT t m (IntMap v', Event t (p v'))
+mapIntMapWithAdjustImpl base f dm0 dm' = do
+  postBuild <- getPostBuild
+  let loweredDm0 = fmap ((,) (False, postBuild)) dm0
+      f' :: IntMap.Key -> ((Bool, Event t ()), v) -> m v'
+      f' k ((shouldHeadE, e), v) = do
+        eOnce <- if shouldHeadE
+          then headE e --TODO: Avoid doing this headE so many times; once per loweredDm' firing ought to be OK, but it's not totally trivial to do because result' might be firing at the same time, and we don't want *that* to be the postBuild occurrence
+          else return e
+        runPostBuildT (f k v) eOnce
+  lift $ do
+    rec (result0, result') <- base f' loweredDm0 loweredDm'
+        let voidResult' = fmapCheap (\_ -> ()) result'
+        let loweredDm' = ffor dm' $ fmap ((,) (True, voidResult'))
+    return (result0, result')
+
+{-# INLINABLE mapDMapWithAdjustImpl #-}
 mapDMapWithAdjustImpl :: forall t m k v v' p. (Reflex t, MonadFix m, MonadHold t m)
   => (   (forall a. k a -> Compose ((,) (Bool, Event t ())) v a -> m (v' a))
       -> DMap k (Compose ((,) (Bool, Event t ())) v)

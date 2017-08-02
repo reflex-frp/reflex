@@ -49,6 +49,7 @@ library
     MemoTrie == 0.6.*,
     base >= 4.7 && < 4.11,
     bifunctors >= 5.2 && < 5.5,
+    comonad,
     containers == 0.5.*,
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.2.4 && < 0.3,
@@ -63,6 +64,7 @@ library
     semigroupoids >= 4.0 && < 6,
     semigroups >= 0.16 && < 0.19,
     stm == 2.4.*,
+    structs == 0.1,
     syb >= 0.5 && < 0.7,
     these >= 0.4 && < 0.8,
     transformers >= 0.2,
@@ -73,6 +75,7 @@ library
     Data.Functor.Misc,
     Data.WeakBag,
     Data.FastWeakBag,
+    Data.FastMutableIntMap,
     Reflex,
     Reflex.Class,
     Reflex.EventWriter,
@@ -187,6 +190,7 @@ test-suite hlint
                , hlint == 1.9.*
   if impl(ghcjs)
     buildable: False
+  buildable: False
 
 test-suite EventWriterT
   type: exitcode-stdio-1.0

@@ -22,6 +22,7 @@ module Reflex.Requester.Base
   ( RequesterT (..)
   , runRequesterT
   , runWithReplaceRequesterTWith
+  , traverseIntMapWithKeyWithAdjustRequesterTWith
   , traverseDMapWithKeyWithAdjustRequesterTWith
   , RequesterData
   , traverseRequesterData
@@ -42,52 +43,84 @@ import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Bits
 import Data.Coerce
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import qualified Data.Some as Some
+import Data.FastMutableIntMap
 import Data.Functor.Compose
 import Data.Functor.Misc
-import Data.Int
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import Data.Map (Map)
-import Data.Monoid
+import Data.Monoid ((<>))
 import Data.Unique.Tag
 import Data.Some (Some)
 import Data.Tuple
 import Data.Type.Equality
+import Data.Proxy
 
+import GHC.Exts (Any)
 import Unsafe.Coerce
 
-newtype RequesterData f = RequesterData { unRequesterData :: DMap MyTag (Entry f) }
+newtype TagMap (f :: * -> *) = TagMap (IntMap Any)
+
+newtype RequesterData f = RequesterData (TagMap (Entry f))
+
+traverseTagMapWithKey :: forall t f g. Applicative t => (forall a. MyTag a -> f a -> t (g a)) -> TagMap f -> t (TagMap g)
+traverseTagMapWithKey f (TagMap m) = TagMap <$> IntMap.traverseWithKey g m
+  where
+    g :: Int -> Any -> t Any
+    g k v = (unsafeCoerce :: g a -> Any) <$> f (MyTag k) ((unsafeCoerce :: Any -> f a) v)
 
 -- | Runs in reverse to accommodate for the fact that we accumulate it in reverse
 traverseRequesterData :: forall m request response. Applicative m => (forall a. request a -> m (response a)) -> RequesterData request -> m (RequesterData response)
-traverseRequesterData f (RequesterData m) = RequesterData <$> DMap.traverseWithKey go m --TODO: reverse
+traverseRequesterData f (RequesterData m) = RequesterData <$> traverseTagMapWithKey go m --TODO: reverse this, since our tags are in reverse order
   where go :: forall x. MyTag x -> Entry request x -> m (Entry response x)
         go k (Entry request) = Entry <$> case myKeyType k of
           MyTagType_Single -> f request
           MyTagType_Multi -> traverseRequesterData f request
           MyTagType_Multi2 -> traverse (traverseRequesterData f) request
+          MyTagType_Multi3 -> traverse (traverseRequesterData f) request
 
 data MyTagType :: * -> * where
   MyTagType_Single :: MyTagType (Single a)
   MyTagType_Multi :: MyTagType Multi
   MyTagType_Multi2 :: MyTagType (Multi2 k)
+  MyTagType_Multi3 :: MyTagType Multi3
 
 myKeyType :: MyTag x -> MyTagType x
 myKeyType (MyTag k) = case k .&. 0x3 of
   0x0 -> unsafeCoerce MyTagType_Single
   0x1 -> unsafeCoerce MyTagType_Multi
   0x2 -> unsafeCoerce MyTagType_Multi2
+  0x3 -> unsafeCoerce MyTagType_Multi3
   t -> error $ "Reflex.Requester.Base.myKeyType: no such key type" <> show t
 
 data Single a
 data Multi
 data Multi2 (k :: * -> *)
+data Multi3
+
+class MyTagTypeOffset x where
+  myTagTypeOffset :: proxy x -> Int
+
+instance MyTagTypeOffset (Single a) where
+  myTagTypeOffset _ = 0x0
+
+instance MyTagTypeOffset Multi where
+  myTagTypeOffset _ = 0x1
+
+instance MyTagTypeOffset (Multi2 k) where
+  myTagTypeOffset _ = 0x2
+
+instance MyTagTypeOffset Multi3 where
+  myTagTypeOffset _ = 0x3
 
 type family EntryContents request a where
   EntryContents request (Single a) = request a
   EntryContents request Multi = RequesterData request
   EntryContents request (Multi2 k) = Map (Some k) (RequesterData request)
+  EntryContents request Multi3 = IntMap (RequesterData request)
 
 newtype Entry request x = Entry { unEntry :: EntryContents request x }
 
@@ -101,9 +134,9 @@ multiEntry = Entry
 
 -- | We use a hack here to pretend we have x ~ request a; we don't want to use a GADT, because GADTs (even with zero-size existential contexts) can't be newtypes
 -- WARNING: This type should never be exposed.  In particular, this is extremely unsound if a MyTag from one run of runRequesterT is ever compared against a MyTag from another
-newtype MyTag x = MyTag Int32 deriving (Show, Eq, Ord, Enum)
+newtype MyTag x = MyTag Int deriving (Show, Eq, Ord, Enum)
 
-newtype MyTagWrap (f :: * -> *) x = MyTagWrap Int32 deriving (Show, Eq, Ord, Enum)
+newtype MyTagWrap (f :: * -> *) x = MyTagWrap Int deriving (Show, Eq, Ord, Enum)
 
 {-# INLINE castMyTagWrap #-}
 castMyTagWrap :: MyTagWrap f (Entry f x) -> MyTagWrap g (Entry g x)
@@ -135,13 +168,13 @@ instance GCompare (MyTagWrap f) where
       EQ -> unsafeCoerce GEQ
       GT -> GGT
 
-data RequesterState t request = RequesterState
-  { _requesterState_nextMyTag :: {-# UNPACK #-} !Int32 -- Starts at -4 and goes down by 4 each time, to accommodate two 'type' bits at the bottom
-  , _requesterState_requests :: ![DSum (MyTagWrap request) (Event t)]
+data RequesterState t (request :: * -> *) = RequesterState
+  { _requesterState_nextMyTag :: {-# UNPACK #-} !Int -- Starts at -4 and goes down by 4 each time, to accommodate two 'type' bits at the bottom
+  , _requesterState_requests :: ![(Int, Event t Any)]
   }
 
 -- | A basic implementation of 'Requester'.
-newtype RequesterT t request response m a = RequesterT { unRequesterT :: StateT (RequesterState t request) (ReaderT (EventSelector t (MyTagWrap response)) m) a }
+newtype RequesterT t request (response :: * -> *) m a = RequesterT { unRequesterT :: StateT (RequesterState t request) (ReaderT (EventSelectorInt t Any) m) a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException
 -- MonadAsyncException can't be derived on ghc-8.0.1; we use base-4.9.1 as a proxy for ghc-8.0.2
 #if MIN_VERSION_base(4,9,1)
@@ -154,14 +187,6 @@ deriving instance MonadHold t m => MonadHold t (RequesterT t request response m)
 deriving instance PostBuild t m => PostBuild t (RequesterT t request response m)
 deriving instance TriggerEvent t m => TriggerEvent t (RequesterT t request response m)
 
-{-# INLINE wrapMyTags #-}
-wrapMyTags :: DMap MyTag (Entry f) -> DMap (MyTagWrap f) Identity
-wrapMyTags = unsafeCoerce
-
-{-# INLINE unwrapMyTags #-}
-unwrapMyTags :: DMap (MyTagWrap f) Identity -> DMap MyTag (Entry f)
-unwrapMyTags = unsafeCoerce
-
 -- | Run a 'RequesterT' action.  The resulting 'Event' will fire whenever
 -- requests are made, and responses should be provided in the input 'Event'.
 -- The 'Tag' keys will be used to return the responses to the same place the
@@ -172,9 +197,9 @@ runRequesterT :: (Reflex t, Monad m)
               -> Event t (RequesterData response) --TODO: This DMap will be in reverse order, so we need to make sure the caller traverses it in reverse
               -> m (a, Event t (RequesterData request)) --TODO: we need to hide these 'MyTag's here, because they're unsafe to mix in the wild
 runRequesterT (RequesterT a) responses = do
-  (result, s) <- runReaderT (runStateT a $ RequesterState (-4) []) $ fan $
-    fmapCheap (wrapMyTags . unRequesterData) responses
-  return (result, fmapCheap (RequesterData . unwrapMyTags) $ merge $ DMap.fromDistinctAscList $ _requesterState_requests s)
+  (result, s) <- runReaderT (runStateT a $ RequesterState (-4) []) $ fanInt $
+    coerceEvent responses
+  return (result, fmapCheap (RequesterData . TagMap) $ mergeInt $ IntMap.fromDistinctAscList $ _requesterState_requests s)
 
 instance (Reflex t, Monad m) => Requester t (RequesterT t request response m) where
   type Request (RequesterT t request response m) = request
@@ -183,22 +208,22 @@ instance (Reflex t, Monad m) => Requester t (RequesterT t request response m) wh
   requesting_ = void . tagRequest . fmapCheap singleEntry
 
 {-# INLINE tagRequest #-}
-tagRequest :: Monad m => Event t (Entry request x) -> RequesterT t request response m (MyTagWrap request (Entry request x))
+tagRequest :: forall m x t request response. (Monad m, MyTagTypeOffset x) => Event t (Entry request x) -> RequesterT t request response m (MyTagWrap request (Entry request x))
 tagRequest req = do
   old <- RequesterT get
-  let n = _requesterState_nextMyTag old
+  let n = _requesterState_nextMyTag old .|. myTagTypeOffset (Proxy :: Proxy x)
       t = MyTagWrap n
   RequesterT $ put $ RequesterState
-    { _requesterState_nextMyTag = n - 0x4
-    , _requesterState_requests = (t :=> req) : _requesterState_requests old
+    { _requesterState_nextMyTag = _requesterState_nextMyTag old - 0x4
+    , _requesterState_requests = (n, (unsafeCoerce :: Event t (Entry request x) -> Event t Any) req) : _requesterState_requests old
     }
   return t
 
 {-# INLINE responseFromTag #-}
 responseFromTag :: (Monad m, Reflex t) => MyTagWrap response (Entry response x) -> RequesterT t request response m (Event t (Entry response x))
-responseFromTag t = do
-  responses :: EventSelector t (MyTagWrap response) <- RequesterT ask
-  return $ select responses t
+responseFromTag (MyTagWrap t) = do
+  responses :: EventSelectorInt t Any <- RequesterT ask
+  return $ (unsafeCoerce :: Event t Any -> Event t (Entry response x)) $ selectInt responses t
 
 instance MonadTrans (RequesterT t request response) where
   lift = RequesterT . lift . lift
@@ -225,12 +250,15 @@ instance MonadReader r m => MonadReader r (RequesterT t request response m) wher
 
 instance (Reflex t, MonadAdjust t m, MonadHold t m, MonadFix m) => MonadAdjust t (RequesterT t request response m) where
   runWithReplace = runWithReplaceRequesterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
+  traverseIntMapWithKeyWithAdjust = traverseIntMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseIntMapWithKeyWithAdjust f dm0 dm') patchIntMapNewElementsMap mergeIntIncremental
+  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
   traverseDMapWithKeyWithAdjust = traverseDMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjust f dm0 dm') mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental
   traverseDMapWithKeyWithAdjustWithMove = traverseDMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjustWithMove f dm0 dm') mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove
 
-requesting' :: (Monad m, Reflex t) => Event t (Entry request x) -> RequesterT t request response m (Event t (Entry response x))
+requesting' :: (MyTagTypeOffset x, Monad m, Reflex t) => Event t (Entry request x) -> RequesterT t request response m (Event t (Entry response x))
 requesting' = responseFromTag . castMyTagWrap <=< tagRequest
 
+{-# INLINABLE runWithReplaceRequesterTWith #-}
 runWithReplaceRequesterTWith :: forall m t request response a b. (Reflex t, MonadHold t m
                                                                  , MonadFix m
                                                                  )
@@ -244,6 +272,49 @@ runWithReplaceRequesterTWith f a0 a' = do
       requests <- holdDyn requests0 $ fmapCheap snd v'
   return (result0, fmapCheap fst v')
 
+{-# INLINE traverseIntMapWithKeyWithAdjustRequesterTWith #-}
+traverseIntMapWithKeyWithAdjustRequesterTWith :: forall t request response m v v' p.
+                                        ( Reflex t
+                                        , MonadHold t m
+                                        , PatchTarget (p (Event t (RequesterData request))) ~ IntMap (Event t (RequesterData request))
+                                        , Patch (p (Event t (RequesterData request)))
+                                        , Functor p
+                                        , MonadFix m
+                                        )
+                                     => (   (IntMap.Key -> v -> m (Event t (RequesterData request), v'))
+                                         -> IntMap v
+                                         -> Event t (p v)
+                                         -> RequesterT t request response m (IntMap (Event t (RequesterData request), v'), Event t (p (Event t (RequesterData request), v')))
+                                        )
+                                     -> (p (Event t (RequesterData request)) -> IntMap (Event t (RequesterData request)))
+                                     -> (Incremental t (p (Event t (RequesterData request))) -> Event t (IntMap (RequesterData request)))
+                                     -> (IntMap.Key -> v -> RequesterT t request response m v')
+                                     -> IntMap v
+                                     -> Event t (p v)
+                                     -> RequesterT t request response m (IntMap v', Event t (p v'))
+traverseIntMapWithKeyWithAdjustRequesterTWith base patchNewElements mergePatchIncremental f dm0 dm' = do
+  rec response <- requesting' $ fmapCheap pack $ promptRequests `mappend` mergePatchIncremental requests --TODO: Investigate whether we can really get rid of the prompt stuff here
+      let responses :: EventSelectorInt t (RequesterData response)
+          responses = fanInt $ fmapCheap unpack response
+          unpack :: Entry response Multi3 -> IntMap (RequesterData response)
+          unpack = unEntry
+          pack :: IntMap (RequesterData request) -> Entry request Multi3
+          pack = Entry
+          f' :: IntMap.Key -> v -> m (Event t (RequesterData request), v')
+          f' k v = fmap swap $ runRequesterT (f k v) $ selectInt responses k
+      (children0, children') <- base f' dm0 dm'
+      let result0 = fmap snd children0
+          result' = fforCheap children' $ fmap snd
+          requests0 :: IntMap (Event t (RequesterData request))
+          requests0 = fmap fst children0
+          requests' :: Event t (p (Event t (RequesterData request)))
+          requests' = fforCheap children' $ fmap fst
+          promptRequests :: Event t (IntMap (RequesterData request))
+          promptRequests = coincidence $ fmapCheap (mergeInt . patchNewElements) requests' --TODO: Create a mergeIncrementalPromptly, and use that to eliminate this 'coincidence'
+      requests <- holdIncremental requests0 requests'
+  return (result0, result')
+
+{-# INLINE traverseDMapWithKeyWithAdjustRequesterTWith #-}
 traverseDMapWithKeyWithAdjustRequesterTWith :: forall k t request response m v v' p p'.
                                         ( GCompare k
                                         , Reflex t

@@ -30,6 +30,8 @@ instance (
 instance (
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
            x ~ Global
+#else
+           HasSpiderTimeline x
 #endif
          ) => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPushM x) where
   {-# INLINABLE sample #-}

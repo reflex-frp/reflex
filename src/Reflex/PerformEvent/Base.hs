@@ -40,6 +40,9 @@ import Data.Coerce
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
+import Data.FastMutableIntMap
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 
 -- | A function that fires events for the given 'EventTrigger's and then runs
 -- any followup actions provided via 'PerformEvent'.  The given 'ReadPhase'
@@ -76,6 +79,7 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => MonadAdjust t (PerformEventT
             result0 <- lift a0
             result' <- requestingIdentity a'
             return (result0, result')
+  traverseIntMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseIntMapWithKeyWithAdjustRequesterTWith (defaultAdjustIntBase traverseIntMapPatchWithKey) patchIntMapNewElementsMap mergeIntIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
   traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
   traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
 
@@ -87,6 +91,17 @@ defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), PrimMonad (HostFr
   -> RequesterT t (HostFrame t) Identity (HostFrame t) (DMap k' v2, Event t (p k' v2))
 defaultAdjustBase traversePatchWithKey f' dm0 dm' = do
   result0 <- lift $ DMap.traverseWithKey f' dm0
+  result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
+  return (result0, result')
+
+defaultAdjustIntBase :: forall t v v2 p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
+  => ((IntMap.Key -> v -> HostFrame t v2) -> p v -> HostFrame t (p v2))
+  -> (IntMap.Key -> v -> HostFrame t v2)
+  -> IntMap v
+  -> Event t (p v)
+  -> RequesterT t (HostFrame t) Identity (HostFrame t) (IntMap v2, Event t (p v2))
+defaultAdjustIntBase traversePatchWithKey f' dm0 dm' = do
+  result0 <- lift $ IntMap.traverseWithKey f' dm0
   result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
   return (result0, result')
 

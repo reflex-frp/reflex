@@ -29,6 +29,7 @@ module Reflex.Class
   ( module Reflex.Patch
     -- * Primitives
   , Reflex (..)
+  , mergeInt
   , coerceBehavior
   , coerceEvent
   , coerceDynamic
@@ -36,6 +37,7 @@ module Reflex.Class
   , MonadHold (..)
     -- ** 'fan'-related types
   , EventSelector (..)
+  , EventSelectorInt (..)
     -- ** 'Incremental'-related types
     -- * Convenience functions
   , constDyn
@@ -172,6 +174,8 @@ import qualified Data.Functor.Bind as Bind
 import Data.Functor.Constant
 import Data.Functor.Misc
 import Data.Functor.Plus
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Maybe
@@ -183,6 +187,7 @@ import Data.Traversable
 import Data.Type.Coercion
 import Reflex.FunctorMaybe
 import Reflex.Patch
+import Data.FastMutableIntMap (PatchIntMap)
 
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 import Reflex.Spider.Internal (EventM, Global, HasSpiderTimeline, SpiderHost (..), SpiderHostFrame (..),
@@ -298,7 +303,13 @@ class ( MonadHold t (PushM t)
   -- | Construct a 'Coercion' for a 'Dynamic' given an 'Coercion' for its
   -- occurrence type
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
+  mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
+  fanInt :: Event t (IntMap a) -> EventSelectorInt t a
 #endif
+
+--TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
+mergeInt :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
+mergeInt m = mergeIntIncremental $ unsafeBuildIncremental (return m) never
 
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 instance t ~ SpiderTimeline Global => Reflex t where
@@ -445,6 +456,8 @@ newtype EventSelector t k = EventSelector
     -- occurrences of an 'Event'.
     select :: forall a. k a -> Event t a
   }
+
+newtype EventSelectorInt t a = EventSelectorInt { selectInt :: Int -> Event t a }
 
 --------------------------------------------------------------------------------
 -- Instances
@@ -1031,6 +1044,7 @@ infixl 4 <@
 -- to determine what the best meaning for this class is in such cases.
 class (Reflex t, Monad m) => MonadAdjust t m | m -> t where
   runWithReplace :: m a -> Event t (m b) -> m (a, Event t b)
+  traverseIntMapWithKeyWithAdjust :: (IntMap.Key -> v -> m v') -> IntMap v -> Event t (PatchIntMap v) -> m (IntMap v', Event t (PatchIntMap v'))
   traverseDMapWithKeyWithAdjust :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> m (DMap k v', Event t (PatchDMap k v'))
   traverseDMapWithKeyWithAdjustWithMove :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> m (DMap k v', Event t (PatchDMapWithMove k v'))
 
@@ -1038,6 +1052,9 @@ instance MonadAdjust t m => MonadAdjust t (ReaderT r m) where
   runWithReplace a0 a' = do
     r <- ask
     lift $ runWithReplace (runReaderT a0 r) $ fmap (`runReaderT` r) a'
+  traverseIntMapWithKeyWithAdjust f dm0 dm' = do
+    r <- ask
+    lift $ traverseIntMapWithKeyWithAdjust (\k v -> runReaderT (f k v) r) dm0 dm'
   traverseDMapWithKeyWithAdjust f dm0 dm' = do
     r <- ask
     lift $ traverseDMapWithKeyWithAdjust (\k v -> runReaderT (f k v) r) dm0 dm'

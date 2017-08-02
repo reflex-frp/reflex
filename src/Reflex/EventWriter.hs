@@ -37,10 +37,13 @@ import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
-import Data.GADT.Compare (GEq (..), GCompare (..), GOrdering (..))
+import Data.FastMutableIntMap
 import Data.Foldable
 import Data.Functor.Compose
 import Data.Functor.Misc
+import Data.GADT.Compare (GEq (..), GCompare (..), GOrdering (..))
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Semigroup
@@ -131,6 +134,7 @@ instance MonadHold t m => MonadHold t (EventWriterT t w m) where
 
 instance (Reflex t, MonadAdjust t m, MonadHold t m, Semigroup w, Semigroup w) => MonadAdjust t (EventWriterT t w m) where
   runWithReplace = runWithReplaceEventWriterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
+  traverseIntMapWithKeyWithAdjust = sequenceIntMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseIntMapWithKeyWithAdjust f dm0 dm') patchIntMapNewElements mergeIntIncremental
   traverseDMapWithKeyWithAdjust = sequenceDMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjust f dm0 dm') mapPatchDMap weakenPatchDMapWith patchMapNewElements mergeMapIncremental
   traverseDMapWithKeyWithAdjustWithMove = sequenceDMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjustWithMove f dm0 dm') mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElements mergeMapIncrementalWithMove
 
@@ -156,6 +160,37 @@ runWithReplaceEventWriterTWith f a0 a' = do
   tellEvent $ coincidence $ updated request
   tellEvent $ switch $ current request
   return (fst result0, fmapCheap fst result')
+
+-- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceIntMapWithAdjust'.
+sequenceIntMapWithAdjustEventWriterTWith :: forall t m p w v v'. (Reflex t, MonadHold t m, Semigroup w, Semigroup w, Functor p, Patch (p (Event t w)), PatchTarget (p (Event t w)) ~ IntMap (Event t w))
+                                       => (   (IntMap.Key -> v -> m (Event t w, v'))
+                                           -> IntMap v
+                                           -> Event t (p v)
+                                           -> EventWriterT t w m (IntMap (Event t w, v'), Event t (p (Event t w, v')))
+                                          )
+                                       -> (p (Event t w) -> [Event t w])
+                                       -> (Incremental t (p (Event t w)) -> Event t (IntMap w))
+                                       -> (IntMap.Key -> v -> EventWriterT t w m v')
+                                       -> IntMap v
+                                       -> Event t (p v)
+                                       -> EventWriterT t w m (IntMap v', Event t (p v'))
+sequenceIntMapWithAdjustEventWriterTWith base patchNewElements mergePatchIncremental f dm0 dm' = do
+  let f' :: IntMap.Key -> v -> m (Event t w, v')
+      f' k v = swap <$> runEventWriterT (f k v)
+  (children0, children') <- base f' dm0 dm'
+  let result0 = fmap snd children0
+      result' = fmapCheap (fmap snd) children'
+      requests0 :: IntMap (Event t w)
+      requests0 = fmap fst children0
+      requests' :: Event t (p (Event t w))
+      requests' = fmapCheap (fmap fst) children'
+  childRequestMap :: Incremental t (p (Event t w)) <- holdIncremental requests0 requests'
+  -- We add these two separately to take advantage of the free merge being done later.  The coincidence case must come first so that it has precedence if both fire simultaneously.  (Really, we should probably block the 'switch' whenever 'updated' fires, but switchPromptlyDyn has the same issue.)
+  tellEvent $ coincidence $ fforCheap requests' $ \p -> mconcat $ patchNewElements p --TODO: Create a mergeIncrementalPromptly, and use that to eliminate this 'coincidence'
+  tellEvent $ fforMaybeCheap (mergePatchIncremental childRequestMap) $ \m -> case toList m of
+    [] -> Nothing
+    h : t -> Just $ sconcat $ h :| t
+  return (result0, result')
 
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceDMapWithAdjust'.
 sequenceDMapWithAdjustEventWriterTWith :: forall t m p p' w k v v'. (Reflex t, MonadHold t m, Semigroup w, Semigroup w, Patch (p' (Some k) (Event t w)), PatchTarget (p' (Some k) (Event t w)) ~ Map (Some k) (Event t w))
