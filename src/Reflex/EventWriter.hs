@@ -132,7 +132,7 @@ instance MonadHold t m => MonadHold t (EventWriterT t w m) where
   holdDyn v0 = lift . holdDyn v0
   holdIncremental v0 = lift . holdIncremental v0
 
-instance (Reflex t, MonadAdjust t m, MonadHold t m, Semigroup w, Semigroup w) => MonadAdjust t (EventWriterT t w m) where
+instance (Reflex t, MonadAdjust t m, MonadHold t m, Semigroup w) => MonadAdjust t (EventWriterT t w m) where
   runWithReplace = runWithReplaceEventWriterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
   traverseIntMapWithKeyWithAdjust = sequenceIntMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseIntMapWithKeyWithAdjust f dm0 dm') patchIntMapNewElements mergeIntIncremental
   traverseDMapWithKeyWithAdjust = sequenceDMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjust f dm0 dm') mapPatchDMap weakenPatchDMapWith patchMapNewElements mergeMapIncremental
@@ -193,7 +193,7 @@ sequenceIntMapWithAdjustEventWriterTWith base patchNewElements mergePatchIncreme
   return (result0, result')
 
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceDMapWithAdjust'.
-sequenceDMapWithAdjustEventWriterTWith :: forall t m p p' w k v v'. (Reflex t, MonadHold t m, Semigroup w, Semigroup w, Patch (p' (Some k) (Event t w)), PatchTarget (p' (Some k) (Event t w)) ~ Map (Some k) (Event t w))
+sequenceDMapWithAdjustEventWriterTWith :: forall t m p p' w k v v'. (Reflex t, MonadHold t m, Semigroup w, Patch (p' (Some k) (Event t w)), PatchTarget (p' (Some k) (Event t w)) ~ Map (Some k) (Event t w))
                                        => (   (forall a. k a -> v a -> m (Compose ((,) (Event t w)) v' a))
                                            -> DMap k v
                                            -> Event t (p k v)

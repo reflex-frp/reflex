@@ -1157,7 +1157,9 @@ type ResultM = EventM
 
 {-# NOINLINE unsafeNewIORef #-}
 unsafeNewIORef :: a -> b -> IORef b
-unsafeNewIORef _ b = unsafePerformIO $ newIORef b
+unsafeNewIORef a b = unsafePerformIO $ do
+  touch a
+  newIORef b
 
 instance HasSpiderTimeline x => Functor (Event x) where
   fmap f = push $ return . Just . f
