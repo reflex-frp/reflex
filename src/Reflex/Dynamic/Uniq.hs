@@ -81,13 +81,13 @@ instance Reflex t => Accumulator t (UniqDynamic t) where
     let f' old change = do
           mNew <- f old change
           return $ unsafeJustChanged old =<< mNew
-    d <- accumMaybeM f' z e
+    d <- accumMaybeMDyn f' z e
     return $ UniqDynamic d
   mapAccumMaybeM f z e = do
     let f' old change = do
           (mNew, output) <- f old change
           return (unsafeJustChanged old =<< mNew, output)
-    (d, out) <- mapAccumMaybeM f' z e
+    (d, out) <- mapAccumMaybeMDyn f' z e
     return (UniqDynamic d, out)
 
 instance Reflex t => Functor (UniqDynamic t) where

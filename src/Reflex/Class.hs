@@ -78,6 +78,22 @@ module Reflex.Class
   , zipDynWith
     -- ** Accumulating state
   , Accumulator (..)
+  , accumDyn
+  , accumMDyn
+  , accumMaybeDyn
+  , accumMaybeMDyn
+  , mapAccumDyn
+  , mapAccumMDyn
+  , mapAccumMaybeDyn
+  , mapAccumMaybeMDyn
+  , accumB
+  , accumMB
+  , accumMaybeB
+  , accumMaybeMB
+  , mapAccumB
+  , mapAccumMB
+  , mapAccumMaybeB
+  , mapAccumMaybeMB
   , mapAccum_
   , mapAccumM_
   , mapAccumMaybe_
@@ -880,6 +896,12 @@ alignEventWithMaybe f ea eb =
 
 -- | An 'Accumulator' type can be built by accumulating occurrences of an
 -- 'Event'.
+#if __GLASGOW_HASKELL__ < 802
+{-# WARNING accum "ghc < 8.2.1 doesn't seem to be able to specialize functions in this class, which can lead to poor performance" #-}
+{-# WARNING accumM "ghc < 8.2.1 doesn't seem to be able to specialize functions in this class, which can lead to poor performance" #-}
+{-# WARNING accumMaybe "ghc < 8.2.1 doesn't seem to be able to specialize functions in this class, which can lead to poor performance" #-}
+{-# WARNING accumMaybeM "ghc < 8.2.1 doesn't seem to be able to specialize functions in this class, which can lead to poor performance" #-}
+#endif
 class Reflex t => Accumulator t f | f -> t where
   accum :: (MonadHold t m, MonadFix m) => (a -> b -> a) -> a -> Event t b -> m (f a)
   accum f = accumMaybe $ \v o -> Just $ f v o
@@ -896,25 +918,85 @@ class Reflex t => Accumulator t f | f -> t where
   mapAccumMaybe f = mapAccumMaybeM $ \v o -> return $ f v o
   mapAccumMaybeM :: (MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (f a, Event t c)
 
+accumDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> a) -> a -> Event t b -> m (Dynamic t a)
+accumDyn f = accumMaybeDyn $ \v o -> Just $ f v o
+accumMDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t a) -> a -> Event t b -> m (Dynamic t a)
+accumMDyn f = accumMaybeMDyn $ \v o -> Just <$> f v o
+accumMaybeDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> Maybe a) -> a -> Event t b -> m (Dynamic t a)
+accumMaybeDyn f = accumMaybeMDyn $ \v o -> return $ f v o
+accumMaybeMDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a)) -> a -> Event t b -> m (Dynamic t a)
+accumMaybeMDyn f z e = do
+  rec let e' = flip push e $ \o -> do
+            v <- sample $ current d'
+            f v o
+      d' <- holdDyn z e'
+  return d'
+mapAccumDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (a, c)) -> a -> Event t b -> m (Dynamic t a, Event t c)
+mapAccumDyn f = mapAccumMaybeDyn $ \v o -> bimap Just Just $ f v o
+mapAccumMDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (a, c)) -> a -> Event t b -> m (Dynamic t a, Event t c)
+mapAccumMDyn f = mapAccumMaybeMDyn $ \v o -> bimap Just Just <$> f v o
+mapAccumMaybeDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (Maybe a, Maybe c)) -> a -> Event t b -> m (Dynamic t a, Event t c)
+mapAccumMaybeDyn f = mapAccumMaybeMDyn $ \v o -> return $ f v o
+mapAccumMaybeMDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Dynamic t a, Event t c)
+mapAccumMaybeMDyn f z e = do
+  rec let e' = flip push e $ \o -> do
+            v <- sample $ current d'
+            result <- f v o
+            return $ case result of
+              (Nothing, Nothing) -> Nothing
+              _ -> Just result
+      d' <- holdDyn z $ fmapMaybe fst e'
+  return (d', fmapMaybe snd e')
+
+accumB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> a) -> a -> Event t b -> m (Behavior t a)
+accumB f = accumMaybeB $ \v o -> Just $ f v o
+accumMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t a) -> a -> Event t b -> m (Behavior t a)
+accumMB f = accumMaybeMB $ \v o -> Just <$> f v o
+accumMaybeB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> Maybe a) -> a -> Event t b -> m (Behavior t a)
+accumMaybeB f = accumMaybeMB $ \v o -> return $ f v o
+accumMaybeMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a)) -> a -> Event t b -> m (Behavior t a)
+accumMaybeMB f z e = do
+  rec let e' = flip push e $ \o -> do
+            v <- sample d'
+            f v o
+      d' <- hold z e'
+  return d'
+mapAccumB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (a, c)) -> a -> Event t b -> m (Behavior t a, Event t c)
+mapAccumB f = mapAccumMaybeB $ \v o -> bimap Just Just $ f v o
+mapAccumMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (a, c)) -> a -> Event t b -> m (Behavior t a, Event t c)
+mapAccumMB f = mapAccumMaybeMB $ \v o -> bimap Just Just <$> f v o
+mapAccumMaybeB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (Maybe a, Maybe c)) -> a -> Event t b -> m (Behavior t a, Event t c)
+mapAccumMaybeB f = mapAccumMaybeMB $ \v o -> return $ f v o
+mapAccumMaybeMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Behavior t a, Event t c)
+mapAccumMaybeMB f z e = do
+  rec let e' = flip push e $ \o -> do
+            v <- sample d'
+            result <- f v o
+            return $ case result of
+              (Nothing, Nothing) -> Nothing
+              _ -> Just result
+      d' <- hold z $ fmapMaybe fst e'
+  return (d', fmapMaybe snd e')
+
 -- | Accumulate occurrences of an 'Event', producing an output occurrence each
 -- time.  Discard the underlying 'Accumulator'.
 mapAccum_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (a, c)) -> a -> Event t b -> m (Event t c)
 mapAccum_ f z e = do
-  (_ :: Behavior t a, result) <- mapAccum f z e
+  (_, result) <- mapAccumB f z e
   return result
 
 -- | Accumulate occurrences of an 'Event', possibly producing an output
 -- occurrence each time.  Discard the underlying 'Accumulator'.
 mapAccumMaybe_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (Maybe a, Maybe c)) -> a -> Event t b -> m (Event t c)
 mapAccumMaybe_ f z e = do
-  (_ :: Behavior t a, result) <- mapAccumMaybe f z e
+  (_, result) <- mapAccumMaybeB f z e
   return result
 
 -- | Accumulate occurrences of an 'Event', using a 'PushM' action and producing
 -- an output occurrence each time.  Discard the underlying 'Accumulator'.
 mapAccumM_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (a, c)) -> a -> Event t b -> m (Event t c)
 mapAccumM_ f z e = do
-  (_ :: Behavior t a, result) <- mapAccumM f z e
+  (_, result) <- mapAccumMB f z e
   return result
 
 -- | Accumulate occurrences of an 'Event', using a 'PushM' action and possibly
@@ -922,29 +1004,16 @@ mapAccumM_ f z e = do
 -- 'Accumulator'.
 mapAccumMaybeM_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Event t c)
 mapAccumMaybeM_ f z e = do
-  (_ :: Behavior t a, result) <- mapAccumMaybeM f z e
+  (_, result) <- mapAccumMaybeMB f z e
   return result
 
 instance Reflex t => Accumulator t (Dynamic t) where
-  accumMaybeM f z e = do
-    rec let e' = flip push e $ \o -> do
-              v <- sample $ current d'
-              f v o
-        d' <- holdDyn z e'
-    return d'
-  mapAccumMaybeM f z e = do
-    rec let e' = flip push e $ \o -> do
-              v <- sample $ current d'
-              result <- f v o
-              return $ case result of
-                (Nothing, Nothing) -> Nothing
-                _ -> Just result
-        d' <- holdDyn z $ fmapMaybe fst e'
-    return (d', fmapMaybe snd e')
+  accumMaybeM = accumMaybeMDyn
+  mapAccumMaybeM = mapAccumMaybeMDyn
 
 instance Reflex t => Accumulator t (Behavior t) where
-  accumMaybeM f z e = current <$> accumMaybeM f z e
-  mapAccumMaybeM f z e = first current <$> mapAccumMaybeM f z e
+  accumMaybeM = accumMaybeMB
+  mapAccumMaybeM = mapAccumMaybeMB
 
 instance Reflex t => Accumulator t (Event t) where
   accumMaybeM f z e = updated <$> accumMaybeM f z e
