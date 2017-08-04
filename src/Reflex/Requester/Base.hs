@@ -1,6 +1,7 @@
 -- | This module provides 'RequesterT', the standard implementation of
 -- 'Requester'.
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -66,22 +67,24 @@ import Data.Proxy
 import GHC.Exts (Any)
 import Unsafe.Coerce
 
+--TODO: Make this module type-safe
+
 newtype TagMap (f :: * -> *) = TagMap (IntMap Any)
 
 newtype RequesterData f = RequesterData (TagMap (Entry f))
 
 data RequesterDataKey a where
   RequesterDataKey_Single :: {-# UNPACK #-} !(MyTag (Single a)) -> RequesterDataKey a
-  RequesterDataKey_Multi :: {-# UNPACK #-} !(MyTag Multi) -> !(RequesterDataKey a) -> RequesterDataKey a
-  RequesterDataKey_Multi2 :: {-# UNPACK #-} !(MyTag (Multi2 k)) -> {-# UNPACK #-} !(Some k) -> !(RequesterDataKey a) -> RequesterDataKey a
-  RequesterDataKey_Multi3 :: {-# UNPACK #-} !(MyTag Multi3) -> Int -> !(RequesterDataKey a) -> RequesterDataKey a
+  RequesterDataKey_Multi :: {-# UNPACK #-} !(MyTag Multi) -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a --TODO: Don't put a second Int here (or in the other Multis); use a single Int instead
+  RequesterDataKey_Multi2 :: {-# UNPACK #-} !(MyTag (Multi2 k)) -> {-# UNPACK #-} !(Some k) -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a
+  RequesterDataKey_Multi3 :: {-# UNPACK #-} !(MyTag Multi3) -> {-# UNPACK #-} !Int -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a
 
 singletonRequesterData :: RequesterDataKey a -> f a -> RequesterData f
 singletonRequesterData rdk v = case rdk of
   RequesterDataKey_Single k -> RequesterData $ singletonTagMap k $ Entry v
-  RequesterDataKey_Multi k k' -> RequesterData $ singletonTagMap k $ Entry $ singletonRequesterData k' v
-  RequesterDataKey_Multi2 k k' k'' -> RequesterData $ singletonTagMap k $ Entry $ Map.singleton k' $ singletonRequesterData k'' v
-  RequesterDataKey_Multi3 k k' k'' -> RequesterData $ singletonTagMap k $ Entry $ IntMap.singleton k' $ singletonRequesterData k'' v
+  RequesterDataKey_Multi k k' k'' -> RequesterData $ singletonTagMap k $ Entry $ IntMap.singleton k' $ singletonRequesterData k'' v
+  RequesterDataKey_Multi2 k k' k'' k''' -> RequesterData $ singletonTagMap k $ Entry $ Map.singleton k' $ IntMap.singleton k'' $ singletonRequesterData k''' v
+  RequesterDataKey_Multi3 k k' k'' k''' -> RequesterData $ singletonTagMap k $ Entry $ IntMap.singleton k' $ IntMap.singleton k'' $ singletonRequesterData k''' v
 
 requesterDataToList :: RequesterData f -> [DSum RequesterDataKey f]
 requesterDataToList (RequesterData m) = do
@@ -89,16 +92,19 @@ requesterDataToList (RequesterData m) = do
   case myKeyType k of
     MyTagType_Single -> return $ RequesterDataKey_Single k :=> e
     MyTagType_Multi -> do
-      k' :=> e' <- requesterDataToList e
-      return $ RequesterDataKey_Multi k k' :=> e'
-    MyTagType_Multi2 -> do
-      (k', e') <- Map.toList e
-      k'' :=> e'' <- requesterDataToList e'
-      return $ RequesterDataKey_Multi2 k k' k'' :=> e''
-    MyTagType_Multi3 -> do
       (k', e') <- IntMap.toList e
       k'' :=> e'' <- requesterDataToList e'
-      return $ RequesterDataKey_Multi3 k k' k'' :=> e''
+      return $ RequesterDataKey_Multi k k' k'' :=> e''
+    MyTagType_Multi2 -> do
+      (k', e') <- Map.toList e
+      (k'', e'') <- IntMap.toList e'
+      k''' :=> e''' <- requesterDataToList e''
+      return $ RequesterDataKey_Multi2 k k' k'' k''' :=> e'''
+    MyTagType_Multi3 -> do
+      (k', e') <- IntMap.toList e
+      (k'', e'') <- IntMap.toList e'
+      k''' :=> e''' <- requesterDataToList e''
+      return $ RequesterDataKey_Multi3 k k' k'' k''' :=> e'''
 
 singletonTagMap :: forall f a. MyTag a -> f a -> TagMap f
 singletonTagMap (MyTag k) v = TagMap $ IntMap.singleton k $ (unsafeCoerce :: f a -> Any) v
@@ -120,9 +126,9 @@ traverseRequesterData f (RequesterData m) = RequesterData <$> traverseTagMapWith
   where go :: forall x. MyTag x -> Entry request x -> m (Entry response x)
         go k (Entry request) = Entry <$> case myKeyType k of
           MyTagType_Single -> f request
-          MyTagType_Multi -> traverseRequesterData f request
-          MyTagType_Multi2 -> traverse (traverseRequesterData f) request
-          MyTagType_Multi3 -> traverse (traverseRequesterData f) request
+          MyTagType_Multi -> traverse (traverseRequesterData f) request
+          MyTagType_Multi2 -> traverse (traverse (traverseRequesterData f)) request
+          MyTagType_Multi3 -> traverse (traverse (traverseRequesterData f)) request
 
 data MyTagType :: * -> * where
   MyTagType_Single :: MyTagType (Single a)
@@ -160,9 +166,9 @@ instance MyTagTypeOffset Multi3 where
 
 type family EntryContents request a where
   EntryContents request (Single a) = request a
-  EntryContents request Multi = RequesterData request
-  EntryContents request (Multi2 k) = Map (Some k) (RequesterData request)
-  EntryContents request Multi3 = IntMap (RequesterData request)
+  EntryContents request Multi = IntMap (RequesterData request)
+  EntryContents request (Multi2 k) = Map (Some k) (IntMap (RequesterData request))
+  EntryContents request Multi3 = IntMap (IntMap (RequesterData request))
 
 newtype Entry request x = Entry { unEntry :: EntryContents request x }
 
@@ -171,11 +177,11 @@ singleEntry :: f a -> Entry f (Single a)
 singleEntry = Entry
 
 {-# INLINE multiEntry #-}
-multiEntry :: RequesterData f -> Entry f Multi
+multiEntry :: IntMap (RequesterData f) -> Entry f Multi
 multiEntry = Entry
 
 {-# INLINE unMultiEntry #-}
-unMultiEntry :: Entry f Multi -> RequesterData f
+unMultiEntry :: Entry f Multi -> IntMap (RequesterData f)
 unMultiEntry = unEntry
 
 -- | We use a hack here to pretend we have x ~ request a; we don't want to use a GADT, because GADTs (even with zero-size existential contexts) can't be newtypes
@@ -313,49 +319,54 @@ runWithReplaceRequesterTWith :: forall m t request response a b. (Reflex t, Mona
                              -> Event t (RequesterT t request response m b)
                              -> RequesterT t request response m (a, Event t b)
 runWithReplaceRequesterTWith f a0 a' = do
-  rec response <- fmap (fmapCheap unMultiEntry) $ requesting' $ fmapCheap multiEntry $ switchPromptlyDyn requests --TODO: Investigate whether we can really get rid of the prompt stuff here
-      ((result0, requests0), v') <- f (runRequesterT a0 response) $ fmapCheap (`runRequesterT` response) a'
-      requests <- holdDyn requests0 $ fmapCheap snd v'
-  return (result0, fmapCheap fst v')
+  rec na' <- numberOccurrencesFrom 1 a'
+      responses <- fmap (fmapCheap unMultiEntry) $ requesting' $ fmapCheap multiEntry $ switchPromptlyDyn requests --TODO: Investigate whether we can really get rid of the prompt stuff here
+      let responses' = fanInt responses
+      ((result0, requests0), v') <- f (runRequesterT a0 (selectInt responses' 0)) $ fmapCheap (\(n, a) -> fmap ((,) n) $ runRequesterT a $ selectInt responses' n) na'
+      requests <- holdDyn (fmapCheap (IntMap.singleton 0) requests0) $ fmapCheap (\(n, (_, reqs)) -> fmapCheap (IntMap.singleton n) reqs) v'
+  return (result0, fmapCheap (fst . snd) v')
 
 {-# INLINE traverseIntMapWithKeyWithAdjustRequesterTWith #-}
 traverseIntMapWithKeyWithAdjustRequesterTWith :: forall t request response m v v' p.
                                         ( Reflex t
                                         , MonadHold t m
-                                        , PatchTarget (p (Event t (RequesterData request))) ~ IntMap (Event t (RequesterData request))
-                                        , Patch (p (Event t (RequesterData request)))
+                                        , PatchTarget (p (Event t (IntMap (RequesterData request)))) ~ IntMap (Event t (IntMap (RequesterData request)))
+                                        , Patch (p (Event t (IntMap (RequesterData request))))
                                         , Functor p
                                         , MonadFix m
                                         )
-                                     => (   (IntMap.Key -> v -> m (Event t (RequesterData request), v'))
-                                         -> IntMap v
-                                         -> Event t (p v)
-                                         -> RequesterT t request response m (IntMap (Event t (RequesterData request), v'), Event t (p (Event t (RequesterData request), v')))
+                                     => (   (IntMap.Key -> (IntMap.Key, v) -> m (Event t (IntMap (RequesterData request)), v'))
+                                         -> IntMap (IntMap.Key, v)
+                                         -> Event t (p (IntMap.Key, v))
+                                         -> RequesterT t request response m (IntMap (Event t (IntMap (RequesterData request)), v'), Event t (p (Event t (IntMap (RequesterData request)), v')))
                                         )
-                                     -> (p (Event t (RequesterData request)) -> IntMap (Event t (RequesterData request)))
-                                     -> (Incremental t (p (Event t (RequesterData request))) -> Event t (IntMap (RequesterData request)))
+                                     -> (p (Event t (IntMap (RequesterData request))) -> IntMap (Event t (IntMap (RequesterData request))))
+                                     -> (Incremental t (p (Event t (IntMap (RequesterData request)))) -> Event t (IntMap (IntMap (RequesterData request))))
                                      -> (IntMap.Key -> v -> RequesterT t request response m v')
                                      -> IntMap v
                                      -> Event t (p v)
                                      -> RequesterT t request response m (IntMap v', Event t (p v'))
 traverseIntMapWithKeyWithAdjustRequesterTWith base patchNewElements mergePatchIncremental f dm0 dm' = do
   rec response <- requesting' $ fmapCheap pack $ promptRequests `mappend` mergePatchIncremental requests --TODO: Investigate whether we can really get rid of the prompt stuff here
-      let responses :: EventSelectorInt t (RequesterData response)
+      let responses :: EventSelectorInt t (IntMap (RequesterData response))
           responses = fanInt $ fmapCheap unpack response
-          unpack :: Entry response Multi3 -> IntMap (RequesterData response)
+          unpack :: Entry response Multi3 -> IntMap (IntMap (RequesterData response))
           unpack = unEntry
-          pack :: IntMap (RequesterData request) -> Entry request Multi3
+          pack :: IntMap (IntMap (RequesterData request)) -> Entry request Multi3
           pack = Entry
-          f' :: IntMap.Key -> v -> m (Event t (RequesterData request), v')
-          f' k v = fmap swap $ runRequesterT (f k v) $ selectInt responses k
-      (children0, children') <- base f' dm0 dm'
+          f' :: IntMap.Key -> (Int, v) -> m (Event t (IntMap (RequesterData request)), v')
+          f' k (n, v) = do
+            (result, myRequests) <- runRequesterT (f k v) $ fmapMaybeCheap (IntMap.lookup n) $ selectInt responses k --TODO: Instead of doing fmapMaybeCheap, can we share a fanInt across all instances of a given key, or at least the ones that are adjacent in time?
+            return (fmapCheap (IntMap.singleton n) myRequests, result)
+      ndm' <- numberOccurrencesFrom 1 dm'
+      (children0, children') <- base f' (fmap ((,) 0) dm0) $ fmap (\(n, dm) -> fmap ((,) n) dm) ndm' --TODO: Avoid this somehow, probably by adding some sort of per-cohort information passing to MonadAdjust
       let result0 = fmap snd children0
           result' = fforCheap children' $ fmap snd
-          requests0 :: IntMap (Event t (RequesterData request))
+          requests0 :: IntMap (Event t (IntMap (RequesterData request)))
           requests0 = fmap fst children0
-          requests' :: Event t (p (Event t (RequesterData request)))
+          requests' :: Event t (p (Event t (IntMap (RequesterData request))))
           requests' = fforCheap children' $ fmap fst
-          promptRequests :: Event t (IntMap (RequesterData request))
+          promptRequests :: Event t (IntMap (IntMap (RequesterData request)))
           promptRequests = coincidence $ fmapCheap (mergeInt . patchNewElements) requests' --TODO: Create a mergeIncrementalPromptly, and use that to eliminate this 'coincidence'
       requests <- holdIncremental requests0 requests'
   return (result0, result')
@@ -365,8 +376,8 @@ traverseDMapWithKeyWithAdjustRequesterTWith :: forall k t request response m v v
                                         ( GCompare k
                                         , Reflex t
                                         , MonadHold t m
-                                        , PatchTarget (p' (Some k) (Event t (RequesterData request))) ~ Map (Some k) (Event t (RequesterData request))
-                                        , Patch (p' (Some k) (Event t (RequesterData request)))
+                                        , PatchTarget (p' (Some k) (Event t (IntMap (RequesterData request)))) ~ Map (Some k) (Event t (IntMap (RequesterData request)))
+                                        , Patch (p' (Some k) (Event t (IntMap (RequesterData request))))
                                         , MonadFix m
                                         )
                                      => (forall k' v1 v2. GCompare k'
@@ -375,7 +386,7 @@ traverseDMapWithKeyWithAdjustRequesterTWith :: forall k t request response m v v
                                          -> Event t (p k' v1)
                                          -> RequesterT t request response m (DMap k' v2, Event t (p k' v2))
                                         )
-                                     -> (forall v1. (forall a. v1 a -> v' a) -> p k v1 -> p k v')
+                                     -> (forall v1 v2. (forall a. v1 a -> v2 a) -> p k v1 -> p k v2)
                                      -> (forall v1 v2. (forall a. v1 a -> v2) -> p k v1 -> p' (Some k) v2)
                                      -> (forall v2. p' (Some k) v2 -> Map (Some k) v2)
                                      -> (forall a. Incremental t (p' (Some k) (Event t a)) -> Event t (Map (Some k) a))
@@ -385,22 +396,25 @@ traverseDMapWithKeyWithAdjustRequesterTWith :: forall k t request response m v v
                                      -> RequesterT t request response m (DMap k v', Event t (p k v'))
 traverseDMapWithKeyWithAdjustRequesterTWith base mapPatch weakenPatchWith patchNewElements mergePatchIncremental f dm0 dm' = do
   rec response <- requesting' $ fmapCheap pack $ promptRequests `mappend` mergePatchIncremental requests --TODO: Investigate whether we can really get rid of the prompt stuff here
-      let responses :: EventSelector t (Const2 (Some k) (RequesterData response))
+      let responses :: EventSelector t (Const2 (Some k) (IntMap (RequesterData response)))
           responses = fanMap $ fmapCheap unpack response
-          unpack :: Entry response (Multi2 k) -> Map (Some k) (RequesterData response)
+          unpack :: Entry response (Multi2 k) -> Map (Some k) (IntMap (RequesterData response))
           unpack = unEntry
-          pack :: Map (Some k) (RequesterData request) -> Entry request (Multi2 k)
+          pack :: Map (Some k) (IntMap (RequesterData request)) -> Entry request (Multi2 k)
           pack = Entry
-          f' :: forall a. k a -> v a -> m (Compose ((,) (Event t (RequesterData request))) v' a)
-          f' k v = fmap (Compose . swap) $ runRequesterT (f k v) $ select responses (Const2 (Some.This k))
-      (children0, children') <- base f' dm0 dm'
+          f' :: forall a. k a -> Compose ((,) Int) v a -> m (Compose ((,) (Event t (IntMap (RequesterData request)))) v' a)
+          f' k (Compose (n, v)) = do
+            (result, myRequests) <- runRequesterT (f k v) $ fmapMaybeCheap (IntMap.lookup n) $ select responses (Const2 (Some.This k))
+            return $ Compose (fmapCheap (IntMap.singleton n) myRequests, result)
+      ndm' <- numberOccurrencesFrom 1 dm'
+      (children0, children') <- base f' (DMap.map (\v -> Compose (0, v)) dm0) $ fmap (\(n, dm) -> mapPatch (\v -> Compose (n, v)) dm) ndm'
       let result0 = DMap.map (snd . getCompose) children0
           result' = fforCheap children' $ mapPatch $ snd . getCompose
-          requests0 :: Map (Some k) (Event t (RequesterData request))
+          requests0 :: Map (Some k) (Event t (IntMap (RequesterData request)))
           requests0 = weakenDMapWith (fst . getCompose) children0
-          requests' :: Event t (p' (Some k) (Event t (RequesterData request)))
+          requests' :: Event t (p' (Some k) (Event t (IntMap (RequesterData request))))
           requests' = fforCheap children' $ weakenPatchWith $ fst . getCompose
-          promptRequests :: Event t (Map (Some k) (RequesterData request))
+          promptRequests :: Event t (Map (Some k) (IntMap (RequesterData request)))
           promptRequests = coincidence $ fmapCheap (mergeMap . patchNewElements) requests' --TODO: Create a mergeIncrementalPromptly, and use that to eliminate this 'coincidence'
       requests <- holdIncremental requests0 requests'
   return (result0, result')
