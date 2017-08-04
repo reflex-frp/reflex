@@ -60,18 +60,28 @@ getQueryTLoweredResultValue (QueryTLoweredResult (v, _)) = v
 getQueryTLoweredResultWritten :: QueryTLoweredResult t q v -> [Behavior t q]
 getQueryTLoweredResultWritten (QueryTLoweredResult (_, w)) = w
 
+{-
+let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
+    sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
+    bs' = fmapCheap snd $ r'
+    patches = unsafeBuildIncremental (sampleBs bs0) $
+      flip pushCheap bs' $ \bs -> do
+        p <- (~~) <$> sampleBs bs <*> sample (currentIncremental patches)
+        return (Just (AdditivePatch p))
+-}
+
 instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, MonadAdjust t m) => MonadAdjust t (QueryT t q m) where
   runWithReplace (QueryT a0) a' = do
     ((r0, bs0), r') <- QueryT $ lift $ runWithReplace (runStateT a0 []) $ fmapCheap (flip runStateT [] . unQueryT) a'
-    tellQueryIncremental $
-      let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
-          sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
-          bs' = fmapCheap snd $ r'
-          patches = unsafeBuildIncremental (sampleBs bs0) $
-            flip pushCheap bs' $ \bs -> do
-              p <- (~~) <$> sampleBs bs <*> sample (currentIncremental patches)
-              return (Just (AdditivePatch p))
-      in patches
+    let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
+        sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
+        bs' = fmapCheap snd $ r'
+    bbs <- hold bs0 bs'
+    let patches = flip pushAlwaysCheap bs' $ \newBs -> do
+          oldBs <- sample bbs
+          (~~) <$> sampleBs newBs <*> sampleBs oldBs
+    QueryT $ modify $ (:) $ pull $ sampleBs =<< sample bbs
+    QueryT $ lift $ tellEvent patches
     return (r0, fmapCheap fst r')
   traverseDMapWithKeyWithAdjust :: forall (k :: * -> *) v v'. (DMap.GCompare k) => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> QueryT t q m (DMap k v', Event t (PatchDMap k v'))
   traverseDMapWithKeyWithAdjust f dm0 dm' = do
