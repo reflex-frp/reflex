@@ -12,6 +12,9 @@ module Reflex.Profiled where
 import Control.Lens hiding (children)
 import Control.Monad
 import Control.Monad.Fix
+import Control.Monad.Primitive
+import Control.Monad.Reader
+import Control.Monad.Ref
 import Data.Coerce
 import Data.Dependent.Map (DMap, GCompare)
 import Data.List
@@ -26,6 +29,8 @@ import GHC.Foreign
 import GHC.IO.Encoding
 import GHC.Stack
 import Reflex.Class
+import Reflex.PerformEvent.Class
+import Reflex.Host.Class
 
 import System.IO.Unsafe
 import Unsafe.Coerce
@@ -80,7 +85,7 @@ showProfilingData = do
   cct <- mconcat <$> mapM (uncurry toCostCentreTree) (Map.toList vals)
   printCostCentreTree cct
 
-newtype ProfiledM m a = ProfiledM (m a) deriving (Functor, Applicative, Monad, MonadFix)
+newtype ProfiledM m a = ProfiledM { runProfiledM :: m a } deriving (Functor, Applicative, Monad, MonadFix)
 
 profileEvent :: Reflex t => Event t a -> Event t a
 profileEvent e = unsafePerformIO $ do
@@ -93,10 +98,10 @@ profileEvent e = unsafePerformIO $ do
 --TODO: Instead of profiling just the input or output of each one, profile all the inputs and all the outputs
 
 instance Reflex t => Reflex (ProfiledTimeline t) where
-  newtype Behavior (ProfiledTimeline t) a = Behavior_Profiled (Behavior t a)
-  newtype Event (ProfiledTimeline t) a = Event_Profiled (Event t a)
-  newtype Dynamic (ProfiledTimeline t) a = Dynamic_Profiled (Dynamic t a)
-  newtype Incremental (ProfiledTimeline t) p = Incremental_Profiled (Incremental t p)
+  newtype Behavior (ProfiledTimeline t) a = Behavior_Profiled { unBehavior_Profiled :: Behavior t a }
+  newtype Event (ProfiledTimeline t) a = Event_Profiled { unEvent_Profiled :: Event t a }
+  newtype Dynamic (ProfiledTimeline t) a = Dynamic_Profiled { unDynamic_Profiled :: Dynamic t a }
+  newtype Incremental (ProfiledTimeline t) p = Incremental_Profiled { unIncremental_Profiled :: Incremental t p }
   type PushM (ProfiledTimeline t) = ProfiledM (PushM t)
   type PullM (ProfiledTimeline t) = ProfiledM (PullM t)
   never = Event_Profiled never
@@ -139,3 +144,51 @@ instance MonadHold t m => MonadHold (ProfiledTimeline t) (ProfiledM m) where
 
 instance MonadSample t m => MonadSample (ProfiledTimeline t) (ProfiledM m) where
   sample (Behavior_Profiled b) = ProfiledM $ sample b
+
+instance MonadTrans ProfiledM where
+  lift = ProfiledM
+
+instance MonadIO m => MonadIO (ProfiledM m) where
+  liftIO = lift . liftIO
+
+instance PerformEvent t m => PerformEvent (ProfiledTimeline t) (ProfiledM m) where
+  type Performable (ProfiledM m) = Performable m
+  performEvent_ = lift . performEvent_ . coerce
+  performEvent = lift . fmap coerce . performEvent . coerce
+
+instance MonadRef m => MonadRef (ProfiledM m) where
+  type Ref (ProfiledM m) = Ref m
+  newRef = lift . newRef
+  readRef = lift . readRef
+  writeRef r = lift . writeRef r
+
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger (ProfiledTimeline t) (ProfiledM m) where
+  newEventWithTrigger = lift . fmap coerce . newEventWithTrigger
+  newFanEventWithTrigger f = do
+    es <- lift $ newFanEventWithTrigger f
+    return $ EventSelector $ \k -> coerce $ select es k
+
+instance MonadReader r m => MonadReader r (ProfiledM m) where
+  ask = lift ask
+  local f (ProfiledM a) = ProfiledM $ local f a
+  reader = lift . reader
+
+instance ReflexHost t => ReflexHost (ProfiledTimeline t) where
+  type EventTrigger (ProfiledTimeline t) = EventTrigger t
+  type EventHandle (ProfiledTimeline t) = EventHandle t
+  type HostFrame (ProfiledTimeline t) = ProfiledM (HostFrame t)
+
+instance MonadSubscribeEvent t m => MonadSubscribeEvent (ProfiledTimeline t) (ProfiledM m) where
+  subscribeEvent = lift . subscribeEvent . coerce
+
+instance PrimMonad m => PrimMonad (ProfiledM m) where
+  type PrimState (ProfiledM m) = PrimState m
+  primitive = lift . primitive
+
+instance MonadReflexHost t m => MonadReflexHost (ProfiledTimeline t) (ProfiledM m) where
+  type ReadPhase (ProfiledM m) = ProfiledM (ReadPhase m)
+  fireEventsAndRead ts r = lift $ fireEventsAndRead ts $ coerce r
+  runHostFrame = lift . runHostFrame . coerce
+
+instance MonadReadEvent t m => MonadReadEvent (ProfiledTimeline t) (ProfiledM m) where
+  readEvent = lift . fmap coerce . readEvent
