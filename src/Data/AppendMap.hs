@@ -26,7 +26,7 @@ import Data.Semigroup
 import Data.Set (Set)
 import Data.Typeable
 import GHC.Generics (Generic)
-import Reflex (FunctorMaybe (..))
+import Reflex.Class (FunctorMaybe (..))
 import Reflex.Patch (Additive, Group (..))
 
 newtype AppendMap k m = AppendMap { _unAppendMap :: Map k m }
