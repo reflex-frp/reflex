@@ -1,0 +1,141 @@
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+module Reflex.Profiled where
+
+import Control.Lens hiding (children)
+import Control.Monad
+import Control.Monad.Fix
+import Data.Coerce
+import Data.Dependent.Map (DMap, GCompare)
+import Data.List
+import Data.FastMutableIntMap
+import Data.IORef
+import Data.Map (Map)
+import qualified Data.Map.Strict as Map
+import Data.Monoid
+import Data.Type.Coercion
+import Foreign.Ptr
+import GHC.Foreign
+import GHC.IO.Encoding
+import GHC.Stack
+import Reflex.Class
+
+import System.IO.Unsafe
+import Unsafe.Coerce
+
+data ProfiledTimeline t
+
+{-# NOINLINE profilingData #-}
+profilingData :: IORef (Map (Ptr CostCentreStack) Int)
+profilingData = unsafePerformIO $ newIORef Map.empty
+
+data CostCentreTree = CostCentreTree
+  { _costCentreTree_ownEntries :: !Int
+  , _costCentreTree_cumulativeEntries :: !Int
+  , _costCentreTree_children :: !(Map (Ptr CostCentre) CostCentreTree)
+  }
+  deriving (Show, Eq, Ord)
+
+instance Monoid CostCentreTree where
+  mempty = CostCentreTree 0 0 mempty
+  CostCentreTree oa ea ca `mappend` CostCentreTree ob eb cb = CostCentreTree (oa + ob) (ea + eb) $ Map.unionWith (<>) ca cb
+
+getCostCentreStack :: Ptr CostCentreStack -> IO [Ptr CostCentre]
+getCostCentreStack = go []
+  where go l ccs = if ccs == nullPtr
+          then return l
+          else do
+          cc <- ccsCC ccs
+          parent <- ccsParent ccs
+          go (cc : l) parent
+
+toCostCentreTree :: Ptr CostCentreStack -> Int -> IO CostCentreTree
+toCostCentreTree ccs n = do
+  ccList <- getCostCentreStack ccs
+  return $ foldr (\cc child -> CostCentreTree 0 n $ Map.singleton cc child) (CostCentreTree n n mempty) ccList
+
+printCostCentreTree :: CostCentreTree -> IO ()
+printCostCentreTree = go 0
+  where go depth cct = do
+          let children = sortOn (_costCentreTree_cumulativeEntries . snd) $ Map.toList $ _costCentreTree_children cct
+              indent = mconcat $ replicate depth "  "
+          forM_ children $ \(cc, childCct) -> do
+            lbl <- peekCString utf8 =<< ccLabel cc
+            mdl <- peekCString utf8 =<< ccModule cc
+            loc <- peekCString utf8 =<< ccSrcSpan cc
+            let description = mdl <> "." <> lbl <> " (" <> loc <> ")"
+            putStrLn $ indent <> description <> "\t" <> show (_costCentreTree_cumulativeEntries childCct) <> "\t" <> show (_costCentreTree_ownEntries childCct)
+            go (succ depth) childCct
+
+showProfilingData :: IO ()
+showProfilingData = do
+  vals <- readIORef profilingData
+  cct <- mconcat <$> mapM (uncurry toCostCentreTree) (Map.toList vals)
+  printCostCentreTree cct
+
+newtype ProfiledM m a = ProfiledM (m a) deriving (Functor, Applicative, Monad, MonadFix)
+
+profileEvent :: Reflex t => Event t a -> Event t a
+profileEvent e = unsafePerformIO $ do
+  stack <- getCurrentCCS e
+  let f x = unsafePerformIO $ do
+        modifyIORef' profilingData $ Map.insertWith (+) stack 1
+        return $ return $ Just x
+  return $ pushCheap f e
+
+--TODO: Instead of profiling just the input or output of each one, profile all the inputs and all the outputs
+
+instance Reflex t => Reflex (ProfiledTimeline t) where
+  newtype Behavior (ProfiledTimeline t) a = Behavior_Profiled (Behavior t a)
+  newtype Event (ProfiledTimeline t) a = Event_Profiled (Event t a)
+  newtype Dynamic (ProfiledTimeline t) a = Dynamic_Profiled (Dynamic t a)
+  newtype Incremental (ProfiledTimeline t) p = Incremental_Profiled (Incremental t p)
+  type PushM (ProfiledTimeline t) = ProfiledM (PushM t)
+  type PullM (ProfiledTimeline t) = ProfiledM (PullM t)
+  never = Event_Profiled never
+  constant = Behavior_Profiled . constant
+  push f (Event_Profiled e) = coerce $ push (coerce f) $ profileEvent e -- Profile before rather than after; this way fanout won't count against us
+  pushCheap f (Event_Profiled e) = coerce $ pushCheap (coerce f) $ profileEvent e
+  pull = Behavior_Profiled . pull . coerce
+  merge :: forall k. GCompare k => DMap k (Event (ProfiledTimeline t)) -> Event (ProfiledTimeline t) (DMap k Identity)
+  merge = Event_Profiled . merge . (unsafeCoerce :: DMap k (Event (ProfiledTimeline t)) -> DMap k (Event t))
+  fan (Event_Profiled e) = EventSelector $ coerce $ select (fan $ profileEvent e)
+  switch (Behavior_Profiled b) = coerce $ profileEvent $ switch (coerceBehavior b)
+  coincidence (Event_Profiled e) = coerce $ profileEvent $ coincidence (coerceEvent e)
+  current (Dynamic_Profiled d) = coerce $ current d
+  updated (Dynamic_Profiled d) = coerce $ profileEvent $ updated d
+  unsafeBuildDynamic (ProfiledM a0) (Event_Profiled a') = coerce $ unsafeBuildDynamic a0 a'
+  unsafeBuildIncremental (ProfiledM a0) (Event_Profiled a') = coerce $ unsafeBuildIncremental a0 a'
+  mergeIncremental = Event_Profiled . mergeIncremental . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchDMap k (Event (ProfiledTimeline t))) -> Incremental t (PatchDMap k (Event t)))
+  mergeIncrementalWithMove = Event_Profiled . mergeIncrementalWithMove . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchDMapWithMove k (Event (ProfiledTimeline t))) -> Incremental t (PatchDMapWithMove k (Event t)))
+  currentIncremental (Incremental_Profiled i) = coerce $ currentIncremental i
+  updatedIncremental (Incremental_Profiled i) = coerce $ profileEvent $ updatedIncremental i
+  incrementalToDynamic (Incremental_Profiled i) = coerce $ incrementalToDynamic i
+  behaviorCoercion (c :: Coercion a b) = case behaviorCoercion c :: Coercion (Behavior t a) (Behavior t b) of
+    Coercion -> unsafeCoerce (Coercion :: Coercion (Behavior (ProfiledTimeline t) a) (Behavior (ProfiledTimeline t) a)) --TODO: Figure out how to make this typecheck without the unsafeCoerce
+  eventCoercion (c :: Coercion a b) = case eventCoercion c :: Coercion (Event t a) (Event t b) of
+    Coercion -> unsafeCoerce (Coercion :: Coercion (Event (ProfiledTimeline t) a) (Event (ProfiledTimeline t) a)) --TODO: Figure out how to make this typecheck without the unsafeCoerce
+  dynamicCoercion (c :: Coercion a b) = case dynamicCoercion c :: Coercion (Dynamic t a) (Dynamic t b) of
+    Coercion -> unsafeCoerce (Coercion :: Coercion (Dynamic (ProfiledTimeline t) a) (Dynamic (ProfiledTimeline t) a)) --TODO: Figure out how to make this typecheck without the unsafeCoerce
+  mergeIntIncremental = Event_Profiled . mergeIntIncremental . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchIntMap (Event (ProfiledTimeline t) a)) -> Incremental t (PatchIntMap (Event t a)))
+  fanInt (Event_Profiled e) = coerce $ fanInt $ profileEvent e
+
+deriving instance Functor (Dynamic t) => Functor (Dynamic (ProfiledTimeline t))
+deriving instance Applicative (Dynamic t) => Applicative (Dynamic (ProfiledTimeline t))
+deriving instance Monad (Dynamic t) => Monad (Dynamic (ProfiledTimeline t))
+
+instance MonadHold t m => MonadHold (ProfiledTimeline t) (ProfiledM m) where
+  hold v0 (Event_Profiled v') = ProfiledM $ Behavior_Profiled <$> hold v0 v'
+  holdDyn v0 (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> holdDyn v0 v'
+  holdIncremental v0 (Event_Profiled v') = ProfiledM $ Incremental_Profiled <$> holdIncremental v0 v'
+  buildDynamic (ProfiledM v0) (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> buildDynamic v0 v'
+
+instance MonadSample t m => MonadSample (ProfiledTimeline t) (ProfiledM m) where
+  sample (Behavior_Profiled b) = ProfiledM $ sample b

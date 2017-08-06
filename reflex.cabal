@@ -96,6 +96,7 @@ library
     Reflex.PerformEvent.Class,
     Reflex.PostBuild.Base,
     Reflex.PostBuild.Class,
+    Reflex.Profiled,
     Reflex.Query.Base,
     Reflex.Query.Class,
     Reflex.Requester.Base,
