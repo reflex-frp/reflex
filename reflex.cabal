@@ -180,7 +180,7 @@ test-suite hlint
                , directory
                , filepath
                , filemanip
-               , hlint == 1.9.*
+               , hlint
   if impl(ghcjs)
     buildable: False
 
