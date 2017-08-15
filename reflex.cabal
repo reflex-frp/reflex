@@ -98,6 +98,7 @@ library
     Reflex.Requester.Class,
     Reflex.Spider,
     Reflex.Spider.Internal,
+    Reflex.Time,
     Reflex.Widget.Basic
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
