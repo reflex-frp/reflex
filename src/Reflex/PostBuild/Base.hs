@@ -125,9 +125,9 @@ instance (Reflex t, MonadHold t m, MonadFix m, MonadAdjust t m, PerformEvent t m
 
 {-# INLINABLE mapIntMapWithAdjustImpl #-}
 mapIntMapWithAdjustImpl :: forall t m v v' p. (Reflex t, MonadFix m, MonadHold t m, Functor p)
-  => (   (IntMap.Key -> ((Bool, Event t ()), v) -> m v')
-      -> IntMap ((Bool, Event t ()), v)
-      -> Event t (p ((Bool, Event t ()), v))
+  => (   (IntMap.Key -> (Event t (), v) -> m v')
+      -> IntMap (Event t (), v)
+      -> Event t (p (Event t (), v))
       -> m (IntMap v', Event t (p v'))
      )
   -> (IntMap.Key -> v -> PostBuildT t m v')
@@ -136,17 +136,17 @@ mapIntMapWithAdjustImpl :: forall t m v v' p. (Reflex t, MonadFix m, MonadHold t
   -> PostBuildT t m (IntMap v', Event t (p v'))
 mapIntMapWithAdjustImpl base f dm0 dm' = do
   postBuild <- getPostBuild
-  let loweredDm0 = fmap ((,) (False, postBuild)) dm0
-      f' :: IntMap.Key -> ((Bool, Event t ()), v) -> m v'
-      f' k ((shouldHeadE, e), v) = do
-        eOnce <- if shouldHeadE
-          then headE e --TODO: Avoid doing this headE so many times; once per loweredDm' firing ought to be OK, but it's not totally trivial to do because result' might be firing at the same time, and we don't want *that* to be the postBuild occurrence
-          else return e
-        runPostBuildT (f k v) eOnce
+  let loweredDm0 = fmap ((,) postBuild) dm0
+      f' :: IntMap.Key -> (Event t (), v) -> m v'
+      f' k (e, v) = do
+        runPostBuildT (f k v) e
   lift $ do
     rec (result0, result') <- base f' loweredDm0 loweredDm'
-        let voidResult' = fmapCheap (\_ -> ()) result'
-        let loweredDm' = ffor dm' $ fmap ((,) (True, voidResult'))
+        cohortDone <- numberOccurrencesFrom_ 1 result'
+        numberedDm' <- numberOccurrencesFrom 1 dm'
+        let postBuild' = fanInt $ fmapCheap (\n -> IntMap.singleton n ()) cohortDone
+            loweredDm' = flip pushAlways numberedDm' $ \(n, p) -> do
+              return $ fmap ((,) (selectInt postBuild' n)) p
     return (result0, result')
 
 {-# INLINABLE mapDMapWithAdjustImpl #-}

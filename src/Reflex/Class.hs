@@ -101,6 +101,7 @@ module Reflex.Class
   , zipListWithEvent
   , numberOccurrences
   , numberOccurrencesFrom
+  , numberOccurrencesFrom_
   , (<@>)
   , (<@)
   , headE
@@ -655,7 +656,7 @@ attachWithMaybe f b e = flip push e $ \o -> (`f` o) <$> sample b
 -- the supplied 'Event'.
 headE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
 headE e = do
-  rec be <- hold e $ fmap (const never) e'
+  rec be <- hold e $ fmapCheap (const never) e'
       let e' = switch be
   return e'
 
@@ -1036,6 +1037,10 @@ numberOccurrences = numberOccurrencesFrom 0
 -- | Assign a number to each occurence of the given 'Event'
 numberOccurrencesFrom :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t (b, a))
 numberOccurrencesFrom = mapAccum_ (\n a -> (n + 1, (n, a)))
+
+-- | Assign a number to each occurence of the given 'Event'; discard the occurrences' values
+numberOccurrencesFrom_ :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t b)
+numberOccurrencesFrom_ = mapAccum_ (\n a -> (n + 1, n))
 
 -- | This is used to sample the value of a 'Behavior' using an 'Event'.
 --
