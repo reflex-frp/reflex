@@ -33,7 +33,7 @@ import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
-import Control.Monad.Trans.Control
+import qualified Control.Monad.Trans.Control as TransControl
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Compose
@@ -54,13 +54,6 @@ instance PrimMonad m => PrimMonad (PostBuildT x m) where
   type PrimState (PostBuildT x m) = PrimState m
   primitive = lift . primitive
 
-instance MonadTransControl (PostBuildT t) where
-  type StT (PostBuildT t) a = StT (ReaderT (Event t ())) a
-  {-# INLINABLE liftWith #-}
-  liftWith = defaultLiftWith PostBuildT unPostBuildT
-  {-# INLINABLE restoreT #-}
-  restoreT = defaultRestoreT PostBuildT
-
 instance (Reflex t, Monad m) => PostBuild t (PostBuildT t m) where
   {-# INLINABLE getPostBuild #-}
   getPostBuild = PostBuildT ask
@@ -78,11 +71,11 @@ instance MonadHold t m => MonadHold t (PostBuildT t m) where
   holdIncremental v0 = lift . holdIncremental v0
 
 instance PerformEvent t m => PerformEvent t (PostBuildT t m) where
-  type Performable (PostBuildT t m) = PostBuildT t (Performable m)
+  type Performable (PostBuildT t m) = Performable m
   {-# INLINABLE performEvent_ #-}
-  performEvent_ e = liftWith $ \run -> performEvent_ $ fmap run e
+  performEvent_ = lift . performEvent_
   {-# INLINABLE performEvent #-}
-  performEvent e = liftWith $ \run -> performEvent $ fmap run e
+  performEvent = lift . performEvent
 
 instance (ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigger t (PostBuildT t m) where
   {-# INLINABLE newEventWithTrigger #-}
@@ -175,3 +168,15 @@ mapDMapWithAdjustImpl base mapPatch f dm0 dm' = do
         let voidResult' = fmapCheap (\_ -> ()) result'
         let loweredDm' = ffor dm' $ mapPatch (Compose . (,) (True, voidResult'))
     return (result0, result')
+
+--------------------------------------------------------------------------------
+-- Deprecated functionality
+--------------------------------------------------------------------------------
+
+-- | Deprecated
+instance TransControl.MonadTransControl (PostBuildT t) where
+  type StT (PostBuildT t) a = TransControl.StT (ReaderT (Event t ())) a
+  {-# INLINABLE liftWith #-}
+  liftWith = TransControl.defaultLiftWith PostBuildT unPostBuildT
+  {-# INLINABLE restoreT #-}
+  restoreT = TransControl.defaultRestoreT PostBuildT
