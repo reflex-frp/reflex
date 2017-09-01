@@ -1040,7 +1040,7 @@ numberOccurrencesFrom = mapAccum_ (\n a -> (n + 1, (n, a)))
 
 -- | Assign a number to each occurence of the given 'Event'; discard the occurrences' values
 numberOccurrencesFrom_ :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t b)
-numberOccurrencesFrom_ = mapAccum_ (\n a -> (n + 1, n))
+numberOccurrencesFrom_ = mapAccum_ (\n _ -> (n + 1, n))
 
 -- | This is used to sample the value of a 'Behavior' using an 'Event'.
 --
