@@ -1045,10 +1045,10 @@ numberOccurrencesFrom_ = mapAccum_ (\n _ -> (n + 1, n))
 
 -- | This is used to sample the value of a 'Behavior' using an 'Event'.
 --
--- The '<@>' operator is intended to be used in conjunction with 
+-- The '<@>' operator is intended to be used in conjunction with
 -- the 'Applicative' instance for 'Behavior'.
 --
--- This is useful when we want to combine the values of one 'Event' and 
+-- This is useful when we want to combine the values of one 'Event' and
 -- the value of several 'Behavior's at the time the 'Event' is firing.
 --
 -- If we have:
@@ -1068,7 +1068,7 @@ numberOccurrencesFrom_ = mapAccum_ (\n _ -> (n + 1, n))
 --
 -- > attachWith (\(x1, x2) y -> f x1 x2 y) ((,) <$> b1 <*> b2) e :: Event t d
 --
--- or a variation involing a custom data type to hold the combination of 
+-- or a variation involing a custom data type to hold the combination of
 -- 'Behavior's even when that combination might only ever be used by 'f'.
 --
 -- A more suggestive example might be:
@@ -1085,8 +1085,8 @@ infixl 4 <@>
 --
 -- Alternatively, it is 'tag' in operator form.
 --
--- This is useful when we want to combine the values of several 
--- 'Behavior's at particular points in time using an 'Applicative' 
+-- This is useful when we want to combine the values of several
+-- 'Behavior's at particular points in time using an 'Applicative'
 -- style syntax.
 --
 -- If we have:
@@ -1097,16 +1097,16 @@ infixl 4 <@>
 -- > e  :: Event t c
 --
 -- where 'e' is firing at the points in time of interest.
--- 
+--
 -- Then we can use '<@':
 --
 -- > g <$> b1 <*> b2 <@  e :: Event t d
 --
--- to combine the values of 'b1' and 'b2' at each of those points of time, 
+-- to combine the values of 'b1' and 'b2' at each of those points of time,
 -- with the function 'g' being used to combine the values.
 --
 -- This is the same as '<@>' except that the 'Event' is being used only
--- to act as a trigger. 
+-- to act as a trigger.
 (<@) :: (Reflex t) => Behavior t b -> Event t a -> Event t b
 (<@) = tag
 infixl 4 <@
