@@ -60,7 +60,6 @@ import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Unique.Tag
 import Data.Some (Some)
-import Data.Tuple
 import Data.Type.Equality
 import Data.Proxy
 
@@ -76,7 +75,7 @@ newtype RequesterData f = RequesterData (TagMap (Entry f))
 data RequesterDataKey a where
   RequesterDataKey_Single :: {-# UNPACK #-} !(MyTag (Single a)) -> RequesterDataKey a
   RequesterDataKey_Multi :: {-# UNPACK #-} !(MyTag Multi) -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a --TODO: Don't put a second Int here (or in the other Multis); use a single Int instead
-  RequesterDataKey_Multi2 :: {-# UNPACK #-} !(MyTag (Multi2 k)) -> {-# UNPACK #-} !(Some k) -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a
+  RequesterDataKey_Multi2 :: {-# UNPACK #-} !(MyTag (Multi2 k)) -> !(Some k) -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a
   RequesterDataKey_Multi3 :: {-# UNPACK #-} !(MyTag Multi3) -> {-# UNPACK #-} !Int -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a
 
 singletonRequesterData :: RequesterDataKey a -> f a -> RequesterData f
