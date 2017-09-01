@@ -100,6 +100,8 @@ module Reflex.Class
   , FunctorMaybe (..)
   , fforMaybe
   , ffilter
+  , filterLeft
+  , filterRight
     -- * Miscellaneous convenience functions
   , ffor
   , MonadAdjust (..)
@@ -574,6 +576,14 @@ fforMaybe = flip fmapMaybe
 -- Relies on 'fforMaybe'.
 ffilter :: FunctorMaybe f => (a -> Bool) -> f a -> f a
 ffilter f = fmapMaybe $ \x -> if f x then Just x else Nothing
+
+-- | Filter 'Left's from 'f (Either a b)' into 'a'.
+filterLeft :: FunctorMaybe f => f (Either a b) -> f a
+filterLeft = fmapMaybe (either Just (const Nothing))
+
+-- | Filter 'Right's from 'f (Either a b)' into 'b'.
+filterRight :: FunctorMaybe f => f (Either a b) -> f b
+filterRight = fmapMaybe (either (const Nothing) Just)
 
 -- | Left-biased event union (prefers left event on simultaneous
 -- occurrence).
