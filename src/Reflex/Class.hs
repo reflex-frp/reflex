@@ -731,10 +731,9 @@ mergeWith = mergeWith' id
 
 {-# INLINE mergeWith' #-}
 mergeWith' :: Reflex t => (a -> b) -> (b -> b -> b) -> [Event t a] -> Event t b
-mergeWith' f g es = fmap (Prelude.foldl1 g . map (\(Const2 _ :=> Identity v) -> f v) . DMap.toList)
-                  . merge
-                  . DMap.fromDistinctAscList
-                  . map (\(k, v) -> Const2 k :=> v)
+mergeWith' f g es = fmap (Prelude.foldl1 g . fmap f)
+                  . mergeInt
+                  . IntMap.fromDistinctAscList
                   $ zip [0 :: Int ..] es
 
 -- | Create a new 'Event' that occurs if at least one of the 'Event's in the
@@ -968,6 +967,8 @@ mapAccumMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (a, c)
 mapAccumMB f = mapAccumMaybeMB $ \v o -> bimap Just Just <$> f v o
 mapAccumMaybeB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (Maybe a, Maybe c)) -> a -> Event t b -> m (Behavior t a, Event t c)
 mapAccumMaybeB f = mapAccumMaybeMB $ \v o -> return $ f v o
+
+{-# INLINABLE mapAccumMaybeMB #-}
 mapAccumMaybeMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Behavior t a, Event t c)
 mapAccumMaybeMB f z e = do
   rec let e' = flip push e $ \o -> do
@@ -1186,10 +1187,9 @@ mergeWithCheap' f g = mergeWithFoldCheap' $ foldl1 g . fmap f
 {-# INLINE mergeWithFoldCheap' #-}
 mergeWithFoldCheap' :: Reflex t => (NonEmpty a -> b) -> [Event t a] -> Event t b
 mergeWithFoldCheap' f es =
-  fmapCheap (f . (\(h : t) -> h :| t) . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList)
-  . merge
-  . DMap.fromDistinctAscList
-  . map (\(k, v) -> Const2 k :=> v)
+  fmapCheap (f . (\(h : t) -> h :| t) . IntMap.elems)
+  . mergeInt
+  . IntMap.fromDistinctAscList
   $ zip [0 :: Int ..] es
 
 --------------------------------------------------------------------------------
