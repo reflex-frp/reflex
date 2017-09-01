@@ -266,7 +266,7 @@ data CacheSubscribed x a
 --TODO: Try a caching strategy where we subscribe directly to the parent when
 --there's only one subscriber, and then build our own FastWeakBag only when a second
 --subscriber joins
-{-# NOINLINE cacheEvent #-}
+{-# NOINLINE [0] cacheEvent #-}
 cacheEvent :: forall x a. HasSpiderTimeline x => Event x a -> Event x a
 cacheEvent e =
 #ifdef DEBUG_TRACE_EVENTS
@@ -2330,7 +2330,9 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   eventCoercion Coercion = Coercion
   behaviorCoercion Coercion = Coercion
   dynamicCoercion = unsafeCoerce --TODO: How can we avoid this unsafeCoerce?  This is safe only because we know how Identity works as a Patch instance
+  {-# INLINABLE mergeIntIncremental #-}
   mergeIntIncremental = SpiderEvent . mergeInt . (unsafeCoerce :: Dynamic x (PatchIntMap (R.Event (SpiderTimeline x) a)) -> Dynamic x (PatchIntMap (Event x a))) . unSpiderIncremental
+  {-# INLINABLE fanInt #-}
   fanInt e = R.EventSelectorInt $ SpiderEvent . selectInt (fanInt (unSpiderEvent e))
 #endif
 
