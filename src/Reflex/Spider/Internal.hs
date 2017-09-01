@@ -1500,7 +1500,7 @@ fanInt p =
       t <- liftIO $ FastWeakBag.insert sub b
       currentOcc <- readIORef (_fanInt_occRef self)
       (EventSubscription _ (EventSubscribed !heightRef _)) <- readIORef (_fanInt_subscriptionRef self)
-      return (EventSubscription (FastWeakBag.remove t) $! EventSubscribed heightRef $! toAny $! (_fanInt_subscriptionRef self, t), IntMap.lookup k currentOcc)
+      return (EventSubscription (FastWeakBag.remove t) $! EventSubscribed heightRef $! toAny (_fanInt_subscriptionRef self, t), IntMap.lookup k currentOcc)
 
 {-# INLINABLE getFanSubscribed #-}
 getFanSubscribed :: (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderTimeline x, m ~ EventM x, GCompare k) => k a -> Fan x k -> Subscriber x a -> m (WeakBagTicket, FanSubscribed x k, Maybe a)
