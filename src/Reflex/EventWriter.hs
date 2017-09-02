@@ -128,9 +128,16 @@ instance MonadSample t m => MonadSample t (EventWriterT t w m) where
   sample = lift . sample
 
 instance MonadHold t m => MonadHold t (EventWriterT t w m) where
+  {-# INLINABLE hold #-}
   hold v0 = lift . hold v0
+  {-# INLINABLE holdDyn #-}
   holdDyn v0 = lift . holdDyn v0
+  {-# INLINABLE holdIncremental #-}
   holdIncremental v0 = lift . holdIncremental v0
+  {-# INLINABLE buildDynamic #-}
+  buildDynamic a0 = lift . buildDynamic a0
+  {-# INLINABLE headE #-}
+  headE = lift . headE
 
 instance (Reflex t, MonadAdjust t m, MonadHold t m, Semigroup w) => MonadAdjust t (EventWriterT t w m) where
   runWithReplace = runWithReplaceEventWriterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'

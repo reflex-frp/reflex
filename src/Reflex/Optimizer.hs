@@ -31,7 +31,12 @@ plugin :: Plugin
 plugin = defaultPlugin { installCoreToDos = install }
 
 install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
-install [] p = return $ makeInlinable : p
+install [] p = do
+  liftIO $ putStrLn $ showSDocUnsafe $ ppr p
+  let f = \case
+        simpl@(CoreDoSimplify _ _) -> [CoreDoSpecialising, simpl]
+        x -> [x]
+  return $ makeInlinable : concatMap f p
 install options@(_:_) p = do
   warnMsg $ "Reflex.Optimizer: ignoring " <> fromString (show $ length options) <> " command-line options"
   install [] p

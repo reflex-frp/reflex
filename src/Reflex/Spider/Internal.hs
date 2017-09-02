@@ -254,6 +254,43 @@ pushCheap !f e = Event $ \sub -> do
   occ' <- join <$> mapM f occ
   return (subscription, occ')
 
+-- | A subscriber that never triggers other 'Event's
+{-# INLINE terminalSubscriber #-}
+terminalSubscriber :: (a -> EventM x ()) -> Subscriber x a
+terminalSubscriber p = Subscriber
+  { subscriberPropagate = p
+  , subscriberInvalidateHeight = \_ -> return ()
+  , subscriberRecalculateHeight = \_ -> return ()
+  }
+
+-- | Subscribe to an Event only for the duration of one occurrence
+{-# INLINE subscribeAndReadHead #-}
+subscribeAndReadHead :: Event x a -> Subscriber x a -> EventM x (EventSubscription x, Maybe a)
+subscribeAndReadHead e sub = do
+  subscriptionRef <- liftIO $ newIORef $ error "subscribeAndReadHead: not initialized"
+  (subscription, occ) <- subscribeAndRead e $ sub
+    { subscriberPropagate = \a -> do
+        liftIO $ unsubscribe =<< readIORef subscriptionRef
+        subscriberPropagate sub a
+    }
+  liftIO $ case occ of
+    Nothing -> writeIORef subscriptionRef $! subscription
+    Just _ -> unsubscribe subscription
+  return (subscription, occ)
+
+--TODO: Make this lazy in its input event
+headE :: (MonadIO m, Defer (SomeMergeInit x) m) => Event x a -> m (Event x a)
+headE originalE = do
+  parent <- liftIO $ newIORef $ Just originalE
+  defer $ SomeMergeInit $ do --TODO: Rename SomeMergeInit appropriately
+    let clearParent = liftIO $ writeIORef parent Nothing
+    (_, occ) <- subscribeAndReadHead originalE $ terminalSubscriber $ \_ -> clearParent
+    when (isJust occ) clearParent
+  return $ Event $ \sub -> do
+    liftIO (readIORef parent) >>= \case
+      Nothing -> return (EventSubscription (return ()) $ EventSubscribed zeroRef $ toAny (), Nothing)
+      Just e -> subscribeAndReadHead e sub
+
 data CacheSubscribed x a
    = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
                      , _cacheSubscribed_parent :: {-# UNPACK #-} !(EventSubscription x)

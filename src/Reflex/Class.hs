@@ -104,7 +104,6 @@ module Reflex.Class
   , numberOccurrencesFrom_
   , (<@>)
   , (<@)
-  , headE
   , tailE
   , headTailE
   , takeWhileE
@@ -459,6 +458,14 @@ class MonadSample t m => MonadHold t m where
   buildDynamic :: PullM t a -> Event t a -> m (Dynamic t a)
   default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PullM t a -> Event t a -> m (Dynamic t a)
   buildDynamic getV0 = lift . buildDynamic getV0
+  -- | Create a new 'Event' that only occurs only once, on the first occurence of
+  -- the supplied 'Event'.
+  headE :: Event t a -> m (Event t a)
+  default headE :: (Reflex t, MonadFix m) => Event t a -> m (Event t a)
+  headE e = do
+    rec be <- hold e $ fmapCheap (const never) e'
+        let e' = switch be
+    return e'
 
 -- | An 'EventSelector' allows you to efficiently 'select' an 'Event' based on a
 -- key.  This is much more efficient than filtering for each key with
@@ -488,6 +495,7 @@ instance MonadHold t m => MonadHold t (ReaderT r m) where
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
+  headE = lift . headE
 
 instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
   sample = lift . sample
@@ -497,6 +505,7 @@ instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
+  headE = lift . headE
 
 instance MonadSample t m => MonadSample t (StateT s m) where
   sample = lift . sample
@@ -506,6 +515,7 @@ instance MonadHold t m => MonadHold t (StateT s m) where
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
+  headE = lift . headE
 
 instance MonadSample t m => MonadSample t (ExceptT e m) where
   sample = lift . sample
@@ -514,6 +524,8 @@ instance MonadHold t m => MonadHold t (ExceptT e m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
+  buildDynamic a0 = lift . buildDynamic a0
+  headE = lift . headE
 
 instance (MonadSample t m, Monoid w) => MonadSample t (RWST r w s m) where
   sample = lift . sample
@@ -522,6 +534,8 @@ instance (MonadHold t m, Monoid w) => MonadHold t (RWST r w s m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
+  buildDynamic a0 = lift . buildDynamic a0
+  headE = lift . headE
 
 instance MonadSample t m => MonadSample t (ContT r m) where
   sample = lift . sample
@@ -530,6 +544,8 @@ instance MonadHold t m => MonadHold t (ContT r m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
+  buildDynamic a0 = lift . buildDynamic a0
+  headE = lift . headE
 
 --------------------------------------------------------------------------------
 -- Convenience functions
@@ -651,14 +667,6 @@ attachWith f = attachWithMaybe $ \a b -> Just $ f a b
 -- Nothing
 attachWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Behavior t a -> Event t b -> Event t c
 attachWithMaybe f b e = flip push e $ \o -> (`f` o) <$> sample b
-
--- | Create a new 'Event' that only occurs only once, on the first occurence of
--- the supplied 'Event'.
-headE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
-headE e = do
-  rec be <- hold e $ fmapCheap (const never) e'
-      let e' = switch be
-  return e'
 
 -- | Create a new 'Event' that occurs on all but the first occurence of the
 -- supplied 'Event'.
