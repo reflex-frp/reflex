@@ -638,6 +638,8 @@ instance Reflex t => Bind (Event t) where
 instance Reflex t => Functor (Event t) where
   {-# INLINE fmap #-}
   fmap f = fmapMaybe $ Just . f
+  {-# INLINE (<$) #-}
+  x <$ e = fmapCheap (const x) e
 
 instance Reflex t => FunctorMaybe (Event t) where
   {-# INLINE fmapMaybe #-}
@@ -956,12 +958,16 @@ mapAccumMaybeMDyn f z e = do
       d' <- holdDyn z $ fmapMaybe fst e'
   return (d', fmapMaybe snd e')
 
+{-# INLINE accumB #-}
 accumB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> a) -> a -> Event t b -> m (Behavior t a)
 accumB f = accumMaybeB $ \v o -> Just $ f v o
+{-# INLINE accumMB #-}
 accumMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t a) -> a -> Event t b -> m (Behavior t a)
 accumMB f = accumMaybeMB $ \v o -> Just <$> f v o
+{-# INLINE accumMaybeB #-}
 accumMaybeB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> Maybe a) -> a -> Event t b -> m (Behavior t a)
 accumMaybeB f = accumMaybeMB $ \v o -> return $ f v o
+{-# INLINE accumMaybeMB #-}
 accumMaybeMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a)) -> a -> Event t b -> m (Behavior t a)
 accumMaybeMB f z e = do
   rec let e' = flip push e $ \o -> do
@@ -969,14 +975,17 @@ accumMaybeMB f z e = do
             f v o
       d' <- hold z e'
   return d'
+{-# INLINE mapAccumB #-}
 mapAccumB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (a, c)) -> a -> Event t b -> m (Behavior t a, Event t c)
 mapAccumB f = mapAccumMaybeB $ \v o -> bimap Just Just $ f v o
+{-# INLINE mapAccumMB #-}
 mapAccumMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (a, c)) -> a -> Event t b -> m (Behavior t a, Event t c)
 mapAccumMB f = mapAccumMaybeMB $ \v o -> bimap Just Just <$> f v o
+{-# INLINE mapAccumMaybeB #-}
 mapAccumMaybeB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (Maybe a, Maybe c)) -> a -> Event t b -> m (Behavior t a, Event t c)
 mapAccumMaybeB f = mapAccumMaybeMB $ \v o -> return $ f v o
 
-{-# INLINABLE mapAccumMaybeMB #-}
+{-# INLINE mapAccumMaybeMB #-}
 mapAccumMaybeMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Behavior t a, Event t c)
 mapAccumMaybeMB f z e = do
   rec let e' = flip push e $ \o -> do
@@ -990,6 +999,7 @@ mapAccumMaybeMB f z e = do
 
 -- | Accumulate occurrences of an 'Event', producing an output occurrence each
 -- time.  Discard the underlying 'Accumulator'.
+{-# INLINE mapAccum_ #-}
 mapAccum_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (a, c)) -> a -> Event t b -> m (Event t c)
 mapAccum_ f z e = do
   (_, result) <- mapAccumB f z e
@@ -997,6 +1007,7 @@ mapAccum_ f z e = do
 
 -- | Accumulate occurrences of an 'Event', possibly producing an output
 -- occurrence each time.  Discard the underlying 'Accumulator'.
+{-# INLINE mapAccumMaybe_ #-}
 mapAccumMaybe_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (Maybe a, Maybe c)) -> a -> Event t b -> m (Event t c)
 mapAccumMaybe_ f z e = do
   (_, result) <- mapAccumMaybeB f z e
@@ -1004,6 +1015,7 @@ mapAccumMaybe_ f z e = do
 
 -- | Accumulate occurrences of an 'Event', using a 'PushM' action and producing
 -- an output occurrence each time.  Discard the underlying 'Accumulator'.
+{-# INLINE mapAccumM_ #-}
 mapAccumM_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (a, c)) -> a -> Event t b -> m (Event t c)
 mapAccumM_ f z e = do
   (_, result) <- mapAccumMB f z e
@@ -1012,6 +1024,7 @@ mapAccumM_ f z e = do
 -- | Accumulate occurrences of an 'Event', using a 'PushM' action and possibly
 -- producing an output occurrence each time.  Discard the underlying
 -- 'Accumulator'.
+{-# INLINE mapAccumMaybeM_ #-}
 mapAccumMaybeM_ :: forall t m a b c. (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Event t c)
 mapAccumMaybeM_ f z e = do
   (_, result) <- mapAccumMaybeMB f z e
@@ -1040,14 +1053,17 @@ zipListWithEvent f l e = do
   mapAccumMaybe_ f' l e
 
 -- | Assign a number to each occurence of the given 'Event', starting from 0
+{-# INLINE numberOccurrences #-}
 numberOccurrences :: (Reflex t, MonadHold t m, MonadFix m, Num b) => Event t a -> m (Event t (b, a))
 numberOccurrences = numberOccurrencesFrom 0
 
 -- | Assign a number to each occurence of the given 'Event'
+{-# INLINE numberOccurrencesFrom #-}
 numberOccurrencesFrom :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t (b, a))
 numberOccurrencesFrom = mapAccum_ (\n a -> (n + 1, (n, a)))
 
 -- | Assign a number to each occurence of the given 'Event'; discard the occurrences' values
+{-# INLINE numberOccurrencesFrom_ #-}
 numberOccurrencesFrom_ :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t b)
 numberOccurrencesFrom_ = mapAccum_ (\n _ -> (n + 1, n))
 

@@ -395,7 +395,7 @@ eventDyn :: (HasSpiderTimeline x, Patch p) => Dyn x p -> Event x p
 eventDyn !j = Event $ \sub -> getDynHold j >>= \h -> subscribeHoldEvent h sub
 
 {-# INLINE subscribeCoincidenceInner #-}
-subscribeCoincidenceInner :: CanSubscribe x m => Event x a -> Height -> CoincidenceSubscribed x a -> m (Maybe a, Height, EventSubscribed x)
+subscribeCoincidenceInner :: HasSpiderTimeline x => Event x a -> Height -> CoincidenceSubscribed x a -> EventM x (Maybe a, Height, EventSubscribed x)
 subscribeCoincidenceInner inner outerHeight subscribedUnsafe = do
   subInner <- liftIO $ newSubscriberCoincidenceInner subscribedUnsafe
   (subscription@(EventSubscription _ innerSubd), innerOcc) <- subscribeAndRead inner subInner
@@ -645,7 +645,7 @@ walkInvalidHeightParents s0 = do
 #endif
 
 {-# INLINE subscribeHoldEvent #-}
-subscribeHoldEvent :: CanSubscribe x m => Hold x p -> Subscriber x p -> m (EventSubscription x, Maybe p)
+subscribeHoldEvent :: HasSpiderTimeline x => Hold x p -> Subscriber x p -> EventM x (EventSubscription x, Maybe p)
 subscribeHoldEvent = subscribeAndRead . holdEvent
 
 --------------------------------------------------------------------------------
@@ -929,7 +929,7 @@ hold v0 e = do
   return h
 
 {-# INLINE getHoldEventSubscription #-}
-getHoldEventSubscription :: forall m p x. (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer SomeClear m, Patch p, HasCurrentHeight x m, Defer (SomeMergeInit x) m, Defer (SomeResetCoincidence x) m, HasSpiderTimeline x, m ~ EventM x) => Hold x p -> m (EventSubscription x)
+getHoldEventSubscription :: forall p x. (HasSpiderTimeline x, Patch p) => Hold x p -> EventM x (EventSubscription x)
 getHoldEventSubscription h = do
   ep <- liftIO $ readIORef $ holdParent h
   case ep of
@@ -1409,17 +1409,6 @@ getDynHold d = do
 zeroRef :: IORef Height
 zeroRef = unsafePerformIO $ newIORef zeroHeight
 
-type CanSubscribe x m =
-  ( HasSpiderTimeline x
-  , HasCurrentHeight x m
-  , Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m -- The things we need to lazily initialize state
-  , Defer SomeClear m -- Wiping out event firings
-  , Defer SomeIntClear m
-  , Defer (SomeAssignment x) m -- Updating state
-  , Defer (SomeResetCoincidence x) m
-  , m ~ EventM x
-  )
-
 getRootSubscribed :: GCompare k => k a -> Root x k -> Subscriber x a -> IO (WeakBagTicket, RootSubscribed x a, Maybe a)
 getRootSubscribed k r sub = do
   mSubscribed <- readIORef $ rootSubscribed r
@@ -1500,7 +1489,6 @@ unsafeNewFanInt b = unsafePerformIO $ do
   touch b
   newFanInt
 
-{-# NOINLINE fanInt #-}
 fanInt :: HasSpiderTimeline x => Event x (IntMap a) -> EventSelectorInt x a
 fanInt p =
   let self = unsafeNewFanInt p
@@ -1511,7 +1499,7 @@ fanInt p =
         { subscriberPropagate = \m -> do
             liftIO $ writeIORef (_fanInt_occRef self) m
             scheduleIntClear $ _fanInt_occRef self
-            FastMutableIntMap.forIntersectionWithImmutable_ (_fanInt_subscribers self) m $ \b v -> do
+            FastMutableIntMap.forIntersectionWithImmutable_ (_fanInt_subscribers self) m $ \b v -> do --TODO: Do we need to know that no subscribers are being added as we traverse?
               FastWeakBag.traverse b $ \s -> do
                 subscriberPropagate s v
         , subscriberInvalidateHeight = \old -> do
@@ -1540,7 +1528,7 @@ fanInt p =
       return (EventSubscription (FastWeakBag.remove t) $! EventSubscribed heightRef $! toAny (_fanInt_subscriptionRef self, t), IntMap.lookup k currentOcc)
 
 {-# INLINABLE getFanSubscribed #-}
-getFanSubscribed :: (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderTimeline x, m ~ EventM x, GCompare k) => k a -> Fan x k -> Subscriber x a -> m (WeakBagTicket, FanSubscribed x k, Maybe a)
+getFanSubscribed :: (HasSpiderTimeline x, GCompare k) => k a -> Fan x k -> Subscriber x a -> EventM x (WeakBagTicket, FanSubscribed x k, Maybe a)
 getFanSubscribed k f sub = do
   mSubscribed <- liftIO $ readIORef $ fanSubscribed f
   case mSubscribed of
@@ -1599,7 +1587,7 @@ subscribeFanSubscribed k subscribed sub = do
     Just (FanSubscribedChildren list _ weakSelf) -> {-# SCC "hitSubscribeFanSubscribed" #-} WeakBag.insert sub list weakSelf cleanupFanSubscribed
 
 {-# INLINABLE getSwitchSubscribed #-}
-getSwitchSubscribed :: (Defer (SomeHoldInit x) m, Defer (SomeAssignment x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, Defer (SomeResetCoincidence x) m, HasCurrentHeight x m, HasSpiderTimeline x, m ~ EventM x) => Switch x a -> Subscriber x a -> m (WeakBagTicket, SwitchSubscribed x a, Maybe a)
+getSwitchSubscribed :: HasSpiderTimeline x => Switch x a -> Subscriber x a -> EventM x (WeakBagTicket, SwitchSubscribed x a, Maybe a)
 getSwitchSubscribed s sub = do
   mSubscribed <- liftIO $ readIORef $ switchSubscribed s
   case mSubscribed of
@@ -1655,7 +1643,7 @@ subscribeSwitchSubscribed :: SwitchSubscribed x a -> Subscriber x a -> IO WeakBa
 subscribeSwitchSubscribed subscribed sub = WeakBag.insert sub (switchSubscribedSubscribers subscribed) (switchSubscribedWeakSelf subscribed) cleanupSwitchSubscribed
 
 {-# INLINABLE getCoincidenceSubscribed #-}
-getCoincidenceSubscribed :: forall x a m. (Defer (SomeAssignment x) m, Defer (SomeHoldInit x) m, Defer (SomeMergeInit x) m, Defer SomeClear m, HasCurrentHeight x m, Defer (SomeResetCoincidence x) m, HasSpiderTimeline x, m ~ EventM x) => Coincidence x a -> Subscriber x a -> m (WeakBagTicket, CoincidenceSubscribed x a, Maybe a)
+getCoincidenceSubscribed :: forall x a. HasSpiderTimeline x => Coincidence x a -> Subscriber x a -> EventM x (WeakBagTicket, CoincidenceSubscribed x a, Maybe a)
 getCoincidenceSubscribed c sub = do
   mSubscribed <- liftIO $ readIORef $ coincidenceSubscribed c
   case mSubscribed of

@@ -105,7 +105,7 @@ library
     Reflex.Spider.Internal,
     Reflex.Widget.Basic
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively -ddump-simpl -ddump-to-file -dsuppress-coercions -dsuppress-idinfo
   ghc-prof-options: -fprof-auto
 
   if flag(specialize-to-spidertimeline-global)
