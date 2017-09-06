@@ -74,7 +74,11 @@ runRequesterT (RequesterT a) responses = do
 instance (Reflex t, PrimMonad m) => Requester t (RequesterT t request response m) where
   type Request (RequesterT t request response m) = request
   type Response (RequesterT t request response m) = response
-  withRequesting a = do
+  requesting req = withRequesting' $ return . (,) req
+  requesting_ req = withRequesting' $ \_ -> return (req, ())
+
+withRequesting' :: (Reflex t, PrimMonad m) => (Event t (response v) -> RequesterT t request response m (Event t (request v), b)) -> RequesterT t request response m b
+withRequesting' a = do
     !t <- lift newTag --TODO: Fix this upstream
     s <- RequesterT ask
     (req, result) <- a $ select s $ WrapArg t

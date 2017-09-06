@@ -86,8 +86,8 @@ instance (Reflex t, MonadAdjust t m, MonadHold t m, Semigroup w) => MonadAdjust 
 instance Requester t m => Requester t (EventWriterT t w m) where
   type Request (EventWriterT t w m) = Request m
   type Response (EventWriterT t w m) = Response m
-  withRequesting f = EventWriterT $ withRequesting $ unEventWriterT . f
-
+  requesting = lift . requesting
+  requesting_ = lift . requesting_
 
 -- | Given a function like 'runWithReplace' for the underlying monad, implement
 -- 'runWithReplace' for 'EventWriterT'.  This is necessary when the underlying

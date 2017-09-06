@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 #ifdef USE_REFLEX_OPTIMIZER
@@ -14,8 +15,7 @@
 #endif
 module Reflex.Requester.Class
  ( Requester (..)
- , requesting
- , requesting_
+ , withRequesting
  , requestingIdentity
  ) where
 
@@ -36,52 +36,38 @@ class (Reflex t, Monad m) => Requester t m | m -> t where
   type Request m :: * -> *
   -- | The type of responses that this 'Requester' can receive
   type Response m :: * -> *
-  -- | Usually, end-user code should use 'requesting', 'requesting_', or
-  -- 'requestingIdentity'.  For implementers of 'Requester', this function
-  -- provides a convenient way to define instances of the typeclass that
-  -- efficiently support the underlying operations without needing to use
-  -- 'Control.Monad.Fix.MonadFix'.
-  withRequesting :: (Event t (Response m a) -> m (Event t (Request m a), r)) -> m r
+  -- | Emit a request whenever the given 'Event' fires, and return responses in
+  -- the resulting 'Event'.
+  requesting :: Event t (Request m a) -> m (Event t (Response m a))
+  -- | Emit a request whenever the given 'Event' fires, and ignore all responses.
+  requesting_ :: Event t (Request m a) -> m ()
+
 
 instance Requester t m => Requester t (ReaderT r m) where
   type Request (ReaderT r m) = Request m
   type Response (ReaderT r m) = Response m
-  withRequesting f = do
-    r <- ask
-    lift $ withRequesting $ (`runReaderT` r) . f
+  requesting = lift . requesting
+  requesting_ = lift . requesting_
 
 instance Requester t m => Requester t (StateT s m) where
   type Request (StateT s m) = Request m
   type Response (StateT s m) = Response m
-  withRequesting f = do
-    old <- get
-    (result, new) <- lift $ withRequesting $ \x -> do
-      ((request, result), new) <- runStateT (f x) old
-      return (request, (result, new))
-    put new
-    return result
+  requesting = lift . requesting
+  requesting_ = lift . requesting_
 
 instance Requester t m => Requester t (Lazy.StateT s m) where
   type Request (Lazy.StateT s m) = Request m
   type Response (Lazy.StateT s m) = Response m
-  withRequesting f = do
-    old <- Lazy.get
-    (result, new) <- lift $ withRequesting $ \x -> do
-      ((request, result), new) <- Lazy.runStateT (f x) old
-      return (request, (result, new))
-    Lazy.put new
-    return result
-
--- | Emit a request whenever the given 'Event' fires, and return responses in
--- the resulting 'Event'.
-requesting :: Requester t m => Event t (Request m a) -> m (Event t (Response m a))
-requesting req = withRequesting $ return . (,) req
-
--- | Emit a request whenever the given 'Event' fires, and ignore all responses.
-requesting_ :: Requester t m => Event t (Request m a) -> m ()
-requesting_ req = withRequesting $ \_ -> return (req, ())
+  requesting = lift . requesting
+  requesting_ = lift . requesting_
 
 -- | Emit a request whenever the given 'Event' fires, and unwrap the responses
 -- before returning them.  @Response m@ must be 'Identity'.
 requestingIdentity :: (Requester t m, Response m ~ Identity) => Event t (Request m a) -> m (Event t a)
 requestingIdentity = fmap coerceEvent . requesting
+
+withRequesting :: (Requester t m, MonadFix m) => (Event t (Response m a) -> m (Event t (Request m a), r)) -> m r
+withRequesting f = do
+  rec response <- requesting request
+      (request, result) <- f response
+  return result

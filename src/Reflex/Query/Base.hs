@@ -268,7 +268,8 @@ instance (Monad m, Group q, Additive q, Query q, Reflex t) => MonadQuery t q (Qu
 instance Requester t m => Requester t (QueryT t q m) where
   type Request (QueryT t q m) = Request m
   type Response (QueryT t q m) = Response m
-  withRequesting f = QueryT $ withRequesting $ unQueryT . f
+  requesting = lift . requesting
+  requesting_ = lift . requesting_
 
 instance EventWriter t w m => EventWriter t w (QueryT t q m) where
   tellEvent = lift . tellEvent
