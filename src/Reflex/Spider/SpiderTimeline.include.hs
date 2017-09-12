@@ -18,6 +18,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
   holdIncremental = holdIncrementalSpiderEventM
   {-# INLINABLE buildDynamic #-}
   buildDynamic = buildDynamicSpiderEventM
+  {-# INLINABLE headE #-}
+  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
 
 instance (
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
@@ -46,6 +48,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   holdIncremental v0 (SpiderEvent e) = SpiderPushM $ SpiderIncremental . dynamicHold <$> Reflex.Spider.Internal.hold v0 e
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 (SpiderEvent e) = SpiderPushM $ fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce e
+  {-# INLINABLE headE #-}
+  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
 
 instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) where
   {-# INLINE return #-}
@@ -101,6 +105,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   holdIncremental v0 e = runFrame . runSpiderHostFrame $ Reflex.Class.holdIncremental v0 e
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 e = runFrame . runSpiderHostFrame $ Reflex.Class.buildDynamic getV0 e
+  {-# INLINABLE headE #-}
+  headE e = runFrame . runSpiderHostFrame $ Reflex.Class.headE e
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
   sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
@@ -114,6 +120,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   holdIncremental v0 e = SpiderHostFrame $ fmap (SpiderIncremental . dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 e = SpiderHostFrame $ fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
+  {-# INLINABLE headE #-}
+  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHost x) where
   {-# INLINABLE sample #-}
@@ -132,6 +140,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
   holdIncremental v0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.holdIncremental v0 e
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.buildDynamic getV0 e
+  {-# INLINABLE headE #-}
+  headE e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.headE e
 
 --------------------------------------------------------------------------------
 -- Deprecated items

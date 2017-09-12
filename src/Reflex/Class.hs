@@ -136,6 +136,8 @@ module Reflex.Class
   , tagCheap
   , mergeWithCheap
   , mergeWithCheap'
+    -- * Slow, but general, implementations
+  , slowHeadE
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
   , Spider
   , SpiderEnv
@@ -456,16 +458,20 @@ class MonadSample t m => MonadHold t m where
   default holdIncremental :: (Patch p, m ~ f m', MonadTrans f, MonadHold t m') => PatchTarget p -> Event t p -> m (Incremental t p)
   holdIncremental v0 = lift . holdIncremental v0
   buildDynamic :: PullM t a -> Event t a -> m (Dynamic t a)
+  {-
   default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PullM t a -> Event t a -> m (Dynamic t a)
   buildDynamic getV0 = lift . buildDynamic getV0
+  -}
   -- | Create a new 'Event' that only occurs only once, on the first occurence of
   -- the supplied 'Event'.
   headE :: Event t a -> m (Event t a)
-  default headE :: (Reflex t, MonadFix m) => Event t a -> m (Event t a)
-  headE e = do
-    rec be <- hold e $ fmapCheap (const never) e'
-        let e' = switch be
-    return e'
+
+
+slowHeadE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
+slowHeadE e = do
+  rec be <- hold e $ fmapCheap (const never) e'
+      let e' = switch be
+  return e'
 
 -- | An 'EventSelector' allows you to efficiently 'select' an 'Event' based on a
 -- key.  This is much more efficient than filtering for each key with

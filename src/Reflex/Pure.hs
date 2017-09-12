@@ -202,3 +202,5 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
                  in case unEvent e lastTime of
                    Nothing -> lastValue
                    Just x -> fromMaybe lastValue $ apply x lastValue
+
+  headE = slowHeadE
