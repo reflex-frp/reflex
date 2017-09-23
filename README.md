@@ -1,6 +1,8 @@
 ## Reflex
 ### Practical Functional Reactive Programming
 
+[![Build Status](https://img.shields.io/travis/reflex-frp/reflex/develop.svg?style=flat-square)](https://travis-ci.org/reflex-frp/reflex)
+
 Reflex is an fully-deterministic, higher-order Functional Reactive Programming (FRP) interface and an engine that efficiently implements that interface.
 
 [Reflex-DOM](https://github.com/reflex-frp/reflex-dom) is a framework built on Reflex that facilitates the development of web pages, including highly-interactive single-page apps.
