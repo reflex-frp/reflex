@@ -220,6 +220,7 @@ test-suite QueryT
                , lens
                , these
                , transformers
+               , semigroups
                , reflex
                , ref-tf
 
