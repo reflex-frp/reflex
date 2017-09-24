@@ -73,9 +73,6 @@ instance HasSpiderTimeline x => Functor (Reflex.Class.Dynamic (SpiderTimeline x)
 
 instance HasSpiderTimeline x => Applicative (Reflex.Class.Dynamic (SpiderTimeline x)) where
   pure = SpiderDynamic . dynamicConst
-#if MIN_VERSION_base(4,10,0)
-  liftA2 f a b = SpiderDynamic $ Reflex.Spider.Internal.zipDynWith f a b
-#endif
   SpiderDynamic a <*> SpiderDynamic b = SpiderDynamic $ Reflex.Spider.Internal.zipDynWith ($) a b
   _ *> b = b
   a <* _ = a --TODO: The semantics of *>, <*, and <$ might not be quite right - they drop changes
