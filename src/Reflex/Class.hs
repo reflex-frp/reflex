@@ -806,6 +806,9 @@ switcher :: (Reflex t, MonadHold t m)
         => Behavior t a -> Event t (Behavior t a) -> m (Behavior t a)
 switcher b eb = pull . (sample <=< sample) <$> hold b eb
 
+instance (Reflex t, IsString a) => IsString (Dynamic t a) where
+  fromString = pure . fromString
+
 -- | Combine two 'Dynamic's.  The result will change whenever either (or both)
 -- input 'Dynamic' changes.  Equivalent to @zipDynWith (,)@.
 zipDyn :: Reflex t => Dynamic t a -> Dynamic t b -> Dynamic t (a, b)
