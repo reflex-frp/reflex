@@ -15,6 +15,7 @@ import Control.Monad.Fix
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
+import Control.Monad.State.Strict (StateT, execStateT, modify)
 import Data.Coerce
 import Data.Dependent.Map (DMap, GCompare)
 import Data.List
@@ -23,6 +24,7 @@ import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import Data.Monoid
+import Data.Ord
 import Data.Type.Coercion
 import Foreign.Ptr
 import GHC.Foreign
@@ -66,24 +68,32 @@ toCostCentreTree ccs n = do
   ccList <- getCostCentreStack ccs
   return $ foldr (\cc child -> CostCentreTree 0 n $ Map.singleton cc child) (CostCentreTree n n mempty) ccList
 
-printCostCentreTree :: CostCentreTree -> IO ()
-printCostCentreTree = go 0
-  where go depth cct = do
-          let children = sortOn (_costCentreTree_cumulativeEntries . snd) $ Map.toList $ _costCentreTree_children cct
+getCostCentreTree :: IO CostCentreTree
+getCostCentreTree = do
+  vals <- readIORef profilingData
+  mconcat <$> mapM (uncurry toCostCentreTree) (Map.toList vals)
+
+formatCostCentreTree :: CostCentreTree -> IO String
+formatCostCentreTree cct0 = unlines . reverse <$> execStateT (go 0 cct0) []
+  where go :: Int -> CostCentreTree -> StateT [String] IO ()
+        go depth cct = do
+          let children = sortOn (Down . _costCentreTree_cumulativeEntries . snd) $ Map.toList $ _costCentreTree_children cct
               indent = mconcat $ replicate depth "  "
           forM_ children $ \(cc, childCct) -> do
-            lbl <- peekCString utf8 =<< ccLabel cc
-            mdl <- peekCString utf8 =<< ccModule cc
-            loc <- peekCString utf8 =<< ccSrcSpan cc
+            lbl <- liftIO $ peekCString utf8 =<< ccLabel cc
+            mdl <- liftIO $ peekCString utf8 =<< ccModule cc
+            loc <- liftIO $ peekCString utf8 =<< ccSrcSpan cc
             let description = mdl <> "." <> lbl <> " (" <> loc <> ")"
-            putStrLn $ indent <> description <> "\t" <> show (_costCentreTree_cumulativeEntries childCct) <> "\t" <> show (_costCentreTree_ownEntries childCct)
+            modify $ (:) $ indent <> description <> "\t" <> show (_costCentreTree_cumulativeEntries childCct) <> "\t" <> show (_costCentreTree_ownEntries childCct)
             go (succ depth) childCct
 
 showProfilingData :: IO ()
 showProfilingData = do
-  vals <- readIORef profilingData
-  cct <- mconcat <$> mapM (uncurry toCostCentreTree) (Map.toList vals)
-  printCostCentreTree cct
+  putStr =<< formatCostCentreTree =<< getCostCentreTree
+
+writeProfilingData :: FilePath -> IO ()
+writeProfilingData p = do
+  writeFile p =<< formatCostCentreTree =<< getCostCentreTree
 
 newtype ProfiledM m a = ProfiledM { runProfiledM :: m a } deriving (Functor, Applicative, Monad, MonadFix)
 
