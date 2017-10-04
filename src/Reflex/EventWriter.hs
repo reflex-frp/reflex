@@ -179,7 +179,7 @@ instance (MonadQuery t q m, Monad m) => MonadQuery t q (EventWriterT t w m) wher
   queryIncremental = lift . queryIncremental
 
 -- | Map a function over the output of a 'EventWriterT'.
-withEventWriterT :: (Monoid w, Monoid w', Reflex t, MonadHold t m, MonadFix m)
+withEventWriterT :: (Semigroup w, Semigroup w', Reflex t, MonadHold t m, MonadFix m)
                  => (w -> w')
                  -> EventWriterT t w m a
                  -> EventWriterT t w' m a
