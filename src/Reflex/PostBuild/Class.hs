@@ -19,6 +19,8 @@ module Reflex.PostBuild.Class
 import Reflex.Class
 
 import Control.Monad.Reader
+import Control.Monad.State
+import qualified Control.Monad.State.Strict as Strict
 
 -- | 'PostBuild' represents an action that is notified via an 'Event' when it
 -- has finished executing.  Note that the specific definition of "finished" is
@@ -31,4 +33,10 @@ class (Reflex t, Monad m) => PostBuild t m | m -> t where
   getPostBuild :: m (Event t ())
 
 instance PostBuild t m => PostBuild t (ReaderT r m) where
+  getPostBuild = lift getPostBuild
+
+instance PostBuild t m => PostBuild t (StateT s m) where
+  getPostBuild = lift getPostBuild
+
+instance PostBuild t m => PostBuild t (Strict.StateT s m) where
   getPostBuild = lift getPostBuild

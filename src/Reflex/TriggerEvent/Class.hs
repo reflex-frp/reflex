@@ -11,6 +11,8 @@ module Reflex.TriggerEvent.Class
 import Reflex.Class
 
 import Control.Monad.Reader
+import Control.Monad.State
+import qualified Control.Monad.State.Strict as Strict
 
 --TODO: Shouldn't have IO hard-coded
 -- | 'TriggerEvent' represents actions that can create 'Event's that can be
@@ -33,6 +35,16 @@ class Monad m => TriggerEvent t m | m -> t where
   newEventWithLazyTriggerWithOnComplete :: ((a -> IO () -> IO ()) -> IO (IO ())) -> m (Event t a)
 
 instance TriggerEvent t m => TriggerEvent t (ReaderT r m) where
+  newTriggerEvent = lift newTriggerEvent
+  newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
+  newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete
+
+instance TriggerEvent t m => TriggerEvent t (StateT s m) where
+  newTriggerEvent = lift newTriggerEvent
+  newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
+  newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete
+
+instance TriggerEvent t m => TriggerEvent t (Strict.StateT s m) where
   newTriggerEvent = lift newTriggerEvent
   newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
   newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete

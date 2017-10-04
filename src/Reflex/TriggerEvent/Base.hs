@@ -114,10 +114,16 @@ instance MonadHold t m => MonadHold t (TriggerEventT t m) where
   holdDyn v0 v' = lift $ holdDyn v0 v'
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 v' = lift $ holdIncremental v0 v'
+  {-# INLINABLE buildDynamic #-}
+  buildDynamic a0 = lift . buildDynamic a0
+  {-# INLINABLE headE #-}
+  headE = lift . headE
 
 instance MonadAdjust t m => MonadAdjust t (TriggerEventT t m) where
   {-# INLINABLE runWithReplace #-}
   runWithReplace (TriggerEventT a0) a' = TriggerEventT $ runWithReplace a0 (coerceEvent a')
+  {-# INLINABLE traverseIntMapWithKeyWithAdjust #-}
+  traverseIntMapWithKeyWithAdjust f dm0 dm' = TriggerEventT $ traverseIntMapWithKeyWithAdjust (coerce . f) dm0 dm'
   {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
   traverseDMapWithKeyWithAdjust f dm0 dm' = TriggerEventT $ traverseDMapWithKeyWithAdjust (coerce . f) dm0 dm'
   {-# INLINABLE traverseDMapWithKeyWithAdjustWithMove #-}

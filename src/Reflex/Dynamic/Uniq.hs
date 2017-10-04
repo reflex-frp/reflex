@@ -31,7 +31,7 @@ newtype UniqDynamic t a = UniqDynamic { unUniqDynamic :: Dynamic t a }
 
 -- | Construct a 'UniqDynamic' by eliminating redundant updates from a 'Dynamic'.
 uniqDynamic :: Reflex t => Dynamic t a -> UniqDynamic t a
-uniqDynamic d = UniqDynamic $ unsafeBuildDynamic (sample $ current d) $ flip push (updated d) $ \new -> do --TODO: It would be very nice if we had an uncached push here
+uniqDynamic d = UniqDynamic $ unsafeBuildDynamic (sample $ current d) $ flip pushCheap (updated d) $ \new -> do
   old <- sample $ current d --TODO: Is it better to sample ourselves here?
   return $ unsafeJustChanged old new
 
@@ -81,13 +81,13 @@ instance Reflex t => Accumulator t (UniqDynamic t) where
     let f' old change = do
           mNew <- f old change
           return $ unsafeJustChanged old =<< mNew
-    d <- accumMaybeM f' z e
+    d <- accumMaybeMDyn f' z e
     return $ UniqDynamic d
   mapAccumMaybeM f z e = do
     let f' old change = do
           (mNew, output) <- f old change
           return (unsafeJustChanged old =<< mNew, output)
-    (d, out) <- mapAccumMaybeM f' z e
+    (d, out) <- mapAccumMaybeMDyn f' z e
     return (UniqDynamic d, out)
 
 instance Reflex t => Functor (UniqDynamic t) where

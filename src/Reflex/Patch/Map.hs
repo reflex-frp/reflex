@@ -16,6 +16,7 @@ newtype PatchMap k v = PatchMap { unPatchMap :: Map k (Maybe v) }
 
 instance Ord k => Patch (PatchMap k v) where
   type PatchTarget (PatchMap k v) = Map k v
+  {-# INLINABLE apply #-}
   apply (PatchMap p) old = Just $! insertions `Map.union` (old `Map.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
     where insertions = Map.mapMaybeWithKey (const id) p
           deletions = Map.mapMaybeWithKey (const nothingToJust) p
@@ -46,3 +47,6 @@ instance Functor (PatchMap k) where
 patchMapNewElements :: PatchMap k v -> [v]
 patchMapNewElements (PatchMap p) = catMaybes $ Map.elems p
 
+-- | Returns all the new elements that will be added to the 'Map'
+patchMapNewElementsMap :: PatchMap k v -> Map k v
+patchMapNewElementsMap (PatchMap p) = Map.mapMaybe id p

@@ -49,6 +49,7 @@ library
     MemoTrie == 0.6.*,
     base >= 4.7 && < 4.11,
     bifunctors >= 5.2 && < 5.5,
+    comonad,
     containers == 0.5.*,
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.2.4 && < 0.3,
@@ -72,12 +73,15 @@ library
     Data.AppendMap,
     Data.Functor.Misc,
     Data.WeakBag,
+    Data.FastWeakBag,
+    Data.FastMutableIntMap,
     Reflex,
     Reflex.Class,
     Reflex.EventWriter,
     Reflex.Dynamic,
     Reflex.Dynamic.Uniq,
     Reflex.DynamicWriter,
+    Reflex.FastWeak,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,
     Reflex.Patch,
@@ -92,6 +96,7 @@ library
     Reflex.PerformEvent.Class,
     Reflex.PostBuild.Base,
     Reflex.PostBuild.Class,
+    Reflex.Profiled,
     Reflex.Query.Base,
     Reflex.Query.Class,
     Reflex.Requester.Base,
@@ -100,7 +105,7 @@ library
     Reflex.Spider.Internal,
     Reflex.Widget.Basic
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively -ddump-simpl -ddump-to-file -dsuppress-coercions -dsuppress-idinfo
   ghc-prof-options: -fprof-auto
 
   if flag(specialize-to-spidertimeline-global)
@@ -136,6 +141,9 @@ library
 
   if flag(experimental-dependent-sum-instances)
     ghc-options: -DEXPERIMENTAL_DEPENDENT_SUM_INSTANCES
+
+  if impl(ghcjs)
+    build-depends: ghcjs-base
 
 test-suite semantics
   type: exitcode-stdio-1.0
@@ -183,6 +191,7 @@ test-suite hlint
                , hlint
   if impl(ghcjs)
     buildable: False
+  buildable: False
 
 test-suite EventWriterT
   type: exitcode-stdio-1.0
@@ -208,6 +217,7 @@ test-suite RequesterT
                , transformers
                , reflex
                , ref-tf
+  buildable: False
 
 test-suite QueryT
   type: exitcode-stdio-1.0

@@ -62,7 +62,10 @@ instance Ord k => Patch (PatchMapWithMove k v) where
 
 -- | Returns all the new elements that will be added to the 'Map'
 patchMapWithMoveNewElements :: PatchMapWithMove k v -> [v]
-patchMapWithMoveNewElements (PatchMapWithMove p) = catMaybes $ f <$> Map.elems p
+patchMapWithMoveNewElements = Map.elems . patchMapWithMoveNewElementsMap
+
+patchMapWithMoveNewElementsMap :: PatchMapWithMove k v -> Map k v
+patchMapWithMoveNewElementsMap (PatchMapWithMove p) = Map.mapMaybe f p
   where f ni = case _nodeInfo_from ni of
           From_Insert v -> Just v
           From_Move _ -> Nothing

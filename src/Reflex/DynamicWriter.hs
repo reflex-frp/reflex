@@ -188,4 +188,5 @@ withDynamicWriterT f dw = do
 instance Requester t m => Requester t (DynamicWriterT t w m) where
   type Request (DynamicWriterT t w m) = Request m
   type Response (DynamicWriterT t w m) = Response m
-  withRequesting f = DynamicWriterT $ withRequesting $ unDynamicWriterT . f
+  requesting = lift . requesting
+  requesting_ = lift . requesting_

@@ -34,6 +34,8 @@ import Control.Monad
 import Data.Dependent.Map (DMap, GCompare)
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Identity
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 import Data.Maybe
 import Data.MemoTrie
 import Data.Monoid
@@ -125,10 +127,21 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   eventCoercion Coercion = Coercion
   dynamicCoercion Coercion = Coercion
 
+  fanInt e = EventSelectorInt $ \k -> Event $ \t -> unEvent e t >>= IntMap.lookup k
+
+  mergeIntIncremental = mergeIntIncrementalImpl
+
 mergeIncrementalImpl :: (PatchTarget p ~ DMap k (Event (Pure t)), GCompare k) => Incremental (Pure t) p -> Event (Pure t) (DMap k Identity)
 mergeIncrementalImpl i = Event $ \t ->
   let results = DMap.mapMaybeWithKey (\_ (Event e) -> Identity <$> e t) $ fst $ unIncremental i t
   in if DMap.null results
+     then Nothing
+     else Just results
+
+mergeIntIncrementalImpl :: (PatchTarget p ~ IntMap (Event (Pure t) a)) => Incremental (Pure t) p -> Event (Pure t) (IntMap a)
+mergeIntIncrementalImpl i = Event $ \t ->
+  let results = IntMap.mapMaybeWithKey (\_ (Event e) -> e t) $ fst $ unIncremental i t
+  in if IntMap.null results
      then Nothing
      else Just results
 
@@ -189,3 +202,5 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
                  in case unEvent e lastTime of
                    Nothing -> lastValue
                    Just x -> fromMaybe lastValue $ apply x lastValue
+
+  headE = slowHeadE

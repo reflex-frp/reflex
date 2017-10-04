@@ -143,12 +143,12 @@ scanDynMaybe z f d = do
 -- 'Event' occurs using a folding function on the previous value and the value
 -- of the 'Event'.
 foldDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> b) -> b -> Event t a -> m (Dynamic t b)
-foldDyn = accum . flip
+foldDyn = accumDyn . flip
 
 -- | Like 'foldDyn', but the combining function is a 'PushM' action, so it
 -- can 'sample' existing 'Behaviors' and 'hold' new ones.
 foldDynM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t b) -> b -> Event t a -> m (Dynamic t b)
-foldDynM = accumM . flip
+foldDynM = accumMDyn . flip
 
 -- | Create a 'Dynamic' using the provided initial value and change it each time
 -- the provided 'Event' occurs, using a function to combine the old value with
@@ -157,12 +157,12 @@ foldDynM = accumM . flip
 -- 'Dynamic''s 'updated' 'Event' will fire in the 'Just' case, and will not fire
 -- in the 'Nothing' case.
 foldDynMaybe :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> Maybe b) -> b -> Event t a -> m (Dynamic t b)
-foldDynMaybe = accumMaybe . flip
+foldDynMaybe = accumMaybeDyn . flip
 
 -- | Like 'foldDynMaybe', but the combining function is a 'PushM' action, so it
 -- can 'sample' existing 'Behaviors' and 'hold' new ones.
 foldDynMaybeM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe b)) -> b -> Event t a -> m (Dynamic t b)
-foldDynMaybeM = accumMaybeM . flip
+foldDynMaybeM = accumMaybeMDyn . flip
 
 -- | Create a new 'Dynamic' that counts the occurences of the 'Event'.
 count :: (Reflex t, MonadHold t m, MonadFix m, Num b) => Event t a -> m (Dynamic t b)
