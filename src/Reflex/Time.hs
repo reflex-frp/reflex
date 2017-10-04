@@ -3,7 +3,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-#ifdef USER_TEMPLATE_HASKELL
+{-# LANGUAGE CPP #-}
+#ifdef USE_TEMPLATE_HASKELL
 {-# LANGUAGE TemplateHaskell #-}
 #endif
 {-# LANGUAGE TypeFamilies #-}
@@ -17,7 +18,7 @@ import Reflex.TriggerEvent.Class
 
 import Control.Concurrent
 import qualified Control.Concurrent.Thread.Delay as Concurrent
-import Control.Lens
+import Control.Lens hiding ((|>))
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.IO.Class
