@@ -31,7 +31,7 @@ newtype UniqDynamic t a = UniqDynamic { unUniqDynamic :: Dynamic t a }
 
 -- | Construct a 'UniqDynamic' by eliminating redundant updates from a 'Dynamic'.
 uniqDynamic :: Reflex t => Dynamic t a -> UniqDynamic t a
-uniqDynamic d = UniqDynamic $ unsafeBuildDynamic (sample $ current d) $ flip push (updated d) $ \new -> do --TODO: It would be very nice if we had an uncached push here
+uniqDynamic d = UniqDynamic $ unsafeBuildDynamic (sample $ current d) $ flip pushCheap (updated d) $ \new -> do
   old <- sample $ current d --TODO: Is it better to sample ourselves here?
   return $ unsafeJustChanged old new
 
