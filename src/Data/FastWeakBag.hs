@@ -3,7 +3,7 @@
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE JavaScriptFFI #-}
 #endif
@@ -21,7 +21,7 @@ module Data.FastWeakBag
   , remove
   -- * Internal functions
   -- These will not always be available.
-#ifndef ghcjs_HOST_OS
+#ifndef GHCJS_FAST_WEAK
   , _weakBag_children --TODO: Don't export this
 #endif
   ) where
@@ -29,7 +29,7 @@ module Data.FastWeakBag
 import Control.Monad hiding (forM_, mapM_)
 import Control.Monad.IO.Class
 
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 import GHCJS.Types
 import Reflex.FastWeak (unsafeFromRawJSVal, unsafeToRawJSVal, js_isNull)
 #else
@@ -46,7 +46,7 @@ import Prelude hiding (mapM_, traverse)
 -- | A @FastWeakBag a@ holds a set of values of type @a@, but does not retain them -
 -- that is, they can still be garbage-collected.  As long as the @a@s remain
 -- alive, the 'FastWeakBag' will continue to refer to them.
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 newtype FastWeakBag a = FastWeakBag JSVal
 #else
 data FastWeakBag a = FastWeakBag
@@ -59,7 +59,7 @@ data FastWeakBag a = FastWeakBag
 -- the caller retains the ticket, the item is guranteed to stay in memory (and
 -- thus in the 'FastWeakBag').  The ticket can also be used to remove the item from
 -- the 'FastWeakBag' prematurely (i.e. while it is still alive), using 'remove'.
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 newtype FastWeakBagTicket a = FastWeakBagTicket JSVal
 #else
 data FastWeakBagTicket a = FastWeakBagTicket
@@ -74,7 +74,7 @@ insert :: a -- ^ The item
        -> FastWeakBag a -- ^ The 'FastWeakBag' to insert into
        -> IO (FastWeakBagTicket a) -- ^ Returns a 'FastWeakBagTicket' that ensures the item
                            -- is retained and allows the item to be removed.
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 insert a wb = js_insert (unsafeToRawJSVal a) wb
 foreign import javascript unsafe "$r = new h$FastWeakBagTicket($2, $1);" js_insert :: JSVal -> FastWeakBag a -> IO (FastWeakBagTicket a)
 #else
@@ -93,7 +93,7 @@ insert a (FastWeakBag nextId children) = {-# SCC "insert" #-} do
 -- | Create an empty 'FastWeakBag'.
 {-# INLINE empty #-}
 empty :: IO (FastWeakBag a)
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 empty = js_empty
 foreign import javascript unsafe "$r = new h$FastWeakBag();" js_empty :: IO (FastWeakBag a)
 #else
@@ -110,7 +110,7 @@ empty = {-# SCC "empty" #-} do
 -- | Check whether a 'FastWeakBag' is empty.
 {-# INLINE isEmpty #-}
 isEmpty :: FastWeakBag a -> IO Bool
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 isEmpty = js_isEmpty
 foreign import javascript unsafe "(function(){ for(var i = 0; i < $1.tickets.length; i++) { if($1.tickets[i] !== null) { return false; } }; return true; })()" js_isEmpty :: FastWeakBag a -> IO Bool --TODO: Clean up as we go along so this isn't O(n) every time
 #else
@@ -123,7 +123,7 @@ isEmpty bag = {-# SCC "isEmpty" #-} IntMap.null <$> readIORef (_weakBag_children
 -- when the traversal began will be visited exactly once; however, no guarantee
 -- is made about the order of the traversal.
 traverse :: forall a m. MonadIO m => FastWeakBag a -> (a -> m ()) -> m ()
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 traverse wb f = do
   let go cursor = when (not $ js_isNull cursor) $ do
         val <- liftIO $ js_getTicketValue cursor
@@ -146,7 +146,7 @@ traverse (FastWeakBag _ children) f = {-# SCC "traverse" #-} do
 -- on the same 'FastWeakBagTicket'.
 {-# INLINE remove #-}
 remove :: FastWeakBagTicket a -> IO ()
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 remove = js_remove
 foreign import javascript unsafe "$1.bag.tickets[$1.pos] = null; $1.bag = new h$FastWeakBag(); $1.bag.tickets.push($1); $1.pos = 0;" js_remove :: FastWeakBagTicket a -> IO () --TODO: Don't bother with the new surrogate FastWeakBag; instead, make the GC check for bag === null, and then null it out here
 #else

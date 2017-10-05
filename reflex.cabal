@@ -43,6 +43,11 @@ flag experimental-dependent-sum-instances
   default: False
   manual: True
 
+flag fast-weak
+  description: Use the primitive implementation of FastWeak in GHCJS; note that this requires GHCJS to be built with FastWeak and FastWeakBag present in the RTS, which is not the default
+  default: False
+  manual: True
+
 library
   hs-source-dirs: src
   build-depends:
@@ -141,6 +146,9 @@ library
 
   if flag(experimental-dependent-sum-instances)
     ghc-options: -DEXPERIMENTAL_DEPENDENT_SUM_INSTANCES
+
+  if flag(fast-weak) && impl(ghcjs)
+    ghc-options: -DGHCJS_FAST_WEAK
 
   if impl(ghcjs)
     build-depends: ghcjs-base

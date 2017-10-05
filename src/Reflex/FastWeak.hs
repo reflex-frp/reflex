@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-#ifdef ghcjs_HOST_OS
+#if GHCJS_FAST_WEAK
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE JavaScriptFFI #-}
 #endif
@@ -14,7 +14,7 @@ module Reflex.FastWeak
   , getFastWeakValue
   , getFastWeakTicket
   , emptyFastWeak
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
   --TODO: Move these elsewhere
   , unsafeFromRawJSVal
   , unsafeToRawJSVal
@@ -25,7 +25,7 @@ module Reflex.FastWeak
 import GHC.Exts (Any)
 import Unsafe.Coerce
 
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 import GHCJS.Types
 #else
 import Control.Exception (evaluate)
@@ -34,7 +34,7 @@ import System.Mem.Weak
 #endif
 
 
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 newtype FastWeakTicket a = FastWeakTicket JSVal
 
 newtype FastWeak a = FastWeak JSVal
@@ -59,7 +59,7 @@ type FastWeak a = Weak a
 
 -- This needs to be in IO so we know that we've relinquished the ticket
 getFastWeakTicketValue :: FastWeakTicket a -> IO a
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 getFastWeakTicketValue t = do
   v <- js_ticketVal t
   return $ unsafeFromRawJSVal v
@@ -70,7 +70,7 @@ getFastWeakTicketValue = return . _fastWeakTicket_val
 #endif
 
 getFastWeakValue :: FastWeak a -> IO (Maybe a)
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 getFastWeakValue w = do
   r <- js_weakVal w
   case js_isNull r of
@@ -85,7 +85,7 @@ getFastWeakValue = deRefWeak
 #endif
 
 getFastWeakTicket :: forall a. FastWeak a -> IO (Maybe (FastWeakTicket a))
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 getFastWeakTicket w = do
   r <- js_weakTicket w
   case js_isNull r of
@@ -105,7 +105,7 @@ getFastWeakTicket w = do
 
 -- I think it's fine if this is lazy - it'll retain the 'a', but so would the output; we just need to make sure it's forced before we start relying on the associated FastWeak to actually be weak
 mkFastWeakTicket :: a -> IO (FastWeakTicket a)
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 mkFastWeakTicket v = js_fastWeakTicket (unsafeToRawJSVal v)
 
 foreign import javascript unsafe "$r = new h$FastWeakTicket($1);" js_fastWeakTicket :: JSVal -> IO (FastWeakTicket a)
@@ -120,7 +120,7 @@ mkFastWeakTicket v = do
 #endif
 
 -- Needs IO so that it can force the value - otherwise, could end up with a reference to the Ticket, which would retain the value
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
 foreign import javascript unsafe "$r = $1.weak;" getFastWeakTicketWeak :: FastWeakTicket a -> IO (FastWeak a)
 #else
 getFastWeakTicketWeak :: FastWeakTicket a -> IO (FastWeak a)
@@ -131,7 +131,7 @@ getFastWeakTicketWeak = return . _fastWeakTicket_weak
 emptyFastWeak :: FastWeak a
 emptyFastWeak = unsafeCoerce w
   where w :: FastWeak Any
-#ifdef ghcjs_HOST_OS
+#ifdef GHCJS_FAST_WEAK
         w = js_emptyWeak
 foreign import javascript unsafe "$r = new h$FastWeak(null);" js_emptyWeak :: FastWeak Any
 #else
