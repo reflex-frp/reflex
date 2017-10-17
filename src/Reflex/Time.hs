@@ -230,11 +230,11 @@ tickInfo_lastUTC f (TickInfo x1 x2 x3) = (\y -> TickInfo y x2 x3) <$> f x1
 {-# INLINE tickInfo_lastUTC #-}
 
 tickInfo_n :: Lens' TickInfo Integer
-tickInfo_n f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 y x3) <$> f x1
+tickInfo_n f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 y x3) <$> f x2
 {-# INLINE tickInfo_n #-}
 
 tickInfo_alreadyElapsed :: Lens' TickInfo NominalDiffTime
-tickInfo_alreadyElapsed f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 x2 y) <$> f x1
+tickInfo_alreadyElapsed f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 x2 y) <$> f x3
 {-# INLINE tickInfo_alreadyElapsed #-}
 #endif
 
