@@ -23,5 +23,6 @@ import Reflex.Query.Class as X
 import Reflex.Requester.Base as X
 import Reflex.Requester.Class as X
 import Reflex.Spider as X
+import Reflex.Time as X
 import Reflex.TriggerEvent.Base as X
 import Reflex.TriggerEvent.Class as X
