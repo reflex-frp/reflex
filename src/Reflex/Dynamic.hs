@@ -25,6 +25,8 @@ module Reflex.Dynamic
   , current
   , updated
   , holdDyn
+  , mapDynM
+  , forDynM
   , constDyn
   , count
   , toggle
@@ -76,11 +78,9 @@ module Reflex.Dynamic
   , distributeDMapOverDyn
   , distributeFHListOverDyn
   , forDyn
-  , forDynM
   , getDemuxed
   , joinDyn
   , mapDyn
-  , mapDynM
   , mconcatDyn
   , nubDyn
   , splitDyn
@@ -108,6 +108,14 @@ import Data.Monoid
 import Data.These
 
 import Debug.Trace
+
+-- | Map a sampling function over a 'Dynamic'.
+mapDynM :: forall t m a b. (Reflex t, MonadHold t m) => (forall m'. MonadSample t m' => a -> m' b) -> Dynamic t a -> m (Dynamic t b)
+mapDynM f d = buildDynamic (f =<< sample (current d)) $ pushAlways f (updated d)
+
+-- | Flipped version of 'mapDynM'
+forDynM :: forall t m a b. (Reflex t, MonadHold t m) => Dynamic t a -> (forall m'. MonadSample t m' => a -> m' b) -> m (Dynamic t b)
+forDynM d f = mapDynM f d
 
 -- | Create a new 'Dynamic' that only signals changes if the values actually
 -- changed.
@@ -548,26 +556,10 @@ instance IsHList (a, b, c, d, e, f) where
 mapDyn :: (Reflex t, Monad m) => (a -> b) -> Dynamic t a -> m (Dynamic t b)
 mapDyn f = return . fmap f
 
--- | Map a sampling function over a 'Dynamic'.  The sampling function will use the input 'Dynamic''s 'current' 'Behavior' until the first time its 'updated' 'Event' fires, at which point it will be invoked only once each time the 'Event' fires.
-{-# DEPRECATED mapDynM "Consider using the Monad instance for Dynamic instead." #-}
-mapDynM :: forall t m a b. (Reflex t, MonadHold t m) => (forall m'. MonadSample t m' => a -> m' b) -> Dynamic t a -> m (Dynamic t b)
-mapDynM f d = do
-  let e' = push (fmap Just . f :: a -> PushM t (Maybe b)) $ updated d
-      eb' = fmap constant e'
-      v0 = pull $ f =<< sample (current d)
-  bb' :: Behavior t (Behavior t b) <- hold v0 eb'
-  let b' = pull $ sample =<< sample bb'
-  return $ unsafeDynamic b' e'
-
 -- | Flipped version of 'mapDyn'.
 {-# DEPRECATED forDyn "Use 'return . ffor a' instead of 'forDyn a'; consider eliminating monadic style" #-}
 forDyn :: (Reflex t, Monad m) => Dynamic t a -> (a -> b) -> m (Dynamic t b)
 forDyn a = return . ffor a
-
--- | Flipped version of 'mapDynM'
-{-# DEPRECATED forDynM "Consider using the Monad instance for Dynamic instead." #-}
-forDynM :: forall t m a b. (Reflex t, MonadHold t m) => Dynamic t a -> (forall m'. MonadSample t m' => a -> m' b) -> m (Dynamic t b)
-forDynM d f = mapDynM f d
 
 -- | Split the 'Dynamic' into two 'Dynamic's, each taking the respective value
 -- of the tuple.
