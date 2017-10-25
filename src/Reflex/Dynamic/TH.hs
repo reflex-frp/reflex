@@ -18,7 +18,8 @@ module Reflex.Dynamic.TH
   , mkDyn
   ) where
 
-import Reflex.Dynamic
+import Generics.SOP (I (..), NP (..))
+import Reflex.Dynamic.CollectDynGeneric (collectDynNP)
 
 import Control.Monad.State
 import Data.Data
@@ -47,9 +48,10 @@ qDynPure qe = do
         _ -> gmapM f d
   (e', exprsReversed) <- runStateT (gmapM f e) []
   let exprs = reverse exprsReversed
-      arg = foldr (\a b -> ConE 'FHCons `AppE` a `AppE` b) (ConE 'FHNil) $ map snd exprs
-      param = foldr (\a b -> ConP 'HCons [VarP a, b]) (ConP 'HNil []) $ map fst exprs
-  [| $(return $ LamE [param] e') <$> distributeFHListOverDynPure $(return arg) |]
+      arg = foldr (\a b -> ConE '(:*) `AppE` a `AppE` b) (ConE 'Nil) $ map snd exprs
+      param = foldr (\a b -> ConP '(:*) [ConP 'I [VarP a], b]) (ConP 'Nil []) $ map fst exprs
+  [| $(return $ LamE [param] e') <$> collectDynNP $(return arg) |]
+
 
 -- | Antiquote a 'Dynamic' expression.  This can /only/ be used inside of a
 -- 'qDyn' quotation.

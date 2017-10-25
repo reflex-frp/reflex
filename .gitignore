@@ -36,3 +36,4 @@ hsenv.log
 /ghci-tmp
 *.dump-*
 *.verbose-core2core
+.stack-work/*

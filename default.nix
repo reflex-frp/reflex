@@ -1,6 +1,6 @@
 { mkDerivation, ghc, base, bifunctors, containers, deepseq
 , dependent-map, dependent-sum, exception-transformers
-, haskell-src-exts, haskell-src-meta, hlint, lens, MemoTrie
+, generics-sop, haskell-src-exts, haskell-src-meta, hlint, lens, MemoTrie
 , monad-control, mtl, primitive, random, ref-tf
 , semigroupoids , semigroups, split, stdenv, stm, syb
 , template-haskell , these, time, transformers
@@ -20,7 +20,7 @@ mkDerivation {
     transformers-compat prim-uniq
     base bifunctors containers deepseq dependent-map dependent-sum
     mtl ref-tf split transformers data-default
-    random time unbounded-delays
+    random time unbounded-delays generics-sop
   ] ++ (if !useTemplateHaskell then [] else [
     haskell-src-exts haskell-src-meta
   ]);

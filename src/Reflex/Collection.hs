@@ -4,7 +4,6 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -12,7 +11,7 @@
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
 module Reflex.Collection
-  ( 
+  (
   -- * Widgets on Collections
     listHoldWithKey
   , listWithKey

@@ -1,7 +1,6 @@
 -- | This module provides 'RequesterT', the standard implementation of
 -- 'Requester'.
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -111,7 +110,7 @@ singletonTagMap (MyTag k) v = TagMap $ IntMap.singleton k $ (unsafeCoerce :: f a
 tagMapToList :: forall f. TagMap f -> [DSum MyTag f]
 tagMapToList (TagMap m) = fmap f $ IntMap.toList m
   where f :: (Int, Any) -> DSum MyTag f
-        f (k, v) = MyTag k :=> ((unsafeCoerce :: Any -> f a) v)
+        f (k, v) = MyTag k :=> (unsafeCoerce :: Any -> f a) v
 
 traverseTagMapWithKey :: forall t f g. Applicative t => (forall a. MyTag a -> f a -> t (g a)) -> TagMap f -> t (TagMap g)
 traverseTagMapWithKey f (TagMap m) = TagMap <$> IntMap.traverseWithKey g m

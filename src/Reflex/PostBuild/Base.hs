@@ -141,7 +141,7 @@ mapIntMapWithAdjustImpl base f dm0 dm' = do
     rec (result0, result') <- base f' loweredDm0 loweredDm'
         cohortDone <- numberOccurrencesFrom_ 1 result'
         numberedDm' <- numberOccurrencesFrom 1 dm'
-        let postBuild' = fanInt $ fmapCheap (\n -> IntMap.singleton n ()) cohortDone
+        let postBuild' = fanInt $ fmapCheap (`IntMap.singleton` ()) cohortDone
             loweredDm' = flip pushAlways numberedDm' $ \(n, p) -> do
               return $ fmap ((,) (selectInt postBuild' n)) p
     return (result0, result')
