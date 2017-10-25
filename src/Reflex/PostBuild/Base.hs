@@ -107,7 +107,7 @@ instance MonadAtomicRef m => MonadAtomicRef (PostBuildT t m) where
   {-# INLINABLE atomicModifyRef #-}
   atomicModifyRef r = lift . atomicModifyRef r
 
-instance (Reflex t, MonadHold t m, MonadFix m, MonadAdjust t m, PerformEvent t m) => MonadAdjust t (PostBuildT t m) where
+instance (Reflex t, MonadHold t m, MonadFix m, Adjustable t m, PerformEvent t m) => Adjustable t (PostBuildT t m) where
   runWithReplace a0 a' = do
     postBuild <- getPostBuild
     lift $ do

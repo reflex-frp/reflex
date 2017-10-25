@@ -140,7 +140,7 @@ instance MonadHold t m => MonadHold t (EventWriterT t w m) where
   {-# INLINABLE headE #-}
   headE = lift . headE
 
-instance (Reflex t, MonadAdjust t m, MonadHold t m, Semigroup w) => MonadAdjust t (EventWriterT t w m) where
+instance (Reflex t, Adjustable t m, MonadHold t m, Semigroup w) => Adjustable t (EventWriterT t w m) where
   runWithReplace = runWithReplaceEventWriterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
   traverseIntMapWithKeyWithAdjust = sequenceIntMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseIntMapWithKeyWithAdjust f dm0 dm') patchIntMapNewElements mergeIntIncremental
   traverseDMapWithKeyWithAdjust = sequenceDMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjust f dm0 dm') mapPatchDMap weakenPatchDMapWith patchMapNewElements mergeMapIncremental
@@ -154,8 +154,8 @@ instance Requester t m => Requester t (EventWriterT t w m) where
 
 -- | Given a function like 'runWithReplace' for the underlying monad, implement
 -- 'runWithReplace' for 'EventWriterT'.  This is necessary when the underlying
--- monad doesn't have a 'MonadAdjust' instance or to override the default
--- 'MonadAdjust' behavior.
+-- monad doesn't have a 'Adjustable' instance or to override the default
+-- 'Adjustable' behavior.
 runWithReplaceEventWriterTWith :: forall m t w a b. (Reflex t, MonadHold t m, Semigroup w)
                                => (forall a' b'. m a' -> Event t (m b') -> EventWriterT t w m (a', Event t b'))
                                -> EventWriterT t w m a

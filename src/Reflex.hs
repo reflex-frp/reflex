@@ -6,6 +6,7 @@ module Reflex
   ) where
 
 import Reflex.Class as X
+import Reflex.Collection as X
 import Reflex.EventWriter as X
 import Reflex.Dynamic as X
 #ifdef USE_TEMPLATE_HASKELL

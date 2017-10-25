@@ -81,7 +81,7 @@ testQueryT w (AppIn _ pulse) = do
     }
 
 testRunWithReplace :: ( Reflex t
-                      , MonadAdjust t m
+                      , Adjustable t m
                       , MonadHold t m
                       , MonadFix m
                       , MonadQuery t (Selector Int MyQuery) m)
@@ -96,7 +96,7 @@ testRunWithReplace replace increment = do
   return ()
 
 testSequenceDMapWithAdjust :: ( Reflex t
-                              , MonadAdjust t m
+                              , Adjustable t m
                               , MonadHold t m
                               , MonadFix m
                               , MonadQuery t (Selector Int MyQuery) m)
@@ -110,7 +110,7 @@ testSequenceDMapWithAdjust replace increment = do
   return ()
 
 testSequenceDMapWithAdjustWithMove :: ( Reflex t
-                                      , MonadAdjust t m
+                                      , Adjustable t m
                                       , MonadHold t m
                                       , MonadFix m
                                       , MonadQuery t (Selector Int MyQuery) m)
@@ -123,16 +123,8 @@ testSequenceDMapWithAdjustWithMove replace increment = do
     queryDyn $ zipDynWith (\x y -> Selector (AMap.singleton (x :: Int) y)) n $ pure $ MyQuery $ SelectedCount 1
   return ()
 
-listHoldWithKey :: forall t m k v a. (Ord k, MonadHold t m, MonadAdjust t m) => Map k v -> Event t (Map k (Maybe v)) -> (k -> v -> m a) -> m (Dynamic t (Map k a))
-listHoldWithKey m0 m' f = do
-  let dm0 = mapWithFunctorToDMap $ Map.mapWithKey f m0
-      dm' = fmap (PatchDMap . mapWithFunctorToDMap . Map.mapWithKey (\k v -> ComposeMaybe $ fmap (f k) v)) m'
-  (a0, a') <- sequenceDMapWithAdjust dm0 dm'
-  fmap dmapToMap . incrementalToDynamic <$> holdIncremental a0 a'
-
-
 -- scam it out to test traverseDMapWithAdjustWithMove
-listHoldWithKeyWithMove :: forall t m k v a. (Ord k, MonadHold t m, MonadAdjust t m) => Map k v -> Event t (Map k (Maybe v)) -> (k -> v -> m a) -> m (Dynamic t (Map k a))
+listHoldWithKeyWithMove :: forall t m k v a. (Ord k, MonadHold t m, Adjustable t m) => Map k v -> Event t (Map k (Maybe v)) -> (k -> v -> m a) -> m (Dynamic t (Map k a))
 listHoldWithKeyWithMove m0 m' f = do
   (n0, n') <- mapMapWithAdjustWithMove f m0 $ ffor m' $ PatchMapWithMove . Map.map (\v -> NodeInfo (maybe From_Delete From_Insert v) Nothing)
   incrementalToDynamic <$> holdIncremental n0 n'

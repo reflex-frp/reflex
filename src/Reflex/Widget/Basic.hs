@@ -30,7 +30,7 @@ import Reflex.Patch.MapWithMove
 -- >   (\k v -> text $ "\n" ++ show k ++ " " ++ v)  -- show each element on a new line
 -- >   (Map.fromList $ zip [0..] [(3, "a"), (2, "b"), (1, "c")])
 -- >   sortEvent
-sortableList :: forall t m k v a. (MonadHold t m, MonadFix m, MonadAdjust t m, Ord k)
+sortableList :: forall t m k v a. (MonadHold t m, MonadFix m, Adjustable t m, Ord k)
              => (k -> v -> m a) -- ^ Function to render the content for each key/value pair
              -> Map k v -- ^ The sortable list with an initial ordering determined by the @Map@ keys in ascending order
              -> Event t (v -> v -> Ordering) -- ^ An event carrying a sort function for the list
