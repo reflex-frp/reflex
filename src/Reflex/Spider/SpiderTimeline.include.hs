@@ -75,7 +75,7 @@ newJoinDyn d =
 
 instance HasSpiderTimeline x => Functor (Reflex.Class.Dynamic (SpiderTimeline x)) where
   fmap f = SpiderDynamic . newMapDyn f . unSpiderDynamic
-  x <$ _ = pure x
+  x <$ d = R.unsafeBuildDynamic (return x) $ x <$ R.updated d
 
 instance HasSpiderTimeline x => Applicative (Reflex.Class.Dynamic (SpiderTimeline x)) where
   pure = SpiderDynamic . dynamicConst
@@ -83,8 +83,8 @@ instance HasSpiderTimeline x => Applicative (Reflex.Class.Dynamic (SpiderTimelin
   liftA2 f a b = SpiderDynamic $ Reflex.Spider.Internal.zipDynWith f (unSpiderDynamic a) (unSpiderDynamic b)
 #endif
   SpiderDynamic a <*> SpiderDynamic b = SpiderDynamic $ Reflex.Spider.Internal.zipDynWith ($) a b
-  _ *> b = b
-  a <* _ = a --TODO: The semantics of *>, <*, and <$ might not be quite right - they drop changes
+  a *> b = R.unsafeBuildDynamic (R.sample $ R.current b) $ R.leftmost [R.updated b, R.tag (R.current b) $ R.updated a]
+  (<*) = flip (*>) -- There are no effects, so order doesn't matter
 
 holdSpiderEventM :: HasSpiderTimeline x => a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Behavior (SpiderTimeline x) a)
 holdSpiderEventM v0 e = fmap (SpiderBehavior . behaviorHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
