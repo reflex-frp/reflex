@@ -13,7 +13,6 @@ Some of these functions are *pure*:  They operate on Events, Behaviors, or Dynam
 [S]   -- Function runs in any monad supporting MonadSample
 [H]   -- Function runs in any monad supporting MonadHold
 ```
-
 Since MonadHold depends on MonadSample, any [S] function also runs in [H] context.
 
 ## Functions producing Event
@@ -46,6 +45,8 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   attachPromptlyDynWith      :: (a -> b ->       c) ->  Dynamic a -> Event b -> Event c
 [ ]   attachWithMaybe            :: (a -> b -> Maybe c) -> Behavior a -> Event b -> Event c
 [ ]   attachPromptlyDynWithMaybe :: (a -> b -> Maybe c) ->  Dynamic a -> Event b -> Event c
+[ ]   <@>                        ::                 Behavior (a -> b) -> Event a -> Event b
+[ ]   <@                         ::                        Behavior b -> Event a -> Event b
 
 -- Combine multiple Events
 [ ]   <>         ::      Semigroup a => Event a -> Event a -> Event a
@@ -181,3 +182,103 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 -- At switchover, the output Event immediately tracks the new Event.
 [H]   switchPromptly    ::       Event a ->    Event (Event a)  -> m (Event a)
 ```
+
+## Typeclasses to introspect and modify an FRP network.
+
+The functions mentioned above are used to create a static FRP network.
+There are additional typeclasses that can be used to modify the FRP network, to have it interact with IO action, or to introspect the building of the network.
+
+Th typeclasses and their associated annotations include:
+
+- `PostBuild`
+    Fire an Event when an FRP network has been set up.
+    ```haskell
+    [B]   -- Function runs in any monad supporting PostBuild
+    ```
+
+- `Adjustable` 
+    Use Events to add or remove pieces of an FRP network.
+    ```haskell
+    [A]   -- Function runs in any monad supporting Adjustable
+    ```
+
+- `TriggerEvent`
+    Create new externally-fired Events from within an FRP network.
+    ```haskell
+    [T]   -- Function runs in any monad supporting TriggerEvent
+    ```
+
+- `PerformEvent`
+    Use Events to trigger IO actions and to collect their results.
+    ```haskell
+    [P]   -- Function runs in any monad supporting PerformEvent
+    ```
+
+## Startup
+
+```haskell
+-- One-shot Event that is triggered once the FRP network has been built
+[B]   getPostBuild :: m (Event ())
+```
+
+## Collection management functions
+
+```haskell
+-- Turn a Dynamic key/value map into a set of dynamically-changing widgets.
+[H,A,B]   listWithKey :: Ord k =>
+            Dynamic (Map k v) -> (k -> Dynamic v -> m        a ) -> m (Dynamic (Map k a))
+
+-- Same as above where the widget constructor doesn't care about the key.
+[H,A,B]   list        :: Ord k =>
+            Dynamic (Map k v) -> (     Dynamic v -> m        a ) -> m (Dynamic (Map k a))
+
+-- Even simpler version where there are no keys and we just use a list.
+[H,A,B]   simpleList  ::
+            Dynamic       [v] -> (     Dynamic v -> m        a ) -> m (Dynamic       [a])
+
+-- Like listWithKey specialized for widgets returning (Event a).
+[H,A,B]   listViewWithKey :: Ord k =>
+            Dynamic (Map k v) -> (k -> Dynamic v -> m (Event a)) -> m (Event   (Map k a))
+
+-- Create a dynamically-changing set of widgets, one of which is selected at any time.
+[H,A,B]   selectViewListWithKey_ :: Ord k => Dynamic k ->
+            Dynamic (Map k v) -> (k -> Dynamic v -> Dynamic Bool -> m (Event a)) -> m (Event k)
+
+-- Same as listWithKey, but takes initial values and an updates Event instead of a Dynamic.
+[H,A,B]   listWithKey' :: Ord k =>
+            Map k v -> Event (Map k (Maybe v)) -> (k -> v -> Event v -> m a) -> m (Dynamic (Map k a))
+```
+
+## Creating new events from within an FRP network.
+
+```haskell
+-- Create a new Event and a function that will cause the Event to fire, from within an FRP network
+[T]   newTriggerEvent      :: m (Event a, a -> IO ())
+```
+
+## Connecting to the real world (I/O)
+
+```haskell
+-- Run side-effecting actions in Event when it occurs; returned Event contains
+-- results. Side effects run in the (Performable m) monad which is associated with
+-- the (PerformEvent t m) typeclass constraint. 
+-- This allows for working with IO when a ((MonadIO (Performable m)) constraint is available.
+[P]   performEvent        :: Event (Performable m a )                 -> m (Event a)
+
+-- Just run side-effects; no return Event
+[P]   performEvent_       :: Event (Performable m ())                 -> m ()
+
+-- Actions run asynchronously; actions are given a callback to send return values
+[P,T]   performEventAsync :: Event ((a -> IO ()) -> Performable m ()) -> m (Event a)
+```
+
+### Time
+
+```haskell
+-- Create Event at given interval with given basis time.
+[P,T]   tickLossy :: NominalDiffTime -> UTCTime -> m (Event t TickInfo)
+
+-- Delay an Event's occurrences by a given amount in seconds.
+[P,T]   delay :: NominalDiffTime -> Event t a -> m (Event t a)
+```
+
