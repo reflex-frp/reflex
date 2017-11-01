@@ -94,6 +94,8 @@ library
     Reflex.FastWeak,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,
+    Reflex.Network,
+    Reflex.NotReady.Class,
     Reflex.Patch,
     Reflex.Patch.Class,
     Reflex.Patch.DMap,
@@ -114,7 +116,8 @@ library
     Reflex.Spider,
     Reflex.Spider.Internal,
     Reflex.Time,
-    Reflex.Widget.Basic
+    Reflex.Widget.Basic,
+    Reflex.Workflow
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively -ddump-simpl -ddump-to-file -dsuppress-coercions -dsuppress-idinfo
   ghc-prof-options: -fprof-auto
