@@ -37,7 +37,7 @@ import Prelude hiding (mapM_, traverse)
 -- alive, the 'WeakBag' will continue to refer to them.
 data WeakBag a = WeakBag
   { _weakBag_nextId :: {-# UNPACK #-} !(IORef Int) --TODO: what if this wraps around?
-  , _weakBag_children :: {-# UNPACK #-} !(IORef (IntMap (Weak a)))
+  , _weakBag_children :: {-# UNPACK #-} !(IORef (IntMap (Weak a))) -- ^ The items referenced by the WeakBag
   }
 
 -- | When inserting an item into a 'WeakBag', a 'WeakBagTicket' is returned.  If

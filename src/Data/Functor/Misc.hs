@@ -70,6 +70,7 @@ data Const2 :: * -> x -> x -> * where
   Const2 :: k -> Const2 k v v
   deriving (Typeable)
 
+-- | Extract the value from a Const2
 unConst2 :: Const2 k v v' -> k
 unConst2 (Const2 k) = k
 
@@ -126,6 +127,8 @@ instance {-# INCOHERENT #-} Eq k => EqTag (Const2 k v) (Const2 k v) where
 dmapToMap :: DMap (Const2 k v) Identity -> Map k v
 dmapToMap = Map.fromDistinctAscList . map (\(Const2 k :=> Identity v) -> (k, v)) . DMap.toAscList
 
+-- | Convert a 'DMap' to a regular 'Map', applying the given function to remove
+-- the wrapping 'Functor'
 dmapToMapWith :: (f v -> v') -> DMap (Const2 k v) f -> Map k v'
 dmapToMapWith f = Map.fromDistinctAscList . map (\(Const2 k :=> v) -> (k, f v)) . DMap.toAscList
 
@@ -138,6 +141,8 @@ mapToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> Identity v) 
 mapWithFunctorToDMap :: Map k (f v) -> DMap (Const2 k v) f
 mapWithFunctorToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> v) . Map.toAscList
 
+-- | Convert a 'DMap' to a regular 'Map' by forgetting the types associated with
+-- the keys, using a function to remove the wrapping 'Functor'
 weakenDMapWith :: (forall a. v a -> v') -> DMap k v -> Map (Some k) v'
 weakenDMapWith f = Map.fromDistinctAscList . map (\(k :=> v) -> (Some.This k, f v)) . DMap.toAscList
 

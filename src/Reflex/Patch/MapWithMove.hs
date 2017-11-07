@@ -5,6 +5,8 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+-- | 'Patch'es on 'Map' that can insert, delete, and move values from one key to
+-- another
 module Reflex.Patch.MapWithMove where
 
 import Reflex.Patch.Class
@@ -20,19 +22,33 @@ import Data.Maybe
 import qualified Data.Set as Set
 import Data.Tuple
 
--- | Patch a DMap with additions, deletions, and moves.
--- Invariants:
---   * The same source key may not be moved to two destination keys.
---   * Any key that is the source of a Move must also be edited
---     (otherwise, the Move would duplicate it)
+-- | Patch a DMap with additions, deletions, and moves.  Invariant: If key @k1@
+-- is coming from @From_Move k2@, then key @k2@ should be going to @Just k1@,
+-- and vice versa.  There should never be any unpaired From/To keys.
 newtype PatchMapWithMove k v = PatchMapWithMove (Map k (NodeInfo k v)) deriving (Show, Eq, Ord, Functor, Foldable, Traversable)
 
+-- | Holds the information about each key: where its new value should come from,
+-- and where its old value should go to
 data NodeInfo k v = NodeInfo
   { _nodeInfo_from :: !(From k v)
+    -- ^ Where do we get the new value for this key?
   , _nodeInfo_to :: !(To k)
+    -- ^ If the old value is being kept (i.e. moved rather than deleted or
+    -- replaced), where is it going?
   }
   deriving (Show, Read, Eq, Ord, Functor, Foldable, Traversable)
 
+-- | Create a 'PatchMapWithMove', validating it
+patchMapWithMove :: Ord k => Map k (NodeInfo k v) -> Maybe (PatchMapWithMove k v)
+patchMapWithMove m = if valid then Just $ PatchMapWithMove m else Nothing
+  where valid = forwardLinks == backwardLinks
+        forwardLinks = Map.mapMaybe _nodeInfo_to m
+        backwardLinks = Map.fromList $ catMaybes $ flip fmap (Map.toList m) $ \(to, v) ->
+          case _nodeInfo_from v of
+            From_Move from -> Just (from, to)
+            _ -> Nothing
+
+-- | Extract the internal representation of the 'PatchMapWithMove'
 unPatchMapWithMove :: PatchMapWithMove k v -> Map k (NodeInfo k v)
 unPatchMapWithMove (PatchMapWithMove p) = p
 
@@ -41,14 +57,19 @@ unPatchMapWithMove (PatchMapWithMove p) = p
 unsafePatchMapWithMove :: Map k (NodeInfo k v) -> PatchMapWithMove k v
 unsafePatchMapWithMove = PatchMapWithMove
 
+-- | Describe how a key's new value should be produced
 data From k v
    = From_Insert v -- ^ Insert the given value here
    | From_Delete -- ^ Delete the existing value, if any, from here
    | From_Move !k -- ^ Move the value here from the given key
    deriving (Show, Read, Eq, Ord, Functor, Foldable, Traversable)
 
+-- | Describe where a key's old value will go.  If this is 'Just', that means
+-- the key's old value will be moved to the given other key; if it is 'Nothing',
+-- that means it will be deleted.
 type To = Maybe
 
+-- | Apply the insertions, deletions, and moves to a given 'Map'
 instance Ord k => Patch (PatchMapWithMove k v) where
   type PatchTarget (PatchMapWithMove k v) = Map k v
   apply (PatchMapWithMove p) old = Just $! insertions `Map.union` (old `Map.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
@@ -71,40 +92,9 @@ patchMapWithMoveNewElementsMap (PatchMapWithMove p) = Map.mapMaybe f p
           From_Move _ -> Nothing
           From_Delete -> Nothing
 
-validPatchMapWithMove :: Ord k => PatchMapWithMove k v -> Bool
-validPatchMapWithMove (PatchMapWithMove p) =
-  let f ni = case _nodeInfo_from ni of
-        From_Move k -> Just k
-        _ -> Nothing
-      moveSources = catMaybes $ f <$> Map.elems p
-  in and
-  [ -- All Moves must have unique source keys - a single source key can't be moved to two destinations
-    all (==1) $ Map.fromListWith (+) $ fmap (\k -> (k, 1 :: Integer )) moveSources
-  , -- All Move source keys must also be patched - since the value's being moved elsewhere, the original must either be Deleted or replaced (with Insert or Move)
-    all (isJust . flip Map.lookup p) moveSources
-  ]
-
-knownValidPatchMapWithMove :: [PatchMapWithMove Int Int]
-knownValidPatchMapWithMove =
-  [ PatchMapWithMove mempty
-  , PatchMapWithMove $ Map.fromList
-    [ (1, NodeInfo (From_Move 2) $ Just 1)
-    , (2, NodeInfo (From_Move 1) $ Just 2)
-    ]
-  ]
-
-knownInvalidPatchMapWithMove :: [PatchMapWithMove Int Int]
-knownInvalidPatchMapWithMove =
-  [ -- Invalid because we move 2 to 1, but don't specify what to do with 2
-    PatchMapWithMove $ Map.singleton 1 $ NodeInfo (From_Move 2) Nothing
-  , -- Invalid because we have multiple moves from 3
-    PatchMapWithMove $ Map.fromList
-    [ (1, NodeInfo (From_Move 3) Nothing)
-    , (2, NodeInfo (From_Move 3) Nothing)
-    , (3, NodeInfo From_Delete (Just 1))
-    ]
-  ]
-
+-- | Create a 'PatchMapWithMove' that, if applied to the given 'Map', will sort
+-- its values using the given ordering function.  The set keys of the 'Map' is
+-- not changed.
 patchThatSortsMapWith :: Ord k => (v -> v -> Ordering) -> Map k v -> PatchMapWithMove k v
 patchThatSortsMapWith cmp m = PatchMapWithMove $ Map.fromList $ catMaybes $ zipWith g unsorted sorted
   where unsorted = Map.toList m
@@ -116,6 +106,9 @@ patchThatSortsMapWith cmp m = PatchMapWithMove $ Map.fromList $ catMaybes $ zipW
           let Just movingTo = Map.lookup from reverseMapping
           in Just (to, NodeInfo (From_Move from) $ Just movingTo)
 
+-- | Create a 'PatchMapWithMove' that, if applied to the first 'Map' provided,
+-- will produce a 'Map' with the same values as the second 'Map' but with the
+-- values sorted with the given ordering function.
 patchThatChangesAndSortsMapWith :: forall k v. (Ord k, Ord v) => (v -> v -> Ordering) -> Map k v -> Map k v -> PatchMapWithMove k v
 patchThatChangesAndSortsMapWith cmp oldByIndex newByIndexUnsorted = patch
   where oldByValue = Map.fromListWith Set.union $ swap . first Set.singleton <$> Map.toList oldByIndex
@@ -149,11 +142,15 @@ patchThatChangesAndSortsMapWith cmp oldByIndex newByIndexUnsorted = patch
           else Nothing
         patch = unsafePatchMapWithMove $ Map.filterWithKey (\k -> not . pointlessMove k . _nodeInfo_from) $ Map.mergeWithKey (\k a _ -> Just $ nodeInfoSetTo (keyWasMoved k) a) (Map.mapWithKey $ \k -> nodeInfoSetTo $ keyWasMoved k) (Map.mapWithKey $ \k _ -> NodeInfo From_Delete $ keyWasMoved k) insertsAndMoves oldByIndex
 
+-- | Change the 'From' value of a 'NodeInfo'
 nodeInfoMapFrom :: (From k v -> From k v) -> NodeInfo k v -> NodeInfo k v
 nodeInfoMapFrom f ni = ni { _nodeInfo_from = f $ _nodeInfo_from ni }
 
+-- | Change the 'From' value of a 'NodeInfo', using a 'Functor' (or
+-- 'Applicative', 'Monad', etc.) action to get the new value
 nodeInfoMapMFrom :: Functor f => (From k v -> f (From k v)) -> NodeInfo k v -> f (NodeInfo k v)
 nodeInfoMapMFrom f ni = fmap (\result -> ni { _nodeInfo_from = result }) $ f $ _nodeInfo_from ni
 
+-- | Set the 'To' field of a 'NodeInfo'
 nodeInfoSetTo :: To k -> NodeInfo k v -> NodeInfo k v
 nodeInfoSetTo to ni = ni { _nodeInfo_to = to }
