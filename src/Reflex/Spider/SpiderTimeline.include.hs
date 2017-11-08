@@ -59,7 +59,7 @@ instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) 
   {-# INLINE (>>=) #-}
   x >>= f = SpiderDynamic $ dynamicDynIdentity $ newJoinDyn $ newMapDyn (unSpiderDynamic . f) $ unSpiderDynamic x
   {-# INLINE (>>) #-}
-  _ >> y = y
+  (>>) = (*>)
   {-# INLINE fail #-}
   fail _ = error "Dynamic does not support 'fail'"
 
