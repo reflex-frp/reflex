@@ -43,6 +43,7 @@ import Data.Dependent.Sum
 import Data.FastMutableIntMap
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import qualified Data.Semigroup as S
 
 -- | A function that fires events for the given 'EventTrigger's and then runs
 -- any followup actions provided via 'PerformEvent'.  The given 'ReadPhase'
@@ -60,6 +61,8 @@ deriving instance ReflexHost t => Monad (PerformEventT t m)
 deriving instance ReflexHost t => MonadFix (PerformEventT t m)
 deriving instance (ReflexHost t, MonadIO (HostFrame t)) => MonadIO (PerformEventT t m)
 deriving instance (ReflexHost t, MonadException (HostFrame t)) => MonadException (PerformEventT t m)
+deriving instance (ReflexHost t, Applicative m, Monoid a) => Monoid (PerformEventT t m a)
+deriving instance (ReflexHost t, Applicative m, S.Semigroup a) => S.Semigroup (PerformEventT t m a)
 
 instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m) where
   type PrimState (PerformEventT t m) = PrimState (HostFrame t)

@@ -28,6 +28,7 @@ import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.TriggerEvent.Class
 
+import Control.Applicative (liftA2)
 import Control.Monad.Exception
 import Control.Monad.Identity
 import Control.Monad.Primitive
@@ -39,6 +40,7 @@ import qualified Data.Dependent.Map as DMap
 import Data.Functor.Compose
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import qualified Data.Semigroup as S
 
 -- | Provides a basic implementation of 'PostBuild'.
 newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event t ()) m a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans, MonadException, MonadAsyncException)
@@ -49,6 +51,14 @@ newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event t ()) m a
 {-# INLINABLE runPostBuildT #-}
 runPostBuildT :: PostBuildT t m a -> Event t () -> m a
 runPostBuildT (PostBuildT a) = runReaderT a
+
+-- TODO: Monoid and Semigroup can likely be derived once ReaderT has them.
+instance (Monoid a, Applicative m) => Monoid (PostBuildT t m a) where
+  mempty = pure mempty
+  mappend = liftA2 mappend
+
+instance (S.Semigroup a, Applicative m) => S.Semigroup (PostBuildT t m a) where
+  (<>) = liftA2 (S.<>)
 
 instance PrimMonad m => PrimMonad (PostBuildT x m) where
   type PrimState (PostBuildT x m) = PrimState m

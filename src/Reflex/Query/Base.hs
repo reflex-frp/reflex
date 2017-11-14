@@ -16,6 +16,7 @@ module Reflex.Query.Base
   , withQueryT
   ) where
 
+import Control.Applicative (liftA2)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Reader
@@ -30,6 +31,7 @@ import Data.Functor.Misc
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
+import qualified Data.Semigroup as S
 import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.These
@@ -209,6 +211,15 @@ instance MonadRef m => MonadRef (QueryT t q m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (QueryT t q m) where
   newEventWithTrigger = QueryT . newEventWithTrigger
   newFanEventWithTrigger a = QueryT . lift $ newFanEventWithTrigger a
+
+-- TODO: Monoid and Semigroup can likely be derived once StateT has them.
+instance (Monoid a, Monad m) => Monoid (QueryT t q m a) where
+  mempty = pure mempty
+  mappend = liftA2 mappend
+
+instance (S.Semigroup a, Monad m) => S.Semigroup (QueryT t q m a) where
+  (<>) = liftA2 (S.<>)
+
 
 mapQuery :: QueryMorphism q q' -> q -> q'
 mapQuery = _queryMorphism_mapQuery
