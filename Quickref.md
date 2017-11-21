@@ -139,7 +139,8 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   demuxed :: Eq k  =>              Demux k -> k -> Dynamic Bool
 
 -- Dynamic to Dynamic, removing updates w/o value change
-[ ]   uniqDyn :: Eq a => Dynamic a -> Dynamic a
+[H]   holdUniqDyn   :: Eq a => Dynamic a -> m (Dynamic a)
+[H]   holdUniqDynBy :: (a -> a -> Bool) -> Dynamic t a -> m (Dynamic t a)
 
 -- Dynamic to identical Dynamic with debug trace.  (Only prints if Dynamic is ultimately used.)
 [ ]   traceDyn     :: Show a => String -> Dynamic a -> Dynamic a
