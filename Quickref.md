@@ -30,6 +30,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   ffilter   :: (a ->    Bool) ->        Event a -> Event a
 [ ]   ffor      ::        Event a -> (a ->       b) -> Event b
 [ ]   fforMaybe ::        Event a -> (a -> Maybe b) -> Event b
+[ ]   <$        ::              b ->        Event a -> Event b
 
 -- Event to identical Event with debug trace.  (Only prints if Event is ultimately used.)
 [ ]   traceEvent     :: Show a => String -> Event a -> Event a
