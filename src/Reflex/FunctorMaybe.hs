@@ -24,9 +24,9 @@ class FunctorMaybe f where
   -- | Combined mapping and filtering function.
   fmapMaybe :: (a -> Maybe b) -> f a -> f b
 
--- | @fmapMaybe = flip (>>=)
+-- | @fmapMaybe = (=<<)
 instance FunctorMaybe Maybe where
-  fmapMaybe = flip (>>=)
+  fmapMaybe = (=<<)
 
 -- | @fmapMaybe f = catMaybes . fmap f@
 instance FunctorMaybe [] where
