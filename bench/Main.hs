@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -7,6 +8,7 @@ module Main where
 import Data.Functor.Misc
 import Control.Monad.Primitive
 import Control.Monad.IO.Class
+import Control.Monad.Identity
 import Data.Dependent.Sum
 import Control.Concurrent.STM
 import Control.Applicative
@@ -21,8 +23,6 @@ import System.Mem
 import System.IO
 import Criterion.Main
 
-import qualified Data.Traversable as T
-
 import qualified Data.Dependent.Map as DM
 
 
@@ -30,8 +30,10 @@ main :: IO ()
 main = defaultMain
   [ bgroup "micro" micros ]
 
+#if !(MIN_VERSION_deepseq(1,4,2))
 instance NFData (IORef a) where
   rnf x = seq x ()
+#endif
 
 instance NFData (TVar a) where
   rnf x = seq x ()
@@ -73,7 +75,7 @@ micros =
     (newEventWithTriggerRef >>= subscribePair)
     (\(subd, trigger) -> do
         Just key <- liftIO $ readIORef trigger
-        fireEvents [key :=> (42 :: Int)])
+        fireEvents [key :=> Identity (42 :: Int)])
   , withSetupWHNF "fireEventsAndRead(head/merge1)"
     (setupMerge 1 >>= subscribePair)
     (\(subd, t:riggers) -> fireAndRead t (42 :: Int) subd)
@@ -87,17 +89,17 @@ micros =
     (setupMerge 100 >>= subscribePair)
     (\(subd, t:riggers) -> do
         Just key <- liftIO $ readIORef t
-        fireEvents [key :=> (42 :: Int)])
+        fireEvents [key :=> Identity (42 :: Int)])
   , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev,trigger) -> hold (42 :: Int) ev
   , withSetupWHNF "sample" (newEventWithTriggerRef >>= hold (42 :: Int) . fst) sample    
   ]
 
 setupMerge :: Int
-           -> SpiderHost (Event Spider (DM.DMap (Const2 Int a)),
+           -> SpiderHost (Event Spider (DM.DMap (Const2 Int a) Identity),
                          [IORef (Maybe (EventTrigger Spider a))])
 setupMerge num = do
   (evs, triggers) <- unzip <$> replicateM 100 newEventWithTriggerRef
-  let !m = DM.fromList [WrapArg (Const2 i) :=> v | (i,v) <- zip [0..] evs]
+  let !m = DM.fromList [(Const2 i) :=> v | (i,v) <- zip [0..] evs]
   pure (merge m, triggers)
 
 subscribePair :: (Event Spider a, b) -> SpiderHost (EventHandle Spider a, b)
@@ -107,4 +109,4 @@ fireAndRead :: IORef (Maybe (EventTrigger Spider a)) -> a -> EventHandle Spider 
             -> SpiderHost (Maybe b)
 fireAndRead trigger val subd = do
   Just key <- liftIO $ readIORef trigger
-  fireEventsAndRead [key :=> val] $ readEvent subd >>= T.sequence
+  fireEventsAndRead [key :=> Identity val] $ readEvent subd >>= sequence
