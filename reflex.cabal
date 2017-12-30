@@ -17,7 +17,7 @@ library
   hs-source-dirs: src
   build-depends:
     base >= 4.7 && < 4.10,
-    dependent-sum == 0.3.*,
+    dependent-sum >= 0.3 && < 0.5,
     dependent-map == 0.2.*,
     semigroups >= 0.16 && < 0.19,
     mtl >= 2.1 && < 2.3,
@@ -31,7 +31,7 @@ library
     transformers-compat >= 0.3,
     haskell-src-exts >= 1.16 && < 1.20,
     haskell-src-meta >= 0.6 && < 0.9,
-    syb >= 0.4.4 && < 0.7
+    syb >= 0.4.4 && < 0.8
 
   exposed-modules:
     Reflex,
