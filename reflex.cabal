@@ -24,7 +24,7 @@ library
     containers == 0.5.*,
     these >= 0.4 && < 0.8,
     primitive >= 0.5 && < 0.7,
-    template-haskell >= 2.9 && < 2.12,
+    template-haskell >= 2.9 && < 2.13,
     ref-tf == 0.4.*,
     exception-transformers == 0.4.*,
     transformers >= 0.2,
