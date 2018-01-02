@@ -1,4 +1,10 @@
-{-# LANGUAGE TemplateHaskell, ScopedTypeVariables, TypeOperators, GADTs, EmptyDataDecls, PatternGuards #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeOperators #-}
 module Reflex.Dynamic.TH (qDyn, unqDyn, mkDyn) where
 
 import Reflex.Dynamic
@@ -56,12 +62,22 @@ mkDynExp s = case Hs.parseExpWithMode (Hs.defaultParseMode { Hs.extensions = [ H
   Hs.ParseFailed (Hs.SrcLoc _ l c) err -> fail $ "mkDyn:" <> show l <> ":" <> show c <> ": " <> err
   Hs.ParseOk e -> qDyn $ return $ everywhere (id `extT` reinstateUnqDyn) $ Hs.toExp $ everywhere (id `extT` antiE) e
     where TH.Name (TH.OccName occName) (TH.NameG _ _ (TH.ModName modName)) = 'unqMarker
+#if MIN_VERSION_haskell_src_exts(1,18,0)
+          antiE :: Hs.Exp Hs.SrcSpanInfo -> Hs.Exp Hs.SrcSpanInfo
+          antiE x = case x of
+            Hs.SpliceExp l se ->
+              Hs.App l (Hs.Var l $ Hs.Qual l (Hs.ModuleName l modName) (Hs.Ident l occName)) $ case se of
+                Hs.IdSplice l2 v -> Hs.Var l2 $ Hs.UnQual l2 $ Hs.Ident l2 v
+                Hs.ParenSplice _ ps -> ps
+            _ -> x
+#else
           antiE x = case x of
             Hs.SpliceExp se ->
               Hs.App (Hs.Var $ Hs.Qual (Hs.ModuleName modName) (Hs.Ident occName)) $ case se of
                 Hs.IdSplice v -> Hs.Var $ Hs.UnQual $ Hs.Ident v
                 Hs.ParenSplice ps -> ps
             _ -> x
+#endif
           reinstateUnqDyn (TH.Name (TH.OccName occName') (TH.NameQ (TH.ModName modName')))
             | modName == modName' && occName == occName' = 'unqMarker
           reinstateUnqDyn x = x
