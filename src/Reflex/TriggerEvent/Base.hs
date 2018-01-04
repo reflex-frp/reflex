@@ -13,6 +13,7 @@ module Reflex.TriggerEvent.Base
   , EventTriggerRef (..)
   ) where
 
+import Control.Applicative (liftA2)
 import Control.Concurrent
 import Control.Monad.Exception
 import Control.Monad.Primitive
@@ -21,6 +22,7 @@ import Control.Monad.Ref
 import Data.Coerce
 import Data.Dependent.Sum
 import Data.IORef
+import qualified Data.Semigroup as S
 import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
@@ -128,6 +130,15 @@ instance Adjustable t m => Adjustable t (TriggerEventT t m) where
   traverseDMapWithKeyWithAdjust f dm0 dm' = TriggerEventT $ traverseDMapWithKeyWithAdjust (coerce . f) dm0 dm'
   {-# INLINABLE traverseDMapWithKeyWithAdjustWithMove #-}
   traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = TriggerEventT $ traverseDMapWithKeyWithAdjustWithMove (coerce . f) dm0 dm'
+
+-- TODO: Monoid and Semigroup can likely be derived once ReaderT has them.
+instance (Monoid a, Applicative m) => Monoid (TriggerEventT t m a) where
+  mempty = pure mempty
+  mappend = liftA2 mappend
+
+instance (S.Semigroup a, Applicative m) => S.Semigroup (TriggerEventT t m a) where
+  (<>) = liftA2 (S.<>)
+
 
 -- | Retrieve the current 'Chan'; event trigger invocations pushed into it will
 -- be fired.

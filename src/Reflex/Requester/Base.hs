@@ -40,6 +40,7 @@ import Reflex.PostBuild.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
+import Control.Applicative (liftA2)
 import Control.Monad.Exception
 import Control.Monad.Identity
 import Control.Monad.Reader
@@ -58,6 +59,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Unique.Tag
+import qualified Data.Semigroup as S
 import Data.Some (Some)
 import Data.Type.Equality
 import Data.Proxy
@@ -236,6 +238,15 @@ deriving instance MonadSample t m => MonadSample t (RequesterT t request respons
 deriving instance MonadHold t m => MonadHold t (RequesterT t request response m)
 deriving instance PostBuild t m => PostBuild t (RequesterT t request response m)
 deriving instance TriggerEvent t m => TriggerEvent t (RequesterT t request response m)
+
+-- TODO: Monoid and Semigroup can likely be derived once StateT has them.
+instance (Monoid a, Monad m) => Monoid (RequesterT t request response m a) where
+  mempty = pure mempty
+  mappend = liftA2 mappend
+
+instance (S.Semigroup a, Monad m) => S.Semigroup (RequesterT t request response m a) where
+  (<>) = liftA2 (S.<>)
+
 
 -- | Run a 'RequesterT' action.  The resulting 'Event' will fire whenever
 -- requests are made, and responses should be provided in the input 'Event'.
