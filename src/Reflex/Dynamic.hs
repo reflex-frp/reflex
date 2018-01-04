@@ -38,6 +38,7 @@ module Reflex.Dynamic
   , maybeDyn
   , eitherDyn
   , factorDyn
+  , factorDynGeneric
   , scanDyn
   , scanDynMaybe
   , holdUniqDyn
@@ -57,15 +58,6 @@ module Reflex.Dynamic
   , Demux
   , demux
   , demuxed
-    -- Things that probably aren't very useful:
-  , HList (..)
-  , FHList (..)
-  , collectDynPure
-  , RebuildSortedHList (..)
-  , IsHList (..)
-  , AllAreFunctors (..)
-  , HListPtr (..)
-  , distributeFHListOverDynPure
     -- Unsafe
   , unsafeDynamic
     -- * Deprecated functions
@@ -87,9 +79,17 @@ module Reflex.Dynamic
   , tagDyn
   , uniqDyn
   , uniqDynBy
+    -- Things that probably aren't very useful, and are also deprecated
+  , HList (..)
+  , FHList (..)
+  , collectDynPure
+  , RebuildSortedHList (..)
+  , IsHList (..)
+  , AllAreFunctors (..)
+  , HListPtr (..)
+  , distributeFHListOverDynPure
   ) where
 
-import Data.Functor.Compose
 import Data.Functor.Misc
 import Reflex.Class
 
@@ -101,11 +101,15 @@ import Data.Align
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Compose (Compose (Compose), getCompose)
 import Data.GADT.Compare ((:~:) (..), GCompare (..), GEq (..), GOrdering (..))
 import Data.Map (Map)
-import Data.Maybe
+import Data.Maybe (isJust)
 import Data.Monoid
 import Data.These
+import Generics.SOP ((:.:) (Comp), Code, Generic, I (I), Proxy (Proxy), SListI, SOP (SOP), from, hcmap, hmap, to, unSOP)
+import Generics.SOP.Distribute (distributeI_NP)
+import Generics.SOP.DMapUtilities (FunctorWrapTypeListOfLists, dSumToNS, nsOfnpUnCompose, nsToDSum)
 
 import Debug.Trace
 
@@ -329,6 +333,29 @@ factorDyn d = do
   o0 <- getInitial --TODO: Figure out how to get this to run inside something like the first argument to buildDynamic
   holdDyn o0 update
 
+-- | Use factorDyn and generics-sop to turn a Dynamic of a type into a factored
+-- Dynamic of a type with Dynamic fields.  For example:
+--
+-- > maybeDyn :: (Reflex t, MonadHold t m, MonadFix m) => Dynamic t (Maybe a) -> m (Dynamic t (Maybe (Dynamic t a)))
+-- > maybeDyn = factorDynGeneric
+--
+-- > eitherDyn :: (Reflex t, MonadHold t m, MonadFix m) => Dynamic t (Either a b) -> m (Dynamic t (Either (Dynamic t a) (Dynamic t b)))
+-- > eitherDyn = factorDynGeneric
+
+factorDynGeneric :: forall t m a b. (Reflex t, MonadFix m, MonadHold t m
+                                    , Generic a, Generic b
+                                    , (Code b) ~ FunctorWrapTypeListOfLists (Dynamic t) (Code a))
+  => Dynamic t a -> m (Dynamic t b)
+factorDynGeneric da = do
+  let dSumDyn = nsToDSum . unSOP . from <$> da -- Dynamic t (DSum (TypeListTag (Code a)) (NP I xs))
+  dSumDyn' <- factorDyn dSumDyn  -- Dynamic t (DSum (TypeListTag (Code a)) (NP I))
+  let nsnpDyn = dSumToNS <$> dSumDyn' -- Dynamic t (NS (Compose (Dynamic t) (NP I)) (Code a))
+      sListIC = Proxy :: Proxy SListI
+      nsnpDyn' = hcmap sListIC (hmap (Comp. I) . distributeI_NP . getCompose) <$> nsnpDyn -- Dynamic t (NS (NP (I :.: Dynamic t)) (Code a))
+      nsnpDyn'' = nsOfnpUnCompose <$> nsnpDyn' -- Dynamic t (NS (NP I) (Code b))
+      result = to . SOP <$> nsnpDyn''
+  return result
+
 --------------------------------------------------------------------------------
 -- Demux
 --------------------------------------------------------------------------------
@@ -366,15 +393,22 @@ demuxed d k =
   let e = select (demuxSelector d) (Const2 k)
   in unsafeBuildDynamic (fmap (==k) $ sample $ demuxValue d) e
 
+
 --------------------------------------------------------------------------------
 -- collectDyn
 --------------------------------------------------------------------------------
 
---TODO: This whole section is badly in need of cleanup
+-- | This is now deprecated in favor of types from the generics-sop library and
+-- functions provided in Reflex.Dynamic.CollectDynGeneric
+-- The generics-sop 'NP' product type takes the place of FHList and HList.
+-- Utilities to manipulate the NP types (shifting functors from the type into and out of the type-list
+-- and convert from NP to DMap and DMap to NP are all in Generics.SOP.DMapUtilities
+-- Equivalent "distribute" and "collect" functions are now in Reflex.Dynamic.CollectDynGeneric
 
 -- | A heterogeneous list whose type and length are fixed statically.  This is
 -- reproduced from the 'HList' package due to integration issues, and because
 -- very little other functionality from that library is needed.
+{-# DEPRECATED HList, HRevApp, hRevApp, hReverse, hBuild, HBuild' "This interface for type-level lists is being deprecated in favor of the 'NP' type from generics-sop" #-}
 data HList (l::[*]) where
   HNil  :: HList '[]
   HCons :: e -> HList l -> HList (e ': l)
@@ -407,6 +441,7 @@ instance HBuild' (a ': l) r
   hBuild' l x = hBuild' (HCons x l)
 
 -- | Like 'HList', but with a functor wrapping each element.
+{-# DEPRECATED FHList,RebuildSortedHList "This interface for type-level lists is being deprecated in favor of the 'NP' type from generics-sop" #-}
 data FHList f l where
   FHNil :: FHList f '[]
   FHCons :: f e -> FHList f l -> FHList f (e ': l)
@@ -433,6 +468,7 @@ instance GCompare (HListPtr l) where -- Warning: This ordering can't change, dma
   HTailPtr a `gcompare` HTailPtr b = a `gcompare` b
 
 -- | A typed index into a typed heterogeneous list.
+{-# DEPRECATED HListPtr "Use 'Generics.SOP.DMapUtiltiies.TypeListTag' instead" #-}
 data HListPtr l a where
   HHeadPtr :: HListPtr (h ': t) h
   HTailPtr :: HListPtr t a -> HListPtr (h ': t) a
@@ -440,6 +476,7 @@ data HListPtr l a where
 deriving instance Eq (HListPtr l a)
 deriving instance Ord (HListPtr l a)
 
+{-# DEPRECATED fhlistToDMap "Use generics-sop 'NP' for your functor wrapped type-list and then 'Generics.SOP.DMapUtilities.npToDMap'" #-}
 fhlistToDMap :: forall (f :: * -> *) l. FHList f l -> DMap (HListPtr l) f
 fhlistToDMap = DMap.fromList . go
   where go :: forall l'. FHList f l' -> [DSum (HListPtr l') f]
@@ -469,17 +506,20 @@ instance RebuildSortedHList t => RebuildSortedHList (h ': t) where
     ((HHeadPtr :=> Identity h) : t) -> HCons h . rebuildSortedHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
     _ -> error "rebuildSortedHList{h':t}: non-empty list with HHeadPtr expected"
 
+{-# DEPRECATED dmapToHList "Use generics-sop 'NP' for your functor wrapped type-list and then 'Generics.SOP.DMapUtilities.dMapToNP'" #-}
 dmapToHList :: forall l. RebuildSortedHList l => DMap (HListPtr l) Identity -> HList l
 dmapToHList = rebuildSortedHList . DMap.toList
 
 -- | Collect a hetereogeneous list whose elements are all 'Dynamic's into a
 -- single 'Dynamic' whose value represents the current values of all of the
 -- input 'Dynamic's.
+{-# DEPRECATED distributeFHListOverDynPure "Use the generics-sop 'NP' type for functor-wrapped type-lists and then 'Reflex.Dynamic.CollectDynGeneric.collectDynNP' " #-}
 distributeFHListOverDynPure :: (Reflex t, RebuildSortedHList l) => FHList (Dynamic t) l -> Dynamic t (HList l)
 distributeFHListOverDynPure l = fmap dmapToHList $ distributeDMapOverDynPure $ fhlistToDMap l
 
 -- | Indicates that all elements in a type-level list are applications of the
 -- same functor.
+{-# DEPRECATED AllAreFunctors "This functionality is provided for generics-sop 'NP' via 'Generics.SOP.DMapUtilties.npUnCompose' and 'Generics.SOP.DMapUtilities.npReCompose'" #-}
 class AllAreFunctors (f :: a -> *) (l :: [a]) where
   type FunctorList f l :: [*]
   toFHList :: HList (FunctorList f l) -> FHList f l
@@ -506,6 +546,7 @@ instance AllAreFunctors f t => AllAreFunctors f (h ': t) where
 -- | Convert a datastructure whose constituent parts are all 'Dynamic's into a
 -- single 'Dynamic' whose value represents all the current values of the input's
 -- consitutent 'Dynamic's.
+{-# DEPRECATED collectDynPure "Use 'Reflex.Dynamic.CollectDynGeneric.collectDynGeneric' instead." #-}
 collectDynPure :: ( RebuildSortedHList (HListElems b)
                   , IsHList a, IsHList b
                   , AllAreFunctors (Dynamic t) (HListElems b)

@@ -59,6 +59,7 @@ library
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.2.4 && < 0.3,
     exception-transformers == 0.4.*,
+    generics-sop >= 0.2.4.0,
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
@@ -84,12 +85,15 @@ library
     Data.WeakBag,
     Data.FastWeakBag,
     Data.FastMutableIntMap,
+    Generics.SOP.DMapUtilities,
+    Generics.SOP.Distribute,
     Reflex,
     Reflex.Class,
     Reflex.Collection,
     Reflex.EventWriter,
     Reflex.Dynamic,
     Reflex.Dynamic.Uniq,
+    Reflex.Dynamic.CollectDynGeneric,
     Reflex.DynamicWriter,
     Reflex.FastWeak,
     Reflex.FunctorMaybe,
@@ -120,7 +124,7 @@ library
     Reflex.Widget.Basic,
     Reflex.Workflow
 
-  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively -ddump-simpl -ddump-to-file -dsuppress-coercions -dsuppress-idinfo
+  ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively
   ghc-prof-options: -fprof-auto
 
   if flag(specialize-to-spidertimeline-global)
@@ -168,6 +172,8 @@ test-suite semantics
   main-is: semantics.hs
   hs-source-dirs: test
   ghc-options: -O2 -Wall -rtsopts
+  if flag(use-template-haskell)
+    cpp-options: -DUSE_TEMPLATE_HASKELL
   build-depends:
     base,
     bifunctors,
@@ -274,6 +280,18 @@ test-suite rootCleanup
   hs-source-dirs: test
   build-depends: base
                , reflex
+
+test-suite mkDyn
+  type: exitcode-stdio-1.0
+  main-is: MkDyn.hs
+  hs-source-dirs: test
+  if !flag(use-template-haskell)
+    buildable: False
+  build-depends: base
+               , reflex
+               , deepseq
+               , mtl
+               , containers
 
 benchmark spider-bench
   type: exitcode-stdio-1.0
