@@ -89,6 +89,7 @@ import qualified Reflex.Class
 import qualified Reflex.Class as R
 import qualified Reflex.Host.Class
 #endif
+import Reflex.NotReady.Class
 import Reflex.Patch
 import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
 
@@ -2418,6 +2419,10 @@ instance Monad (SpiderHostFrame x) where
   return x = SpiderHostFrame $ return x
   {-# INLINABLE fail #-}
   fail s = SpiderHostFrame $ fail s
+
+instance NotReady x (SpiderHostFrame x) where
+  notReadyUntil _ = pure ()
+  notReady = pure ()
 
 newEventWithTriggerIO :: (RootTrigger x a -> IO (IO ())) -> IO (Event x a)
 newEventWithTriggerIO f = do
