@@ -7,10 +7,11 @@ module Reflex.Patch
   ) where
 
 import Reflex.Patch.Class as X
-import Reflex.Patch.DMap as X
+import Reflex.Patch.DMap as X hiding (getDeletions)
 import Reflex.Patch.DMapWithMove as X (PatchDMapWithMove, const2PatchDMapWithMoveWith, patchDMapWithMoveToPatchMapWithMoveWith, mapPatchDMapWithMove, weakenPatchDMapWithMoveWith, traversePatchDMapWithMoveWithKey, unsafePatchDMapWithMove, unPatchDMapWithMove)
 import Reflex.Patch.Map as X
 import Reflex.Patch.MapWithMove as X (PatchMapWithMove, patchMapWithMoveNewElementsMap, patchMapWithMoveNewElements, unsafePatchMapWithMove, unPatchMapWithMove)
+import Reflex.Patch.IntMap as X hiding (getDeletions)
 
 import Data.Semigroup (Semigroup (..), (<>))
 

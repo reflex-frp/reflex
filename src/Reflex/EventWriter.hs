@@ -38,7 +38,6 @@ import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
-import Data.FastMutableIntMap
 import Data.Foldable
 import Data.Functor.Compose
 import Data.Functor.Misc

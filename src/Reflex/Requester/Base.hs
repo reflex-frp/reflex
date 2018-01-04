@@ -50,7 +50,6 @@ import Data.Coerce
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import qualified Data.Some as Some
-import Data.FastMutableIntMap
 import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.IntMap.Strict (IntMap)

@@ -48,6 +48,7 @@ module Reflex.Class
   , mergeMap
   , mergeMapIncremental
   , mergeMapIncrementalWithMove
+  , mergeIntMapIncremental
   , mergeList
   , mergeWith
   , difference
@@ -791,6 +792,10 @@ mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
 -- | Create a merge whose parents can change over time
 mergeMapIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Event t a)) -> Event t (Map k a)
 mergeMapIncremental = fmap dmapToMap . mergeIncremental . unsafeMapIncremental mapWithFunctorToDMap (const2PatchDMapWith id)
+
+-- | Create a merge whose parents can change over time
+mergeIntMapIncremental :: Reflex t => Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
+mergeIntMapIncremental = fmap dmapToIntMap . mergeIncremental . unsafeMapIncremental intMapWithFunctorToDMap (const2IntPatchDMapWith id)
 
 -- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental
 mergeMapIncrementalWithMove :: (Reflex t, Ord k) => Incremental t (PatchMapWithMove k (Event t a)) -> Event t (Map k a)

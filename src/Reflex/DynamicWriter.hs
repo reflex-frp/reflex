@@ -30,7 +30,10 @@ import Control.Monad.State.Strict
 import Data.Align
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.FastMutableIntMap
 import Data.Functor.Misc
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Semigroup
@@ -54,6 +57,11 @@ mergeDynIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Dynamic t
 mergeDynIncremental a = unsafeBuildIncremental (mapM (sample . current) =<< sample (currentIncremental a)) $ addedAndRemovedValues <> changedValues
   where changedValues = fmap (PatchMap . fmap Just) $ mergeMapIncremental $ mapIncrementalMapValues updated a
         addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ \(PatchMap m) -> PatchMap <$> mapM (mapM (sample . current)) m
+
+mergeIntMapDynIncremental :: Reflex t => Incremental t (PatchIntMap (Dynamic t v)) -> Incremental t (PatchIntMap v)
+mergeIntMapDynIncremental a = unsafeBuildIncremental (mapM (sample . current) =<< sample (currentIncremental a)) $ addedAndRemovedValues <> changedValues
+  where changedValues = fmap (PatchIntMap . fmap Just) $ mergeIntMapIncremental $ mapIncrementalMapValues updated a
+        addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ \(PatchIntMap m) -> PatchIntMap <$> mapM (mapM (sample . current)) m
 
 mergeDynIncrementalWithMove :: forall t k v. (Reflex t, Ord k) => Incremental t (PatchMapWithMove k (Dynamic t v)) -> Incremental t (PatchMapWithMove k v)
 mergeDynIncrementalWithMove a = unsafeBuildIncremental (mapM (sample . current) =<< sample (currentIncremental a)) $ alignWith f addedAndRemovedValues changedValues
@@ -142,6 +150,7 @@ instance (Adjustable t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => Adju
     (result0, result') <- lift $ runWithReplace (runDynamicWriterT a0) $ runDynamicWriterT <$> a'
     tellDyn . join =<< holdDyn (snd result0) (snd <$> result')
     return (fst result0, fst <$> result')
+  traverseIntMapWithKeyWithAdjust = traverseIntMapWithKeyWithAdjustImpl traverseIntMapWithKeyWithAdjust mergeIntMapDynIncremental
   traverseDMapWithKeyWithAdjust = traverseDMapWithKeyWithAdjustImpl traverseDMapWithKeyWithAdjust mapPatchDMap weakenPatchDMapWith mergeDynIncremental
   traverseDMapWithKeyWithAdjustWithMove = traverseDMapWithKeyWithAdjustImpl traverseDMapWithKeyWithAdjustWithMove mapPatchDMapWithMove weakenPatchDMapWithMoveWith mergeDynIncrementalWithMove
 
@@ -170,6 +179,29 @@ traverseDMapWithKeyWithAdjustImpl base mapPatch weakenPatchWith mergeMyDynIncrem
   --TODO: We should be able to improve the performance here by incrementally updating the mconcat of the merged Dynamics
   i <- holdIncremental liftedWritten0 liftedWritten'
   tellDyn $ fmap (mconcat . Map.elems) $ incrementalToDynamic $ mergeMyDynIncremental i
+  return (liftedResult0, liftedResult')
+
+traverseIntMapWithKeyWithAdjustImpl :: forall t w v' p p' v m. (PatchTarget (p' (Dynamic t w)) ~ IntMap (Dynamic t w), PatchTarget (p' w) ~ IntMap w, Patch (p' w), Patch (p' (Dynamic t w)), MonadFix m, Monoid w, Reflex t, MonadHold t m, Functor p, p ~ p')
+  => (   (IntMap.Key -> v -> m ((v', Dynamic t w)))
+      -> IntMap v
+      -> Event t (p v)
+      -> m (IntMap (v', Dynamic t w), Event t (p (v', Dynamic t w)))
+     )
+  -> (Incremental t (p' (Dynamic t w)) -> Incremental t (p' w))
+  -> (IntMap.Key -> v -> DynamicWriterT t w m v')
+  -> IntMap v
+  -> Event t (p v)
+  -> DynamicWriterT t w m (IntMap v', Event t (p v'))
+traverseIntMapWithKeyWithAdjustImpl base mergeMyDynIncremental f (dm0 :: IntMap v) dm' = do
+  (result0, result') <- lift $ base (\k v -> runDynamicWriterT $ f k v) dm0 dm'
+  let liftedResult0 = fmap fst result0
+      liftedResult' = fmap (fmap fst) result'
+      liftedWritten0 :: IntMap (Dynamic t w)
+      liftedWritten0 = fmap snd result0
+      liftedWritten' = fmap (fmap snd) result'
+  --TODO: We should be able to improve the performance here by incrementally updating the mconcat of the merged Dynamics
+  i <- holdIncremental liftedWritten0 liftedWritten'
+  tellDyn $ fmap (mconcat . IntMap.elems) $ incrementalToDynamic $ mergeMyDynIncremental i
   return (liftedResult0, liftedResult')
 
 -- | Map a function over the output of a 'DynamicWriterT'.

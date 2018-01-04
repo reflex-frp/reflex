@@ -8,11 +8,13 @@
 module Reflex.Patch.DMap where
 
 import Reflex.Patch.Class
+import Reflex.Patch.IntMap
 import Reflex.Patch.Map
 
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Constant
+import qualified Data.IntMap as IntMap
 import Data.Functor.Misc
 import qualified Data.Map as Map
 import Data.Semigroup (Semigroup (..))
@@ -53,6 +55,11 @@ patchDMapToPatchMapWith f (PatchDMap p) = PatchMap $ dmapToMapWith (fmap f . get
 const2PatchDMapWith :: forall k v f a. (v -> f a) -> PatchMap k v -> PatchDMap (Const2 k a) f
 const2PatchDMapWith f (PatchMap p) = PatchDMap $ DMap.fromDistinctAscList $ g <$> Map.toAscList p
   where g :: (k, Maybe v) -> DSum (Const2 k a) (ComposeMaybe f)
+        g (k, e) = Const2 k :=> ComposeMaybe (f <$> e)
+
+const2IntPatchDMapWith :: forall v f a. (v -> f a) -> PatchIntMap v -> PatchDMap (Const2 IntMap.Key a) f
+const2IntPatchDMapWith f (PatchIntMap p) = PatchDMap $ DMap.fromDistinctAscList $ g <$> IntMap.toAscList p
+  where g :: (IntMap.Key, Maybe v) -> DSum (Const2 IntMap.Key a) (ComposeMaybe f)
         g (k, e) = Const2 k :=> ComposeMaybe (f <$> e)
 
 -- | Get the values that will be deleted if the given patch is applied to the

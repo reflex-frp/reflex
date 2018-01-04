@@ -23,6 +23,7 @@ module Data.Functor.Misc
     Const2 (..)
   , unConst2
   , dmapToMap
+  , dmapToIntMap
   , dmapToMapWith
   , mapToDMap
   , weakenDMapWith
@@ -30,6 +31,7 @@ module Data.Functor.Misc
   , WrapArg (..)
     -- * Convenience functions for DMap
   , mapWithFunctorToDMap
+  , intMapWithFunctorToDMap
   , mapKeyValuePairsMonotonic
   , combineDMapsWithKey
   , EitherTag (..)
@@ -53,6 +55,8 @@ import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.GADT.Compare
 import Data.GADT.Show
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Some (Some)
@@ -127,6 +131,10 @@ instance {-# INCOHERENT #-} Eq k => EqTag (Const2 k v) (Const2 k v) where
 dmapToMap :: DMap (Const2 k v) Identity -> Map k v
 dmapToMap = Map.fromDistinctAscList . map (\(Const2 k :=> Identity v) -> (k, v)) . DMap.toAscList
 
+-- | Convert a 'DMap' to an 'IntMap'
+dmapToIntMap :: DMap (Const2 IntMap.Key v) Identity -> IntMap v
+dmapToIntMap = IntMap.fromDistinctAscList . map (\(Const2 k :=> Identity v) -> (k, v)) . DMap.toAscList
+
 -- | Convert a 'DMap' to a regular 'Map', applying the given function to remove
 -- the wrapping 'Functor'
 dmapToMapWith :: (f v -> v') -> DMap (Const2 k v) f -> Map k v'
@@ -140,6 +148,11 @@ mapToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> Identity v) 
 -- to a 'DMap'
 mapWithFunctorToDMap :: Map k (f v) -> DMap (Const2 k v) f
 mapWithFunctorToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> v) . Map.toAscList
+
+-- | Convert a regular 'IntMap', where the values are already wrapped in a
+-- functor, to a 'DMap'
+intMapWithFunctorToDMap :: IntMap (f v) -> DMap (Const2 IntMap.Key v) f
+intMapWithFunctorToDMap = DMap.fromDistinctAscList . map (\(k, v) -> Const2 k :=> v) . IntMap.toAscList
 
 -- | Convert a 'DMap' to a regular 'Map' by forgetting the types associated with
 -- the keys, using a function to remove the wrapping 'Functor'

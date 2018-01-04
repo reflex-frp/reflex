@@ -26,14 +26,15 @@ module Data.FastMutableIntMap
 --TODO: Fast copy to FastIntMap
 --TODO: Fast patch type
 
-import Prelude hiding (lookup)
+import Control.Monad.IO.Class
+import Data.Foldable (traverse_)
 import Data.IORef
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Maybe
+import Prelude hiding (lookup)
 import Reflex.Patch.Class
-import Data.Foldable (traverse_)
-import Control.Monad.IO.Class
+import Reflex.Patch.IntMap
 
 newtype FastMutableIntMap a = FastMutableIntMap (IORef (IntMap a))
 
@@ -77,24 +78,3 @@ applyPatch (FastMutableIntMap r) p@(PatchIntMap m) = do
   v <- readIORef r
   writeIORef r $! applyAlways p v
   return $ IntMap.intersection v m
-
-newtype PatchIntMap a = PatchIntMap (IntMap (Maybe a)) deriving (Functor, Foldable, Traversable, Monoid)
-
-instance Patch (PatchIntMap a) where
-  type PatchTarget (PatchIntMap a) = IntMap a
-  apply (PatchIntMap p) v = if IntMap.null p then Nothing else Just $
-    let removes = IntMap.filter isNothing p
-        adds = IntMap.mapMaybe id p
-    in IntMap.union adds $ v `IntMap.difference` removes
-
-traverseIntMapPatchWithKey :: Applicative t => (Int -> a -> t b) -> PatchIntMap a -> t (PatchIntMap b)
-traverseIntMapPatchWithKey f (PatchIntMap m) = PatchIntMap <$> IntMap.traverseWithKey (\k mv -> traverse (f k) mv) m
-
-patchIntMapNewElements :: PatchIntMap a -> [a]
-patchIntMapNewElements (PatchIntMap m) = catMaybes $ IntMap.elems m
-
-patchIntMapNewElementsMap :: PatchIntMap a -> IntMap a
-patchIntMapNewElementsMap (PatchIntMap m) = IntMap.mapMaybe id m
-
-getDeletions :: PatchIntMap v -> IntMap v' -> IntMap v'
-getDeletions (PatchIntMap m) v = IntMap.intersection v m
