@@ -76,6 +76,7 @@ module Reflex.Class
   , distributeDMapOverDynPure
   , distributeListOverDyn
   , distributeListOverDynWith
+  , distributeNonEmptyOverDynWith
   , zipDyn
   , zipDynWith
     -- ** Accumulating state
@@ -201,6 +202,7 @@ import Data.Functor.Plus
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
+import qualified Data.List.NonEmpty as LNE
 import Data.Map (Map)
 import Data.Maybe
 import Data.Monoid hiding (Alt, (<>))
@@ -912,6 +914,10 @@ distributeListOverDyn = distributeListOverDynWith id
 -- | Create a new 'Dynamic' by applying a combining function to a list of 'Dynamic's
 distributeListOverDynWith :: Reflex t => ([a] -> b) -> [Dynamic t a] -> Dynamic t b
 distributeListOverDynWith f = fmap (f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..]
+
+-- | Create a new 'Dynamic' by applying a combining function to a list of 'Dynamic's
+distributeNonEmptyOverDynWith :: Reflex t => (NonEmpty a -> b) -> NonEmpty (Dynamic t a) -> Dynamic t b
+distributeNonEmptyOverDynWith f = fmap (f . LNE.fromList . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..] . LNE.toList
 
 -- | Create a new 'Event' that occurs when the first supplied 'Event' occurs
 -- unless the second supplied 'Event' occurs simultaneously.
