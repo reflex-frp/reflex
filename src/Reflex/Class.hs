@@ -605,8 +605,8 @@ instance Reflex t => Monad (Behavior t) where
 
 instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
   mempty = constant mempty
-  mappend a b = pull $ liftM2 mappend (sample a) (sample b)
   mconcat = pull . fmap mconcat . mapM sample
+  mappend a b = pull $ liftM2 mappend (sample a) (sample b)
 
 instance (Reflex t, Num a) => Num (Behavior t a) where
   (+) = liftA2 (+)
@@ -888,9 +888,15 @@ zipDynWith f da db =
   in unsafeBuildDynamic (f <$> sample (current da) <*> sample (current db)) ec
 
 instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
-  mconcat = distributeListOverDynWith mconcat
   mempty = constDyn mempty
+#if !MIN_VERSION_base(4,11,0)
   mappend = zipDynWith mappend
+  mconcat = distributeListOverDynWith mconcat
+#else
+instance (Reflex t, Semigroup a) => Semigroup (Dynamic t a) where
+  (<>) = zipDynWith (<>)
+  sconcat = distributeNonEmptyOverDynWith sconcat
+#endif
 
 -- | This function converts a 'DMap' whose elements are 'Dynamic's into a
 -- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same

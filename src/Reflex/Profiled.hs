@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -52,7 +53,12 @@ data CostCentreTree = CostCentreTree
 
 instance Monoid CostCentreTree where
   mempty = CostCentreTree 0 0 mempty
+#if !MIN_VERSION_base(4,11,0)
   CostCentreTree oa ea ca `mappend` CostCentreTree ob eb cb = CostCentreTree (oa + ob) (ea + eb) $ Map.unionWith (<>) ca cb
+#else
+instance Semigroup CostCentreTree where
+  CostCentreTree oa ea ca <> CostCentreTree ob eb cb = CostCentreTree (oa + ob) (ea + eb) $ Map.unionWith (<>) ca cb
+#endif
 
 getCostCentreStack :: Ptr CostCentreStack -> IO [Ptr CostCentre]
 getCostCentreStack = go []
