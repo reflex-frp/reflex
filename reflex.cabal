@@ -53,7 +53,7 @@ library
   build-depends:
     MemoTrie == 0.6.*,
     base >= 4.7 && < 4.11,
-    bifunctors >= 5.2 && < 5.5,
+    bifunctors >= 5.2 && < 5.6,
     comonad,
     containers == 0.5.*,
     data-default >= 0.5 && < 0.8,
@@ -141,7 +141,7 @@ library
     cpp-options: -DUSE_TEMPLATE_HASKELL
     build-depends:
       dependent-sum >= 0.3 && < 0.5,
-      haskell-src-exts >= 1.16 && < 1.20,
+      haskell-src-exts >= 1.16 && < 1.21,
       haskell-src-meta >= 0.6 && < 0.9,
       template-haskell >= 2.9 && < 2.13
     exposed-modules:
