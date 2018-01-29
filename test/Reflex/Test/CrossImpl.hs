@@ -155,35 +155,35 @@ testCases =
        let e' = leftmost [e, e]
        e'' <- switch <$> hold e' (fmap (const e) e)
        return (b, e'')
-  , (,) "switchPromptly-1" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-1" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = fmap (const e) e
-       e'' <- switchPromptly never e'
+       e'' <- switchHoldPromptly never e'
        return (b, e'')
-  , (,) "switchPromptly-2" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-2" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = fmap (const e) e
-       e'' <- switchPromptly never $ leftmost [e', e']
+       e'' <- switchHoldPromptly never $ leftmost [e', e']
        return (b, e'')
-  , (,) "switchPromptly-3" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-3" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = leftmost [e, e]
-       e'' <- switchPromptly never (fmap (const e) e')
+       e'' <- switchHoldPromptly never (fmap (const e) e')
        return (b, e'')
-  , (,) "switchPromptly-4" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj"), (3, "asdf")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-4" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj"), (3, "asdf")]) $ \(b, e) -> do
        let e' = leftmost [e, e]
-       e'' <- switchPromptly never (fmap (const e') e)
+       e'' <- switchHoldPromptly never (fmap (const e') e)
        return (b, e'')
   , (,) "switch-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = leftmost [e, e]
        e'' <- switch <$> hold never (fmap (const e') e)
        return (b, e'')
-  , (,) "switchPromptly-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip push e $ \_ -> do
              Just <$> headE e
-       e'' <- switchPromptly never e'
+       e'' <- switchHoldPromptly never e'
        return (b, e'')
-  , (,) "switchPromptly-6" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-6" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip pushAlways e $ \_ -> do
-             switchPromptly e never
-       e'' <- switchPromptly never e'
+             switchHoldPromptly e never
+       e'' <- switchHoldPromptly never e'
        return (b, e'')
   , (,) "coincidence-1" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip pushAlways e $ \_ -> return e

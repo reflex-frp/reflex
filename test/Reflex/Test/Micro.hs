@@ -128,36 +128,36 @@ testCases =
       return $ coincidence $ flip pushAlways e $ const $ do
             switch <$> hold ("x" <$ e) (e <$ e)
 
-  , testE "switchPromptly-1" $ do
+  , testE "switchHoldPromptly-1" $ do
       e <- events1
       let e' = e <$ e
-      switchPromptly never $ e <$ e'
+      switchHoldPromptly never $ e <$ e'
 
-  , testE "switchPromptly-2" $ do
+  , testE "switchHoldPromptly-2" $ do
       e <- events1
-      switchPromptly never $ deep (e <$ e)
+      switchHoldPromptly never $ deep (e <$ e)
 
-  , testE "switchPromptly-3" $ do
+  , testE "switchHoldPromptly-3" $ do
       e <- events1
-      switchPromptly never $ (e <$ deep e)
+      switchHoldPromptly never $ (e <$ deep e)
 
-  , testE "switchPromptly-4" $ do
+  , testE "switchHoldPromptly-4" $ do
       e <- events1
-      switchPromptly never $ (deep e <$ e)
+      switchHoldPromptly never $ (deep e <$ e)
 
   , testE "switch-5" $ do
       e <- events1
       switch <$> hold never (deep e <$ e)
 
-  , testE "switchPromptly-5" $ do
+  , testE "switchHoldPromptly-5" $ do
     e <- events1
-    switchPromptly never $ flip push e $
+    switchHoldPromptly never $ flip push e $
       const (Just <$> headE e)
 
-  , testE "switchPromptly-6" $ do
+  , testE "switchHoldPromptly-6" $ do
       e <- events1
-      switchPromptly never $ flip pushAlways e $
-        const (switchPromptly e never)
+      switchHoldPromptly never $ flip pushAlways e $
+        const (switchHoldPromptly e never)
 
   , testE "coincidence-1" $ do
       e <- events1

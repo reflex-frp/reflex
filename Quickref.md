@@ -159,7 +159,7 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 [ ]   switch            ::                  Behavior (Event a)  ->    Event a
 
 -- Flatten Dyanmic-of-Event to Event.  New Event is used immediately.
-[ ]   switchPromptlyDyn ::                   Dynamic (Event a)  ->    Event a
+[ ]   switchDyn         ::                   Dynamic (Event a)  ->    Event a
 
 -- Flatten Event-of-Event to Event that fires when both wrapper AND new Event fire.
 [ ]   coincidence       ::                     Event (Event a)  ->    Event a
@@ -182,7 +182,7 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 
 -- Similar to above, for Events.  Created Event initially tracks the first argument.
 -- At switchover, the output Event immediately tracks the new Event.
-[H]   switchPromptly    ::       Event a ->    Event (Event a)  -> m (Event a)
+[H]   switchHold        ::       Event a ->    Event (Event a)  -> m (Event a)
 ```
 
 ## Typeclasses to introspect and modify an FRP network.

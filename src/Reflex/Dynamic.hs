@@ -30,6 +30,7 @@ module Reflex.Dynamic
   , constDyn
   , count
   , toggle
+  , switchDyn
   , switchPromptlyDyn
   , tagPromptlyDyn
   , attachPromptlyDyn
@@ -181,10 +182,25 @@ count e = holdDyn 0 =<< zipListWithEvent const (iterate (+1) 1) e
 toggle :: (Reflex t, MonadHold t m, MonadFix m) => Bool -> Event t a -> m (Dynamic t Bool)
 toggle = foldDyn (const not)
 
+-- | Switches to the new 'Event' whenever it receives one. Only the old event is
+-- considered the moment a new one is switched in; the output event will fire at
+-- that moment if only if the old event does.
+--
+-- Prefer this to 'switchPromptlyDyn' where possible. The lack of doing double
+-- work when the outer and (new) inner fires means this imposes fewer "timing
+-- requirements" and thus is far more easy to use without introducing fresh
+-- failure cases. 'switchDyn' is also more performant.
+switchDyn :: forall t a. Reflex t => Dynamic t (Event t a) -> Event t a
+switchDyn d = switch (current d)
+
 -- | Switches to the new 'Event' whenever it receives one.  Switching occurs
 -- *before* the inner 'Event' fires - so if the 'Dynamic' changes and both the
 -- old and new inner Events fire simultaneously, the output will fire with the
 -- value of the *new* 'Event'.
+--
+-- Prefer 'switchDyn' to this where possible. The timing requirements that
+-- switching before imposes are likely to bring down your app unless you are
+-- very careful. 'switchDyn' is also more performant.
 switchPromptlyDyn :: forall t a. Reflex t => Dynamic t (Event t a) -> Event t a
 switchPromptlyDyn de =
   let eLag = switch $ current de

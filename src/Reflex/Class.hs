@@ -62,9 +62,10 @@ module Reflex.Class
   , EitherTag (..)
   , eitherToDSum
   , dsumToEither
-    -- ** Switching between 'Event's
-  , switchPromptly
-  , switchPromptOnly
+    -- ** Collapsing 'Event . Event'
+  , switchHold
+  , switchHoldPromptly
+  , switchHoldPromptOnly
     -- ** Using 'Event's to sample 'Behavior's
   , tag
   , attach
@@ -142,6 +143,8 @@ module Reflex.Class
   , tagCheap
   , mergeWithCheap
   , mergeWithCheap'
+  , switchPromptly
+  , switchPromptOnly
     -- * Slow, but general, implementations
   , slowHeadE
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
@@ -825,22 +828,45 @@ fanThese e =
 fanMap :: (Reflex t, Ord k) => Event t (Map k a) -> EventSelector t (Const2 k a)
 fanMap = fan . fmap mapToDMap
 
--- | Switches to the new event whenever it receives one.  Whenever a new event
--- is provided, if it is firing, its value will be the resulting event's value;
--- if it is not firing, but the old one is, the old one's value will be used.
-switchPromptly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
-switchPromptly ea0 eea = do
+-- | Switches to the new event whenever it receives one. Only the old event is
+-- considered the moment a new one is switched in; the output event will fire at
+-- that moment if only if the old event does.
+--
+-- Because the simultaneous firing case is irrelevant, this function imposes
+-- laxer "timing requirements" on the overall circuit, avoiding many potential
+-- cyclic dependency / metastability failures. It's also more performant. Use
+-- this rather than 'switchHoldPromptly' and 'switchHoldPromptOnly' unless you
+-- are absolutely sure you need to act on the new event in the coincidental
+-- case.
+switchHold :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
+switchHold ea0 eea = switch <$> hold ea0 eea
+
+-- | Switches to the new event whenever it receives one. Whenever a new event is
+-- provided, if it is firing, its value will be the resulting event's value; if
+-- it is not firing, but the old one is, the old one's value will be used.
+--
+-- 'switchHold', by always forwarding the old event the moment it is switched
+-- out, avoids many potential cyclic dependency problems / metastability
+-- problems. It's also more performant. Use it instead unless you are sure you
+-- cannot.
+switchHoldPromptly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
+switchHoldPromptly ea0 eea = do
   bea <- hold ea0 eea
   let eLag = switch bea
       eCoincidences = coincidence eea
   return $ leftmost [eCoincidences, eLag]
 
--- | 'switch'es to a new event whenever it receives one.  At the moment of
+-- | switches to a new event whenever it receives one.  At the moment of
 -- switching, the old event will be ignored if it fires, and the new one will be
 -- used if it fires; this is the opposite of 'switch', which will use only the
 -- old value.
-switchPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
-switchPromptOnly e0 e' = do
+--
+-- 'switchHold', by always forwarding the old event the moment it is switched
+-- out, avoids many potential cyclic dependency problems / metastability
+-- problems. It's also more performant. Use it instead unless you are sure you
+-- cannot.
+switchHoldPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
+switchHoldPromptOnly e0 e' = do
   eLag <- switch <$> hold e0 e'
   return $ coincidence $ leftmost [e', eLag <$ eLag]
 
@@ -1275,3 +1301,10 @@ sequenceThese t = case t of
   This ma -> fmap This ma
   These ma mb -> liftM2 These ma mb
   That mb -> fmap That mb
+
+{-# DEPRECATED switchPromptly "Use 'switchHoldPromptly' instead. The 'switchHold*' naming convention was chosen because those functions are more closely related to each other than they are to 'switch'. " #-}
+switchPromptly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
+switchPromptly = switchHoldPromptly
+{-# DEPRECATED switchPromptOnly "Use 'switchHoldPromptOnly' instead. The 'switchHold*' naming convention was chosen because those functions are more closely related to each other than they are to 'switch'. " #-}
+switchPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
+switchPromptOnly = switchHoldPromptOnly
