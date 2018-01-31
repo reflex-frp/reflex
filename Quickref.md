@@ -247,7 +247,7 @@ Th typeclasses and their associated annotations include:
             Dynamic (Map k v) -> (k -> Dynamic v -> Dynamic Bool -> m (Event a)) -> m (Event k)
 
 -- Same as listWithKey, but takes initial values and an updates Event instead of a Dynamic.
-[H,A,B]   listWithKey' :: Ord k =>
+[H,A]     listWithKeyShallowDiff :: Ord k =>
             Map k v -> Event (Map k (Maybe v)) -> (k -> v -> Event v -> m a) -> m (Dynamic (Map k a))
 ```
 
