@@ -5,7 +5,7 @@
 , semigroupoids , semigroups, split, stdenv, stm, syb
 , template-haskell , these, time, transformers
 , transformers-compat, unbounded-delays, prim-uniq
-, data-default , filepath, directory, filemanip
+, data-default , filepath, directory, filemanip, ghcjs-base
 , useTemplateHaskell ? true
 }:
 mkDerivation {
@@ -21,7 +21,9 @@ mkDerivation {
     base bifunctors containers deepseq dependent-map dependent-sum
     mtl ref-tf split transformers data-default
     random time unbounded-delays
-  ] ++ (if !useTemplateHaskell then [] else [
+  ] ++ (if ghc.isGhcjs or false then [
+    ghcjs-base
+  ] else []) ++ (if !useTemplateHaskell then [] else [
     haskell-src-exts haskell-src-meta
   ]);
   testHaskellDepends = if ghc.isGhcjs or false then [] else [
