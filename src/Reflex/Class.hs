@@ -911,6 +911,14 @@ zipDynWith f da db =
         return $ Just $ f a b
   in unsafeBuildDynamic (f <$> sample (current da) <*> sample (current db)) ec
 
+instance (Reflex t, Semigroup a) => Semigroup (Dynamic t a) where
+  (<>) = zipDynWith (<>)
+#if MIN_VERSION_semigroups(0,17,0)
+  stimes n = fmap $ stimes n
+#else
+  times1p n = fmap $ times1p n
+#endif
+
 instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
   mconcat = distributeListOverDynWith mconcat
   mempty = constDyn mempty
