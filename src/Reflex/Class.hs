@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DefaultSignatures #-}
@@ -1113,12 +1114,12 @@ numberOccurrences = numberOccurrencesFrom 0
 -- | Assign a number to each occurence of the given 'Event'
 {-# INLINE numberOccurrencesFrom #-}
 numberOccurrencesFrom :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t (b, a))
-numberOccurrencesFrom = mapAccum_ (\n a -> (n + 1, (n, a)))
+numberOccurrencesFrom = mapAccum_ (\n a -> let !next = n + 1 in (next, (n, a)))
 
 -- | Assign a number to each occurence of the given 'Event'; discard the occurrences' values
 {-# INLINE numberOccurrencesFrom_ #-}
 numberOccurrencesFrom_ :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t b)
-numberOccurrencesFrom_ = mapAccum_ (\n _ -> (n + 1, n))
+numberOccurrencesFrom_ = mapAccum_ (\n _ -> let !next = n + 1 in (next, n))
 
 -- | This is used to sample the value of a 'Behavior' using an 'Event'.
 --
