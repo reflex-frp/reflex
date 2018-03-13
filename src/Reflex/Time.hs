@@ -230,26 +230,26 @@ throttle t e = do
   let f (immediate, buffer) x = case x of -- (Just newState, out)
         This a -- If only the input event fires
           | immediate -> -- and we're in immediate mode
-            -- * Immediate mode turns off, and the buffer is empty.
-            -- * We fire the output event with the input event value immediately.
+            -- Immediate mode turns off, and the buffer is empty.
+            -- We fire the output event with the input event value immediately.
             (Just (False, Nothing), Just a)
           | otherwise -> -- and we're not in immediate mode
-            -- * Immediate mode remains off, and we replace the contents of the buffer (if any) with the input value.
-            -- * We don't fire the output event.
+            -- Immediate mode remains off, and we replace the contents of the buffer (if any) with the input value.
+            -- We don't fire the output event.
             (Just (False, Just a), Nothing)
         That _ -> -- If only the delayed output event fires,
           case buffer of
             Nothing -> -- and the buffer is empty:
-              -- * Immediate mode turns back on, and the buffer remains empty.
-              -- * We don't fire.
+              -- Immediate mode turns back on, and the buffer remains empty.
+              -- We don't fire.
               (Just (True, Nothing), Nothing)
             Just b -> -- and the buffer is full:
-              -- * Immediate mode remains off, and the buffer is cleared.
-              -- * We fire with the buffered value.
+              -- Immediate mode remains off, and the buffer is cleared.
+              -- We fire with the buffered value.
               (Just (False, Nothing), Just b)
         These a _ -> -- If both the input and delayed output event fire simultaneously:
-          -- * Immediate mode turns off, and the buffer is empty.
-          -- * We fire with the input event's value, as it is the most recent we have seen at this moment.
+          -- Immediate mode turns off, and the buffer is empty.
+          -- We fire with the input event's value, as it is the most recent we have seen at this moment.
           (Just (False, Nothing), Just a)
   rec (_, outE) <- mapAccumMaybeDyn f (True, Nothing) $ align e delayed -- We start in immediate mode with an empty buffer.
       delayed <- delay t outE
