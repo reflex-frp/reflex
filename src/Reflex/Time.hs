@@ -7,6 +7,7 @@
 #ifdef USE_TEMPLATE_HASKELL
 {-# LANGUAGE TemplateHaskell #-}
 #endif
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 module Reflex.Time where
 
@@ -41,10 +42,18 @@ data TickInfo
              }
   deriving (Eq, Ord, Show, Typeable)
 
--- | Special case of tickLossyFrom that uses the post-build event to start the
+-- | Special case of 'tickLossyFrom' that uses the post-build event to start the
 --   tick thread.
 tickLossy :: (PostBuild t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m) => NominalDiffTime -> UTCTime -> m (Event t TickInfo)
 tickLossy dt t0 = tickLossyFrom dt t0 =<< getPostBuild
+
+-- | Special case of 'tickLossyFrom' that uses the post-build event to start the
+--   tick thread and the time of the post-build as the tick basis time.
+tickLossyFromPostBuildTime :: (PostBuild t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m) => NominalDiffTime -> m (Event t TickInfo)
+tickLossyFromPostBuildTime dt = do
+  postBuild <- getPostBuild
+  postBuildTime <- performEvent $ liftIO getCurrentTime <$ postBuild
+  tickLossyFrom' $ (dt,) <$> postBuildTime
 
 -- | Send events over time with the given basis time and interval
 --   If the system starts running behind, occurrences will be dropped rather than buffered
@@ -52,7 +61,9 @@ tickLossy dt t0 = tickLossyFrom dt t0 =<< getPostBuild
 tickLossyFrom
     :: (PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m)
     => NominalDiffTime
+    -- ^ The length of a tick interval
     -> UTCTime
+    -- ^ The basis time from which intervals count
     -> Event t a
     -- ^ Event that starts a tick generation thread.  Usually you want this to
     -- be something like the result of getPostBuild that only fires once.  But
