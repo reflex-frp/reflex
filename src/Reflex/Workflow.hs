@@ -1,5 +1,6 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Reflex.Workflow (
   -- * Workflows
     Workflow (..)
@@ -7,10 +8,16 @@ module Reflex.Workflow (
   , workflowView
   , mapWorkflow
   , mapWorkflowCheap
+  -- * Better workflows
+  , W (..)
+  , runW
+  , prompt
   ) where
 
 import Control.Arrow ((***))
 import Control.Monad.Fix (MonadFix)
+import Control.Monad.Free.Church
+import Data.Functor.Compose
 
 import Reflex.Class
 import Reflex.Network
@@ -35,3 +42,23 @@ mapWorkflow f (Workflow x) = Workflow (fmap (f *** fmap (mapWorkflow f)) x)
 
 mapWorkflowCheap :: (Reflex t, Functor m) => (a -> b) -> Workflow t m a -> Workflow t m b
 mapWorkflowCheap f (Workflow x) = Workflow (fmap (f *** fmapCheap (mapWorkflowCheap f)) x)
+
+--------------------------------------------------------------------------------
+-- Workflow monad
+--------------------------------------------------------------------------------
+
+type WInternal t m = F (Compose m (Event t))
+newtype W t m a = W { unW :: WInternal t m a } deriving (Functor, Applicative, Monad)
+
+runW :: forall t m a. (Adjustable t m, MonadHold t m, MonadFix m, PostBuild t m) => W t m a -> m (Event t a)
+runW (W w0) = do
+  let go :: WInternal t m a -> m (Event t (WInternal t m a))
+      go w = runF w
+        (\l -> (return l <$) <$> getPostBuild) --TODO: Can this just be blank?
+        (\(Compose r) -> fmap (fmapCheap (wrap . Compose)) r)
+  rec (next0, built) <- runWithReplace (go w0) $ go <$> next
+      next <- switch <$> hold next0 built
+  return $ fmapMaybe (\w -> runF w Just (const Nothing)) next
+
+prompt :: (Reflex t, Functor m) => m (Event t a) -> W t m a
+prompt = W . wrap . fmap return . Compose
