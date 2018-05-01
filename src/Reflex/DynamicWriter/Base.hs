@@ -1,8 +1,5 @@
--- | This module defines 'MonadDynamicWriter' and 'DynamicWriterT', its standard
--- implementation.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
@@ -14,9 +11,8 @@
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
-module Reflex.DynamicWriter
-  ( MonadDynamicWriter (..)
-  , DynamicWriterT (..)
+module Reflex.DynamicWriter.Base
+  ( DynamicWriterT (..)
   , runDynamicWriterT
   , withDynamicWriterT
   ) where
@@ -40,6 +36,7 @@ import Data.Semigroup
 import Data.Some (Some)
 import Data.These
 import Reflex.Class
+import Reflex.DynamicWriter.Class
 import Reflex.Host.Class
 import qualified Reflex.Patch.MapWithMove as MapWithMove
 import Reflex.PerformEvent.Class
@@ -75,7 +72,7 @@ mergeDynIncrementalWithMove a = unsafeBuildIncremental (mapM (sample . current) 
                 These p_ c -> (unPatchMapWithMove p_, c)
               (pWithNewVals, noLongerMoved) = flip runState [] $ forM p $ MapWithMove.nodeInfoMapMFrom $ \case
                 MapWithMove.From_Insert v -> return $ MapWithMove.From_Insert v
-                MapWithMove.From_Delete -> return $ MapWithMove.From_Delete
+                MapWithMove.From_Delete -> return MapWithMove.From_Delete
                 MapWithMove.From_Move k -> case Map.lookup k changed of
                   Nothing -> return $ MapWithMove.From_Move k
                   Just v -> do
@@ -107,11 +104,6 @@ runDynamicWriterT (DynamicWriterT a) = do
   (result, ws) <- runStateT a []
   return (result, mconcat $ reverse ws)
 
--- | 'MonadDynamicWriter' efficiently collects 'Dynamic' values using 'tellDyn'
--- and combines them monoidally to provide a 'Dynamic' result.
-class (Monad m, Monoid w) => MonadDynamicWriter t w m | m -> t w where
-  tellDyn :: Dynamic t w -> m ()
-
 instance (Monad m, Monoid w, Reflex t) => MonadDynamicWriter t w (DynamicWriterT t w m) where
   tellDyn w = DynamicWriterT $ modify (w :)
 
@@ -132,9 +124,6 @@ instance TriggerEvent t m => TriggerEvent t (DynamicWriterT t w m) where
 
 instance PostBuild t m => PostBuild t (DynamicWriterT t w m) where
   getPostBuild = lift getPostBuild
-
-instance MonadDynamicWriter t w m => MonadDynamicWriter t w (ReaderT r m) where
-  tellDyn = lift . tellDyn
 
 instance MonadState s m => MonadState s (DynamicWriterT t w m) where
   get = lift get

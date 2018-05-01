@@ -3,7 +3,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE Rank2Types #-}
@@ -14,16 +13,16 @@
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
-module Reflex.EventWriter
+module Reflex.EventWriter.Base
   ( EventWriterT (..)
   , runEventWriterT
-  , EventWriter (..)
   , runWithReplaceEventWriterTWith
   , sequenceDMapWithAdjustEventWriterTWith
   , withEventWriterT
   ) where
 
 import Reflex.Class
+import Reflex.EventWriter.Class (EventWriter, tellEvent)
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
@@ -41,7 +40,7 @@ import qualified Data.Dependent.Map as DMap
 import Data.Foldable
 import Data.Functor.Compose
 import Data.Functor.Misc
-import Data.GADT.Compare (GEq (..), GCompare (..), GOrdering (..))
+import Data.GADT.Compare (GCompare (..), GEq (..), GOrdering (..))
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
@@ -52,11 +51,6 @@ import Data.Tuple
 import Data.Type.Equality
 
 import Unsafe.Coerce
-
--- | 'EventWriter' efficiently collects 'Event' values using 'tellEvent'
--- and combines them monoidally to provide an 'Event' result.
-class (Monad m, Semigroup w) => EventWriter t w m | m -> t w where
-  tellEvent :: Event t w -> m ()
 
 {-# DEPRECATED TellId "Do not construct this directly; use tellId instead" #-}
 newtype TellId w x
@@ -117,9 +111,6 @@ instance (Reflex t, Monad m, Semigroup w) => EventWriter t w (EventWriterT t w m
        { _eventWriterState_nextId = pred myId
        , _eventWriterState_told = (tellId myId :=> w) : _eventWriterState_told old
        }
-
-instance EventWriter t w m => EventWriter t w (ReaderT r m) where
-  tellEvent = lift . tellEvent
 
 instance MonadTrans (EventWriterT t w) where
   lift = EventWriterT . lift
