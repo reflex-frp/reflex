@@ -98,6 +98,10 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   <>   :: Monoid a => Behavior a ->        Behavior a -> Behavior a
 -- ... plus many more due to typeclass membership
 
+-- Combine multiple behaviors via applicative instance
+[ ]   ffor2 :: Behavior a -> Behavior b ->               (a -> b -> c)      -> Behavior c
+[ ]   ffor3 :: Behavior a -> Behavior b -> Behavior c -> (a -> b -> c -> d) -> Behavior d
+
 -- Behavior to Behavior by sampling current values
 [S]   sample :: Behavior a -> m a
 [ ]   pull   ::               m a -> Behavior a
@@ -134,6 +138,10 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   <*>                       ::           Dynamic (a -> b) ->        Dynamic a -> Dynamic b
 [ ]   >>=                       ::                  Dynamic a -> (a -> Dynamic b) -> Dynamic b
 [ ]   zipDynWith                :: (a -> b -> c) -> Dynamic a -> Dynamic b        -> Dynamic c
+
+-- Combine multiple dynamics via applicative instance
+[ ]   ffor2 :: Dynamic a -> Dynamic b ->              (a -> b -> c)      -> Dynamic c
+[ ]   ffor3 :: Dynamic a -> Dynamic b -> Dynamic c -> (a -> b -> c -> d) -> Dynamic d
 
 -- Efficient one-to-many fanout
 [ ]   demux   :: Ord k => Dynamic k -> Demux k
