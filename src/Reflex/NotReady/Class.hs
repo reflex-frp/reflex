@@ -18,8 +18,8 @@ import Control.Monad.Reader (ReaderT)
 import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PostBuild.Base (PostBuildT)
-import Reflex.EventWriter (EventWriterT)
-import Reflex.DynamicWriter (DynamicWriterT)
+import Reflex.EventWriter.Base (EventWriterT)
+import Reflex.DynamicWriter.Base (DynamicWriterT)
 import Reflex.Query.Base (QueryT)
 import Reflex.Requester.Base (RequesterT)
 import Reflex.PerformEvent.Base (PerformEventT(..))

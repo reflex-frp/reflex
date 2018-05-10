@@ -37,7 +37,8 @@ import qualified Data.Some as Some
 import Data.These
 
 import Reflex.Class
-import Reflex.EventWriter
+import Reflex.EventWriter.Class
+import Reflex.EventWriter.Base
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class

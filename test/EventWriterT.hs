@@ -6,7 +6,7 @@ import Control.Monad
 import Data.These
 
 import Reflex
-import Reflex.EventWriter
+import Reflex.EventWriter.Base
 import Test.Run
 
 main :: IO ()
