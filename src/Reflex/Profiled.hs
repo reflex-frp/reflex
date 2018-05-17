@@ -23,8 +23,9 @@ import Data.FastMutableIntMap
 import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import Data.Monoid
+import Data.Monoid ((<>))
 import Data.Ord
+import qualified Data.Semigroup as S
 import Data.Type.Coercion
 import Foreign.Ptr
 import GHC.Foreign
@@ -50,9 +51,13 @@ data CostCentreTree = CostCentreTree
   }
   deriving (Show, Eq, Ord)
 
+instance S.Semigroup CostCentreTree where
+  (CostCentreTree oa ea ca) <> (CostCentreTree ob eb cb) =
+      CostCentreTree (oa + ob) (ea + eb) $ Map.unionWith (S.<>) ca cb
+
 instance Monoid CostCentreTree where
   mempty = CostCentreTree 0 0 mempty
-  CostCentreTree oa ea ca `mappend` CostCentreTree ob eb cb = CostCentreTree (oa + ob) (ea + eb) $ Map.unionWith (<>) ca cb
+  mappend = (S.<>)
 
 getCostCentreStack :: Ptr CostCentreStack -> IO [Ptr CostCentre]
 getCostCentreStack = go []

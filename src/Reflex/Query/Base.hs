@@ -30,7 +30,7 @@ import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid
+import Data.Monoid ((<>))
 import qualified Data.Semigroup as S
 import Data.Some (Some)
 import qualified Data.Some as Some
@@ -216,7 +216,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (QueryT t q 
 -- TODO: Monoid and Semigroup can likely be derived once StateT has them.
 instance (Monoid a, Monad m) => Monoid (QueryT t q m a) where
   mempty = pure mempty
-  mappend = liftA2 mappend
+  mappend = (<>)
 
 instance (S.Semigroup a, Monad m) => S.Semigroup (QueryT t q m a) where
   (<>) = liftA2 (S.<>)
