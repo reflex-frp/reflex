@@ -88,11 +88,11 @@ type To = ComposeMaybe
 
 -- |Test whether a 'PatchDMapWithMove' satisfies its invariants.
 validPatchDMapWithMove :: forall k v. (GCompare k, GEq k, GShow k) => DMap k (NodeInfo k v) -> Bool
-validPatchDMapWithMove = not . null . validPatchDMapWithMove'
+validPatchDMapWithMove = not . null . validationErrorsForPatchDMapWithMove
 
--- |Test whether a 'PatchDMapWithMove' satisfies its invariants and give reasons why it doesn't.
-validPatchDMapWithMove' :: forall k v. (GCompare k, GEq k, GShow k) => DMap k (NodeInfo k v) -> [String]
-validPatchDMapWithMove' m =
+-- |Enumerate what reasons a 'PatchDMapWithMove' doesn't satisfy its invariants, returning @[]@ if it's valid.
+validationErrorsForPatchDMapWithMove :: forall k v. (GCompare k, GEq k, GShow k) => DMap k (NodeInfo k v) -> [String]
+validationErrorsForPatchDMapWithMove m =
   noSelfMoves `mappend` movesBalanced
   where
     noSelfMoves = catMaybes . map selfMove . DMap.toAscList $ m
@@ -111,7 +111,7 @@ validPatchDMapWithMove' m =
           Just $ "unbalanced move at destination key " <> gshow dst <> " supposedly from " <> gshow src <> " but source key has no move to key"
     unbalancedMove (src :=> NodeInfo _ (ComposeMaybe (Just dst))) =
       case DMap.lookup dst m of
-        Nothing -> Just $ " unbalancved move at source key " <> gshow src <> " supposedly going to " <> gshow dst <> " but destination key is not in the patch"
+        Nothing -> Just $ " unbalanced move at source key " <> gshow src <> " supposedly going to " <> gshow dst <> " but destination key is not in the patch"
         Just (NodeInfo (From_Move src') _) ->
           if isNothing (src' `geq` src)
             then Just $ "unbalanced move at source key " <> gshow src <> " to " <> gshow dst <> " is coming from " <> gshow src' <> " instead"
@@ -287,7 +287,7 @@ unsafePatchDMapWithMove = PatchDMapWithMove
 -- otherwise @Left errors@.
 patchDMapWithMove :: (GCompare k, GEq k, GShow k) => DMap k (NodeInfo k v) -> Either [String] (PatchDMapWithMove k v)
 patchDMapWithMove dm =
-  case validPatchDMapWithMove' dm of
+  case validationErrorsForPatchDMapWithMove dm of
     [] -> Right $ unsafePatchDMapWithMove dm
     errs -> Left errs
 
