@@ -121,6 +121,7 @@ validationErrorsForPatchDMapWithMove m =
           Just $ "unbalanced move at source key " <> gshow src <> " supposedly going to " <> gshow dst <> " but destination key is not moving"
     unbalancedMove _ = Nothing
 
+-- |Test whether two @'PatchDMapWithMove' k v@ contain the same patch operations.
 instance EqTag k (NodeInfo k v) => Eq (PatchDMapWithMove k v) where
   PatchDMapWithMove a == PatchDMapWithMove b = a == b
 
@@ -362,6 +363,7 @@ const2PatchDMapWithMoveWith f (PatchMapWithMove p) = PatchDMapWithMove $ DMap.fr
           , _nodeInfo_to = ComposeMaybe $ Const2 <$> MapWithMove._nodeInfo_to ni
           }
 
+-- | Apply the insertions, deletions, and moves to a given 'DMap'.
 instance GCompare k => Patch (PatchDMapWithMove k v) where
   type PatchTarget (PatchDMapWithMove k v) = DMap k v
   apply (PatchDMapWithMove p) old = Just $! insertions `DMap.union` (old `DMap.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
@@ -377,8 +379,7 @@ instance GCompare k => Patch (PatchDMapWithMove k v) where
             From_Delete -> Just $ Constant ()
             _ -> Nothing
 
--- | Get the values that will be deleted or moved if the given patch is applied
--- to the given 'DMap'.
+-- | Get the values that will be replaced, deleted, or moved if the given patch is applied to the given 'DMap'.
 getDeletionsAndMoves :: GCompare k => PatchDMapWithMove k v -> DMap k v' -> DMap k (Product v' (ComposeMaybe k))
 getDeletionsAndMoves (PatchDMapWithMove p) m = DMap.intersectionWithKey f m p
   where f _ v ni = Pair v $ _nodeInfo_to ni
