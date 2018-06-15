@@ -73,13 +73,13 @@ instance {-# INCOHERENT #-} (GEq k, EqTag k v) => EqTag k (From k v) where
 -- |Structure describing a particular change to a key, be it inserting a new key (@From_Insert@), updating an existing key (@From_Insert@ again), deleting a
 -- key (@From_Delete@), or moving a key (@From_Move@).
 data From (k :: a -> *) (v :: a -> *) :: a -> * where
+  -- |Insert a new or update an existing key with the given value @v a@
   From_Insert :: v a -> From k v a
-  -- ^Insert a new or update an existing key with the given value @v a@
+  -- |Delete the existing key
   From_Delete :: From k v a
-  -- ^Delete the existing key
-  From_Move :: !(k a) -> From k v a
-  -- ^Move the value from the given key @k a@ to this key. The source key should also have an entry in the patch giving the current key as @_nodeInfo_to@,
+  -- |Move the value from the given key @k a@ to this key. The source key should also have an entry in the patch giving the current key as @_nodeInfo_to@,
   -- usually but not necessarily with @From_Delete@.
+  From_Move :: !(k a) -> From k v a
   deriving (Show, Read, Eq, Ord)
 
 -- |Type alias for the "to" part of a 'NodeInfo'. @'ComposeMaybe' ('Just' k)@ means the key is moving to another key, @ComposeMaybe Nothing@ for any other
@@ -93,7 +93,7 @@ validPatchDMapWithMove = not . null . validationErrorsForPatchDMapWithMove
 -- |Enumerate what reasons a 'PatchDMapWithMove' doesn't satisfy its invariants, returning @[]@ if it's valid.
 validationErrorsForPatchDMapWithMove :: forall k v. (GCompare k, GEq k, GShow k) => DMap k (NodeInfo k v) -> [String]
 validationErrorsForPatchDMapWithMove m =
-  noSelfMoves `mappend` movesBalanced
+  noSelfMoves <> movesBalanced
   where
     noSelfMoves = catMaybes . map selfMove . DMap.toAscList $ m
     selfMove (dst :=> NodeInfo (From_Move src) _)           | Just _ <- dst `geq` src = Just $ "self move of key " <> gshow src <> " at destination side"
