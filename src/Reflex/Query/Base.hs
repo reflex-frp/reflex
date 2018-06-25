@@ -209,9 +209,15 @@ instance MonadRef m => MonadRef (QueryT t q m) where
   readRef = QueryT . readRef
   writeRef r = QueryT . writeRef r
 
-instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (QueryT t q m) where
+instance (Reflex t, S.Semigroup q, Group q, Additive q, Query q, MonadFix m, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigger t (QueryT t q m) where
   newEventWithTrigger = QueryT . newEventWithTrigger
   newFanEventWithTrigger a = QueryT . lift $ newFanEventWithTrigger a
+  newFanThing e fn = do
+    r <- askQueryResult
+    (b, i) <- lift $ newFanThing e (\ft -> (\((f, b), i) -> (f, (b, i))) <$> runQueryT (fn ft) r)
+    tellQueryIncremental i
+    pure b
+  newEventKeyHost = QueryT . lift . newEventKeyHost
 
 -- TODO: Monoid and Semigroup can likely be derived once StateT has them.
 instance (Monoid a, Monad m) => Monoid (QueryT t q m a) where

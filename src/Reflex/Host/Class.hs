@@ -38,11 +38,11 @@ import Control.Monad.Ref
 import Control.Monad.Trans
 import Control.Monad.Trans.Cont (ContT ())
 import Control.Monad.Trans.Except (ExceptT ())
-import Control.Monad.Trans.Reader (ReaderT ())
-import Control.Monad.Trans.RWS (RWST ())
-import Control.Monad.Trans.State (StateT ())
+import Control.Monad.Trans.Reader (ReaderT (..), runReaderT)
+import Control.Monad.Trans.RWS (RWST (..), runRWST)
+import Control.Monad.Trans.State (StateT (..), runStateT)
 import qualified Control.Monad.Trans.State.Strict as Strict
-import Control.Monad.Trans.Writer (WriterT ())
+import Control.Monad.Trans.Writer (WriterT (..), runWriterT)
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
@@ -222,8 +222,8 @@ fireEventRefAndRead mtRef input e = do
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ReaderT r m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
-  newFanThing _ _ = undefined
-  newEventKeyHost = undefined
+  newFanThing e fn = ReaderT $ \r -> newFanThing e (\ft -> runReaderT (fn ft) r)
+  newEventKeyHost = lift . newEventKeyHost
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ReaderT r m) where
   subscribeEvent = lift . subscribeEvent
@@ -236,8 +236,8 @@ instance MonadReflexHost t m => MonadReflexHost t (ReaderT r m) where
 instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (WriterT w m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
-  newFanThing _ _ = undefined
-  newEventKeyHost = undefined
+  newFanThing e fn = WriterT $ newFanThing e (\ft -> (\((f, b), w) -> (f, (b, w))) <$> runWriterT (fn ft))
+  newEventKeyHost = lift . newEventKeyHost
 
 instance (MonadSubscribeEvent t m, Monoid w) => MonadSubscribeEvent t (WriterT w m) where
   subscribeEvent = lift . subscribeEvent
@@ -250,8 +250,8 @@ instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (WriterT w m) wher
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (StateT s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
-  newFanThing _ _ = undefined
-  newEventKeyHost = undefined
+  newFanThing e fn = StateT $ \s -> newFanThing e (\ft -> (\((f, b), st) -> (f, (b, st))) <$> runStateT (fn ft) s)
+  newEventKeyHost = lift . newEventKeyHost
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (StateT r m) where
   subscribeEvent = lift . subscribeEvent
@@ -265,8 +265,8 @@ instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (Strict.StateT s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
-  newFanThing _ _ = undefined
-  newEventKeyHost = undefined
+  newFanThing e fn = Strict.StateT $ \s -> newFanThing e (\ft -> (\((f, b), st) -> (f, (b, st))) <$> Strict.runStateT (fn ft) s)
+  newEventKeyHost = lift . newEventKeyHost
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (Strict.StateT r m) where
   subscribeEvent = lift . subscribeEvent
@@ -282,7 +282,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ContT r m) 
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
   newFanThing _ _ = undefined
-  newEventKeyHost = undefined
+  newEventKeyHost = lift . newEventKeyHost
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ContT r m) where
   subscribeEvent = lift . subscribeEvent
@@ -296,7 +296,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ExceptT e m
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
   newFanThing _ _ = undefined
-  newEventKeyHost = undefined
+  newEventKeyHost = lift . newEventKeyHost
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ExceptT r m) where
   subscribeEvent = lift . subscribeEvent
@@ -309,8 +309,8 @@ instance MonadReflexHost t m => MonadReflexHost t (ExceptT e m) where
 instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (RWST r w s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
-  newFanThing _ _ = undefined
-  newEventKeyHost = undefined
+  newFanThing e fn = RWST $ \r s -> newFanThing e (\ft -> (\((f, b), st, w) -> (f, (b, st, w)))  <$> runRWST (fn ft) r s)
+  newEventKeyHost = lift . newEventKeyHost
 
 instance (MonadSubscribeEvent t m, Monoid w) => MonadSubscribeEvent t (RWST r w s m) where
   subscribeEvent = lift . subscribeEvent

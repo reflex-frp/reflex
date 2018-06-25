@@ -183,6 +183,13 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger (ProfiledTimel
   newFanEventWithTrigger f = do
     es <- lift $ newFanEventWithTrigger f
     return $ EventSelector $ \k -> coerce $ select es k
+  newFanThing e fn = ProfiledM $
+    newFanThing (coerce e) $ \ft -> do
+      (f, b) <- runProfiledM (fn (ProfiledFanThing ft))
+      pure (unProfiledFire . f, b)
+  newEventKeyHost ft = do
+    (ek, e) <- lift $ newEventKeyHost (unProfiledFanThing ft)
+    pure (ProfiledEventKey (coerce ek), coerce e)
 
 instance MonadReader r m => MonadReader r (ProfiledM m) where
   ask = lift ask
@@ -193,6 +200,10 @@ instance ReflexHost t => ReflexHost (ProfiledTimeline t) where
   type EventTrigger (ProfiledTimeline t) = EventTrigger t
   type EventHandle (ProfiledTimeline t) = EventHandle t
   type HostFrame (ProfiledTimeline t) = ProfiledM (HostFrame t)
+  data EventKey (ProfiledTimeline t) s a = ProfiledEventKey { unProfiledEventKey :: EventKey t s a }
+  data Fire (ProfiledTimeline t) s a = ProfiledFire { unProfiledFire :: Fire t s a }
+  data FanThing (ProfiledTimeline t) s = ProfiledFanThing { unProfiledFanThing :: FanThing t s }
+  fire (ProfiledEventKey ek) a = ProfiledFire (fire ek a)
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent (ProfiledTimeline t) (ProfiledM m) where
   subscribeEvent = lift . subscribeEvent . coerce
