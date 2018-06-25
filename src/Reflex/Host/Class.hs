@@ -75,6 +75,11 @@ class ( Reflex t
   type EventTrigger t :: * -> *
   type EventHandle t :: * -> *
   type HostFrame t :: * -> *
+  --TODO: Move to reflex
+  data EventKey t :: * -> * -> *
+  data Fire t :: * -> * -> *
+  data FanThing t :: * -> *
+  fire :: EventKey t s a -> a -> Fire t s () --TODO: Deal with double-firings
 
 -- | Monad in which Events can be 'subscribed'.  This forces all underlying
 -- event sources to be initialized, so that the event will fire whenever it
@@ -125,6 +130,9 @@ class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
   -- is executed, the event may still be set up again in the future.
   newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event t a)
   newFanEventWithTrigger :: GCompare k => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> m (EventSelector t k)
+  --newFanThing :: Event t (DMap (EventKey t s) Identity) -> m (m (EventKey t s a, Event t a))
+  newFanThing :: Event t a -> (forall s. FanThing t s -> m (a -> Fire t s (), b)) -> m b
+  newEventKeyHost :: FanThing t s -> m (EventKey t s a, Event t a)
 
 -- | 'MonadReflexHost' designates monads that can run reflex frames.
 class ( ReflexHost t
@@ -214,6 +222,8 @@ fireEventRefAndRead mtRef input e = do
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ReaderT r m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newFanThing _ _ = undefined
+  newEventKeyHost = undefined
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ReaderT r m) where
   subscribeEvent = lift . subscribeEvent
@@ -226,6 +236,8 @@ instance MonadReflexHost t m => MonadReflexHost t (ReaderT r m) where
 instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (WriterT w m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newFanThing _ _ = undefined
+  newEventKeyHost = undefined
 
 instance (MonadSubscribeEvent t m, Monoid w) => MonadSubscribeEvent t (WriterT w m) where
   subscribeEvent = lift . subscribeEvent
@@ -238,6 +250,8 @@ instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (WriterT w m) wher
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (StateT s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newFanThing _ _ = undefined
+  newEventKeyHost = undefined
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (StateT r m) where
   subscribeEvent = lift . subscribeEvent
@@ -251,6 +265,8 @@ instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (Strict.StateT s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newFanThing _ _ = undefined
+  newEventKeyHost = undefined
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (Strict.StateT r m) where
   subscribeEvent = lift . subscribeEvent
@@ -265,6 +281,8 @@ instance MonadReflexHost t m => MonadReflexHost t (Strict.StateT s m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ContT r m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newFanThing _ _ = undefined
+  newEventKeyHost = undefined
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ContT r m) where
   subscribeEvent = lift . subscribeEvent
@@ -277,6 +295,8 @@ instance MonadReflexHost t m => MonadReflexHost t (ContT r m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ExceptT e m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newFanThing _ _ = undefined
+  newEventKeyHost = undefined
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ExceptT r m) where
   subscribeEvent = lift . subscribeEvent
@@ -289,6 +309,8 @@ instance MonadReflexHost t m => MonadReflexHost t (ExceptT e m) where
 instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (RWST r w s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newFanThing _ _ = undefined
+  newEventKeyHost = undefined
 
 instance (MonadSubscribeEvent t m, Monoid w) => MonadSubscribeEvent t (RWST r w s m) where
   subscribeEvent = lift . subscribeEvent
