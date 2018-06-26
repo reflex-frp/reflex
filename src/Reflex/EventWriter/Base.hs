@@ -250,9 +250,14 @@ instance MonadRef m => MonadRef (EventWriterT t w m) where
 instance MonadAtomicRef m => MonadAtomicRef (EventWriterT t w m) where
   atomicModifyRef r = lift . atomicModifyRef r
 
-instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (EventWriterT t w m) where
+instance (Reflex t, Semigroup w, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigger t (EventWriterT t w m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
+  newFanThing e fn = do
+    (b, ew) <- lift $ newFanThing e (\ft -> (\((f, b), ew) -> (f, (b, ew))) <$> runEventWriterT (fn ft))
+    tellEvent ew
+    pure b
+  newEventKeyHost = lift . newEventKeyHost
 
 instance (MonadQuery t q m, Monad m) => MonadQuery t q (EventWriterT t w m) where
   tellQueryIncremental = lift . tellQueryIncremental

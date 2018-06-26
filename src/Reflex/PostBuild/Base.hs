@@ -96,6 +96,10 @@ instance (ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigge
   newEventWithTrigger = PostBuildT . lift . newEventWithTrigger
   {-# INLINABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = PostBuildT $ lift $ newFanEventWithTrigger f
+  {-# INLINABLE newFanThing #-}
+  newFanThing e fn = PostBuildT . ReaderT $ \r -> newFanThing e (\ft -> runReaderT (unPostBuildT (fn ft)) r)
+  {-# INLINABLE newEventKeyHost #-}
+  newEventKeyHost = PostBuildT . lift . newEventKeyHost
 
 instance TriggerEvent t m => TriggerEvent t (PostBuildT t m) where
   {-# INLINABLE newTriggerEvent #-}

@@ -47,6 +47,8 @@ instance ( HasSpiderTimeline x
   newFanThing e f = do
     t <- SpiderHost ask
     runFrame $ runSpiderHostFrame $ Reflex.Host.Class.newFanThing e (SpiderHostFrame . liftIO . flip runSpiderHostForTimeline t . f)
+  newEventKeyHost ft =
+    runFrame $ runSpiderHostFrame $ Reflex.Host.Class.newEventKeyHost ft
 
 instance ( HasSpiderTimeline x
 #ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL

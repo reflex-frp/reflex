@@ -73,6 +73,10 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (TriggerEven
   newEventWithTrigger = lift . newEventWithTrigger
   {-# INLINABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
+  {-# INLINABLE newFanThing #-}
+  newFanThing e fn = TriggerEventT . ReaderT $ \r -> newFanThing e (\ft -> runReaderT (unTriggerEventT (fn ft)) r)
+  {-# INLINABLE newEventKeyHost #-}
+  newEventKeyHost = lift . newEventKeyHost
 
 instance (Monad m, MonadRef m, Ref m ~ Ref IO, MonadReflexCreateTrigger t m) => TriggerEvent t (TriggerEventT t m) where
   {-# INLINABLE newTriggerEvent #-}
