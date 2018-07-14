@@ -18,6 +18,7 @@ module Reflex.EventWriter.Base
   , runEventWriterT
   , runWithReplaceEventWriterTWith
   , sequenceDMapWithAdjustEventWriterTWith
+  , mapEventWriterT
   , withEventWriterT
   ) where
 
@@ -279,3 +280,10 @@ withEventWriterT f ew = do
     return (r, e')
   tellEvent e
   return r
+
+-- | Change the monad underlying an EventWriterT
+mapEventWriterT :: (Semigroup w, Reflex t, MonadHold t m, MonadFix m)
+                 => (forall x. m x -> n x)
+                 -> EventWriterT t w m a
+                 -> EventWriterT t w n a
+mapEventWriterT f (EventWriterT a) = EventWriterT $ mapStateT f a
