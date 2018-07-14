@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -35,6 +36,13 @@ import Reflex.Patch (Additive, Group (..))
 
 {-# DEPRECATED AppendMap "Use 'MonoidalMap' instead" #-}
 type AppendMap = MonoidalMap
+
+{-# DEPRECATED _unAppendMap "Use 'getMonoidalMap' instead" #-}
+_unAppendMap :: MonoidalMap k v -> Map k v
+_unAppendMap = getMonoidalMap
+
+pattern AppendMap :: Map k v -> MonoidalMap k v
+pattern AppendMap m = MonoidalMap m
 
 deriving instance Ord k => Align (MonoidalMap k)
 
