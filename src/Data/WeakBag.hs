@@ -72,8 +72,6 @@ insert a (WeakBag nextId children) wbRef finalizer = {-# SCC "insert" #-} do
             let !csWithoutMe = IntMap.delete myId cs
             in (csWithoutMe, csWithoutMe)
           when (IntMap.null csWithoutMe) $ finalizer b
-          return ()
-        return ()
   wa <- mkWeakPtr a' $ Just cleanup
   atomicModifyIORef' children $ \cs -> (IntMap.insert myId wa cs, ())
   return $ WeakBagTicket

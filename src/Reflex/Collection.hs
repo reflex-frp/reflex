@@ -25,7 +25,7 @@ module Reflex.Collection
   , simpleList
   ) where
 
-import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.Identity
 import Data.Align
 import Data.Functor.Misc
 import Data.Map (Map)

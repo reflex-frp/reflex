@@ -9,7 +9,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MagicHash #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE RankNTypes #-}
@@ -25,14 +24,16 @@
 -- a graph traversal algorithm to propagate 'Event's and 'Behavior's.
 module Reflex.Spider.Internal (module Reflex.Spider.Internal) where
 
-import Control.Applicative
+#if MIN_VERSION_base(4,10,0)
+import Control.Applicative (liftA2)
+#endif
 import Control.Concurrent
 import Control.Exception
-import Control.Monad hiding (forM, forM_, mapM, mapM_, sequence)
+import Control.Monad hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Exception
-import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence)
+import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Primitive
-import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_, sequence)
+import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Ref
 import Data.Align
 import Data.Coerce
@@ -41,7 +42,6 @@ import qualified Data.Dependent.Map as DMap
 import Data.FastMutableIntMap (FastMutableIntMap, PatchIntMap (..))
 import qualified Data.FastMutableIntMap as FastMutableIntMap
 import Data.Foldable hiding (concat, elem, sequence_)
-import Data.Function
 import Data.Functor.Constant
 import Data.Functor.Misc
 import Data.Functor.Product
@@ -49,13 +49,11 @@ import Data.GADT.Compare
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
-import Data.List hiding (foldl')
 import Data.Maybe
 import Data.Monoid ((<>))
 import Data.Proxy
 import Data.These
 import Data.Traversable
-import Data.Word
 import GHC.Exts
 import GHC.IORef (IORef (..))
 import GHC.Stack
@@ -87,9 +85,6 @@ import qualified Reflex.Host.Class
 import Reflex.NotReady.Class
 import Reflex.Patch
 import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
-
--- Note: must come last to silence warnings due to AMP on GHC < 7.10
-import Prelude hiding (any, concat, mapM, mapM_, sequence)
 
 #ifdef DEBUG_TRACE_EVENTS
 import qualified Data.ByteString.Char8 as BS8

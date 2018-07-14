@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 #ifdef USE_REFLEX_OPTIMIZER
@@ -78,7 +79,7 @@ mergeDynIncrementalWithMove a = unsafeBuildIncremental (mapM (sample . current) 
                   Just v -> do
                     modify (k:)
                     return $ MapWithMove.From_Insert v
-              noLongerMovedMap = Map.fromList $ fmap (\k -> (k, ())) noLongerMoved
+              noLongerMovedMap = Map.fromList $ fmap (, ()) noLongerMoved
           in Map.differenceWith (\e _ -> Just $ MapWithMove.nodeInfoSetTo Nothing e) pWithNewVals noLongerMovedMap --TODO: Check if any in the second map are not covered?
 
 -- | A basic implementation of 'MonadDynamicWriter'.

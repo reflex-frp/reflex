@@ -18,8 +18,8 @@ module Reflex.Adjustable.Class
   , mapMapWithAdjustWithMove
   ) where
 
-import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.Identity
+import Control.Monad.Reader
 import Data.Align
 import Data.Dependent.Map (DMap, GCompare (..))
 import Data.Functor.Constant

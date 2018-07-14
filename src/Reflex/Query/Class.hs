@@ -73,5 +73,4 @@ tellQueryDyn d = tellQueryIncremental $ unsafeBuildIncremental (sample (current 
 queryDyn :: (Reflex t, Monad m, MonadQuery t q m) => Dynamic t q -> m (Dynamic t (QueryResult q))
 queryDyn q = do
   tellQueryDyn q
-  r <- askQueryResult
-  return $ zipDynWith crop q r
+  zipDynWith crop q <$> askQueryResult

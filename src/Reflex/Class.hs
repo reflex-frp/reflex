@@ -147,9 +147,9 @@ module Reflex.Class
   ) where
 
 import Control.Applicative
-import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.Identity
+import Control.Monad.Reader
+import Control.Monad.State.Strict
 import Control.Monad.Trans.Cont (ContT)
 import Control.Monad.Trans.Except (ExceptT)
 import Control.Monad.Trans.RWS (RWST)
@@ -160,11 +160,9 @@ import Data.Coerce
 import Data.Default
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
 import qualified Data.Dependent.Map as DMap
-import Data.Either
 import Data.FastMutableIntMap (PatchIntMap)
 import Data.Foldable
-import Data.Functor.Bind hiding (join)
-import qualified Data.Functor.Bind as Bind
+import Data.Functor.Bind
 import Data.Functor.Constant
 import Data.Functor.Misc
 import Data.Functor.Plus
@@ -172,18 +170,12 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
-import Data.Maybe
-import Data.Monoid hiding (Alt, (<>))
 import Data.Semigroup (Semigroup, sconcat, stimes, (<>))
 import Data.String
 import Data.These
-import Data.Traversable
 import Data.Type.Coercion
 import Reflex.FunctorMaybe
 import Reflex.Patch
-
--- Note: must come last to silence warnings due to AMP on GHC < 7.10
-import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
 
 import Debug.Trace (trace)
 

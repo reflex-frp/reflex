@@ -30,8 +30,6 @@ module Reflex.Host.Class
 
 import Reflex.Class
 
-import Control.Applicative
-import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Ref
@@ -45,10 +43,6 @@ import qualified Control.Monad.Trans.State.Strict as Strict
 import Control.Monad.Trans.Writer (WriterT)
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
-import Data.Monoid
-
--- Note: this import must come last to silence warnings from AMP
-import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
 
 -- | Framework implementation support class for the reflex implementation
 -- represented by @t@.

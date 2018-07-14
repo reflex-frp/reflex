@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -253,7 +254,7 @@ dynWithQueryT f q = do
   return result
  where zipDynIncrementalWith g da ib =
          let eab = align (updated da) (updatedIncremental ib)
-             ec = flip push eab $ \o -> case o of
+             ec = flip push eab $ \case
                  This a -> do
                    aOld <- sample $ current da
                    b <- sample $ currentIncremental ib
@@ -274,8 +275,7 @@ instance (Monad m, Group q, Additive q, Query q, Reflex t) => MonadQuery t q (Qu
   askQueryResult = QueryT ask
   queryIncremental q = do
     tellQueryIncremental q
-    r <- askQueryResult
-    return $ zipDynWith crop (incrementalToDynamic q) r
+    zipDynWith crop (incrementalToDynamic q) <$> askQueryResult
 
 instance Requester t m => Requester t (QueryT t q m) where
   type Request (QueryT t q m) = Request m

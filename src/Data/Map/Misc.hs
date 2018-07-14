@@ -10,7 +10,7 @@ module Data.Map.Misc
   ) where
 
 import Data.Align
-import Data.Either
+import Data.Either (isLeft)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
