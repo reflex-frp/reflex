@@ -51,9 +51,8 @@ testOrdering :: ( Response m ~ Identity
                 , Adjustable t m)
              => Event t ()
              -> m ()
-testOrdering pulse = do
-  forM_ [10,9..1] $ \i -> requestingIdentity (RequestInt i <$ pulse)
-  return ()
+testOrdering pulse = forM_ [10,9..1] $ \i ->
+  requestingIdentity (RequestInt i <$ pulse)
 
 testSimultaneous :: ( Response m ~ Identity
                     , Request m ~ RequestInt
