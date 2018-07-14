@@ -10,7 +10,7 @@ Stability: Experimental
 Category: FRP
 Build-type: Simple
 Cabal-version: >=1.9.2
-homepage: https://github.com/reflex-frp/reflex
+homepage: https://reflex-frp.org
 bug-reports: https://github.com/reflex-frp/reflex/issues
 
 flag use-reflex-optimizer
