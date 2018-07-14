@@ -28,11 +28,6 @@ flag use-template-haskell
   default: True
   manual: True
 
-flag expose-all-unfoldings
-  description: Build the library with -fexpose-all-unfoldings which can help client code specialize better
-  default: False
-  manual: True
-
 flag debug-trace-events
   description: Add instrumentation that outputs the stack trace of the definition of an event whenever it is subscribed to. Warning: It is very slow!
   default: False
@@ -149,9 +144,6 @@ library
   else
     build-depends:
       dependent-sum == 0.4.*
-
-  if flag(expose-all-unfoldings)
-    ghc-options: -fexpose-all-unfoldings
 
   if flag(fast-weak) && impl(ghcjs)
     ghc-options: -DGHCJS_FAST_WEAK
