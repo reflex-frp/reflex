@@ -21,16 +21,15 @@ module Data.WeakBag
   , _weakBag_children --TODO: Don't export this
   ) where
 
+import Prelude hiding (traverse)
+
 import Control.Exception
-import Control.Monad hiding (forM_, mapM_)
+import Control.Monad
 import Control.Monad.IO.Class
-import Data.Foldable (forM_, mapM_)
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
 import System.Mem.Weak
-
-import Prelude hiding (mapM_, traverse)
 
 -- | A @WeakBag a@ holds a set of values of type @a@, but does not retain them -
 -- that is, they can still be garbage-collected.  As long as the @a@s remain
