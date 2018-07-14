@@ -280,7 +280,7 @@ tagRequest req = do
   return t
 
 {-# INLINE responseFromTag #-}
-responseFromTag :: (Monad m, Reflex t) => MyTagWrap response (Entry response x) -> RequesterT t request response m (Event t (Entry response x))
+responseFromTag :: Monad m => MyTagWrap response (Entry response x) -> RequesterT t request response m (Event t (Entry response x))
 responseFromTag (MyTagWrap t) = do
   responses :: EventSelectorInt t Any <- RequesterT ask
   return $ (unsafeCoerce :: Event t Any -> Event t (Entry response x)) $ selectInt responses t
@@ -315,7 +315,7 @@ instance (Reflex t, Adjustable t m, MonadHold t m, MonadFix m) => Adjustable t (
   traverseDMapWithKeyWithAdjust = traverseDMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjust f dm0 dm') mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental
   traverseDMapWithKeyWithAdjustWithMove = traverseDMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjustWithMove f dm0 dm') mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove
 
-requesting' :: (MyTagTypeOffset x, Monad m, Reflex t) => Event t (Entry request x) -> RequesterT t request response m (Event t (Entry response x))
+requesting' :: (MyTagTypeOffset x, Monad m) => Event t (Entry request x) -> RequesterT t request response m (Event t (Entry response x))
 requesting' = responseFromTag . castMyTagWrap <=< tagRequest
 
 {-# INLINABLE runWithReplaceRequesterTWith #-}

@@ -235,7 +235,7 @@ subscribeAndRead = unEvent
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
 {-# INLINE [1] pushCheap #-}
-pushCheap :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
+pushCheap :: (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 pushCheap !f e = Event $ \sub -> do
   (subscription, occ) <- subscribeAndRead e $ sub
     { subscriberPropagate = \a -> do
@@ -379,7 +379,7 @@ eventSwitch !s = Event $ wrap eventSubscribedSwitch $ getSwitchSubscribed s
 eventCoincidence :: HasSpiderTimeline x => Coincidence x a -> Event x a
 eventCoincidence !c = Event $ wrap eventSubscribedCoincidence $ getCoincidenceSubscribed c
 
-eventHold :: HasSpiderTimeline x => Hold x p -> Event x p
+eventHold :: Hold x p -> Event x p
 eventHold !h = Event $ subscribeHoldEvent h
 
 eventDyn :: (HasSpiderTimeline x, Patch p) => Dyn x p -> Event x p
@@ -636,7 +636,7 @@ walkInvalidHeightParents s0 = do
 #endif
 
 {-# INLINE subscribeHoldEvent #-}
-subscribeHoldEvent :: HasSpiderTimeline x => Hold x p -> Subscriber x p -> EventM x (EventSubscription x, Maybe p)
+subscribeHoldEvent :: Hold x p -> Subscriber x p -> EventM x (EventSubscription x, Maybe p)
 subscribeHoldEvent = subscribeAndRead . holdEvent
 
 --------------------------------------------------------------------------------
@@ -708,13 +708,13 @@ data Dynamic x p = Dynamic
   , dynamicUpdated :: !(Event x p)
   }
 
-dynamicHold :: HasSpiderTimeline x => Hold x p -> Dynamic x p
+dynamicHold :: Hold x p -> Dynamic x p
 dynamicHold !h = Dynamic
   { dynamicCurrent = behaviorHold h
   , dynamicUpdated = eventHold h
   }
 
-dynamicHoldIdentity :: HasSpiderTimeline x => Hold x (Identity a) -> Dynamic x (Identity a)
+dynamicHoldIdentity :: Hold x (Identity a) -> Dynamic x (Identity a)
 dynamicHoldIdentity = dynamicHold
 
 dynamicConst :: PatchTarget p -> Dynamic x p

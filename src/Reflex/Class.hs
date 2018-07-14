@@ -561,13 +561,13 @@ attachWithMaybe f b e = flip push e $ \o -> (`f` o) <$> sample b
 
 -- | Create a new 'Event' that occurs on all but the first occurence of the
 -- supplied 'Event'.
-tailE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
+tailE :: (Reflex t, MonadHold t m) => Event t a -> m (Event t a)
 tailE e = snd <$> headTailE e
 
 -- | Create a tuple of two 'Event's with the first one occuring only the first
 -- time the supplied 'Event' occurs and the second occuring on all but the first
 -- occurence.
-headTailE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a, Event t a)
+headTailE :: (Reflex t, MonadHold t m) => Event t a -> m (Event t a, Event t a)
 headTailE e = do
   eHead <- headE e
   be <- hold never $ fmap (const e) eHead
@@ -1162,7 +1162,7 @@ appendEvents = alignWith $ mergeThese mappend
 
 -- | Alias for 'headE'
 {-# DEPRECATED onceE "Use 'headE' instead" #-}
-onceE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
+onceE :: MonadHold t m => Event t a -> m (Event t a)
 onceE = headE
 
 -- | Run both sides of a 'These' monadically, combining the results.

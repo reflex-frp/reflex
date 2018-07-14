@@ -60,14 +60,14 @@ deriving instance ReflexHost t => Monad (PerformEventT t m)
 deriving instance ReflexHost t => MonadFix (PerformEventT t m)
 deriving instance (ReflexHost t, MonadIO (HostFrame t)) => MonadIO (PerformEventT t m)
 deriving instance (ReflexHost t, MonadException (HostFrame t)) => MonadException (PerformEventT t m)
-deriving instance (ReflexHost t, Applicative m, Monoid a) => Monoid (PerformEventT t m a)
-deriving instance (ReflexHost t, Applicative m, S.Semigroup a) => S.Semigroup (PerformEventT t m a)
+deriving instance (ReflexHost t, Monoid a) => Monoid (PerformEventT t m a)
+deriving instance (ReflexHost t, S.Semigroup a) => S.Semigroup (PerformEventT t m a)
 
 instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m) where
   type PrimState (PerformEventT t m) = PrimState (HostFrame t)
   primitive = PerformEventT . lift . primitive
 
-instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent t (PerformEventT t m) where
+instance (ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
   type Performable (PerformEventT t m) = HostFrame t
   {-# INLINABLE performEvent_ #-}
   performEvent_ = PerformEventT . requesting_

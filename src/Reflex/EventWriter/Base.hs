@@ -161,7 +161,7 @@ runWithReplaceEventWriterTWith f a0 a' = do
   return (fst result0, fmapCheap fst result')
 
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceIntMapWithAdjust'.
-sequenceIntMapWithAdjustEventWriterTWith :: forall t m p w v v'. (Reflex t, MonadHold t m, Semigroup w, Semigroup w, Functor p, Patch (p (Event t w)), PatchTarget (p (Event t w)) ~ IntMap (Event t w))
+sequenceIntMapWithAdjustEventWriterTWith :: forall t m p w v v'. (Reflex t, MonadHold t m, Semigroup w, Functor p, Patch (p (Event t w)), PatchTarget (p (Event t w)) ~ IntMap (Event t w))
                                        => (   (IntMap.Key -> v -> m (Event t w, v'))
                                            -> IntMap v
                                            -> Event t (p v)
@@ -269,7 +269,7 @@ instance (MonadQuery t q m, Monad m) => MonadQuery t q (EventWriterT t w m) wher
   queryIncremental = lift . queryIncremental
 
 -- | Map a function over the output of a 'EventWriterT'.
-withEventWriterT :: (Semigroup w, Semigroup w', Reflex t, MonadHold t m, MonadFix m)
+withEventWriterT :: (Semigroup w, Semigroup w', Reflex t, MonadHold t m)
                  => (w -> w')
                  -> EventWriterT t w m a
                  -> EventWriterT t w' m a
@@ -282,8 +282,8 @@ withEventWriterT f ew = do
   return r
 
 -- | Change the monad underlying an EventWriterT
-mapEventWriterT :: (Semigroup w, Reflex t, MonadHold t m, MonadFix m)
-                 => (forall x. m x -> n x)
-                 -> EventWriterT t w m a
-                 -> EventWriterT t w n a
+mapEventWriterT
+  :: (forall x. m x -> n x)
+  -> EventWriterT t w m a
+  -> EventWriterT t w n a
 mapEventWriterT f (EventWriterT a) = EventWriterT $ mapStateT f a

@@ -197,7 +197,7 @@ foldlWithKey :: forall k a b. (a -> k -> b -> a) -> a -> MonoidalMap k b -> a
 foldlWithKey = coerce (Map.foldlWithKey :: (a -> k -> b -> a) -> a -> Map k b -> a)
 
 foldMapWithKey :: forall k a m. Monoid m => (k -> a -> m) -> MonoidalMap k a -> m
-foldMapWithKey = coerce (Map.foldMapWithKey :: Monoid m => (k -> a -> m) -> Map k a -> m)
+foldMapWithKey = coerce (Map.foldMapWithKey :: (k -> a -> m) -> Map k a -> m)
 
 foldr' :: forall k a b. (a -> b -> b) -> b -> MonoidalMap k a -> b
 foldr' = coerce (Map.foldr' :: (a -> b -> b) -> b -> Map k a -> b)
@@ -350,13 +350,13 @@ maxViewWithKey :: forall k a. MonoidalMap k a -> Maybe ((k, a), MonoidalMap k a)
 maxViewWithKey = coerce (Map.maxViewWithKey :: Map k a -> Maybe ((k, a), Map k a))
 
 showTree :: forall k a. (Show k, Show a) => MonoidalMap k a -> String
-showTree = coerce (Map.showTree :: (Show k, Show a) => Map k a -> String)
+showTree = coerce (Map.showTree :: Map k a -> String)
 
 showTreeWith :: forall k a. (k -> a -> String) -> Bool -> Bool -> MonoidalMap k a -> String
 showTreeWith = coerce (Map.showTreeWith :: (k -> a -> String) -> Bool -> Bool -> Map k a -> String)
 
 valid :: forall k a. Ord k => MonoidalMap k a -> Bool
-valid = coerce (Map.valid :: Ord k => Map k a -> Bool)
+valid = coerce (Map.valid :: Map k a -> Bool)
 
 instance Default (MonoidalMap k a) where
   def = empty

@@ -70,11 +70,11 @@ data From (k :: a -> *) (v :: a -> *) :: a -> * where
 type To = ComposeMaybe
 
 -- |Test whether a 'PatchDMapWithMove' satisfies its invariants.
-validPatchDMapWithMove :: forall k v. (GCompare k, GEq k, GShow k) => DMap k (NodeInfo k v) -> Bool
+validPatchDMapWithMove :: forall k v. (GCompare k, GShow k) => DMap k (NodeInfo k v) -> Bool
 validPatchDMapWithMove = not . null . validationErrorsForPatchDMapWithMove
 
 -- |Enumerate what reasons a 'PatchDMapWithMove' doesn't satisfy its invariants, returning @[]@ if it's valid.
-validationErrorsForPatchDMapWithMove :: forall k v. (GCompare k, GEq k, GShow k) => DMap k (NodeInfo k v) -> [String]
+validationErrorsForPatchDMapWithMove :: forall k v. (GCompare k, GShow k) => DMap k (NodeInfo k v) -> [String]
 validationErrorsForPatchDMapWithMove m =
   noSelfMoves <> movesBalanced
   where
@@ -268,7 +268,7 @@ unsafePatchDMapWithMove = PatchDMapWithMove
 
 -- |Wrap a 'DMap' representing patch changes into a 'PatchDMapWithMove' while checking invariants. If the invariants are satisfied, @Right p@ is returned
 -- otherwise @Left errors@.
-patchDMapWithMove :: (GCompare k, GEq k, GShow k) => DMap k (NodeInfo k v) -> Either [String] (PatchDMapWithMove k v)
+patchDMapWithMove :: (GCompare k, GShow k) => DMap k (NodeInfo k v) -> Either [String] (PatchDMapWithMove k v)
 patchDMapWithMove dm =
   case validationErrorsForPatchDMapWithMove dm of
     [] -> Right $ unsafePatchDMapWithMove dm
