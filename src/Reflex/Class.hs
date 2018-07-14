@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -150,10 +150,10 @@ import Control.Applicative
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Control.Monad.Trans.Cont (ContT ())
-import Control.Monad.Trans.Except (ExceptT ())
-import Control.Monad.Trans.RWS (RWST ())
-import Control.Monad.Trans.Writer (WriterT ())
+import Control.Monad.Trans.Cont (ContT)
+import Control.Monad.Trans.Except (ExceptT)
+import Control.Monad.Trans.RWS (RWST)
+import Control.Monad.Trans.Writer (WriterT)
 import Data.Align
 import Data.Bifunctor
 import Data.Coerce
@@ -161,6 +161,7 @@ import Data.Default
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Either
+import Data.FastMutableIntMap (PatchIntMap)
 import Data.Foldable
 import Data.Functor.Bind hiding (join)
 import qualified Data.Functor.Bind as Bind
@@ -180,7 +181,6 @@ import Data.Traversable
 import Data.Type.Coercion
 import Reflex.FunctorMaybe
 import Reflex.Patch
-import Data.FastMutableIntMap (PatchIntMap)
 
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
 import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)

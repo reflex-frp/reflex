@@ -31,7 +31,7 @@ import Control.Monad.IO.Class
 
 #ifdef GHCJS_FAST_WEAK
 import GHCJS.Types
-import Reflex.FastWeak (unsafeFromRawJSVal, unsafeToRawJSVal, js_isNull)
+import Reflex.FastWeak (js_isNull, unsafeFromRawJSVal, unsafeToRawJSVal)
 #else
 import Control.Exception
 import Data.Foldable (forM_, mapM_)

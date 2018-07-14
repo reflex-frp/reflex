@@ -49,7 +49,6 @@ import Data.Bits
 import Data.Coerce
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
-import qualified Data.Some as Some
 import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.IntMap.Strict (IntMap)
@@ -57,11 +56,12 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid ((<>))
-import Data.Unique.Tag
+import Data.Proxy
 import qualified Data.Semigroup as S
 import Data.Some (Some)
+import qualified Data.Some as Some
 import Data.Type.Equality
-import Data.Proxy
+import Data.Unique.Tag
 
 import GHC.Exts (Any)
 import Unsafe.Coerce

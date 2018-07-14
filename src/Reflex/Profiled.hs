@@ -1,4 +1,5 @@
 {-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
@@ -18,9 +19,9 @@ import Control.Monad.Ref
 import Control.Monad.State.Strict (StateT, execStateT, modify)
 import Data.Coerce
 import Data.Dependent.Map (DMap, GCompare)
-import Data.List
 import Data.FastMutableIntMap
 import Data.IORef
+import Data.List
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import Data.Monoid ((<>))
@@ -32,8 +33,8 @@ import GHC.Foreign
 import GHC.IO.Encoding
 import GHC.Stack
 import Reflex.Class
-import Reflex.PerformEvent.Class
 import Reflex.Host.Class
+import Reflex.PerformEvent.Class
 
 import System.IO.Unsafe
 import Unsafe.Coerce

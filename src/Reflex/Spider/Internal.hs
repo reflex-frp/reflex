@@ -38,6 +38,8 @@ import Data.Align
 import Data.Coerce
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
+import Data.FastMutableIntMap (FastMutableIntMap, PatchIntMap (..))
+import qualified Data.FastMutableIntMap as FastMutableIntMap
 import Data.Foldable hiding (concat, elem, sequence_)
 import Data.Function
 import Data.Functor.Constant
@@ -54,8 +56,6 @@ import Data.Proxy
 import Data.These
 import Data.Traversable
 import Data.Word
-import Data.FastMutableIntMap (FastMutableIntMap, PatchIntMap (..))
-import qualified Data.FastMutableIntMap as FastMutableIntMap
 import GHC.Exts
 import GHC.IORef (IORef (..))
 import GHC.Stack
@@ -75,12 +75,12 @@ import Data.Tree (Forest, Tree (..), drawForest)
 
 import Data.FastWeakBag (FastWeakBag)
 import qualified Data.FastWeakBag as FastWeakBag
-import Data.WeakBag (WeakBag, WeakBagTicket, _weakBag_children)
-import qualified Data.WeakBag as WeakBag
 import Data.Reflection
 import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.Type.Coercion
+import Data.WeakBag (WeakBag, WeakBagTicket, _weakBag_children)
+import qualified Data.WeakBag as WeakBag
 import qualified Reflex.Class
 import qualified Reflex.Class as R
 import qualified Reflex.Host.Class
@@ -92,8 +92,8 @@ import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
 import Prelude hiding (any, concat, mapM, mapM_, sequence)
 
 #ifdef DEBUG_TRACE_EVENTS
-import System.IO (stderr)
 import qualified Data.ByteString.Char8 as BS8
+import System.IO (stderr)
 #endif
 
 #ifdef DEBUG_TRACE_EVENTS

@@ -37,15 +37,15 @@ import qualified Data.Some as Some
 import Data.These
 
 import Reflex.Class
-import Reflex.EventWriter.Class
 import Reflex.EventWriter.Base
+import Reflex.EventWriter.Class
 import Reflex.Host.Class
+import qualified Reflex.Patch.MapWithMove as MapWithMove
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Query.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
-import qualified Reflex.Patch.MapWithMove as MapWithMove
 
 newtype QueryT t q m a = QueryT { unQueryT :: StateT [Behavior t q] (EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m)) a }
   deriving (Functor, Applicative, Monad, MonadException, MonadFix, MonadIO, MonadHold t, MonadSample t, MonadAtomicRef)

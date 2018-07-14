@@ -4,8 +4,8 @@ import Control.Monad
 import Language.Haskell.HLint3 (hlint)
 import System.Directory
 import System.Exit (exitFailure, exitSuccess)
-import System.FilePath.Find
 import System.FilePath
+import System.FilePath.Find
 
 main :: IO ()
 main = do

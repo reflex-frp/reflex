@@ -24,9 +24,9 @@ module Data.FastMutableIntMap
 
 import Control.Monad.IO.Class
 import Data.Foldable (traverse_)
-import Data.IORef
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import Data.IORef
 import Data.Maybe
 import Prelude hiding (lookup)
 import Reflex.Patch.Class

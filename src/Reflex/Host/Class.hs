@@ -36,13 +36,13 @@ import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Ref
 import Control.Monad.Trans
-import Control.Monad.Trans.Cont (ContT ())
-import Control.Monad.Trans.Except (ExceptT ())
-import Control.Monad.Trans.Reader (ReaderT ())
-import Control.Monad.Trans.RWS (RWST ())
-import Control.Monad.Trans.State (StateT ())
+import Control.Monad.Trans.Cont (ContT)
+import Control.Monad.Trans.Except (ExceptT)
+import Control.Monad.Trans.Reader (ReaderT)
+import Control.Monad.Trans.RWS (RWST)
+import Control.Monad.Trans.State (StateT)
 import qualified Control.Monad.Trans.State.Strict as Strict
-import Control.Monad.Trans.Writer (WriterT ())
+import Control.Monad.Trans.Writer (WriterT)
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid

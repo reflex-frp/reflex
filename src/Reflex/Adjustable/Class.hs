@@ -1,9 +1,9 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 #ifdef USE_REFLEX_OPTIMIZER
@@ -21,11 +21,11 @@ module Reflex.Adjustable.Class
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Data.Align
-import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.Dependent.Map (DMap, GCompare (..))
 import Data.Functor.Constant
 import Data.Functor.Misc
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Map.Misc
 import Data.These
 

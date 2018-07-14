@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module Data.Map.Misc 
+module Data.Map.Misc
   (
   -- * Working with Maps
     diffMapNoEq

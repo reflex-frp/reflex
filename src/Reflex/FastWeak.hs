@@ -133,7 +133,6 @@ emptyFastWeak = unsafeCoerce w
   where w :: FastWeak Any
 #ifdef GHCJS_FAST_WEAK
         w = js_emptyWeak
-foreign import javascript unsafe "$r = new h$FastWeak(null);" js_emptyWeak :: FastWeak Any
 #else
         w = unsafePerformIO $ do
           w' <- mkWeakPtr undefined Nothing
@@ -141,3 +140,7 @@ foreign import javascript unsafe "$r = new h$FastWeak(null);" js_emptyWeak :: Fa
           return w'
 #endif
 {-# NOINLINE emptyFastWeak #-}
+
+#ifdef GHCJS_FAST_WEAK
+foreign import javascript unsafe "$r = new h$FastWeak(null);" js_emptyWeak :: FastWeak Any
+#endif

@@ -7,9 +7,9 @@ module Reflex
 
 import Reflex.Class as X
 import Reflex.Collection as X
+import Reflex.Dynamic as X
 import Reflex.EventWriter.Base as X
 import Reflex.EventWriter.Class as X
-import Reflex.Dynamic as X
 #ifdef USE_TEMPLATE_HASKELL
 import Reflex.Dynamic.TH as X
 #endif

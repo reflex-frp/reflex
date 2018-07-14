@@ -1,9 +1,10 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
@@ -12,17 +13,17 @@ module Reflex.NotReady.Class
   ( NotReady(..)
   ) where
 
-import Control.Monad.Trans
 import Control.Monad.Reader (ReaderT)
+import Control.Monad.Trans
 
 import Reflex.Class
-import Reflex.Host.Class
-import Reflex.PostBuild.Base (PostBuildT)
-import Reflex.EventWriter.Base (EventWriterT)
 import Reflex.DynamicWriter.Base (DynamicWriterT)
+import Reflex.EventWriter.Base (EventWriterT)
+import Reflex.Host.Class
+import Reflex.PerformEvent.Base (PerformEventT (..))
+import Reflex.PostBuild.Base (PostBuildT)
 import Reflex.Query.Base (QueryT)
 import Reflex.Requester.Base (RequesterT)
-import Reflex.PerformEvent.Base (PerformEventT(..))
 import Reflex.TriggerEvent.Base (TriggerEventT)
 
 class Monad m => NotReady t m | m -> t where

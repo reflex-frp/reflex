@@ -14,8 +14,8 @@ import Reflex.Patch.Map
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Constant
-import qualified Data.IntMap as IntMap
 import Data.Functor.Misc
+import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import Data.Semigroup (Semigroup (..))
 import Data.Some (Some)

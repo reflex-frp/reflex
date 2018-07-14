@@ -7,10 +7,10 @@ module Reflex.Patch.Map where
 
 import Reflex.Patch.Class
 
-import Data.Semigroup
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Semigroup
 
 -- | A set of changes to a 'Map'.  Any element may be inserted/updated or
 -- deleted.  Insertions are represented as values wrapped in 'Just', while
