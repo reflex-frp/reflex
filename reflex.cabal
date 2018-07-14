@@ -184,7 +184,6 @@ test-suite hlint
                , hlint
   if impl(ghcjs)
     buildable: False
-  buildable: False
 
 test-suite EventWriterT
   type: exitcode-stdio-1.0
@@ -226,6 +225,7 @@ test-suite QueryT
                , semigroups
                , reflex
                , ref-tf
+  other-modules: Test.Run
 
 test-suite GC-Semantics
   type: exitcode-stdio-1.0

@@ -78,11 +78,11 @@ validationErrorsForPatchDMapWithMove :: forall k v. (GCompare k, GEq k, GShow k)
 validationErrorsForPatchDMapWithMove m =
   noSelfMoves <> movesBalanced
   where
-    noSelfMoves = catMaybes . map selfMove . DMap.toAscList $ m
+    noSelfMoves = mapMaybe selfMove . DMap.toAscList $ m
     selfMove (dst :=> NodeInfo (From_Move src) _)           | Just _ <- dst `geq` src = Just $ "self move of key " <> gshow src <> " at destination side"
     selfMove (src :=> NodeInfo _ (ComposeMaybe (Just dst))) | Just _ <- src `geq` dst = Just $ "self move of key " <> gshow dst <> " at source side"
     selfMove _ = Nothing
-    movesBalanced = catMaybes . map unbalancedMove . DMap.toAscList $ m
+    movesBalanced = mapMaybe unbalancedMove . DMap.toAscList $ m
     unbalancedMove (dst :=> NodeInfo (From_Move src) _) =
       case DMap.lookup src m of
         Nothing -> Just $ "unbalanced move at destination key " <> gshow dst <> " supposedly from " <> gshow src <> " but source key is not in the patch"

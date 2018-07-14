@@ -171,7 +171,7 @@ traverseDMapWithKeyWithAdjustImpl base mapPatch weakenPatchWith mergeMyDynIncrem
   return (liftedResult0, liftedResult')
 
 traverseIntMapWithKeyWithAdjustImpl :: forall t w v' p p' v m. (PatchTarget (p' (Dynamic t w)) ~ IntMap (Dynamic t w), PatchTarget (p' w) ~ IntMap w, Patch (p' w), Patch (p' (Dynamic t w)), MonadFix m, Monoid w, Reflex t, MonadHold t m, Functor p, p ~ p')
-  => (   (IntMap.Key -> v -> m ((v', Dynamic t w)))
+  => (   (IntMap.Key -> v -> m (v', Dynamic t w))
       -> IntMap v
       -> Event t (p v)
       -> m (IntMap (v', Dynamic t w), Event t (p (v', Dynamic t w)))

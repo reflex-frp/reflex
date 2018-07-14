@@ -183,11 +183,7 @@ sequenceIntMapWithAdjustEventWriterTWith base patchNewElements mergePatchIncreme
       requests' :: Event t (p (Event t w))
       requests' = fmapCheap (fmap fst) children'
   childRequestMap :: Incremental t (p (Event t w)) <- holdIncremental requests0 requests'
-  -- We add these two separately to take advantage of the free merge being done later.  The coincidence case must come first so that it has precedence if both fire simultaneously.  (Really, we should probably block the 'switch' whenever 'updated' fires, but switchPromptlyDyn has the same issue.)
-  tellEvent $ coincidence $ fforCheap requests' $ \p -> mconcat $ patchNewElements p --TODO: Create a mergeIncrementalPromptly, and use that to eliminate this 'coincidence'
-  tellEvent $ fforMaybeCheap (mergePatchIncremental childRequestMap) $ \m -> case toList m of
-    [] -> Nothing
-    h : t -> Just $ sconcat $ h :| t
+  tellEventsPromptly requests' patchNewElements $ mergePatchIncremental childRequestMap
   return (result0, result')
 
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceDMapWithAdjust'.
@@ -216,12 +212,24 @@ sequenceDMapWithAdjustEventWriterTWith base mapPatch weakenPatchWith patchNewEle
       requests' :: Event t (p' (Some k) (Event t w))
       requests' = fforCheap children' $ weakenPatchWith $ fst . getCompose
   childRequestMap :: Incremental t (p' (Some k) (Event t w)) <- holdIncremental requests0 requests'
+  tellEventsPromptly requests' patchNewElements $ mergePatchIncremental childRequestMap
+  return (result0, result')
+
+tellEventsPromptly
+  :: ( Foldable f
+     , Reflex t
+     , EventWriter t w m
+     )
+  => Event t a
+  -> (a -> [Event t w])
+  -> Event t (f w)
+  -> m ()
+tellEventsPromptly requests' patchNewElements mergedChildRequestMap = do
   -- We add these two separately to take advantage of the free merge being done later.  The coincidence case must come first so that it has precedence if both fire simultaneously.  (Really, we should probably block the 'switch' whenever 'updated' fires, but switchPromptlyDyn has the same issue.)
-  tellEvent $ coincidence $ fforCheap requests' $ \p -> mconcat $ patchNewElements p --TODO: Create a mergeIncrementalPromptly, and use that to eliminate this 'coincidence'
-  tellEvent $ fforMaybeCheap (mergePatchIncremental childRequestMap) $ \m -> case toList m of
+  tellEvent $ coincidence $ fmapCheap (mconcat . patchNewElements) requests' --TODO: Create a mergeIncrementalPromptly, and use that to eliminate this 'coincidence'
+  tellEvent $ fforMaybeCheap mergedChildRequestMap $ \m -> case toList m of
     [] -> Nothing
     h : t -> Just $ sconcat $ h :| t
-  return (result0, result')
 
 instance PerformEvent t m => PerformEvent t (EventWriterT t w m) where
   type Performable (EventWriterT t w m) = Performable m
