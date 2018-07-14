@@ -2230,9 +2230,6 @@ invalidate toReconnectRef wis = do
 -- Reflex integration
 --------------------------------------------------------------------------------
 
--- When we're specializing, we include this from Reflex.Class instead, because
--- it needs access to these types; when we're not, we want them here, so our
--- instance isn't an orphan instance.
 -- | Designates the default, global Spider timeline
 data SpiderTimeline x
 type role SpiderTimeline nominal
