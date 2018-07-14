@@ -8,11 +8,12 @@
 import Control.Lens
 import Control.Monad.Fix
 import Data.Align
-import Data.AppendMap (AppendMap)
+import Data.AppendMap () -- for the Align instance
 import qualified Data.AppendMap as AMap
 import Data.Functor.Misc
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Map.Monoidal (MonoidalMap)
 import Data.Semigroup
 import Data.These
 
@@ -31,7 +32,7 @@ instance (Ord k, Query a, Eq (QueryResult a)) => Query (Selector k a) where
   type QueryResult (Selector k a) = Selector k (QueryResult a)
   crop q r = undefined
 
-newtype Selector k a = Selector { unSelector :: AppendMap k a }
+newtype Selector k a = Selector { unSelector :: MonoidalMap k a }
   deriving (Show, Read, Eq, Ord, Functor)
 
 instance (Ord k, Eq a, Monoid a) => Semigroup (Selector k a) where
