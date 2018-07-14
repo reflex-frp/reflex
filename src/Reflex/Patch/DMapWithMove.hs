@@ -34,12 +34,6 @@ import Data.Some (Some)
 import qualified Data.Some as Some
 import Data.These
 
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-import Data.Dependent.Sum (ShowTag (..))
-import Data.GADT.Show (GShow (..))
-import Data.Typeable (Proxy (..))
-#endif
-
 -- | Like 'PatchMapWithMove', but for 'DMap'. Each key carries a 'NodeInfo' which describes how it will be changed by the patch and connects move sources and
 -- destinations.
 --
@@ -48,9 +42,6 @@ import Data.Typeable (Proxy (..))
 --     * A key should not move to itself.
 --     * A move should always be represented with both the destination key (as a 'From_Move') and the source key (as a @'ComposeMaybe' ('Just' destination)@)
 newtype PatchDMapWithMove k v = PatchDMapWithMove (DMap k (NodeInfo k v))
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  deriving (Show)
-#endif
 
 -- |Structure which represents what changes apply to a particular key. @_nodeInfo_from@ specifies what happens to this key, and in particular what other key
 -- the current key is moving from, while @_nodeInfo_to@ specifies what key the current key is moving to if involved in a move.
@@ -61,14 +52,6 @@ data NodeInfo k v a = NodeInfo
   -- ^Where this key is moving to, if involved in a move. Should only be @ComposeMaybe (Just k)@ when there is a corresponding 'From_Move'.
   }
   deriving (Show)
-
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-instance {-# INCOHERENT #-} (GShow k, ShowTag k v) => ShowTag k (NodeInfo k v) where
-  showTagToShow k _ r = gshowToShow k $ showTagToShow k (Proxy :: Proxy v) r
-
-instance {-# INCOHERENT #-} (GEq k, EqTag k v) => EqTag k (From k v) where
-  eqTagToEq k _ r = eqTagToEq k (Proxy :: Proxy v) (geqToEq k r)
-#endif
 
 -- |Structure describing a particular change to a key, be it inserting a new key (@From_Insert@), updating an existing key (@From_Insert@ again), deleting a
 -- key (@From_Delete@), or moving a key (@From_Move@).

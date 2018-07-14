@@ -84,48 +84,22 @@ deriving instance Show k => Show (Const2 k v v')
 deriving instance Read k => Read (Const2 k v v)
 
 instance Show k => GShow (Const2 k v) where
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  gshowToShow (Const2 _) = id
-#else
   gshowsPrec n x@(Const2 _) = showsPrec n x
-#endif
 
 instance (Show k, Show (f v)) => ShowTag (Const2 k v) f where
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  showTagToShow (Const2 _) _ = id
-#else
   showTaggedPrec (Const2 _) = showsPrec
-#endif
 
 instance Eq k => GEq (Const2 k v) where
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  geqToEq _ = id
-  geqUnify (Const2 _) (Const2 _) _ = id
-#else
   geq (Const2 a) (Const2 b) =
     if a == b
     then Just Refl
     else Nothing
-#endif
 
 instance Ord k => GCompare (Const2 k v) where
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  gcompareToOrd (Const2 _) = id
-  gcompare (Const2 a) (Const2 b) = strengthenOrdering $ compare a b
-#else
   gcompare (Const2 a) (Const2 b) = case compare a b of
     LT -> GLT
     EQ -> GEQ
     GT -> GGT
-#endif
-
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-instance {-# INCOHERENT #-} (Eq k, Eq v) => EqTag (Const2 k v) Identity where
-  eqTagToEq (Const2 _) _ = id
-
-instance {-# INCOHERENT #-} Eq k => EqTag (Const2 k v) (Const2 k v) where
-  eqTagToEq (Const2 _) _ = id
-#endif
 
 -- | Convert a 'DMap' to a regular 'Map'
 dmapToMap :: DMap (Const2 k v) Identity -> Map k v
@@ -175,17 +149,9 @@ deriving instance Show (f a) => Show (WrapArg g f (g' a))
 deriving instance Read (f a) => Read (WrapArg g f (g a))
 
 instance GEq f => GEq (WrapArg g f) where
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  geqToEq (WrapArg f) = geqToEq f
-  geqUnify (WrapArg a) (WrapArg b) = geqUnify a b
-#else
   geq (WrapArg a) (WrapArg b) = (\Refl -> Refl) <$> geq a b
-#endif
 
 instance GCompare f => GCompare (WrapArg g f) where
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  gcompareToOrd (WrapArg f) = gcompareToOrd f
-#endif
   gcompare (WrapArg a) (WrapArg b) = case gcompare a b of
     GLT -> GLT
     GEQ -> GEQ
@@ -237,34 +203,13 @@ deriving instance Show (EitherTag l r a)
 deriving instance Eq (EitherTag l r a)
 deriving instance Ord (EitherTag l r a)
 
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-instance {-# INCOHERENT #-} (Show (f l), Show (f r)) => ShowTag (EitherTag l r) f where
-  showTagToShow e _ = case e of
-    LeftTag -> id
-    RightTag -> id
-
-instance {-# INCOHERENT #-} (Eq (f l), Eq (f r)) => EqTag (EitherTag l r) f where
-  eqTagToEq e _ = case e of
-    LeftTag -> id
-    RightTag -> id
-#endif
-
 instance GEq (EitherTag l r) where
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  geqToEq _ = id
-  geqUnify LeftTag LeftTag _ same = same
-  geqUnify RightTag RightTag _ same = same
-  geqUnify _ _ unknown _ = unknown
-#endif
   geq a b = case (a, b) of
     (LeftTag, LeftTag) -> Just Refl
     (RightTag, RightTag) -> Just Refl
     _ -> Nothing
 
 instance GCompare (EitherTag l r) where
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  gcompareToOrd _ = id
-#endif
   gcompare a b = case (a, b) of
     (LeftTag, LeftTag) -> GEQ
     (LeftTag, RightTag) -> GLT
@@ -272,24 +217,14 @@ instance GCompare (EitherTag l r) where
     (RightTag, RightTag) -> GEQ
 
 instance GShow (EitherTag l r) where
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  gshowToShow _ = id
-#else
   gshowsPrec _ a = case a of
     LeftTag -> showString "LeftTag"
     RightTag -> showString "RightTag"
-#endif
 
 instance (Show l, Show r) => ShowTag (EitherTag l r) Identity where
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-  showTagToShow t _ = case t of
-    LeftTag -> id
-    RightTag -> id
-#else
   showTaggedPrec t n (Identity a) = case t of
     LeftTag -> showsPrec n a
     RightTag -> showsPrec n a
-#endif
 
 -- | Convert 'Either' to a 'DSum'. Inverse of 'dsumToEither'.
 eitherToDSum :: Either a b -> DSum (EitherTag a b) Identity
@@ -319,13 +254,6 @@ newtype ComposeMaybe (f :: * -> *) (a :: *) =
 
 deriving instance Functor f => Functor (ComposeMaybe f)
 
-#ifdef EXPERIMENTAL_DEPENDENT_SUM_INSTANCES
-instance {-# INCOHERENT #-} EqTag f g => EqTag f (ComposeMaybe g) where
-  eqTagToEq f _ = eqTagToEq f (Proxy :: Proxy g)
-
-instance {-# INCOHERENT #-} GShow k => ShowTag k (ComposeMaybe k) where
-  showTagToShow k _ r = gshowToShow k (showTagToShow k (Proxy :: Proxy k) r)
-#endif
 --------------------------------------------------------------------------------
 -- Deprecated functions
 --------------------------------------------------------------------------------

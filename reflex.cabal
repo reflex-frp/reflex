@@ -38,11 +38,6 @@ flag debug-trace-events
   default: False
   manual: True
 
-flag experimental-dependent-sum-instances
-  description: Use experimental incoherent instances for certain forked dependent-sum typeclasses
-  default: False
-  manual: True
-
 flag fast-weak
   description: Use the primitive implementation of FastWeak in GHCJS; note that this requires GHCJS to be built with FastWeak and FastWeakBag present in the RTS, which is not the default
   default: False
@@ -157,9 +152,6 @@ library
 
   if flag(expose-all-unfoldings)
     ghc-options: -fexpose-all-unfoldings
-
-  if flag(experimental-dependent-sum-instances)
-    ghc-options: -DEXPERIMENTAL_DEPENDENT_SUM_INSTANCES
 
   if flag(fast-weak) && impl(ghcjs)
     ghc-options: -DGHCJS_FAST_WEAK
