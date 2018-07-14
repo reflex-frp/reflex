@@ -19,10 +19,6 @@
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-{-# LANGUAGE EmptyDataDecls #-}
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
-#endif
 
 -- | This module contains the Reflex interface, as well as a variety of
 -- convenience functions for working with 'Event's, 'Behavior's, and other
@@ -148,37 +144,6 @@ module Reflex.Class
   , switchPromptOnly
     -- * Slow, but general, implementations
   , slowHeadE
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-  , Spider
-  , SpiderEnv
-  , SpiderTimeline
-  , Global
-  , Behavior (..)
-  , Event (..)
-  , Dynamic (..)
-  , Incremental (..)
-  , never
-  , constant
-  , push
-  , pushCheap
-  , pull
-  , merge
-  , fan
-  , switch
-  , coincidence
-  , current
-  , updated
-  , unsafeBuildDynamic
-  , unsafeBuildIncremental
-  , mergeIncremental
-  , mergeIncrementalWithMove
-  , currentIncremental
-  , updatedIncremental
-  , incrementalToDynamic
-  , behaviorCoercion
-  , eventCoercion
-  , dynamicCoercion
-#endif
   ) where
 
 import Control.Applicative
@@ -217,25 +182,10 @@ import Reflex.FunctorMaybe
 import Reflex.Patch
 import Data.FastMutableIntMap (PatchIntMap)
 
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-import Reflex.Spider.Internal (EventM, Global, HasSpiderTimeline, SpiderHost (..), SpiderHostFrame (..),
-                               SpiderPullM, SpiderPushM (..), behaviorHoldIdentity, dynamicConst,
-                               dynamicCurrent, dynamicDynIdentity, dynamicHold, dynamicHoldIdentity,
-                               dynamicUpdated, newMapDyn, readBehaviorTracked, readBehaviorUntracked,
-                               runFrame, runSpiderHostFrame)
-import qualified Reflex.Spider.Internal
-import qualified Reflex.Spider.Internal as S
-import Unsafe.Coerce
-#endif
-
 -- Note: must come last to silence warnings due to AMP on GHC < 7.10
 import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
 
 import Debug.Trace (trace)
-
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-#include "Spider/SpiderTimeline.include.hs"
-#endif
 
 -- | The 'Reflex' class contains all the primitive functionality needed for
 -- Functional Reactive Programming (FRP).  The @t@ type parameter indicates
@@ -248,9 +198,6 @@ class ( MonadHold t (PushM t)
       , Functor (Dynamic t)
       , Applicative (Dynamic t) -- Necessary for GHC <= 7.8
       , Monad (Dynamic t)
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-      , t ~ SpiderTimeline Global
-#endif
       ) => Reflex t where
   -- | A container for a value that can change over time.  'Behavior's can be
   -- sampled at will, but it is not possible to be notified when they change
@@ -273,7 +220,6 @@ class ( MonadHold t (PushM t)
   type PushM t :: * -> *
   -- | A monad for doing complex pull-based calculations efficiently
   type PullM t :: * -> *
-#ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
   -- | An 'Event' with no occurrences
   never :: Event t a
   -- | Create a 'Behavior' that always has the given value
@@ -333,83 +279,10 @@ class ( MonadHold t (PushM t)
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
-#endif
 
 --TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
 mergeInt :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
 mergeInt m = mergeIntIncremental $ unsafeBuildIncremental (return m) never
-
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-instance t ~ SpiderTimeline Global => Reflex t where
-  newtype Behavior t a = SpiderBehavior { unSpiderBehavior :: Reflex.Spider.Internal.Behavior Global a }
-  newtype Event t a = SpiderEvent { unSpiderEvent :: Reflex.Spider.Internal.Event Global a }
-  newtype Dynamic t a = SpiderDynamic { unSpiderDynamic :: Reflex.Spider.Internal.Dynamic Global (Identity a) } -- deriving (Functor, Applicative, Monad)
-  newtype Incremental t p = SpiderIncremental { unSpiderIncremental :: Reflex.Spider.Internal.Dynamic Global p }
-  type PullM t = SpiderPullM Global
-  type PushM t = SpiderPushM Global
-never :: Reflex t => Event t a
-constant :: Reflex t => a -> Behavior t a
-push :: Reflex t => (a -> PushM t (Maybe b)) -> Event t a -> Event t b
-pushCheap :: Reflex t => (a -> PushM t (Maybe b)) -> Event t a -> Event t b
-pull :: Reflex t => PullM t a -> Behavior t a
-merge :: (Reflex t, GCompare k) => DMap k (Event t) -> Event t (DMap k Identity)
-fan :: (Reflex t, GCompare k) => Event t (DMap k Identity) -> EventSelector t k
-switch :: Reflex t => Behavior t (Event t a) -> Event t a
-coincidence :: Reflex t => Event t (Event t a) -> Event t a
-current :: Reflex t => Dynamic t a -> Behavior t a
-updated :: Reflex t => Dynamic t a -> Event t a
-unsafeBuildDynamic :: Reflex t => PullM t a -> Event t a -> Dynamic t a
-unsafeBuildIncremental :: (Reflex t, Patch p) => PullM t (PatchTarget p) -> Event t p -> Incremental t p
-mergeIncremental :: (Reflex t, GCompare k) => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
-mergeIncrementalWithMove :: (Reflex t, GCompare k) => Incremental t (PatchDMapWithMove k (Event t)) -> Event t (DMap k Identity)
-currentIncremental :: (Reflex t, Patch p) => Incremental t p -> Behavior t (PatchTarget p)
-updatedIncremental :: (Reflex t, Patch p) => Incremental t p -> Event t p
-incrementalToDynamic :: (Reflex t, Patch p) => Incremental t p -> Dynamic t (PatchTarget p)
-behaviorCoercion :: Reflex t => Coercion a b -> Coercion (Behavior t a) (Behavior t b)
-eventCoercion :: Reflex t => Coercion a b -> Coercion (Event t a) (Event t b)
-dynamicCoercion :: Reflex t => Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
-{-# INLINE never #-}
-never = SpiderEvent S.eventNever
-{-# INLINE constant #-}
-constant = SpiderBehavior . S.behaviorConst
-{-# INLINE push #-}
-push f = SpiderEvent . S.push (coerce f) . unSpiderEvent
-{-# INLINE pushCheap #-}
-pushCheap f = SpiderEvent . S.pushCheap (coerce f) . unSpiderEvent
-{-# INLINE pull #-}
-pull = SpiderBehavior . S.pull . coerce
-{-# INLINE merge #-}
-merge = SpiderEvent . S.merge . S.dynamicConst . (coerce :: DMap k (Event (SpiderTimeline x)) -> DMap k (S.Event x))
-{-# INLINE fan #-}
-fan e = EventSelector $ SpiderEvent . S.select (S.fan (unSpiderEvent e))
-{-# INLINE switch #-}
-switch = SpiderEvent . S.switch . (coerce :: S.Behavior x (Event (SpiderTimeline x) a) -> S.Behavior x (S.Event x a)) . unSpiderBehavior
-{-# INLINE coincidence #-}
-coincidence = SpiderEvent . S.coincidence . (coerce :: S.Event x (Event (SpiderTimeline x) a) -> S.Event x (S.Event x a)) . unSpiderEvent
-{-# INLINE current #-}
-current = SpiderBehavior . S.dynamicCurrent . unSpiderDynamic
-{-# INLINE updated #-}
-updated = coerceEvent . SpiderEvent . dynamicUpdated . unSpiderDynamic
-{-# INLINE unsafeBuildDynamic #-}
-unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ S.unsafeBuildDynamic (coerce readV0) $ coerce $ unSpiderEvent v'
-{-# INLINE unsafeBuildIncremental #-}
-unsafeBuildIncremental readV0 dv = SpiderIncremental $ S.dynamicDyn $ S.unsafeBuildDynamic (coerce readV0) $ unSpiderEvent dv
-{-# INLINE mergeIncremental #-}
-mergeIncremental = SpiderEvent . S.merge . (unsafeCoerce :: S.Dynamic x (PatchDMap k (Event (SpiderTimeline x))) -> S.Dynamic x (PatchDMap k (S.Event x))) . unSpiderIncremental
-{-# INLINE mergeIncrementalWithMove #-}
-mergeIncrementalWithMove = SpiderEvent . S.mergeWithMove . (unsafeCoerce :: S.Dynamic x (PatchDMapWithMove k (Event (SpiderTimeline x))) -> S.Dynamic x (PatchDMapWithMove k (S.Event x))) . unSpiderIncremental
-{-# INLINE currentIncremental #-}
-currentIncremental = SpiderBehavior . dynamicCurrent . unSpiderIncremental
-{-# INLINE updatedIncremental #-}
-updatedIncremental = SpiderEvent . dynamicUpdated . unSpiderIncremental
-{-# INLINE incrementalToDynamic #-}
-incrementalToDynamic (SpiderIncremental i) = SpiderDynamic $ dynamicDynIdentity $ S.unsafeBuildDynamic (readBehaviorUntracked $ dynamicCurrent i) $ flip S.push (dynamicUpdated i) $ \p -> do
-  c <- readBehaviorUntracked $ dynamicCurrent i
-  return $ Identity <$> apply p c
-eventCoercion Coercion = Coercion
-behaviorCoercion Coercion = Coercion
-dynamicCoercion = unsafeCoerce
-#endif
 
 -- | Coerce a 'Behavior' between representationally-equivalent value types
 coerceBehavior :: (Reflex t, Coercible a b) => Behavior t a -> Behavior t b

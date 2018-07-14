@@ -47,21 +47,8 @@ import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Monoid
 
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-import Control.Monad.Primitive (touch)
-import Data.IORef
-import Reflex.Spider.Internal (EventM (..), HasSpiderTimeline, RootTrigger, SpiderEventHandle (..),
-                               SpiderHost (..), SpiderHostFrame (..), Subscriber (..), newEventWithTriggerIO,
-                               newFanEventWithTriggerIO, run, runFrame, scheduleClear, subscribe)
-import qualified Reflex.Spider.Internal
-#endif
-
 -- Note: this import must come last to silence warnings from AMP
 import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
-
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-#include "../Spider/SpiderTimelineHost.include.hs"
-#endif
 
 -- | Framework implementation support class for the reflex implementation
 -- represented by @t@.

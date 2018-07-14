@@ -21,9 +21,6 @@
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-{-# OPTIONS_GHC -fno-warn-orphans #-}
-#endif
 -- | This module is the implementation of the 'Spider' 'Reflex' engine.  It uses
 -- a graph traversal algorithm to propagate 'Event's and 'Behavior's.
 module Reflex.Spider.Internal (module Reflex.Spider.Internal) where
@@ -80,7 +77,6 @@ import Data.FastWeakBag (FastWeakBag)
 import qualified Data.FastWeakBag as FastWeakBag
 import Data.WeakBag (WeakBag, WeakBagTicket, _weakBag_children)
 import qualified Data.WeakBag as WeakBag
-#ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 import Data.Reflection
 import Data.Some (Some)
 import qualified Data.Some as Some
@@ -88,7 +84,6 @@ import Data.Type.Coercion
 import qualified Reflex.Class
 import qualified Reflex.Class as R
 import qualified Reflex.Host.Class
-#endif
 import Reflex.NotReady.Class
 import Reflex.Patch
 import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
@@ -760,9 +755,7 @@ data Hold x p
 #endif
           }
 
--- | A statically allocated 'SpiderTimeline'; this is the only instance of
--- 'SpiderTimeline' that can used when using
--- -fspecialize-to-spidertimeline-global.
+-- | A statically allocated 'SpiderTimeline'
 data Global
 
 {-# NOINLINE globalSpiderTimelineEnv #-}
@@ -856,11 +849,7 @@ instance HasSpiderTimeline x => HasCurrentHeight x (EventM x) where
     delayedRef <- asksEventEnv eventEnvDelayedMerges
     liftIO $ modifyIORef' delayedRef $ IntMap.insertWith (++) (unHeight height) [subscribed]
 
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-class x ~ Global => HasSpiderTimeline x where
-#else
 class HasSpiderTimeline x where
-#endif
   -- | Retrieve the current SpiderTimelineEnv
   spiderTimeline :: SpiderTimelineEnv x
 
@@ -2246,13 +2235,203 @@ invalidate toReconnectRef wis = do
 -- Reflex integration
 --------------------------------------------------------------------------------
 
-#ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 -- When we're specializing, we include this from Reflex.Class instead, because
 -- it needs access to these types; when we're not, we want them here, so our
 -- instance isn't an orphan instance.
-#include "SpiderTimeline.include.hs"
-#include "SpiderTimelineHost.include.hs"
+-- | Designates the default, global Spider timeline
+data SpiderTimeline x
+type role SpiderTimeline nominal
+
+-- | The default, global Spider environment
+type Spider = SpiderTimeline Global
+
+instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (EventM x) where
+  {-# INLINABLE sample #-}
+  sample (SpiderBehavior b) = readBehaviorUntracked b
+
+instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (EventM x) where
+  {-# INLINABLE hold #-}
+  hold = holdSpiderEventM
+  {-# INLINABLE holdDyn #-}
+  holdDyn = holdDynSpiderEventM
+  {-# INLINABLE holdIncremental #-}
+  holdIncremental = holdIncrementalSpiderEventM
+  {-# INLINABLE buildDynamic #-}
+  buildDynamic = buildDynamicSpiderEventM
+  {-# INLINABLE headE #-}
+  headE = R.slowHeadE
+--  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
+
+instance Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPullM x) where
+  {-# INLINABLE sample #-}
+  sample = coerce . readBehaviorTracked . unSpiderBehavior
+
+instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPushM x) where
+  {-# INLINABLE sample #-}
+  sample (SpiderBehavior b) = SpiderPushM $ readBehaviorUntracked b
+
+instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderPushM x) where
+  {-# INLINABLE hold #-}
+  hold v0 e = Reflex.Class.current <$> Reflex.Class.holdDyn v0 e
+  {-# INLINABLE holdDyn #-}
+  holdDyn v0 (SpiderEvent e) = SpiderPushM $ fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce e
+  {-# INLINABLE holdIncremental #-}
+  holdIncremental v0 (SpiderEvent e) = SpiderPushM $ SpiderIncremental . dynamicHold <$> Reflex.Spider.Internal.hold v0 e
+  {-# INLINABLE buildDynamic #-}
+  buildDynamic getV0 (SpiderEvent e) = SpiderPushM $ fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce e
+  {-# INLINABLE headE #-}
+  headE = R.slowHeadE
+--  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+
+instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) where
+  {-# INLINE return #-}
+  return = pure
+  {-# INLINE (>>=) #-}
+  x >>= f = SpiderDynamic $ dynamicDynIdentity $ newJoinDyn $ newMapDyn (unSpiderDynamic . f) $ unSpiderDynamic x
+  {-# INLINE (>>) #-}
+  (>>) = (*>)
+  {-# INLINE fail #-}
+  fail _ = error "Dynamic does not support 'fail'"
+
+{-# INLINABLE newJoinDyn #-}
+newJoinDyn :: HasSpiderTimeline x => Reflex.Spider.Internal.Dynamic x (Identity (Reflex.Spider.Internal.Dynamic x (Identity a))) -> Reflex.Spider.Internal.Dyn x (Identity a)
+newJoinDyn d =
+  let readV0 = readBehaviorTracked . dynamicCurrent =<< readBehaviorTracked (dynamicCurrent d)
+      eOuter = Reflex.Spider.Internal.push (fmap (Just . Identity) . readBehaviorUntracked . dynamicCurrent . runIdentity) $ dynamicUpdated d
+      eInner = Reflex.Spider.Internal.switch $ dynamicUpdated <$> dynamicCurrent d
+      eBoth = Reflex.Spider.Internal.coincidence $ dynamicUpdated . runIdentity <$> dynamicUpdated d
+      v' = unSpiderEvent $ Reflex.Class.leftmost $ map SpiderEvent [eBoth, eOuter, eInner]
+  in Reflex.Spider.Internal.unsafeBuildDynamic readV0 v'
+
+instance HasSpiderTimeline x => Functor (Reflex.Class.Dynamic (SpiderTimeline x)) where
+  fmap f = SpiderDynamic . newMapDyn f . unSpiderDynamic
+  x <$ d = R.unsafeBuildDynamic (return x) $ x <$ R.updated d
+
+instance HasSpiderTimeline x => Applicative (Reflex.Class.Dynamic (SpiderTimeline x)) where
+  pure = SpiderDynamic . dynamicConst
+#if MIN_VERSION_base(4,10,0)
+  liftA2 f a b = SpiderDynamic $ Reflex.Spider.Internal.zipDynWith f (unSpiderDynamic a) (unSpiderDynamic b)
 #endif
+  SpiderDynamic a <*> SpiderDynamic b = SpiderDynamic $ Reflex.Spider.Internal.zipDynWith ($) a b
+  a *> b = R.unsafeBuildDynamic (R.sample $ R.current b) $ R.leftmost [R.updated b, R.tag (R.current b) $ R.updated a]
+  (<*) = flip (*>) -- There are no effects, so order doesn't matter
+
+holdSpiderEventM :: HasSpiderTimeline x => a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Behavior (SpiderTimeline x) a)
+holdSpiderEventM v0 e = fmap (SpiderBehavior . behaviorHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
+
+holdDynSpiderEventM :: HasSpiderTimeline x => a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Dynamic (SpiderTimeline x) a)
+holdDynSpiderEventM v0 e = fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
+
+holdIncrementalSpiderEventM :: (HasSpiderTimeline x, Patch p) => PatchTarget p -> Reflex.Class.Event (SpiderTimeline x) p -> EventM x (Reflex.Class.Incremental (SpiderTimeline x) p)
+holdIncrementalSpiderEventM v0 e = fmap (SpiderIncremental . dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
+
+buildDynamicSpiderEventM :: HasSpiderTimeline x => SpiderPullM x a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Dynamic (SpiderTimeline x) a)
+buildDynamicSpiderEventM getV0 e = fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
+
+instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderHost x) where
+  {-# INLINABLE hold #-}
+  hold v0 e = runFrame . runSpiderHostFrame $ Reflex.Class.hold v0 e
+  {-# INLINABLE holdDyn #-}
+  holdDyn v0 e = runFrame . runSpiderHostFrame $ Reflex.Class.holdDyn v0 e
+  {-# INLINABLE holdIncremental #-}
+  holdIncremental v0 e = runFrame . runSpiderHostFrame $ Reflex.Class.holdIncremental v0 e
+  {-# INLINABLE buildDynamic #-}
+  buildDynamic getV0 e = runFrame . runSpiderHostFrame $ Reflex.Class.buildDynamic getV0 e
+  {-# INLINABLE headE #-}
+  headE e = runFrame . runSpiderHostFrame $ Reflex.Class.headE e
+
+instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
+  sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
+
+instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderHostFrame x) where
+  {-# INLINABLE hold #-}
+  hold v0 e = SpiderHostFrame $ fmap (SpiderBehavior . behaviorHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
+  {-# INLINABLE holdDyn #-}
+  holdDyn v0 e = SpiderHostFrame $ fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
+  {-# INLINABLE holdIncremental #-}
+  holdIncremental v0 e = SpiderHostFrame $ fmap (SpiderIncremental . dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
+  {-# INLINABLE buildDynamic #-}
+  buildDynamic getV0 e = SpiderHostFrame $ fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
+  {-# INLINABLE headE #-}
+  headE = R.slowHeadE
+--  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+
+instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHost x) where
+  {-# INLINABLE sample #-}
+  sample = runFrame . readBehaviorUntracked . unSpiderBehavior
+
+instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (Reflex.Spider.Internal.ReadPhase x) where
+  {-# INLINABLE sample #-}
+  sample = Reflex.Spider.Internal.ReadPhase . Reflex.Class.sample
+
+instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Reflex.Spider.Internal.ReadPhase x) where
+  {-# INLINABLE hold #-}
+  hold v0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.hold v0 e
+  {-# INLINABLE holdDyn #-}
+  holdDyn v0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.holdDyn v0 e
+  {-# INLINABLE holdIncremental #-}
+  holdIncremental v0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.holdIncremental v0 e
+  {-# INLINABLE buildDynamic #-}
+  buildDynamic getV0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.buildDynamic getV0 e
+  {-# INLINABLE headE #-}
+  headE e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.headE e
+
+--------------------------------------------------------------------------------
+-- Deprecated items
+--------------------------------------------------------------------------------
+
+-- | 'SpiderEnv' is the old name for 'SpiderTimeline'
+{-# DEPRECATED SpiderEnv "Use 'SpiderTimelineEnv' instead" #-}
+type SpiderEnv = SpiderTimeline
+instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTimeline x) (SpiderHostFrame x) where
+  {-# INLINABLE subscribeEvent #-}
+  subscribeEvent e = SpiderHostFrame $ do
+    --TODO: Unsubscribe eventually (manually and/or with weak ref)
+    val <- liftIO $ newIORef Nothing
+    subscription <- subscribe (unSpiderEvent e) $ Subscriber
+      { subscriberPropagate = \a -> do
+          liftIO $ writeIORef val $ Just a
+          scheduleClear val
+      , subscriberInvalidateHeight = \_ -> return ()
+      , subscriberRecalculateHeight = \_ -> return ()
+      }
+    return $ SpiderEventHandle
+      { spiderEventHandleSubscription = subscription
+      , spiderEventHandleValue = val
+      }
+
+instance HasSpiderTimeline x => Reflex.Host.Class.ReflexHost (SpiderTimeline x) where
+  type EventTrigger (SpiderTimeline x) = RootTrigger x
+  type EventHandle (SpiderTimeline x) = SpiderEventHandle x
+  type HostFrame (SpiderTimeline x) = SpiderHostFrame x
+
+instance HasSpiderTimeline x => Reflex.Host.Class.MonadReadEvent (SpiderTimeline x) (Reflex.Spider.Internal.ReadPhase x) where
+  {-# NOINLINE readEvent #-}
+  readEvent h = Reflex.Spider.Internal.ReadPhase $ fmap (fmap return) $ liftIO $ do
+    result <- readIORef $ spiderEventHandleValue h
+    touch h
+    return result
+
+instance Reflex.Host.Class.MonadReflexCreateTrigger (SpiderTimeline x) (SpiderHost x) where
+  newEventWithTrigger = SpiderHost . lift . fmap SpiderEvent . newEventWithTriggerIO
+  newFanEventWithTrigger f = SpiderHost $ lift $ do
+    es <- newFanEventWithTriggerIO f
+    return $ Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es
+
+instance Reflex.Host.Class.MonadReflexCreateTrigger (SpiderTimeline x) (SpiderHostFrame x) where
+  newEventWithTrigger = SpiderHostFrame . EventM . liftIO . fmap SpiderEvent . newEventWithTriggerIO
+  newFanEventWithTrigger f = SpiderHostFrame $ EventM $ liftIO $ do
+    es <- newFanEventWithTriggerIO f
+    return $ Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es
+
+instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTimeline x) (SpiderHost x) where
+  {-# INLINABLE subscribeEvent #-}
+  subscribeEvent = runFrame . runSpiderHostFrame . Reflex.Host.Class.subscribeEvent
+
+instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexHost (SpiderTimeline x) (SpiderHost x) where
+  type ReadPhase (SpiderHost x) = Reflex.Spider.Internal.ReadPhase x
+  fireEventsAndRead es (Reflex.Spider.Internal.ReadPhase a) = run es a
+  runHostFrame = runFrame . runSpiderHostFrame
 
 unsafeNewSpiderTimelineEnv :: forall x. IO (SpiderTimelineEnv x)
 unsafeNewSpiderTimelineEnv = do
@@ -2269,7 +2448,6 @@ unsafeNewSpiderTimelineEnv = do
 #endif
     }
 
-#ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 -- | Create a new SpiderTimelineEnv
 newSpiderTimeline :: IO (Some SpiderTimelineEnv)
 newSpiderTimeline = withSpiderTimeline (pure . Some.This)
@@ -2291,7 +2469,6 @@ withSpiderTimeline :: (forall x. HasSpiderTimeline x => SpiderTimelineEnv x -> I
 withSpiderTimeline k = do
   env <- unsafeNewSpiderTimelineEnv
   reify env $ \s -> k $ localSpiderTimeline s env
-#endif
 
 newtype SpiderPullM x a = SpiderPullM (BehaviorM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
@@ -2299,7 +2476,6 @@ type ComputeM = EventM
 
 newtype SpiderPushM x a = SpiderPushM (ComputeM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
-#ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# SPECIALIZE instance R.Reflex (SpiderTimeline Global) #-}
   newtype Behavior (SpiderTimeline x) a = SpiderBehavior { unSpiderBehavior :: Behavior x a }
@@ -2353,7 +2529,6 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   mergeIntIncremental = SpiderEvent . mergeInt . (unsafeCoerce :: Dynamic x (PatchIntMap (R.Event (SpiderTimeline x) a)) -> Dynamic x (PatchIntMap (Event x a))) . unSpiderIncremental
   {-# INLINABLE fanInt #-}
   fanInt e = R.EventSelectorInt $ SpiderEvent . selectInt (fanInt (unSpiderEvent e))
-#endif
 
 data RootTrigger x a = forall k. GCompare k => RootTrigger (WeakBag (Subscriber x a), IORef (DMap k Identity), k a)
 
@@ -2393,12 +2568,10 @@ instance Monad (SpiderHost x) where
 runSpiderHost :: SpiderHost Global a -> IO a
 runSpiderHost (SpiderHost a) = runReaderT a globalSpiderTimelineEnv
 
-#ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
 -- | Run an action affecting a given Spider timeline; this will be guarded by a
 -- mutex for that timeline
 runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimelineEnv x -> IO a
 runSpiderHostForTimeline (SpiderHost a) = runReaderT a
-#endif
 
 newtype SpiderHostFrame x a = SpiderHostFrame { runSpiderHostFrame :: EventM x a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
 

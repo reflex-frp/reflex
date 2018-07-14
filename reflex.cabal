@@ -13,11 +13,6 @@ Cabal-version: >=1.9.2
 homepage: https://github.com/reflex-frp/reflex
 bug-reports: https://github.com/reflex-frp/reflex/issues
 
-flag specialize-to-spidertimeline-global
-  description: Specialize all Reflex functions to the SpiderTimeline Global implementation.  This may improve performance, but will disable all other implementations.
-  default: False
-  manual: True
-
 flag use-reflex-optimizer
   description: Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.
   default: False
@@ -69,22 +64,22 @@ library
 
   exposed-modules:
     Data.AppendMap,
-    Data.Map.Misc,
-    Data.Functor.Misc,
-    Data.WeakBag,
-    Data.FastWeakBag,
     Data.FastMutableIntMap,
+    Data.FastWeakBag,
+    Data.Functor.Misc,
+    Data.Map.Misc,
+    Data.WeakBag,
     Reflex,
     Reflex.Class,
     Reflex.Collection,
-    Reflex.EventWriter,
-    Reflex.EventWriter.Base,
-    Reflex.EventWriter.Class,
     Reflex.Dynamic,
     Reflex.Dynamic.Uniq,
     Reflex.DynamicWriter,
     Reflex.DynamicWriter.Base,
     Reflex.DynamicWriter.Class,
+    Reflex.EventWriter,
+    Reflex.EventWriter.Base,
+    Reflex.EventWriter.Class,
     Reflex.FastWeak,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,
@@ -97,13 +92,12 @@ library
     Reflex.Patch.IntMap,
     Reflex.Patch.Map,
     Reflex.Patch.MapWithMove,
-    Reflex.TriggerEvent.Base,
-    Reflex.TriggerEvent.Class,
     Reflex.PerformEvent.Base,
     Reflex.PerformEvent.Class,
     Reflex.PostBuild.Base,
     Reflex.PostBuild.Class,
     Reflex.Profiled,
+    Reflex.Pure,
     Reflex.Query.Base,
     Reflex.Query.Class,
     Reflex.Requester.Base,
@@ -111,16 +105,13 @@ library
     Reflex.Spider,
     Reflex.Spider.Internal,
     Reflex.Time,
+    Reflex.TriggerEvent.Base,
+    Reflex.TriggerEvent.Class,
     Reflex.Widget.Basic,
     Reflex.Workflow
 
   ghc-options: -Wall -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively -ddump-simpl -ddump-to-file -dsuppress-coercions -dsuppress-idinfo
   ghc-prof-options: -fprof-auto
-
-  if flag(specialize-to-spidertimeline-global)
-    cpp-options: -DSPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-  else
-    exposed-modules: Reflex.Pure
 
   if flag(debug-trace-events)
     cpp-options: -DDEBUG_TRACE_EVENTS
@@ -168,8 +159,6 @@ test-suite semantics
     reflex,
     split,
     transformers >= 0.3
-  if flag(specialize-to-spidertimeline-global)
-    buildable: False
 
 test-suite CrossImpl
   type: exitcode-stdio-1.0
@@ -183,8 +172,6 @@ test-suite CrossImpl
     mtl,
     ref-tf,
     reflex
-  if flag(specialize-to-spidertimeline-global)
-    buildable: False
 
 test-suite hlint
   type: exitcode-stdio-1.0
@@ -244,8 +231,6 @@ test-suite GC-Semantics
   type: exitcode-stdio-1.0
   main-is: GC.hs
   hs-source-dirs: test
-  if flag(specialize-to-spidertimeline-global)
-    buildable: False
   build-depends: base
                , dependent-sum
                , dependent-map

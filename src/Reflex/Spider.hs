@@ -7,16 +7,11 @@ module Reflex.Spider
        , Global
        , SpiderHost
        , runSpiderHost
-#ifndef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
        , runSpiderHostForTimeline
        , newSpiderTimeline
        , withSpiderTimeline
-#endif
          -- * Deprecated
        , SpiderEnv
        ) where
 
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-import Reflex.Class
-#endif
 import Reflex.Spider.Internal
