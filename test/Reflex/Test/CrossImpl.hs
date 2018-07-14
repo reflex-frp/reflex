@@ -20,7 +20,6 @@ import Control.Monad.Ref
 import Reflex.Class
 import Reflex.Dynamic
 import Reflex.Host.Class
-import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
 import qualified Reflex.Pure as P
 import qualified Reflex.Spider.Internal as S
 
@@ -28,10 +27,8 @@ import Control.Arrow (second, (&&&))
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.Writer hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Data.Dependent.Map (DMap, DSum (..))
-import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Map (DSum (..))
 import Data.Foldable
-import Data.Functor.Misc
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
