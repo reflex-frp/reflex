@@ -24,6 +24,12 @@ main = do
          , These () ()
          ]
   print os2
+  x <- runApp' (unwrapApp testRunWithReplace) $ map Just $ concat $ replicate 3
+    [ This (This ()) -- outer
+    , This (That ()) -- inner
+    , That ()        -- output
+    ]
+  print x
   return ()
 
 unwrapApp :: (Reflex t, Monad m) => (a -> EventWriterT t [Int] m ()) -> a -> m (Event t [Int])
@@ -43,3 +49,20 @@ testSimultaneous pulse = do
   forM_ [1,3..9] $ \i -> runWithReplace (tellEvent ([i] <$ e0)) $ ffor e1 $ \_ -> tellEvent ([i+1] <$ e0)
   return ()
 
+testRunWithReplace
+  -- :: forall t m
+  ::  ( Reflex t
+     --, MonadFix m
+     , MonadHold t m
+     , Adjustable t m
+     , EventWriter t [Int] m
+     )
+  => Event t (These (These () ()) ())
+  -> m ()
+testRunWithReplace pulse = do
+  let outer = fmapMaybe (^? here . here) pulse
+  let inner = fmapMaybe (^? here . there) pulse
+  let output = fmapMaybe (^? there) pulse
+  void $ runWithReplace (return ()) $ ffor outer $ const $ do
+    void $ runWithReplace (return ()) $ ffor inner $ const $ do
+      tellEvent $ [1] <$ output
