@@ -543,7 +543,7 @@ instance Reflex t => Plus (Event t) where
 tag :: Reflex t => Behavior t b -> Event t a -> Event t b
 tag b = pushAlways $ \_ -> sample b
 
--- | Create a new 'Event' that combines occurences of supplied 'Event' with the
+-- | Create a new 'Event' that combines occurrences of supplied 'Event' with the
 -- current value of the 'Behavior'.
 attach :: Reflex t => Behavior t a -> Event t b -> Event t (a, b)
 attach = attachWith (,)
@@ -553,19 +553,19 @@ attach = attachWith (,)
 attachWith :: Reflex t => (a -> b -> c) -> Behavior t a -> Event t b -> Event t c
 attachWith f = attachWithMaybe $ \a b -> Just $ f a b
 
--- | Create a new 'Event' by combining each occurence with the current value of
+-- | Create a new 'Event' by combining each occurrence with the current value of
 -- the 'Behavior'. The occurrence is discarded if the combining function returns
 -- Nothing
 attachWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Behavior t a -> Event t b -> Event t c
 attachWithMaybe f b e = flip push e $ \o -> (`f` o) <$> sample b
 
--- | Create a new 'Event' that occurs on all but the first occurence of the
+-- | Create a new 'Event' that occurs on all but the first occurrence of the
 -- supplied 'Event'.
 tailE :: (Reflex t, MonadHold t m) => Event t a -> m (Event t a)
 tailE e = snd <$> headTailE e
 
--- | Create a tuple of two 'Event's with the first one occuring only the first
--- time the supplied 'Event' occurs and the second occuring on all but the first
+-- | Create a tuple of two 'Event's with the first one occurring only the first
+-- time the supplied 'Event' occurs and the second occurring on all but the first
 -- occurence.
 headTailE :: (Reflex t, MonadHold t m) => Event t a -> m (Event t a, Event t a)
 headTailE e = do
@@ -599,7 +599,7 @@ splitE e = (fmap fst e, fmap snd e)
 traceEvent :: (Reflex t, Show a) => String -> Event t a -> Event t a
 traceEvent s = traceEventWith $ \x -> s <> ": " <> show x
 
--- | Print the output of the supplied function on each occurence of the
+-- | Print the output of the supplied function on each occurrence of the
 -- 'Event'. This should /only/ be used for debugging.
 --
 -- Note: As with Debug.Trace.trace, the message will only be printed if the
@@ -643,7 +643,7 @@ leftmost :: Reflex t => [Event t a] -> Event t a
 leftmost = mergeWith const
 
 -- | Create a new 'Event' that occurs if at least one of the 'Event's in the
--- list occurs and has a list of the values of all 'Event's occuring at that
+-- list occurs and has a list of the values of all 'Event's occurring at that
 -- time.
 mergeList :: Reflex t => [Event t a] -> Event t (NonEmpty a)
 mergeList [] = never
