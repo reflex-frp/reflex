@@ -222,6 +222,7 @@ test-suite QueryT
                , dependent-sum
                , lens
                , monoidal-containers
+               , mtl >= 2.1 && < 2.3
                , ref-tf
                , reflex
                , semigroups
