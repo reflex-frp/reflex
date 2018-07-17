@@ -107,6 +107,9 @@ module Reflex.Class
   , tailE
   , headTailE
   , takeWhileE
+  , takeWhileJustE
+  , dropWhileE
+  , takeDropWhileJustE
   , switcher
     -- * Debugging functions
   , traceEvent
@@ -566,18 +569,83 @@ headTailE e = do
   be <- hold never $ fmap (const e) eHead
   return (eHead, switch be)
 
--- | Starting at the current time, fire all the occurrences of the 'Event' for
--- which the given predicate returns 'True'.  When 'False' is returned, do not
--- fire, and permanently stop firing, even if 'True' values are encountered
--- later.
-takeWhileE :: forall t m a. (Reflex t, MonadFix m, MonadHold t m) => (a -> Bool) -> Event t a -> m (Event t a)
-takeWhileE f e = do
-  rec let (eFalse, eTrue) = fanEither $ ffor e' $ \a -> if f a
-            then Right a
-            else Left never
-      be <- hold e eFalse
-      let e' = switch be
+-- | Take the streak of occurrences starting at the current time for which the
+-- event returns 'True'.
+--
+-- Starting at the current time, fire all the occurrences of the 'Event' for
+-- which the given predicate returns 'True'.  When 'False' first is returned,
+-- do not fire, and permanently stop firing, even if 'True' values would have
+-- been encountered later.
+takeWhileE
+  :: forall t m a
+  .  (Reflex t, MonadFix m, MonadHold t m)
+  => (a -> Bool)
+  -> Event t a
+  -> m (Event t a)
+takeWhileE f e = takeWhileJustE (\v -> guard (f v) $> v) e
+
+-- | Take the streak of occurrences starting at the current time for which the
+-- event returns 'Just b'.
+--
+-- Starting at the current time, fire all the occurrences of the 'Event' for
+-- which the given predicate returns 'Just b'.  When 'Nothing' first is returned,
+-- do not fire, and permanently stop firing, even if 'Just b' values would have
+-- been encountered later.
+takeWhileJustE
+  :: forall t m a b
+  .  (Reflex t, MonadFix m, MonadHold t m)
+  => (a -> Maybe b)
+  -> Event t a
+  -> m (Event t b)
+takeWhileJustE f e = do
+  rec let (eBad, eTrue) = fanEither $ ffor e' $ \a -> case f a of
+            Nothing -> Left never
+            Just b  -> Right b
+      eFirstBad <- headE eBad
+      e' <- switchHold e eFirstBad
   return eTrue
+
+-- | Drop the streak of occurrences starting at the current time for which the
+-- event returns 'True'.
+--
+-- Starting at the current time, do not fire all the occurrences of the 'Event'
+-- for which the given predicate returns 'True'.  When 'False' is first
+-- returned, do fire, and permanently continue firing, even if 'True' values
+-- would have been encountered later.
+dropWhileE
+  :: forall t m a
+  .  (Reflex t, MonadFix m, MonadHold t m)
+  => (a -> Bool)
+  -> Event t a
+  -> m (Event t a)
+dropWhileE f e = snd <$> takeDropWhileJustE (\v -> guard (f v) $> v) e
+
+-- | Both take and drop the streak of occurrences starting at the current time
+-- for which the event returns 'Just b'.
+--
+-- For the left event, starting at the current time, fire all the occurrences
+-- of the 'Event' for which the given function returns 'Just b'.  When
+-- 'Nothing' is returned, do not fire, and permanently stop firing, even if
+-- 'Just b' values would have been encountered later.
+--
+-- For the right event, do not fire until the first occurrence where the given
+-- function returns 'Nothing', and fire that one and all subsequent
+-- occurrences. Even if the function would have again returned 'Just b', keep
+-- on firing.
+takeDropWhileJustE
+  :: forall t m a b
+  . (Reflex t, MonadFix m, MonadHold t m)
+  => (a -> Maybe b)
+  -> Event t a
+  -> m (Event t b, Event t a)
+takeDropWhileJustE f e = do
+  rec let (eBad, eGood) = fanEither $ ffor e' $ \a -> case f a of
+            Nothing -> Left ()
+            Just b  -> Right b
+      eFirstBad <- headE eBad
+      e' <- switchHold e (never <$ eFirstBad)
+  eRest <- switchHoldPromptOnly never (e <$ eFirstBad)
+  return (eGood, eRest)
 
 -- | Split the supplied 'Event' into two individual 'Event's occurring at the
 -- same time with the respective values from the tuple.
