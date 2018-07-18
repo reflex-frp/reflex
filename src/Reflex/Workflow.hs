@@ -13,6 +13,7 @@ import Control.Arrow ((***))
 import Control.Monad.Fix (MonadFix)
 
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.Network
 import Reflex.NotReady.Class
 import Reflex.PostBuild.Class

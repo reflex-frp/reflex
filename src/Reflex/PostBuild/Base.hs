@@ -23,6 +23,7 @@ module Reflex.PostBuild.Base
   ) where
 
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class

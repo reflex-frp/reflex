@@ -34,6 +34,7 @@ import Data.Map.Misc
 import Data.These
 
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.Dynamic
 import Reflex.PostBuild.Class
 

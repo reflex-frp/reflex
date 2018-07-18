@@ -38,6 +38,7 @@ import qualified Data.Some as Some
 import Data.These
 
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.EventWriter.Base
 import Reflex.EventWriter.Class
 import Reflex.Host.Class
