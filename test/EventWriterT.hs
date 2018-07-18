@@ -1,9 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
 import Control.Lens
 import Control.Monad
+import Control.Monad.Fix
 import Data.These
 
 import Reflex
@@ -24,6 +26,8 @@ main = do
          , These () ()
          ]
   print os2
+  os3@[[Nothing, Just [2]]] <- runApp' (unwrapApp testMoribundTellEvent) [Just ()]
+  print os3
   return ()
 
 unwrapApp :: (Reflex t, Monad m) => (a -> EventWriterT t [Int] m ()) -> a -> m (Event t [Int])
@@ -43,3 +47,19 @@ testSimultaneous pulse = do
   forM_ [1,3..9] $ \i -> runWithReplace (tellEvent ([i] <$ e0)) $ ffor e1 $ \_ -> tellEvent ([i+1] <$ e0)
   return ()
 
+-- | Test that a widget telling and event which fires at the same time it has been replaced
+-- doesn't count along with the new widget.
+testMoribundTellEvent
+  :: forall t m
+  .  ( Reflex t
+     , Adjustable t m
+     , MonadHold t m
+     , MonadFix m
+     )
+  => Event t ()
+  -> EventWriterT t [Int] m ()
+testMoribundTellEvent pulse = do
+  rec let tellIntOnReplce :: Int -> EventWriterT t [Int] m ()
+          tellIntOnReplce x = tellEvent $ [x] <$ rwrFinished
+      (_, rwrFinished) <- runWithReplace (tellIntOnReplce 1) $ tellIntOnReplce 2 <$ pulse
+  return ()
