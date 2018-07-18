@@ -173,7 +173,7 @@ foldDynMaybe = accumMaybeDyn . flip
 foldDynMaybeM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe b)) -> b -> Event t a -> m (Dynamic t b)
 foldDynMaybeM = accumMaybeMDyn . flip
 
--- | Create a new 'Dynamic' that counts the occurences of the 'Event'.
+-- | Create a new 'Dynamic' that counts the occurrences of the 'Event'.
 count :: (Reflex t, MonadHold t m, MonadFix m, Num b) => Event t a -> m (Dynamic t b)
 count e = holdDyn 0 =<< zipListWithEvent const (iterate (+1) 1) e
 
@@ -287,7 +287,7 @@ attachPromptlyDyn = attachPromptlyDynWith (,)
 attachPromptlyDynWith :: Reflex t => (a -> b -> c) -> Dynamic t a -> Event t b -> Event t c
 attachPromptlyDynWith f = attachPromptlyDynWithMaybe $ \a b -> Just $ f a b
 
--- | Create a new 'Event' by combining the value at each occurence with the
+-- | Create a new 'Event' by combining the value at each occurrence with the
 -- current value of the 'Dynamic' value and possibly filtering if the combining
 -- function returns 'Nothing'.
 --
