@@ -110,10 +110,10 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, Eq q, MonadHold t 
                   -- If the update is to delete the state for a child that doesn't exist, the patch is mempty.
                   Nothing -> return Nothing
                   -- If the update is to update the state for a child that doesn't exist, the patch is the sample of the new state.
-                  Just newBs -> Just <$> sampleBs newBs
+                  Just newBs -> maskMempty <$> sampleBs newBs
                 Just oldBs -> case bs of
                   -- If the update is to delete the state for a child that already exists, the patch is the negation of the child's current state
-                  Nothing -> Just . negateG <$> sampleBs oldBs
+                  Nothing -> maskMempty . negateG <$> sampleBs oldBs
                   -- If the update is to update the state for a child that already exists, the patch is the negation of sampling the child's current state
                   -- composed with the sampling the child's new state.
                   Just newBs -> maskMempty <$> ((~~) <$> sampleBs newBs <*> sampleBs oldBs)
@@ -154,13 +154,13 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, Eq q, MonadHold t 
                   -- If the update is to delete the state for a child that doesn't exist, the patch is mempty.
                   MapWithMove.From_Delete -> return Nothing
                   -- If the update is to update the state for a child that doesn't exist, the patch is the sample of the new state.
-                  MapWithMove.From_Insert newBs -> Just <$> sampleBs newBs
+                  MapWithMove.From_Insert newBs -> maskMempty <$> sampleBs newBs
                   MapWithMove.From_Move k' -> case Map.lookup k' bs0 of
                     Nothing -> return Nothing
-                    Just newBs -> Just <$> sampleBs newBs
+                    Just newBs -> maskMempty <$> sampleBs newBs
                 Just oldBs -> case MapWithMove._nodeInfo_from bs of
                   -- If the update is to delete the state for a child that already exists, the patch is the negation of the child's current state
-                  MapWithMove.From_Delete -> Just . negateG <$> sampleBs oldBs
+                  MapWithMove.From_Delete -> maskMempty . negateG <$> sampleBs oldBs
                   -- If the update is to update the state for a child that already exists, the patch is the negation of sampling the child's current state
                   -- composed with the sampling the child's new state.
                   MapWithMove.From_Insert newBs -> maskMempty <$> ((~~) <$> sampleBs newBs <*> sampleBs oldBs)
@@ -168,7 +168,7 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, Eq q, MonadHold t 
                     | k' == k -> return Nothing
                     | otherwise -> case Map.lookup k' bs0 of
                   -- If we are moving from a non-existent key, that is a delete
-                        Nothing -> Just . negateG <$> sampleBs oldBs
+                        Nothing -> maskMempty . negateG <$> sampleBs oldBs
                         Just newBs -> maskMempty <$> ((~~) <$> sampleBs newBs <*> sampleBs oldBs)
           -- we compute the patch by iterating over the update PatchMap and proceeding by cases. Then we fold over the
           -- child patches and wrap them in AdditivePatch.
