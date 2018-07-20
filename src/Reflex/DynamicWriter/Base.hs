@@ -44,6 +44,7 @@ import Reflex.Host.Class
 import qualified Reflex.Patch.MapWithMove as MapWithMove
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
+import Reflex.Query.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
@@ -214,3 +215,8 @@ instance Requester t m => Requester t (DynamicWriterT t w m) where
   type Response (DynamicWriterT t w m) = Response m
   requesting = lift . requesting
   requesting_ = lift . requesting_
+
+instance (MonadQuery t q m, Monad m) => MonadQuery t q (DynamicWriterT t w m) where
+  tellQueryIncremental = lift . tellQueryIncremental
+  askQueryResult = lift askQueryResult
+  queryIncremental = lift . queryIncremental
