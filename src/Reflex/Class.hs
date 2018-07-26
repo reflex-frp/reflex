@@ -219,7 +219,7 @@ class ( MonadHold t (PushM t)
   -- recomputed whenever any of the read 'Behavior's changes
   pull :: PullM t a -> Behavior t a
   -- | Merge a collection of events; the resulting 'Event' will only occur if at
-  -- least one input event is occuring, and will contain all of the input keys
+  -- least one input event is occurring, and will contain all of the input keys
   -- that are occurring simultaneously
   merge :: GCompare k => DMap k (Event t) -> Event t (DMap k Identity) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
   -- | Efficiently fan-out an event to many destinations.  This function should
@@ -330,7 +330,7 @@ class MonadSample t m => MonadHold t m where
   default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PullM t a -> Event t a -> m (Dynamic t a)
   buildDynamic getV0 = lift . buildDynamic getV0
   -}
-  -- | Create a new 'Event' that only occurs only once, on the first occurence of
+  -- | Create a new 'Event' that only occurs only once, on the first occurrence of
   -- the supplied 'Event'.
   headE :: Event t a -> m (Event t a)
 
@@ -559,7 +559,7 @@ tailE e = snd <$> headTailE e
 
 -- | Create a tuple of two 'Event's with the first one occurring only the first
 -- time the supplied 'Event' occurs and the second occurring on all but the first
--- occurence.
+-- occurrence.
 headTailE :: (Reflex t, MonadHold t m) => Event t a -> m (Event t a, Event t a)
 headTailE e = do
   eHead <- headE e
@@ -579,13 +579,13 @@ takeWhileE f e = do
       let e' = switch be
   return eTrue
 
--- | Split the supplied 'Event' into two individual 'Event's occuring at the
+-- | Split the supplied 'Event' into two individual 'Event's occurring at the
 -- same time with the respective values from the tuple.
 splitE :: Reflex t => Event t (a, b) -> (Event t a, Event t b)
 splitE e = (fmap fst e, fmap snd e)
 
 -- | Print the supplied 'String' and the value of the 'Event' on each
--- occurence. This should /only/ be used for debugging.
+-- occurrence. This should /only/ be used for debugging.
 --
 -- Note: As with Debug.Trace.trace, the message will only be printed if the
 -- 'Event' is actually used.
@@ -647,7 +647,7 @@ unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIn
 
 -- | Create a new 'Event' combining the map of 'Event's into an 'Event' that
 -- occurs if at least one of them occurs and has a map of values of all 'Event's
--- occuring at that time.
+-- occurring at that time.
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
 
@@ -734,7 +734,7 @@ instance Reflex t => Align (Event t) where
   align = alignEventWithMaybe Just
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and
--- the 'Behavior' is true at the time of occurence.
+-- the 'Behavior' is true at the time of occurrence.
 gate :: Reflex t => Behavior t Bool -> Event t a -> Event t a
 gate = attachWithMaybe $ \allow a -> if allow then Just a else Nothing
 
@@ -962,7 +962,7 @@ instance Reflex t => Accumulator t (Event t) where
   accumMaybeM f z e = updated <$> accumMaybeM f z e
   mapAccumMaybeM f z e = first updated <$> mapAccumMaybeM f z e
 
--- | Create a new 'Event' by combining each occurence with the next value of the
+-- | Create a new 'Event' by combining each occurrence with the next value of the
 -- list using the supplied function. If the list runs out of items, all
 -- subsequent 'Event' occurrences will be ignored.
 zipListWithEvent :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> c) -> [a] -> Event t b -> m (Event t c)
@@ -972,17 +972,17 @@ zipListWithEvent f l e = do
         _ -> (Nothing, Nothing) --TODO: Unsubscribe the event?
   mapAccumMaybe_ f' l e
 
--- | Assign a number to each occurence of the given 'Event', starting from 0
+-- | Assign a number to each occurrence of the given 'Event', starting from 0
 {-# INLINE numberOccurrences #-}
 numberOccurrences :: (Reflex t, MonadHold t m, MonadFix m, Num b) => Event t a -> m (Event t (b, a))
 numberOccurrences = numberOccurrencesFrom 0
 
--- | Assign a number to each occurence of the given 'Event'
+-- | Assign a number to each occurrence of the given 'Event'
 {-# INLINE numberOccurrencesFrom #-}
 numberOccurrencesFrom :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t (b, a))
 numberOccurrencesFrom = mapAccum_ (\n a -> let !next = n + 1 in (next, (n, a)))
 
--- | Assign a number to each occurence of the given 'Event'; discard the occurrences' values
+-- | Assign a number to each occurrence of the given 'Event'; discard the occurrences' values
 {-# INLINE numberOccurrencesFrom_ #-}
 numberOccurrencesFrom_ :: (Reflex t, MonadHold t m, MonadFix m, Num b) => b -> Event t a -> m (Event t b)
 numberOccurrencesFrom_ = mapAccum_ (\n _ -> let !next = n + 1 in (next, n))
