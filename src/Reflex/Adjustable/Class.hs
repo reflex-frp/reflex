@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -16,22 +17,20 @@ module Reflex.Adjustable.Class
   , sequenceDMapWithAdjust
   , sequenceDMapWithAdjustWithMove
   , mapMapWithAdjustWithMove
+  -- * Deprecated aliases
+  , MonadAdjust
   ) where
 
 import Control.Monad.Identity
 import Control.Monad.Reader
-import Data.Align
 import Data.Dependent.Map (DMap, GCompare (..))
 import Data.Functor.Constant
 import Data.Functor.Misc
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.Map.Misc
-import Data.These
 
 import Reflex.Class
-import Reflex.Dynamic
-import Reflex.PostBuild.Class
 
 -- | A 'Monad' that supports adjustment over time.  After an action has been
 -- run, if the given events fire, it will adjust itself so that its net effect
@@ -69,3 +68,10 @@ mapMapWithAdjustWithMove :: forall t m k v v'. (Adjustable t m, Ord k) => (k -> 
 mapMapWithAdjustWithMove f m0 m' = do
   (out0 :: DMap (Const2 k v) (Constant v'), out') <- traverseDMapWithKeyWithAdjustWithMove (\(Const2 k) (Identity v) -> Constant <$> f k v) (mapToDMap m0) (const2PatchDMapWithMoveWith Identity <$> m')
   return (dmapToMapWith (\(Constant v') -> v') out0, patchDMapWithMoveToPatchMapWithMoveWith (\(Constant v') -> v') <$> out')
+
+--------------------------------------------------------------------------------
+-- Deprecated functions
+--------------------------------------------------------------------------------
+
+{-# DEPRECATED MonadAdjust "Use Adjustable instead" #-}
+type MonadAdjust = Adjustable

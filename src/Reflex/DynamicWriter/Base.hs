@@ -36,7 +36,9 @@ import qualified Data.Map as Map
 import Data.Semigroup
 import Data.Some (Some)
 import Data.These
+
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.DynamicWriter.Class
 import Reflex.Host.Class
 import qualified Reflex.Patch.MapWithMove as MapWithMove

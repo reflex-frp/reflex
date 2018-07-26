@@ -23,6 +23,7 @@ module Reflex.EventWriter.Base
   ) where
 
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.EventWriter.Class (EventWriter, tellEvent)
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class

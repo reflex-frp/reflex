@@ -25,6 +25,7 @@ import Data.IORef
 import Data.Monoid ((<>))
 import qualified Data.Semigroup as S
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class

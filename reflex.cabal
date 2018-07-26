@@ -72,6 +72,7 @@ library
     Data.WeakBag,
     Reflex,
     Reflex.Class,
+    Reflex.Adjustable.Class,
     Reflex.Collection,
     Reflex.Dynamic,
     Reflex.Dynamic.Uniq,
