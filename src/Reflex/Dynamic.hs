@@ -327,10 +327,10 @@ eitherDyn = fmap (fmap unpack) . factorDyn . fmap eitherToDSum
 factorDyn :: forall t m k v. (Reflex t, MonadFix m, MonadHold t m, GEq k) => Dynamic t (DSum k v) -> m (Dynamic t (DSum k (Compose (Dynamic t) v)))
 factorDyn d = do
   let inner :: forall m' a. (MonadFix m', MonadHold t m') => k a -> v a -> m' (Dynamic t (v a))
-      inner k v0 = holdDyn v0 . fmapMaybe id =<< takeWhileE isJust newVal
-        where newVal = ffor (updated d) $ \(newK :=> newV) -> case newK `geq` k of
-                Just Refl -> Just newV
-                Nothing -> Nothing
+      inner k v0 = (=<<) (holdDyn v0) $ flip takeWhileJustE (updated d) $
+        \(newK :=> newV) -> case newK `geq` k of
+          Just Refl -> Just newV
+          Nothing -> Nothing
       getInitial = do
         k0 :=> (v0 :: v a) <- sample $ current d
         i0 <- inner k0 v0
