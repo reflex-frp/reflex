@@ -39,10 +39,27 @@ import Reflex.Class
 -- other side-effects) cannot be undone, so it is up to the instance implementer
 -- to determine what the best meaning for this class is in such cases.
 class (Reflex t, Monad m) => Adjustable t m | m -> t where
-  runWithReplace :: m a -> Event t (m b) -> m (a, Event t b)
-  traverseIntMapWithKeyWithAdjust :: (IntMap.Key -> v -> m v') -> IntMap v -> Event t (PatchIntMap v) -> m (IntMap v', Event t (PatchIntMap v'))
-  traverseDMapWithKeyWithAdjust :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> m (DMap k v', Event t (PatchDMap k v'))
-  traverseDMapWithKeyWithAdjustWithMove :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> m (DMap k v', Event t (PatchDMapWithMove k v'))
+  runWithReplace
+    :: m a
+    -> Event t (m b)
+    -> m (a, Event t b)
+  traverseIntMapWithKeyWithAdjust
+    :: (IntMap.Key -> v -> m v')
+    -> IntMap v
+    -> Event t (PatchIntMap v)
+    -> m (IntMap v', Event t (PatchIntMap v'))
+  traverseDMapWithKeyWithAdjust
+    :: GCompare k
+    => (forall a. k a -> v a -> m (v' a))
+    -> DMap k v
+    -> Event t (PatchDMap k v)
+    -> m (DMap k v', Event t (PatchDMap k v'))
+  traverseDMapWithKeyWithAdjustWithMove
+    :: GCompare k
+    => (forall a. k a -> v a -> m (v' a))
+    -> DMap k v
+    -> Event t (PatchDMapWithMove k v)
+    -> m (DMap k v', Event t (PatchDMapWithMove k v'))
 
 instance Adjustable t m => Adjustable t (ReaderT r m) where
   runWithReplace a0 a' = do
