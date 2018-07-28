@@ -102,10 +102,11 @@ import Data.Align
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Product
 import Data.GADT.Compare ((:~:) (..), GCompare (..), GEq (..), GOrdering (..))
 import Data.Map (Map)
 import Data.Maybe
-import Data.Monoid
+import Data.Monoid hiding (Product)
 import Data.These
 
 import Debug.Trace
@@ -326,24 +327,13 @@ eitherDyn = fmap (fmap unpack) . factorDyn . fmap eitherToDSum
 
 factorDyn :: forall t m k v. (Reflex t, MonadFix m, MonadHold t m, GEq k) => Dynamic t (DSum k v) -> m (Dynamic t (DSum k (Compose (Dynamic t) v)))
 factorDyn d = do
-  let inner :: forall m' a. (MonadFix m', MonadHold t m') => k a -> v a -> m' (Dynamic t (v a))
-      inner k v0 = (=<<) (holdDyn v0) $ flip takeWhileJustE (updated d) $
-        \(newK :=> newV) -> case newK `geq` k of
-          Just Refl -> Just newV
-          Nothing -> Nothing
-      getInitial = do
-        k0 :=> (v0 :: v a) <- sample $ current d
-        i0 <- inner k0 v0
-        return $ k0 :=> Compose i0
-      update = flip push (updated d) $ \(newKey :=> newVal) -> do
-        (oldKey :=> _) <- sample $ current d
-        case newKey `geq` oldKey of
-          Just Refl -> return Nothing
-          Nothing -> do
-            newInner <- inner newKey newVal
-            return $ Just $ newKey :=> Compose newInner
-  o0 <- getInitial --TODO: Figure out how to get this to run inside something like the first argument to buildDynamic
-  holdDyn o0 update
+  k0 :=> v0 <- sample $ current d --TODO: Figure out how to get this to run inside something like the first argument to buildDynamic
+  (initialEvent, update) <- factorEvent k0 $ updated d
+  initialD <- holdDyn v0 initialEvent
+  let f (k :=> Pair v (Compose v')) = do
+        d' <- holdDyn v v'
+        pure $ k :=> Compose d'
+  holdDyn (k0 :=> Compose initialD) $ pushAlwaysCheap f update
 
 --------------------------------------------------------------------------------
 -- Demux

@@ -9,6 +9,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE RoleAnnotations #-}
@@ -59,6 +60,7 @@ module Reflex.Class
   , EitherTag (..)
   , eitherToDSum
   , dsumToEither
+  , factorEvent
     -- ** Collapsing 'Event . Event'
   , switchHold
   , switchHoldPromptly
@@ -157,8 +159,11 @@ import Data.Align
 import Data.Bifunctor
 import Data.Coerce
 import Data.Default
-import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
+import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
+import Data.Functor.Compose
+import Data.Functor.Product
+import Data.GADT.Compare (GEq (..), GCompare (..), (:~:) (..))
 import Data.FastMutableIntMap (PatchIntMap)
 import Data.Foldable
 import Data.Functor.Bind
@@ -169,6 +174,8 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Semigroup (Semigroup, sconcat, stimes, (<>))
+import Data.Some (Some)
+import qualified Data.Some as Some
 import Data.String
 import Data.These
 import Data.Type.Coercion
@@ -592,7 +599,7 @@ takeWhileE
   => (a -> Bool)
   -> Event t a
   -> m (Event t a)
-takeWhileE f e = takeWhileJustE (\v -> guard (f v) $> v) e
+takeWhileE f = takeWhileJustE $ \v -> guard (f v) $> v
 
 -- | Take the streak of occurrences starting at the current time for which the
 -- event returns 'Just b'.
@@ -897,6 +904,33 @@ alignEventWithMaybe f ea eb =
     $ merge
     $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
 
+factorEvent
+  :: forall t m k v a.
+     ( Reflex t
+     , MonadFix m
+     , MonadHold t m
+     , GEq k
+     )
+  => k a
+  -> Event t (DSum k v)
+  -> m (Event t (v a), Event t (DSum k (Product v (Compose (Event t) v))))
+factorEvent k0 kv' = do
+  key :: Behavior t (Some k) <- hold (Some.This k0) $ fmapCheap (\(k :=> _) -> Some.This k) kv'
+  let inner :: forall m' b. (MonadFix m', MonadHold t m') => k b -> m' (Event t (v b))
+      inner k = do
+        let f :: DSum k v -> Maybe (v b)
+            f (newK :=> newV) = case newK `geq` k of
+              Just Refl -> Just newV
+              Nothing -> Nothing
+        takeWhileJustE f kv'
+      update = flip push kv' $ \(newKey :=> newVal) -> sample key >>= \case
+        Some.This oldKey -> case newKey `geq` oldKey of
+          Just Refl -> return Nothing
+          Nothing -> do
+            newInner <- inner newKey
+            return $ Just $ newKey :=> Pair newVal (Compose newInner)
+  eInitial <- inner k0
+  return (eInitial, update)
 
 --------------------------------------------------------------------------------
 -- Accumulator
