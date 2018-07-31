@@ -61,6 +61,7 @@ module Reflex.Class
   , eitherToDSum
   , dsumToEither
   , factorEvent
+  , filterEventKey
     -- ** Collapsing 'Event . Event'
   , switchHold
   , switchHoldPromptly
@@ -337,7 +338,7 @@ class MonadSample t m => MonadHold t m where
   holdIncremental :: Patch p => PatchTarget p -> Event t p -> m (Incremental t p)
   default holdIncremental :: (Patch p, m ~ f m', MonadTrans f, MonadHold t m') => PatchTarget p -> Event t p -> m (Incremental t p)
   holdIncremental v0 = lift . holdIncremental v0
-  buildDynamic :: PullM t a -> Event t a -> m (Dynamic t a)
+  buildDynamic :: PushM t a -> Event t a -> m (Dynamic t a)
   {-
   default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PullM t a -> Event t a -> m (Dynamic t a)
   buildDynamic getV0 = lift . buildDynamic getV0
@@ -904,6 +905,24 @@ alignEventWithMaybe f ea eb =
     $ merge
     $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
 
+filterEventKey
+  :: forall t m k v a.
+     ( Reflex t
+     , MonadFix m
+     , MonadHold t m
+     , GEq k
+     )
+  => k a
+  -> Event t (DSum k v)
+  -> m (Event t (v a))
+filterEventKey k kv' = do
+  let f :: DSum k v -> Maybe (v a)
+      f (newK :=> newV) = case newK `geq` k of
+        Just Refl -> Just newV
+        Nothing -> Nothing
+  takeWhileJustE f kv'
+
+
 factorEvent
   :: forall t m k v a.
      ( Reflex t
@@ -916,20 +935,13 @@ factorEvent
   -> m (Event t (v a), Event t (DSum k (Product v (Compose (Event t) v))))
 factorEvent k0 kv' = do
   key :: Behavior t (Some k) <- hold (Some.This k0) $ fmapCheap (\(k :=> _) -> Some.This k) kv'
-  let inner :: forall m' b. (MonadFix m', MonadHold t m') => k b -> m' (Event t (v b))
-      inner k = do
-        let f :: DSum k v -> Maybe (v b)
-            f (newK :=> newV) = case newK `geq` k of
-              Just Refl -> Just newV
-              Nothing -> Nothing
-        takeWhileJustE f kv'
-      update = flip push kv' $ \(newKey :=> newVal) -> sample key >>= \case
+  let update = flip push kv' $ \(newKey :=> newVal) -> sample key >>= \case
         Some.This oldKey -> case newKey `geq` oldKey of
           Just Refl -> return Nothing
           Nothing -> do
-            newInner <- inner newKey
+            newInner <- filterEventKey newKey kv'
             return $ Just $ newKey :=> Pair newVal (Compose newInner)
-  eInitial <- inner k0
+  eInitial <- filterEventKey k0 kv'
   return (eInitial, update)
 
 --------------------------------------------------------------------------------

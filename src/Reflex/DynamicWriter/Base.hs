@@ -9,6 +9,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
@@ -85,7 +86,12 @@ mergeDynIncrementalWithMove a = unsafeBuildIncremental (mapM (sample . current) 
           in Map.differenceWith (\e _ -> Just $ MapWithMove.nodeInfoSetTo Nothing e) pWithNewVals noLongerMovedMap --TODO: Check if any in the second map are not covered?
 
 -- | A basic implementation of 'MonadDynamicWriter'.
-newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic t w] m a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadHold t, MonadSample t, MonadAsyncException, MonadException) -- The list is kept in reverse order
+newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic t w] m a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadAsyncException, MonadException) -- The list is kept in reverse order
+
+deriving instance MonadHold t m => MonadHold t (DynamicWriterT t w m)
+deriving instance MonadSample t m => MonadSample t (DynamicWriterT t w m)
+
 
 instance MonadRef m => MonadRef (DynamicWriterT t w m) where
   type Ref (DynamicWriterT t w m) = Ref m

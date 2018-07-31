@@ -1135,7 +1135,11 @@ instance HasSpiderTimeline x => Align (Event x) where
   nil = eventNever
   align ea eb = fmapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 
-newtype Dyn x p = Dyn { unDyn :: IORef (Either (BehaviorM x (PatchTarget p), Event x p) (Hold x p)) }
+data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
+                 | BuildDyn  !(EventM x (PatchTarget p), Event x p)
+                 | HoldDyn   !(Hold x p)
+
+newtype Dyn x p = Dyn { unDyn :: IORef (DynType x p) }
 
 newMapDyn :: HasSpiderTimeline x => (a -> b) -> Dynamic x (Identity a) -> Dynamic x (Identity b)
 newMapDyn f d = dynamicDynIdentity $ unsafeBuildDynamic (fmap f $ readBehaviorTracked $ dynamicCurrent d) (Identity . f . runIdentity <$> dynamicUpdated d)
@@ -1156,15 +1160,15 @@ zipDynWith f da db =
         return $ Just $ Identity $ f a b
   in dynamicDynIdentity $ unsafeBuildDynamic (f <$> readBehaviorUntracked (dynamicCurrent da) <*> readBehaviorUntracked (dynamicCurrent db)) ec
 
-buildDynamic :: (Defer (SomeDynInit x) m, Patch p) => BehaviorM x (PatchTarget p) -> Event x p -> m (Dyn x p)
+buildDynamic :: (Defer (SomeDynInit x) m, Patch p) => EventM x (PatchTarget p) -> Event x p -> m (Dyn x p)
 buildDynamic readV0 v' = do
-  result <- liftIO $ newIORef $ Left (readV0, v')
+  result <- liftIO $ newIORef $ BuildDyn (readV0, v')
   let !d = Dyn result
   defer $ SomeDynInit d
   return d
 
 unsafeBuildDynamic :: BehaviorM x (PatchTarget p) -> Event x p -> Dyn x p
-unsafeBuildDynamic readV0 v' = Dyn $ unsafeNewIORef x $ Left x
+unsafeBuildDynamic readV0 v' = Dyn $ unsafeNewIORef x $ UnsafeDyn x
   where x = (readV0, v')
 
 -- ResultM can read behaviors and events
@@ -1374,13 +1378,20 @@ getDynHold :: (Defer (SomeHoldInit x) m, Patch p) => Dyn x p -> m (Hold x p)
 getDynHold d = do
   mh <- liftIO $ readIORef $ unDyn d
   case mh of
-    Right h -> return h
-    Left (readV0, v') -> do
+    HoldDyn h -> return h
+    UnsafeDyn (readV0, v') -> do
       holdInits <- getDeferralQueue
       v0 <- liftIO $ runBehaviorM readV0 Nothing holdInits
+      hold' v0 v'
+    BuildDyn (readV0, v') -> do
+      v0 <- liftIO $ runEventM readV0
+      hold' v0 v'
+  where
+    hold' v0 v' = do
       h <- hold v0 v'
-      liftIO $ writeIORef (unDyn d) $ Right h
+      liftIO $ writeIORef (unDyn d) $ HoldDyn h
       return h
+
 
 -- Always refers to 0
 {-# NOINLINE zeroRef #-}
@@ -2317,7 +2328,7 @@ holdDynSpiderEventM v0 e = fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.S
 holdIncrementalSpiderEventM :: (HasSpiderTimeline x, Patch p) => PatchTarget p -> Reflex.Class.Event (SpiderTimeline x) p -> EventM x (Reflex.Class.Incremental (SpiderTimeline x) p)
 holdIncrementalSpiderEventM v0 e = fmap (SpiderIncremental . dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
 
-buildDynamicSpiderEventM :: HasSpiderTimeline x => SpiderPullM x a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Dynamic (SpiderTimeline x) a)
+buildDynamicSpiderEventM :: HasSpiderTimeline x => SpiderPushM x a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Dynamic (SpiderTimeline x) a)
 buildDynamicSpiderEventM getV0 e = fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderHost x) where
