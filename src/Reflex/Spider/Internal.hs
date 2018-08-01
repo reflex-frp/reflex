@@ -1059,6 +1059,8 @@ heightBagAdd (Height h) (HeightBag s c) = heightBagVerify $ HeightBag (succ s) $
 heightBagRemove :: Height -> HeightBag -> HeightBag
 heightBagRemove (Height h) b@(HeightBag s c) = heightBagVerify $ case IntMap.lookup h c of
   Nothing -> error $ "heightBagRemove: Height " <> show h <> " not present in bag " <> show b
+                  <> "\n"
+                  <> show (unsafePerformIO $ whoCreated b)
   Just old -> HeightBag (pred s) $ case old of
     0 -> IntMap.delete h c
     _ -> IntMap.insert h (pred old) c
