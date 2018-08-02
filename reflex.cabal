@@ -213,23 +213,6 @@ test-suite RequesterT
                , ref-tf
   buildable: False
 
-
-test-suite BuildDynamic
-  type: exitcode-stdio-1.0
-  main-is: BuildDynamic.hs
-  hs-source-dirs: test
-  build-depends: base
-               , reflex
-               , dependent-map
-               
-               , dependent-sum
-               , these
-               , ref-tf
-               , lens
-
-  other-modules: Test.Run
-
-
 test-suite QueryT
   type: exitcode-stdio-1.0
   main-is: QueryT.hs
