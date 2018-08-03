@@ -38,10 +38,10 @@ main = do
   where
     allTests = concat
      [ makeGroup "micro" Micro.testCases
-     -- , makeGroup "subscribing (100,40)" (Focused.subscribing 100 40)
-     -- , makeGroup "firing 1000" (Focused.firing 1000)
-     -- , makeGroup "merge 100" (Focused.merging 100)
-     -- , makeGroup "fan 50" (Focused.fans 50)
+     , makeGroup "subscribing (100,40)" (Focused.subscribing 100 40)
+     , makeGroup "firing 1000" (Focused.firing 1000)
+     , makeGroup "merge 100" (Focused.merging 100)
+     , makeGroup "fan 50" (Focused.fans 50)
      ]
 
     makeGroup name tests = first (\test -> intercalate "/" [name, test]) <$> tests
