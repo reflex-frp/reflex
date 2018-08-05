@@ -42,6 +42,7 @@ scanInnerDyns d = do
 
 
 
+
 {-# ANN testCases "HLint: ignore Functor law" #-}
 testCases :: [(String, TestCase)]
 testCases =
@@ -282,6 +283,31 @@ testCases =
       d' <- pushDyn scanInnerDyns d >>= scanInnerDyns
       return $ current d'
 
+  , testB "holdIncremental" $ do
+    inc <- makeIncremental
+    return (currentIncremental inc)
+
+  , testB "unsafeMapIncremental" $ do
+    inc <- makeIncremental
+    let f = Map.mapKeys (+1)
+        g (PatchMap m) = PatchMap (Map.mapKeys (+1) m)
+
+    let inc' = unsafeMapIncremental f g inc
+    return (currentIncremental inc')
+
+  , testB "mapIncremental" $ do
+
+    -- Not be safe with 'unsafeBuildIncremental' due to key changes
+    let f = Map.mapKeys (+1)
+        g (PatchMap m) = PatchMap (Map.mapKeys (+2) m)
+
+    rec  -- Backwards order, test laziness
+      inc'' <- mapIncremental f g inc'
+      inc'  <- mapIncremental f g inc
+      inc   <- makeIncremental
+
+    return $ currentIncremental inc''
+
   , testE "fan-1" $ do
       e <- fmap toMap <$> events1
       let es = select (fanMap e) . Const2 <$> values
@@ -331,6 +357,7 @@ testCases =
     events2 = plan [(1, "e"), (3, "d"), (4, "c"), (6, "b"), (7, "a")]
     events3 = liftA2 mappend events1 events2
 
+
     eithers ::  TestPlan t m => m (Event t (Either String String))
     eithers = plan [(1, Left "e"), (3, Left "d"), (4, Right "c"), (6, Right "b"), (7, Left "a")]
 
@@ -344,3 +371,17 @@ testCases =
 
     deep e = leftmost [e, e]
     leftmost2 e1 e2 = leftmost [e1, e2]
+
+
+    makeIncremental :: forall t m. TestPlan t m => m (Incremental t (PatchMap Int String))
+    makeIncremental = do
+      e1  <- events1
+      e2  <- events2
+
+      e <- zipListWithEvent (,) [(0::Int)..] (leftmost [e1, e2])
+      let f (k, v) = Map.fromList $ if odd k
+            then [(k, Just v)]
+            else [(k, Nothing)]
+
+      holdIncremental (Map.fromList [((1 :: Int), "g"), (2, "b"), (5, "b")])
+        (PatchMap . f <$> e)

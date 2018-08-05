@@ -204,3 +204,6 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
                    Just x -> fromMaybe lastValue $ apply x lastValue
 
   headE = slowHeadE
+
+  buildIncremental :: Patch p => (t -> PatchTarget p) -> Event (Pure t) p -> t -> Incremental (Pure t) p
+  buildIncremental initialValue e initialTime = holdIncremental (initialValue initialTime) e initialTime

@@ -38,6 +38,7 @@ module Reflex.Class
   , EventSelector (..)
   , EventSelectorInt (..)
     -- ** 'Incremental'-related types
+  , mapIncremental
     -- * Convenience functions
   , constDyn
   , pushAlways
@@ -339,11 +340,18 @@ class MonadSample t m => MonadHold t m where
   holdIncremental :: Patch p => PatchTarget p -> Event t p -> m (Incremental t p)
   default holdIncremental :: (Patch p, m ~ f m', MonadTrans f, MonadHold t m') => PatchTarget p -> Event t p -> m (Incremental t p)
   holdIncremental v0 = lift . holdIncremental v0
+
+  buildIncremental :: Patch p => PushM t (PatchTarget p) -> Event t p -> m (Incremental t p)
+  default buildIncremental :: (m ~ f m', MonadTrans f, MonadHold t m', Patch p) => PushM t (PatchTarget p) -> Event t p -> m (Incremental t p)
+  buildIncremental getV0 = lift . buildIncremental getV0
+
+  -- | Create a 'Dynamic' from a 'PushM' (which allows sampling from Behaviors
+  -- and holding 'Events') and an 'Event'
   buildDynamic :: PushM t a -> Event t a -> m (Dynamic t a)
-  {-
-  default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PullM t a -> Event t a -> m (Dynamic t a)
+
+  default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PushM t a -> Event t a -> m (Dynamic t a)
   buildDynamic getV0 = lift . buildDynamic getV0
-  -}
+
   -- | Create a new 'Event' that only occurs only once, on the first occurrence of
   -- the supplied 'Event'.
   headE :: Event t a -> m (Event t a)
@@ -737,6 +745,10 @@ mergeList es = mergeWithFoldCheap' id es
 
 unsafeMapIncremental :: (Reflex t, Patch p, Patch p') => (PatchTarget p -> PatchTarget p') -> (p -> p') -> Incremental t p -> Incremental t p'
 unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIncremental a) $ g <$> updatedIncremental a
+
+
+mapIncremental :: (Reflex t, Patch p, Patch p', MonadHold t m) => (PatchTarget p -> PatchTarget p') -> (p -> p') -> Incremental t p -> m (Incremental t p')
+mapIncremental f g a = buildIncremental (fmap f $ sample $ currentIncremental a) $ g <$> updatedIncremental a
 
 -- | Create a new 'Event' combining the map of 'Event's into an 'Event' that
 -- occurs if at least one of them occurs and has a map of values of all 'Event's
