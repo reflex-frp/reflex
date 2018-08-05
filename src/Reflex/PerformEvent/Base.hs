@@ -114,6 +114,12 @@ instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
   {-# INLINABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = PerformEventT $ lift $ newFanEventWithTrigger f
 
+instance ReflexHost t => MonadReflexCreateBehavior t (PerformEventT t m) where
+  {-# INLINABLE newBehavior #-}
+  newBehavior = PerformEventT . lift . newBehavior
+  {-# INLINABLE invalidateBehavior #-}
+  invalidateBehavior = PerformEventT . lift . invalidateBehavior
+
 -- | Run a 'PerformEventT' action, returning a 'FireCommand' that allows the
 -- caller to trigger 'Event's while ensuring that 'performEvent' actions are run
 -- at the appropriate time.

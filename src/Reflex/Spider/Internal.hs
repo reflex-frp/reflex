@@ -788,6 +788,7 @@ data EventEnv x
               , eventEnvCurrentHeight :: !(IORef Height) -- Needed for Subscribe
               , eventEnvResetCoincidences :: !(IORef [SomeResetCoincidence x]) -- Needed for Subscribe
               , eventEnvDelayedMerges :: !(IORef (IntMap [EventM x ()]))
+              , eventEnvToReconnect :: !(IORef [SomeSwitchSubscribed  x])
               }
 
 {-# INLINE runEventM #-}
@@ -1212,6 +1213,9 @@ coincidence a = eventCoincidence $ Coincidence
 -- Propagate the given event occurrence; before cleaning up, run the given action, which may read the state of events and behaviors
 run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> SpiderHost x b
 run roots after = do
+  --TDOO: This is kind of a hack: if we detect that `toReconnect` is not empty, which means we've invalidated behaviors between the last frame and this one
+  toReconnect <- liftIO $ readIORef $ eventEnvToReconnect $ _spiderTimeline_eventEnv (spiderTimeline :: SpiderTimelineEnv x)
+  when (not $ null toReconnect) $ runFrame $ pure ()
   tracePropagate (Proxy :: Proxy x) $ "Running an event frame with " <> show (length roots) <> " events"
   t <- SpiderHost ask
   result <- SpiderHost $ lift $ withMVar (_spiderTimeline_lock t) $ \_ -> flip runReaderT t $ unSpiderHost $ runFrame $ do
@@ -2056,10 +2060,11 @@ newEventEnv = do
   toClearRootRef <- newIORef []
   coincidenceInfosRef <- newIORef []
   delayedRef <- newIORef IntMap.empty
-  return $ EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeInitRef toClearRef toClearIntRef toClearRootRef heightRef coincidenceInfosRef delayedRef
+  toReconnectRef <- newIORef []
+  return $ EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeInitRef toClearRef toClearIntRef toClearRootRef heightRef coincidenceInfosRef delayedRef toReconnectRef
 
 clearEventEnv :: EventEnv x -> IO ()
-clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeInitRef toClearRef toClearIntRef toClearRootRef heightRef coincidenceInfosRef delayedRef) = do
+clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeInitRef toClearRef toClearIntRef toClearRootRef heightRef coincidenceInfosRef delayedRef toReconnectRef) = do
   writeIORef toAssignRef []
   writeIORef holdInitRef []
   writeIORef dynInitRef []
@@ -2071,6 +2076,7 @@ clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeI
   writeIORef toClearRootRef []
   writeIORef coincidenceInfosRef []
   writeIORef delayedRef IntMap.empty
+  writeIORef toReconnectRef []
 
 -- | Run an event action outside of a frame
 runFrame :: forall x a. HasSpiderTimeline x => EventM x a -> SpiderHost x a --TODO: This function also needs to hold the mutex
@@ -2088,7 +2094,7 @@ runFrame a = SpiderHost $ ask >>= \_ -> lift $ do
   toClearRoot <- readIORef $ eventEnvRootClears env
   forM_ toClearRoot $ \(SomeRootClear ref) -> {-# SCC "rootClear" #-} writeIORef ref $! DMap.empty
   toAssign <- readIORef $ eventEnvAssignments env
-  toReconnectRef <- newIORef []
+  let toReconnectRef = eventEnvToReconnect env
   coincidenceInfos <- readIORef $ eventEnvResetCoincidences env
   forM_ toAssign $ \(SomeAssignment vRef iRef v) -> {-# SCC "assignment" #-} do
     writeIORef vRef v
@@ -2394,6 +2400,7 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTim
 
 instance HasSpiderTimeline x => Reflex.Host.Class.ReflexHost (SpiderTimeline x) where
   type EventTrigger (SpiderTimeline x) = RootTrigger x
+  type BehaviorInvalidator (SpiderTimeline x) = Maybe (Weak (Invalidator x))
   type EventHandle (SpiderTimeline x) = SpiderEventHandle x
   type HostFrame (SpiderTimeline x) = SpiderHostFrame x
 
@@ -2410,11 +2417,25 @@ instance Reflex.Host.Class.MonadReflexCreateTrigger (SpiderTimeline x) (SpiderHo
     es <- newFanEventWithTriggerIO f
     return $ Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es
 
+instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexCreateBehavior (SpiderTimeline x) (SpiderHost x) where
+  newBehavior getValue = pure $ SpiderBehavior $ pull $ do
+    !invalidator <- askInvalidator
+    BehaviorM $ lift $ getValue invalidator
+  invalidateBehavior mi = forM_ mi $ \i -> do
+    liftIO $ void $ invalidate (eventEnvToReconnect $ _spiderTimeline_eventEnv (spiderTimeline :: SpiderTimelineEnv x)) [i]
+
 instance Reflex.Host.Class.MonadReflexCreateTrigger (SpiderTimeline x) (SpiderHostFrame x) where
   newEventWithTrigger = SpiderHostFrame . EventM . liftIO . fmap SpiderEvent . newEventWithTriggerIO
   newFanEventWithTrigger f = SpiderHostFrame $ EventM $ liftIO $ do
     es <- newFanEventWithTriggerIO f
     return $ Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es
+
+instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexCreateBehavior (SpiderTimeline x) (SpiderHostFrame x) where
+  newBehavior getValue = pure $ SpiderBehavior $ pull $ do
+    !invalidator <- askInvalidator
+    BehaviorM $ lift $ getValue invalidator
+  invalidateBehavior mi = forM_ mi $ \i -> do
+    liftIO $ void $ invalidate (eventEnvToReconnect $ _spiderTimeline_eventEnv (spiderTimeline :: SpiderTimelineEnv x)) [i]
 
 instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTimeline x) (SpiderHost x) where
   {-# INLINABLE subscribeEvent #-}
@@ -2558,7 +2579,7 @@ instance Monad (SpiderHost x) where
 -- | Run an action affecting the global Spider timeline; this will be guarded by
 -- a mutex for that timeline
 runSpiderHost :: SpiderHost Global a -> IO a
-runSpiderHost (SpiderHost a) = runReaderT a globalSpiderTimelineEnv
+runSpiderHost a = runSpiderHostForTimeline a globalSpiderTimelineEnv
 
 -- | Run an action affecting a given Spider timeline; this will be guarded by a
 -- mutex for that timeline

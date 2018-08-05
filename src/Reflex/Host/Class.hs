@@ -21,6 +21,7 @@ module Reflex.Host.Class
   , MonadSubscribeEvent (..)
   , MonadReadEvent (..)
   , MonadReflexCreateTrigger (..)
+  , MonadReflexCreateBehavior (..)
   , MonadReflexHost (..)
   , fireEvents
   , newEventWithTriggerRef
@@ -48,12 +49,14 @@ import Data.GADT.Compare
 -- represented by @t@.
 class ( Reflex t
       , MonadReflexCreateTrigger t (HostFrame t)
+      , MonadReflexCreateBehavior t (HostFrame t)
       , MonadSample t (HostFrame t)
       , MonadHold t (HostFrame t)
       , MonadFix (HostFrame t)
       , MonadSubscribeEvent t (HostFrame t)
       ) => ReflexHost t where
   type EventTrigger t :: * -> *
+  type BehaviorInvalidator t :: *
   type EventHandle t :: * -> *
   type HostFrame t :: * -> *
 
@@ -106,6 +109,15 @@ class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
   -- is executed, the event may still be set up again in the future.
   newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event t a)
   newFanEventWithTrigger :: GCompare k => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> m (EventSelector t k)
+
+-- | A monad where new events feed from external sources can be created.
+class (Applicative m, Monad m) => MonadReflexCreateBehavior t m | m -> t where
+  -- | Creates a root 'Behavior' (one that is not based on any Event or other
+  -- Behavior).
+  newBehavior :: (BehaviorInvalidator t -> IO a) -> m (Behavior t a)
+  -- | Invalidate a root 'Behavior', effective for all logical times greater
+  -- than the current time.
+  invalidateBehavior :: BehaviorInvalidator t -> m ()
 
 -- | 'MonadReflexHost' designates monads that can run reflex frames.
 class ( ReflexHost t

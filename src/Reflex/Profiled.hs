@@ -185,6 +185,10 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger (ProfiledTimel
     es <- lift $ newFanEventWithTrigger f
     return $ EventSelector $ \k -> coerce $ select es k
 
+instance MonadReflexCreateBehavior t m => MonadReflexCreateBehavior (ProfiledTimeline t) (ProfiledM m) where
+  newBehavior getValue = fmap Behavior_Profiled $ lift $ newBehavior $ coerce getValue
+  invalidateBehavior = lift . invalidateBehavior
+
 instance MonadReader r m => MonadReader r (ProfiledM m) where
   ask = lift ask
   local f (ProfiledM a) = ProfiledM $ local f a
@@ -193,6 +197,7 @@ instance MonadReader r m => MonadReader r (ProfiledM m) where
 instance ReflexHost t => ReflexHost (ProfiledTimeline t) where
   type EventTrigger (ProfiledTimeline t) = EventTrigger t
   type EventHandle (ProfiledTimeline t) = EventHandle t
+  type BehaviorInvalidator (ProfiledTimeline t) = BehaviorInvalidator t
   type HostFrame (ProfiledTimeline t) = ProfiledM (HostFrame t)
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent (ProfiledTimeline t) (ProfiledM m) where
