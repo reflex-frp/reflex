@@ -53,31 +53,31 @@ newtype FireCommand t m = FireCommand { runFireCommand :: forall a. [DSum (Event
 
 -- | Provides a basic implementation of 'PerformEvent'.  Note that, despite the
 -- name, 'PerformEventT' is not an instance of 'MonadTrans'.
-newtype PerformEventT t m a = PerformEventT { unPerformEventT :: RequesterT t (HostFrame t) Identity (HostFrame t) a }
+newtype PerformEventT t m a = PerformEventT { unPerformEventT :: RequesterT t m Identity m a }
 
-deriving instance ReflexHost t => Functor (PerformEventT t m)
-deriving instance ReflexHost t => Applicative (PerformEventT t m)
-deriving instance ReflexHost t => Monad (PerformEventT t m)
-deriving instance ReflexHost t => MonadFix (PerformEventT t m)
-deriving instance (ReflexHost t, MonadIO (HostFrame t)) => MonadIO (PerformEventT t m)
-deriving instance (ReflexHost t, MonadException (HostFrame t)) => MonadException (PerformEventT t m)
-deriving instance (ReflexHost t, Monoid a) => Monoid (PerformEventT t m a)
-deriving instance (ReflexHost t, S.Semigroup a) => S.Semigroup (PerformEventT t m a)
+deriving instance Functor m => Functor (PerformEventT t m)
+deriving instance Monad m => Applicative (PerformEventT t m)
+deriving instance Monad m => Monad (PerformEventT t m)
+deriving instance MonadFix m => MonadFix (PerformEventT t m)
+deriving instance MonadIO m => MonadIO (PerformEventT t m)
+deriving instance MonadException m => MonadException (PerformEventT t m)
+deriving instance (Monad m, Monoid a) => Monoid (PerformEventT t m a)
+deriving instance (Monad m, S.Semigroup a) => S.Semigroup (PerformEventT t m a)
 
-instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m) where
-  type PrimState (PerformEventT t m) = PrimState (HostFrame t)
-  primitive = PerformEventT . lift . primitive
+instance (PrimMonad m, ReflexHost t) => PrimMonad (PerformEventT t m) where
+  type PrimState (PerformEventT t m) = PrimState m
+  primitive = lift . primitive
 
-instance (ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
-  type Performable (PerformEventT t m) = HostFrame t
+instance (Monad m, Reflex t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
+  type Performable (PerformEventT t m) = m
   {-# INLINABLE performEvent_ #-}
   performEvent_ = PerformEventT . requesting_
   {-# INLINABLE performEvent #-}
   performEvent = PerformEventT . requestingIdentity
 
-instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT t m) where
+instance (Reflex t, MonadHold t m, MonadFix m, PrimMonad m) => Adjustable t (PerformEventT t m) where
   runWithReplace outerA0 outerA' = PerformEventT $ runWithReplaceRequesterTWith f (coerce outerA0) (coerceEvent outerA')
-    where f :: HostFrame t a -> Event t (HostFrame t b) -> RequesterT t (HostFrame t) Identity (HostFrame t) (a, Event t b)
+    where f :: m a -> Event t (m b) -> RequesterT t m Identity m (a, Event t b)
           f a0 a' = do
             result0 <- lift a0
             result' <- requestingIdentity a'
@@ -86,33 +86,33 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
   traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
   traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
 
-defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
-  => ((forall a. k' a -> v a -> HostFrame t (v2 a)) -> p k' v -> HostFrame t (p k' v2))
-  -> (forall a. k' a -> v a -> HostFrame t (v2 a))
+defaultAdjustBase :: forall t v v2 k' p m. (Monad m, PrimMonad m, Reflex t)
+  => ((forall a. k' a -> v a -> m (v2 a)) -> p k' v -> m (p k' v2))
+  -> (forall a. k' a -> v a -> m (v2 a))
   -> DMap k' v
   -> Event t (p k' v)
-  -> RequesterT t (HostFrame t) Identity (HostFrame t) (DMap k' v2, Event t (p k' v2))
+  -> RequesterT t m Identity m (DMap k' v2, Event t (p k' v2))
 defaultAdjustBase traversePatchWithKey f' dm0 dm' = do
   result0 <- lift $ DMap.traverseWithKey f' dm0
   result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
   return (result0, result')
 
-defaultAdjustIntBase :: forall t v v2 p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
-  => ((IntMap.Key -> v -> HostFrame t v2) -> p v -> HostFrame t (p v2))
-  -> (IntMap.Key -> v -> HostFrame t v2)
+defaultAdjustIntBase :: forall t v v2 p m. (Monad m, PrimMonad m, Reflex t)
+  => ((IntMap.Key -> v -> m v2) -> p v -> m (p v2))
+  -> (IntMap.Key -> v -> m v2)
   -> IntMap v
   -> Event t (p v)
-  -> RequesterT t (HostFrame t) Identity (HostFrame t) (IntMap v2, Event t (p v2))
+  -> RequesterT t m Identity m (IntMap v2, Event t (p v2))
 defaultAdjustIntBase traversePatchWithKey f' dm0 dm' = do
   result0 <- lift $ IntMap.traverseWithKey f' dm0
   result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
   return (result0, result')
 
-instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (PerformEventT t m) where
   {-# INLINABLE newEventWithTrigger #-}
-  newEventWithTrigger = PerformEventT . lift . newEventWithTrigger
+  newEventWithTrigger = lift . newEventWithTrigger
   {-# INLINABLE newFanEventWithTrigger #-}
-  newFanEventWithTrigger f = PerformEventT $ lift $ newFanEventWithTrigger f
+  newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
 
 -- | Run a 'PerformEventT' action, returning a 'FireCommand' that allows the
 -- caller to trigger 'Event's while ensuring that 'performEvent' actions are run
@@ -129,7 +129,7 @@ hostPerformEventT :: forall t m a.
                   -> m (a, FireCommand t m)
 hostPerformEventT a = do
   (response, responseTrigger) <- newEventWithTriggerRef
-  (result, eventToPerform) <- runHostFrame $ runRequesterT (unPerformEventT a) response
+  (result, eventToPerform) <- runRequesterT (unPerformEventT a) response
   eventToPerformHandle <- subscribeEvent eventToPerform
   return $ (,) result $ FireCommand $ \triggers (readPhase :: ReadPhase m a') -> do
     let go :: [DSum (EventTrigger t) Identity] -> m [a']
@@ -141,7 +141,7 @@ hostPerformEventT a = do
           case mToPerform of
             Nothing -> return [result']
             Just toPerform -> do
-              responses <- runHostFrame $ traverseRequesterData (\v -> Identity <$> v) toPerform
+              responses <- traverseRequesterData (\v -> Identity <$> v) toPerform
               mrt <- readRef responseTrigger
               let followupEventTriggers = case mrt of
                     Just rt -> [rt :=> Identity responses]
@@ -149,31 +149,34 @@ hostPerformEventT a = do
               (result':) <$> go followupEventTriggers
     go triggers
 
-instance ReflexHost t => MonadSample t (PerformEventT t m) where
+instance MonadSample t m => MonadSample t (PerformEventT t m) where
   {-# INLINABLE sample #-}
-  sample = PerformEventT . lift . sample
+  sample = lift . sample
 
 instance (ReflexHost t, MonadHold t m) => MonadHold t (PerformEventT t m) where
   {-# INLINABLE hold #-}
-  hold v0 v' = PerformEventT $ lift $ hold v0 v'
+  hold v0 v' = lift $ hold v0 v'
   {-# INLINABLE holdDyn #-}
-  holdDyn v0 v' = PerformEventT $ lift $ holdDyn v0 v'
+  holdDyn v0 v' = lift $ holdDyn v0 v'
   {-# INLINABLE holdIncremental #-}
-  holdIncremental v0 v' = PerformEventT $ lift $ holdIncremental v0 v'
+  holdIncremental v0 v' = lift $ holdIncremental v0 v'
   {-# INLINABLE buildDynamic #-}
-  buildDynamic getV0 v' = PerformEventT $ lift $ buildDynamic getV0 v'
+  buildDynamic getV0 v' = lift $ buildDynamic getV0 v'
   {-# INLINABLE headE #-}
-  headE = PerformEventT . lift . headE
+  headE = lift . headE
 
-instance (MonadRef (HostFrame t), ReflexHost t) => MonadRef (PerformEventT t m) where
-  type Ref (PerformEventT t m) = Ref (HostFrame t)
+instance (MonadRef m, ReflexHost t) => MonadRef (PerformEventT t m) where
+  type Ref (PerformEventT t m) = Ref m
   {-# INLINABLE newRef #-}
-  newRef = PerformEventT . lift . newRef
+  newRef = lift . newRef
   {-# INLINABLE readRef #-}
-  readRef = PerformEventT . lift . readRef
+  readRef = lift . readRef
   {-# INLINABLE writeRef #-}
-  writeRef r = PerformEventT . lift . writeRef r
+  writeRef r = lift . writeRef r
 
-instance (MonadAtomicRef (HostFrame t), ReflexHost t) => MonadAtomicRef (PerformEventT t m) where
+instance (MonadAtomicRef m, ReflexHost t) => MonadAtomicRef (PerformEventT t m) where
   {-# INLINABLE atomicModifyRef #-}
-  atomicModifyRef r = PerformEventT . lift . atomicModifyRef r
+  atomicModifyRef r = lift . atomicModifyRef r
+
+instance MonadTrans (PerformEventT t) where
+  lift = PerformEventT . lift
