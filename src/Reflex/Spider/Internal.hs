@@ -2555,6 +2555,10 @@ instance Monad (SpiderHost x) where
   {-# INLINABLE fail #-}
   fail s = SpiderHost $ fail s
 
+instance PrimMonad (SpiderHost x) where
+  type PrimState (SpiderHost x) = PrimState IO
+  primitive = SpiderHost . primitive
+
 -- | Run an action affecting the global Spider timeline; this will be guarded by
 -- a mutex for that timeline
 runSpiderHost :: SpiderHost Global a -> IO a
