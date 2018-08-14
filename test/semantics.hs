@@ -45,5 +45,3 @@ main = do
      ]
 
     makeGroup name tests = first (\test -> intercalate "/" [name, test]) <$> tests
-
-

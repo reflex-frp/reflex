@@ -230,6 +230,9 @@ testCases =
       rec result <- holdUniqDyn d
           d <- holdDyn (0 :: Int) e
       return (current result, updated result)
+
+
+
   {-
   , (,) "mergeIncrementalWithMove" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, PatchDMapWithMove.moveDMapKey LeftTag RightTag), (2, mempty)]) $ \(b, e :: Event t (PatchDMapWithMove (EitherTag () ()) (Const2 () ()))) -> do
        x <- holdIncremental (DMap.singleton LeftTag $ void e) $ PatchDMapWithMove.mapPatchDMapWithMove (\(Const2 _) -> void e) <$> e

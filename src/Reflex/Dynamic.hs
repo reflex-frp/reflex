@@ -325,16 +325,20 @@ eitherDyn = fmap (fmap unpack) . factorDyn . fmap eitherToDSum
           LeftTag :=> Compose a -> Left $ coerceDynamic a
           RightTag :=> Compose b -> Right $ coerceDynamic b
 
-factorDyn :: forall t m k v. (Reflex t, MonadFix m, MonadHold t m, GEq k) => Dynamic t (DSum k v) -> m (Dynamic t (DSum k (Compose (Dynamic t) v)))
-factorDyn d = do
-  k0 :=> v0 <- sample $ current d --TODO: Figure out how to get this to run inside something like the first argument to buildDynamic
-  (initialEvent, update) <- factorEvent k0 $ updated d
-  initialD <- holdDyn v0 initialEvent
-  let f (k :=> Pair v (Compose v')) = do
-        d' <- holdDyn v v'
-        pure $ k :=> Compose d'
-  holdDyn (k0 :=> Compose initialD) $ pushAlwaysCheap f update
+factorDyn :: forall t m k v. (Reflex t, MonadHold t m, GEq k)
+          => Dynamic t (DSum k v) -> m (Dynamic t (DSum k (Compose (Dynamic t) v)))
+factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
+  update :: Event t (DSum k (Compose (Dynamic t) v))
+  update = flip push (updated d) $ \(newKey :=> newVal) -> do
+     (oldKey :=> _) <- sample (current d)
+     case newKey `geq` oldKey of
+      Just Refl -> return Nothing
+      Nothing -> Just <$> holdKey (newKey :=> newVal)
 
+  holdKey (k :=> v) = do
+    inner' <- filterEventKey k (updated d)
+    inner <- holdDyn v inner'
+    return $ k :=> Compose inner
 --------------------------------------------------------------------------------
 -- Demux
 --------------------------------------------------------------------------------

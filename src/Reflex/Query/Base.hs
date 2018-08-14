@@ -8,6 +8,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
 module Reflex.Query.Base
   ( QueryT (..)
   , runQueryT
@@ -50,7 +52,10 @@ import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
 newtype QueryT t q m a = QueryT { unQueryT :: StateT [Behavior t q] (EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m)) a }
-  deriving (Functor, Applicative, Monad, MonadException, MonadFix, MonadIO, MonadHold t, MonadSample t, MonadAtomicRef)
+  deriving (Functor, Applicative, Monad, MonadException, MonadFix, MonadIO, MonadAtomicRef)
+
+deriving instance MonadHold t m => MonadHold t (QueryT t q m)
+deriving instance MonadSample t m => MonadSample t (QueryT t q m)
 
 runQueryT :: (MonadFix m, Additive q, Group q, Reflex t) => QueryT t q m a -> Dynamic t (QueryResult q) -> m (a, Incremental t (AdditivePatch q))
 runQueryT (QueryT a) qr = do

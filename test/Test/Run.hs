@@ -64,3 +64,11 @@ runApp' :: (t ~ SpiderTimeline Global, m ~ SpiderHost Global)
 runApp' app input = do
   let app' = fmap (AppOut (pure ())) . app
   map (map snd) <$> runApp (app' . _appIn_event) () (map (fmap That) input)
+
+runAppB :: (t ~ SpiderTimeline Global, m ~ SpiderHost Global)
+        => (Event t eIn -> PerformEventT t m (Behavior t bOut))
+        -> [Maybe eIn]
+        -> IO [[bOut]]
+runAppB app input = do
+  let app' = fmap (flip AppOut never) . app
+  map (map fst) <$> runApp (app' . _appIn_event) () (map (fmap That) input)
