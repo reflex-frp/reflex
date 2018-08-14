@@ -31,6 +31,8 @@ import qualified Data.Dependent.Map as DMap
 import Data.Foldable
 import Data.Functor.Compose
 import Data.Functor.Misc
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid ((<>))
@@ -93,6 +95,52 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, Adj
     QueryT $ modify $ (:) $ pull $ sampleBs =<< sample bbs
     QueryT $ lift $ tellEvent patches
     return (r0, fmapCheap fst r')
+
+  traverseIntMapWithKeyWithAdjust :: forall v v'. (IntMap.Key -> v -> QueryT t q m v') -> IntMap v -> Event t (PatchIntMap v) -> QueryT t q m (IntMap v', Event t (PatchIntMap v'))
+  traverseIntMapWithKeyWithAdjust f im0 im' = do
+    let f' :: IntMap.Key -> v -> EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m) (QueryTLoweredResult t q v')
+        f' k v = fmap QueryTLoweredResult $ flip runStateT [] $ unQueryT $ f k v
+    (result0, result') <- QueryT $ lift $ traverseIntMapWithKeyWithAdjust f' im0 im'
+    let liftedResult0 = IntMap.map (\r -> getQueryTLoweredResultValue r) result0
+        liftedResult' = fforCheap result' $ \(PatchIntMap p) -> PatchIntMap $
+          IntMap.map (\mr -> fmap getQueryTLoweredResultValue mr) p
+        liftedBs0 :: IntMap [Behavior t q]
+        liftedBs0 = IntMap.map (\r -> getQueryTLoweredResultWritten r) result0
+        liftedBs' :: Event t (PatchIntMap [Behavior t q])
+        liftedBs' = fforCheap result' $ \(PatchIntMap p) -> PatchIntMap $
+          IntMap.map (\mr -> fmap getQueryTLoweredResultWritten mr) p
+        sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
+        sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
+        accumBehaviors :: forall m'. MonadHold t m'
+                       => IntMap [Behavior t q]
+                       -> PatchIntMap [Behavior t q]
+                       -> m' ( Maybe (IntMap [Behavior t q])
+                             , Maybe (AdditivePatch q))
+        -- f accumulates the child behavior state we receive from running traverseIntMapWithKeyWithAdjust for the underlying monad.
+        -- When an update occurs, it also computes a patch to communicate to the parent QueryT state.
+        -- bs0 is a Map denoting the behaviors of the current children.
+        -- pbs is a PatchMap denoting an update to the behaviors of the current children
+        accumBehaviors bs0 pbs@(PatchIntMap bs') = do
+          let p k bs = case IntMap.lookup k bs0 of
+                Nothing -> case bs of
+                  -- If the update is to delete the state for a child that doesn't exist, the patch is mempty.
+                  Nothing -> return mempty
+                  -- If the update is to update the state for a child that doesn't exist, the patch is the sample of the new state.
+                  Just newBs -> sampleBs newBs
+                Just oldBs -> case bs of
+                  -- If the update is to delete the state for a child that already exists, the patch is the negation of the child's current state
+                  Nothing -> negateG <$> sampleBs oldBs
+                  -- If the update is to update the state for a child that already exists, the patch is the negation of sampling the child's current state
+                  -- composed with the sampling the child's new state.
+                  Just newBs -> (~~) <$> sampleBs newBs <*> sampleBs oldBs
+          -- we compute the patch by iterating over the update PatchMap and proceeding by cases. Then we fold over the
+          -- child patches and wrap them in AdditivePatch.
+          patch <- AdditivePatch . fold <$> IntMap.traverseWithKey p bs'
+          return (apply pbs bs0, Just patch)
+    (qpatch :: Event t (AdditivePatch q)) <- mapAccumMaybeM_ accumBehaviors liftedBs0 liftedBs'
+    tellQueryIncremental $ unsafeBuildIncremental (fold <$> mapM sampleBs liftedBs0) qpatch
+    return (liftedResult0, liftedResult')
+
   traverseDMapWithKeyWithAdjust :: forall (k :: * -> *) v v'. (DMap.GCompare k) => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> QueryT t q m (DMap k v', Event t (PatchDMap k v'))
   traverseDMapWithKeyWithAdjust f dm0 dm' = do
     let f' :: forall a. k a -> v a -> EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m) (Compose (QueryTLoweredResult t q) v' a)
@@ -137,6 +185,7 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, Adj
     (qpatch :: Event t (AdditivePatch q)) <- mapAccumMaybeM_ accumBehaviors liftedBs0 liftedBs'
     tellQueryIncremental $ unsafeBuildIncremental (fold <$> mapM sampleBs liftedBs0) qpatch
     return (liftedResult0, liftedResult')
+
   traverseDMapWithKeyWithAdjustWithMove :: forall (k :: * -> *) v v'. (DMap.GCompare k) => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> QueryT t q m (DMap k v', Event t (PatchDMapWithMove k v'))
   traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = do
     let f' :: forall a. k a -> v a -> EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m) (Compose (QueryTLoweredResult t q) v' a)
