@@ -68,6 +68,7 @@ module Reflex.Class
   , switchHoldPromptOnly
     -- ** Using 'Event's to sample 'Behavior's
   , tag
+  , tagMaybe
   , attach
   , attachWith
   , attachWithMaybe
@@ -556,6 +557,12 @@ instance Reflex t => Plus (Event t) where
 -- 'Behavior' at the time of that occurrence.
 tag :: Reflex t => Behavior t b -> Event t a -> Event t b
 tag b = pushAlways $ \_ -> sample b
+
+-- | Replace each occurrence value of the 'Event' with the value of the
+-- 'Behavior' at that time; if it is 'Just', fire with the contained value; if
+-- it is 'Nothing', drop the occurrence.
+tagMaybe :: Reflex t => Behavior t (Maybe b) -> Event t a -> Event t b
+tagMaybe b = push $ \_ -> sample b
 
 -- | Create a new 'Event' that combines occurrences of supplied 'Event' with the
 -- current value of the 'Behavior'.
