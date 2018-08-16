@@ -19,7 +19,8 @@ import Control.Monad.Trans
 import Reflex.Class
 import Reflex.DynamicWriter.Base (DynamicWriterT)
 import Reflex.EventWriter.Base (EventWriterT)
-import Reflex.PerformEvent.Base (PerformEventT)
+import Reflex.Host.Class
+import Reflex.PerformEvent.Base (PerformEventT (..))
 import Reflex.PostBuild.Base (PostBuildT)
 import Reflex.Query.Base (QueryT)
 import Reflex.Requester.Base (RequesterT)
@@ -34,11 +35,34 @@ class Monad m => NotReady t m | m -> t where
   default notReady :: (MonadTrans f, m ~ f m', NotReady t m') => m ()
   notReady = lift notReady
 
-instance NotReady t m => NotReady t (ReaderT r m)
-instance NotReady t m => NotReady t (PostBuildT t m)
-instance NotReady t m => NotReady t (EventWriterT t w m)
-instance NotReady t m => NotReady t (DynamicWriterT t w m)
-instance NotReady t m => NotReady t (QueryT t q m)
-instance NotReady t m => NotReady t (PerformEventT t m)
-instance NotReady t m => NotReady t (RequesterT t request response m)
-instance NotReady t m => NotReady t (TriggerEventT t m)
+instance NotReady t m => NotReady t (ReaderT r m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
+instance NotReady t m => NotReady t (PostBuildT t m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
+instance NotReady t m => NotReady t (EventWriterT t w m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
+instance NotReady t m => NotReady t (DynamicWriterT t w m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
+instance NotReady t m => NotReady t (QueryT t q m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
+instance (ReflexHost t, NotReady t (HostFrame t)) => NotReady t (PerformEventT t m) where
+  notReadyUntil = PerformEventT . notReadyUntil
+  notReady = PerformEventT notReady
+
+instance NotReady t m => NotReady t (RequesterT t request response m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
+instance NotReady t m => NotReady t (TriggerEventT t m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
