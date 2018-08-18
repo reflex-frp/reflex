@@ -2408,7 +2408,8 @@ runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimelineEnv x -> IO a
 runSpiderHostForTimeline (SpiderHost a) = runReaderT a
 #endif
 
-newtype SpiderHostFrame x a = SpiderHostFrame { runSpiderHostFrame :: EventM x a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
+newtype SpiderHostFrame x a = SpiderHostFrame { runSpiderHostFrame :: EventM x a }
+  deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 instance Monad (SpiderHostFrame x) where
   {-# INLINABLE (>>=) #-}

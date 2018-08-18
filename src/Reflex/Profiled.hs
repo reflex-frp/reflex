@@ -11,6 +11,7 @@ module Reflex.Profiled where
 
 import Control.Lens hiding (children)
 import Control.Monad
+import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Primitive
 import Control.Monad.Reader
@@ -95,7 +96,8 @@ writeProfilingData :: FilePath -> IO ()
 writeProfilingData p = do
   writeFile p =<< formatCostCentreTree =<< getCostCentreTree
 
-newtype ProfiledM m a = ProfiledM { runProfiledM :: m a } deriving (Functor, Applicative, Monad, MonadFix)
+newtype ProfiledM m a = ProfiledM { runProfiledM :: m a }
+  deriving (Functor, Applicative, Monad, MonadFix, MonadException, MonadAsyncException)
 
 profileEvent :: Reflex t => Event t a -> Event t a
 profileEvent e = unsafePerformIO $ do
