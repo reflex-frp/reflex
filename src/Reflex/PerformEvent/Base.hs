@@ -162,6 +162,8 @@ instance (ReflexHost t, MonadHold t m) => MonadHold t (PerformEventT t m) where
   holdIncremental v0 v' = lift $ holdIncremental v0 v'
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 v' = lift $ buildDynamic getV0 v'
+  {-# INLINABLE buildIncremental #-}
+  buildIncremental getV0 v' = lift $ buildIncremental getV0 v'
   {-# INLINABLE headE #-}
   headE = lift . headE
 

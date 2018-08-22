@@ -157,6 +157,7 @@ instance MonadHold t m => MonadHold (ProfiledTimeline t) (ProfiledM m) where
   holdDyn v0 (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> holdDyn v0 v'
   holdIncremental v0 (Event_Profiled v') = ProfiledM $ Incremental_Profiled <$> holdIncremental v0 v'
   buildDynamic (ProfiledM v0) (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> buildDynamic v0 v'
+  buildIncremental (ProfiledM v0) (Event_Profiled v') = ProfiledM $ Incremental_Profiled <$> buildIncremental v0 v'
   headE (Event_Profiled e) = ProfiledM $ Event_Profiled <$> headE e
 
 instance MonadSample t m => MonadSample (ProfiledTimeline t) (ProfiledM m) where
