@@ -53,6 +53,8 @@ module Reflex.Class
   , alignEventWithMaybe
     -- ** Breaking up 'Event's
   , splitE
+  , unzipE
+  , zipE
   , fanEither
   , fanThese
   , fanMap
@@ -676,6 +678,15 @@ takeDropWhileJustE f e = do
 -- same time with the respective values from the tuple.
 splitE :: Reflex t => Event t (a, b) -> (Event t a, Event t b)
 splitE e = (fmap fst e, fmap snd e)
+
+-- | Alias for 'splitE'
+unzipE :: Reflex t => Event t (a, b) -> (Event t a, Event t b)
+unzipE = splitE
+
+-- | Create a new 'Event' made of a pair of values supplied by two other 'Event's
+-- whenever they occur in simultaneous.
+zipE :: Reflex t => Event t a -> Event t b -> Event t (a, b)
+zipE = alignEventWithMaybe justThese
 
 -- | Print the supplied 'String' and the value of the 'Event' on each
 -- occurrence. This should /only/ be used for debugging.
