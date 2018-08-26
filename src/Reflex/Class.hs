@@ -102,6 +102,14 @@ module Reflex.Class
   , mapAccumM_
   , mapAccumMaybe_
   , mapAccumMaybeM_
+  , accumIncremental
+  , accumMIncremental
+  , accumMaybeIncremental
+  , accumMaybeMIncremental
+  , mapAccumIncremental
+  , mapAccumMIncremental
+  , mapAccumMaybeIncremental
+  , mapAccumMaybeMIncremental
   , zipListWithEvent
   , numberOccurrences
   , numberOccurrencesFrom
@@ -348,6 +356,35 @@ class MonadSample t m => MonadHold t m where
   -- the supplied 'Event'.
   headE :: Event t a -> m (Event t a)
 
+accumIncremental :: (Reflex t, Patch p, MonadHold t m, MonadFix m) => (PatchTarget p -> b -> p) -> PatchTarget p -> Event t b -> m (Incremental t p)
+accumIncremental f = accumMaybeIncremental $ \v o -> Just $ f v o
+accumMIncremental :: (Reflex t, Patch p, MonadHold t m, MonadFix m) => (PatchTarget p -> b -> PushM t p) -> PatchTarget p -> Event t b -> m (Incremental t p)
+accumMIncremental f = accumMaybeMIncremental $ \v o -> Just <$> f v o
+accumMaybeIncremental :: (Reflex t, Patch p, MonadHold t m, MonadFix m) => (PatchTarget p -> b -> Maybe p) -> PatchTarget p -> Event t b -> m (Incremental t p)
+accumMaybeIncremental f = accumMaybeMIncremental $ \v o -> return $ f v o
+accumMaybeMIncremental :: (Reflex t, Patch p, MonadHold t m, MonadFix m) => (PatchTarget p -> b -> PushM t (Maybe p)) -> PatchTarget p -> Event t b -> m (Incremental t p)
+accumMaybeMIncremental f z e = do
+  rec let e' = flip push e $ \o -> do
+            v <- sample $ currentIncremental d'
+            f v o
+      d' <- holdIncremental z e'
+  return d'
+mapAccumIncremental :: (Reflex t, Patch p, MonadHold t m, MonadFix m) => (PatchTarget p -> b -> (p, c)) -> PatchTarget p -> Event t b -> m (Incremental t p, Event t c)
+mapAccumIncremental f = mapAccumMaybeIncremental $ \v o -> bimap Just Just $ f v o
+mapAccumMIncremental :: (Reflex t, Patch p, MonadHold t m, MonadFix m) => (PatchTarget p -> b -> PushM t (p, c)) -> PatchTarget p -> Event t b -> m (Incremental t p, Event t c)
+mapAccumMIncremental f = mapAccumMaybeMIncremental $ \v o -> bimap Just Just <$> f v o
+mapAccumMaybeIncremental :: (Reflex t, Patch p, MonadHold t m, MonadFix m) => (PatchTarget p -> b -> (Maybe p, Maybe c)) -> PatchTarget p -> Event t b -> m (Incremental t p, Event t c)
+mapAccumMaybeIncremental f = mapAccumMaybeMIncremental $ \v o -> return $ f v o
+mapAccumMaybeMIncremental :: (Reflex t, Patch p, MonadHold t m, MonadFix m) => (PatchTarget p -> b -> PushM t (Maybe p, Maybe c)) -> PatchTarget p -> Event t b -> m (Incremental t p, Event t c)
+mapAccumMaybeMIncremental f z e = do
+  rec let e' = flip push e $ \o -> do
+            v <- sample $ currentIncremental d'
+            result <- f v o
+            return $ case result of
+              (Nothing, Nothing) -> Nothing
+              _ -> Just result
+      d' <- holdIncremental z $ fmapMaybe fst e'
+  return (d', fmapMaybe snd e')
 
 slowHeadE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
 slowHeadE e = do
