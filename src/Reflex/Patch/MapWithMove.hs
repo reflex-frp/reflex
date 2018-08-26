@@ -48,6 +48,13 @@ patchMapWithMove m = if valid then Just $ PatchMapWithMove m else Nothing
             From_Move from -> Just (from, to)
             _ -> Nothing
 
+-- | Create a 'PatchMapWithMove' that inserts everything in the given 'Map'
+patchMapWithMoveInsertAll :: Map k v -> PatchMapWithMove k v
+patchMapWithMoveInsertAll m = PatchMapWithMove $ flip fmap m $ \v -> NodeInfo
+  { _nodeInfo_from = From_Insert v
+  , _nodeInfo_to = Nothing
+  }
+
 -- | Extract the internal representation of the 'PatchMapWithMove'
 unPatchMapWithMove :: PatchMapWithMove k v -> Map k (NodeInfo k v)
 unPatchMapWithMove (PatchMapWithMove p) = p
