@@ -102,14 +102,14 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, Adj
     let f' :: IntMap.Key -> v -> EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m) (QueryTLoweredResult t q v')
         f' k v = fmap QueryTLoweredResult $ flip runStateT [] $ unQueryT $ f k v
     (result0, result') <- QueryT $ lift $ traverseIntMapWithKeyWithAdjust f' im0 im'
-    let liftedResult0 = IntMap.map (\r -> getQueryTLoweredResultValue r) result0
+    let liftedResult0 = IntMap.map getQueryTLoweredResultValue result0
         liftedResult' = fforCheap result' $ \(PatchIntMap p) -> PatchIntMap $
-          IntMap.map (\mr -> fmap getQueryTLoweredResultValue mr) p
+          IntMap.map (fmap getQueryTLoweredResultValue) p
         liftedBs0 :: IntMap [Behavior t q]
-        liftedBs0 = IntMap.map (\r -> getQueryTLoweredResultWritten r) result0
+        liftedBs0 = IntMap.map getQueryTLoweredResultWritten result0
         liftedBs' :: Event t (PatchIntMap [Behavior t q])
         liftedBs' = fforCheap result' $ \(PatchIntMap p) -> PatchIntMap $
-          IntMap.map (\mr -> fmap getQueryTLoweredResultWritten mr) p
+          IntMap.map (fmap getQueryTLoweredResultWritten) p
         sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
         sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
         accumBehaviors :: forall m'. MonadHold t m'
