@@ -120,11 +120,15 @@ patchThatSortsMapWith cmp m = PatchMapWithMove $ Map.fromList $ catMaybes $ zipW
 -- will produce a 'Map' with the same values as the second 'Map' but with the
 -- values sorted with the given ordering function.
 patchThatChangesAndSortsMapWith :: forall k v. (Ord k, Ord v) => (v -> v -> Ordering) -> Map k v -> Map k v -> PatchMapWithMove k v
-patchThatChangesAndSortsMapWith cmp oldByIndex newByIndexUnsorted = patch
-  where oldByValue = Map.fromListWith Set.union $ swap . first Set.singleton <$> Map.toList oldByIndex
-        newList = Map.toList newByIndexUnsorted
+patchThatChangesAndSortsMapWith cmp oldByIndex newByIndexUnsorted = patchThatChangesMap oldByIndex newByIndex
+  where newList = Map.toList newByIndexUnsorted
         newByIndex = Map.fromList $ zip (fst <$> newList) $ sortBy cmp $ snd <$> newList
-        insertsAndMoves :: Map k (NodeInfo k v)
+
+-- | Create a 'PatchMapWithMove' that, if applied to the first 'Map' provided,
+-- will produce the second 'Map'.
+patchThatChangesMap :: (Ord k, Ord v) => Map k v -> Map k v -> PatchMapWithMove k v
+patchThatChangesMap oldByIndex newByIndex = patch
+  where oldByValue = Map.fromListWith Set.union $ swap . first Set.singleton <$> Map.toList oldByIndex
         (insertsAndMoves, unusedValuesByValue) = flip runState oldByValue $ do
           let f k v = do
                 remainingValues <- get
