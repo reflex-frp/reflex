@@ -23,14 +23,11 @@ module Data.AppendMap
 
 import Prelude hiding (map, null)
 
-import Data.Align
 import Data.Coerce
 import Data.Default
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Map.Monoidal
-import Data.Semigroup
-import Data.Set (Set)
 import Reflex.Class (FunctorMaybe (..))
 import Reflex.Patch (Additive, Group (..))
 
@@ -43,8 +40,6 @@ _unAppendMap = getMonoidalMap
 
 pattern AppendMap :: Map k v -> MonoidalMap k v
 pattern AppendMap m = MonoidalMap m
-
-deriving instance Ord k => Align (MonoidalMap k)
 
 instance FunctorMaybe (MonoidalMap k) where
   fmapMaybe = mapMaybe

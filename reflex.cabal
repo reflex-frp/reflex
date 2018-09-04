@@ -46,7 +46,7 @@ library
     exception-transformers == 0.4.*,
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
-    monoidal-containers == 0.4.*,
+    monoidal-containers == 0.5.*,
     mtl >= 2.1 && < 2.3,
     prim-uniq >= 0.1.0.1 && < 0.2,
     primitive >= 0.5 && < 0.7,
