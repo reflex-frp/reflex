@@ -22,6 +22,8 @@ main = do
         , "--ignore=Use unless"
         , "--ignore=Reduce duplication"
         , "--cpp-define=USE_TEMPLATE_HASKELL"
+        , "--ignore=Use >>"
+        , "--ignore=Fuse foldr/map"
         ]
       recurseInto = and <$> sequence
         [ fileType ==? Directory

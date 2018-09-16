@@ -30,4 +30,4 @@ instance FunctorMaybe Maybe where
 
 -- | @fmapMaybe f = catMaybes . fmap f@
 instance FunctorMaybe [] where
-  fmapMaybe f = catMaybes . fmap f
+  fmapMaybe = mapMaybe
