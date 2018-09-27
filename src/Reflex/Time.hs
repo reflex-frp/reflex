@@ -266,6 +266,86 @@ throttle t e = do
       delayed <- delay t outE
   return outE
 
+data ThrottleState b
+  = Immediate
+  | Buffered (ThrottleBuffer b)
+
+data ThrottleBuffer b
+  = BEmpty -- Empty conflicts with lens, and hiding it would require turning
+           -- on PatternSynonyms
+  | Full b
+
+instance Semigroup b => Semigroup (ThrottleBuffer b) where
+  BEmpty <> x = x
+  x@(Full _) <> BEmpty = x
+  Full b1 <> Full b2 = Full $ b1 <> b2
+  {-# INLINE (<>) #-}
+
+instance Semigroup b => Monoid (ThrottleBuffer b) where
+  mempty = BEmpty
+  {-# INLINE mempty #-}
+  mappend = (<>)
+  {-# INLINE mappend #-}
+
+-- | Throttle an input event, ensuring that the output event doesn't occur more often than you are ready for it. If the input event occurs too
+-- frequently, the output event will contain semigroup-based summaries of the input firings that happened since the last output firing.
+-- If the output event has not occurred recently, occurrences of the input event will cause the output event to fire immediately.
+-- The first parameter is a function that receives access to the output event, and should construct an event that fires when the receiver is
+-- ready for more input.  For example, using @delay 20@ would give a simple time-based throttle.
+throttleBatchWithLag :: (MonadFix m, MonadHold t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), Semigroup a) => (Event t () -> m (Event t ())) -> Event t a -> m (Event t a)
+-- Invariants:
+-- * Immediate mode must turn off whenever output is produced.
+-- * Output must be produced whenever immediate mode turns from on to off.
+-- * Immediate mode can only go from off to on when the delayed event fires.
+-- * Every input firing must go into either an immediate output firing or the
+--   buffer, but not both.
+-- * An existing full buffer must either stay in the buffer or go to output,
+--   but not both.
+throttleBatchWithLag lag e = do
+  let f state x = case x of -- (Just $ newState, out)
+        This a -> -- If only the input event fires
+          case state of
+            Immediate -> -- and we're in immediate mode
+              -- Immediate mode turns off, and the buffer is empty.
+              -- We fire the output event with the input event value immediately.
+              (Just $ Buffered $ BEmpty, Just a)
+            Buffered b -> -- and we're not in immediate mode
+              -- Immediate mode remains off, and we accumulate the input value.
+              -- We don't fire the output event.
+              (Just $ Buffered $ b <> Full a, Nothing)
+        That _ -> -- If only the delayed output event fires,
+          case state of
+            Immediate -> -- and we're in immediate mode
+              -- Nothing happens.
+              (Nothing, Nothing)
+            Buffered BEmpty -> -- and the buffer is empty:
+              -- Immediate mode turns back on, and the buffer remains empty.
+              -- We don't fire.
+              (Just Immediate, Nothing)
+            Buffered (Full b) -> -- and the buffer is full:
+              -- Immediate mode remains off, and the buffer is cleared.
+              -- We fire with the buffered value.
+              (Just $ Buffered BEmpty, Just b)
+        These a _ -> -- If both the input and delayed output event fire simultaneously:
+          case state of
+            Immediate -> -- and we're in immediate mode
+              -- Immediate mode turns off, and the buffer is empty.
+              -- We fire with the input event's value, as it is the most recent we have seen at this moment.
+              (Just $ Buffered BEmpty, Just a)
+            Buffered BEmpty -> -- and the buffer is empty:
+              -- Immediate mode stays off, and the buffer remains empty.
+              -- We fire with the input event's value.
+              (Just $ Buffered BEmpty, Just a)
+            Buffered (Full b) -> -- and the buffer is full:
+              -- Immediate mode remains off, and the buffer is cleared.
+              -- We fire with everything including the buffered value.
+              (Just $ Buffered BEmpty, Just (b <> a))
+  rec (_stateDyn, outE) <- mapAccumMaybeDyn f
+        Immediate -- We start in immediate mode with an empty buffer.
+        (align e delayed)
+      delayed <- lag (void outE)
+  return outE
+
 #ifdef USE_TEMPLATE_HASKELL
 makeLensesWith (lensRules & simpleLenses .~ True) ''TickInfo
 #else
