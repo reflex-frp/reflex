@@ -34,6 +34,7 @@ import Reflex.TriggerEvent.Class
 
 import Control.Monad.Exception
 import Control.Monad.Identity
+import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
@@ -265,6 +266,10 @@ instance (MonadQuery t q m, Monad m) => MonadQuery t q (EventWriterT t w m) wher
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
+
+instance PrimMonad m => PrimMonad (EventWriterT t w m) where
+  type PrimState (EventWriterT t w m) = PrimState m
+  primitive = lift . primitive
 
 -- | Map a function over the output of a 'EventWriterT'.
 withEventWriterT :: (Semigroup w, Semigroup w', Reflex t, MonadHold t m)
