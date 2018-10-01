@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecursiveDo #-}
@@ -24,12 +26,14 @@ import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Data.Align
+import Data.Data (Data)
 import Data.Fixed
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
 import Data.These
 import Data.Time.Clock
 import Data.Typeable
+import GHC.Generics (Generic)
 import System.Random
 
 data TickInfo
@@ -269,16 +273,20 @@ throttle t e = do
 data ThrottleState b
   = Immediate
   | Buffered (ThrottleBuffer b)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data, Typeable)
 
 data ThrottleBuffer b
   = BEmpty -- Empty conflicts with lens, and hiding it would require turning
            -- on PatternSynonyms
   | Full b
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data, Typeable)
 
 instance Semigroup b => Semigroup (ThrottleBuffer b) where
-  BEmpty <> x = x
-  x@(Full _) <> BEmpty = x
-  Full b1 <> Full b2 = Full $ b1 <> b2
+  x <> y = case x of
+    BEmpty -> y
+    Full b1 -> case y of
+      BEmpty -> x
+      Full b2 -> Full $ b1 <> b2
   {-# INLINE (<>) #-}
 
 instance Semigroup b => Monoid (ThrottleBuffer b) where
