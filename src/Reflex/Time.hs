@@ -271,26 +271,26 @@ throttle t e = do
   return outE
 
 data ThrottleState b
-  = Immediate
-  | Buffered (ThrottleBuffer b)
+  = ThrottleState_Immediate
+  | ThrottleState_Buffered (ThrottleBuffer b)
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data, Typeable)
 
 data ThrottleBuffer b
-  = BEmpty -- Empty conflicts with lens, and hiding it would require turning
+  = ThrottleBuffer_Empty -- Empty conflicts with lens, and hiding it would require turning
            -- on PatternSynonyms
-  | Full b
+  | ThrottleBuffer_Full b
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data, Typeable)
 
 instance Semigroup b => Semigroup (ThrottleBuffer b) where
   x <> y = case x of
-    BEmpty -> y
-    Full b1 -> case y of
-      BEmpty -> x
-      Full b2 -> Full $ b1 <> b2
+    ThrottleBuffer_Empty -> y
+    ThrottleBuffer_Full b1 -> case y of
+      ThrottleBuffer_Empty -> x
+      ThrottleBuffer_Full b2 -> ThrottleBuffer_Full $ b1 <> b2
   {-# INLINE (<>) #-}
 
 instance Semigroup b => Monoid (ThrottleBuffer b) where
-  mempty = BEmpty
+  mempty = ThrottleBuffer_Empty
   {-# INLINE mempty #-}
   mappend = (<>)
   {-# INLINE mappend #-}
@@ -300,7 +300,7 @@ instance Semigroup b => Monoid (ThrottleBuffer b) where
 -- If the output event has not occurred recently, occurrences of the input event will cause the output event to fire immediately.
 -- The first parameter is a function that receives access to the output event, and should construct an event that fires when the receiver is
 -- ready for more input.  For example, using @delay 20@ would give a simple time-based throttle.
-throttleBatchWithLag :: (MonadFix m, MonadHold t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), Semigroup a) => (Event t () -> m (Event t ())) -> Event t a -> m (Event t a)
+throttleBatchWithLag :: (MonadFix m, MonadHold t m, PerformEvent t m, Semigroup a) => (Event t () -> m (Event t ())) -> Event t a -> m (Event t a)
 -- Invariants:
 -- * Immediate mode must turn off whenever output is produced.
 -- * Output must be produced whenever immediate mode turns from on to off.
@@ -313,43 +313,43 @@ throttleBatchWithLag lag e = do
   let f state x = case x of -- (Just $ newState, out)
         This a -> -- If only the input event fires
           case state of
-            Immediate -> -- and we're in immediate mode
+            ThrottleState_Immediate -> -- and we're in immediate mode
               -- Immediate mode turns off, and the buffer is empty.
               -- We fire the output event with the input event value immediately.
-              (Just $ Buffered $ BEmpty, Just a)
-            Buffered b -> -- and we're not in immediate mode
+              (Just $ ThrottleState_Buffered $ ThrottleBuffer_Empty, Just a)
+            ThrottleState_Buffered b -> -- and we're not in immediate mode
               -- Immediate mode remains off, and we accumulate the input value.
               -- We don't fire the output event.
-              (Just $ Buffered $ b <> Full a, Nothing)
+              (Just $ ThrottleState_Buffered $ b <> ThrottleBuffer_Full a, Nothing)
         That _ -> -- If only the delayed output event fires,
           case state of
-            Immediate -> -- and we're in immediate mode
+            ThrottleState_Immediate -> -- and we're in immediate mode
               -- Nothing happens.
               (Nothing, Nothing)
-            Buffered BEmpty -> -- and the buffer is empty:
+            ThrottleState_Buffered ThrottleBuffer_Empty -> -- and the buffer is empty:
               -- Immediate mode turns back on, and the buffer remains empty.
               -- We don't fire.
-              (Just Immediate, Nothing)
-            Buffered (Full b) -> -- and the buffer is full:
+              (Just ThrottleState_Immediate, Nothing)
+            ThrottleState_Buffered (ThrottleBuffer_Full b) -> -- and the buffer is full:
               -- Immediate mode remains off, and the buffer is cleared.
               -- We fire with the buffered value.
-              (Just $ Buffered BEmpty, Just b)
+              (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just b)
         These a _ -> -- If both the input and delayed output event fire simultaneously:
           case state of
-            Immediate -> -- and we're in immediate mode
+            ThrottleState_Immediate -> -- and we're in immediate mode
               -- Immediate mode turns off, and the buffer is empty.
               -- We fire with the input event's value, as it is the most recent we have seen at this moment.
-              (Just $ Buffered BEmpty, Just a)
-            Buffered BEmpty -> -- and the buffer is empty:
+              (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just a)
+            ThrottleState_Buffered ThrottleBuffer_Empty -> -- and the buffer is empty:
               -- Immediate mode stays off, and the buffer remains empty.
               -- We fire with the input event's value.
-              (Just $ Buffered BEmpty, Just a)
-            Buffered (Full b) -> -- and the buffer is full:
+              (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just a)
+            ThrottleState_Buffered (ThrottleBuffer_Full b) -> -- and the buffer is full:
               -- Immediate mode remains off, and the buffer is cleared.
               -- We fire with everything including the buffered value.
-              (Just $ Buffered BEmpty, Just (b <> a))
+              (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just (b <> a))
   rec (_stateDyn, outE) <- mapAccumMaybeDyn f
-        Immediate -- We start in immediate mode with an empty buffer.
+        ThrottleState_Immediate -- We start in immediate mode with an empty buffer.
         (align e delayed)
       delayed <- lag (void outE)
   return outE
