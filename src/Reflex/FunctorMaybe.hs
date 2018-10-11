@@ -28,6 +28,6 @@ class FunctorMaybe f where
 instance FunctorMaybe Maybe where
   fmapMaybe = (=<<)
 
--- | @fmapMaybe f = catMaybes . fmap f@
+-- | @fmapMaybe = mapMaybe@
 instance FunctorMaybe [] where
-  fmapMaybe f = catMaybes . fmap f
+  fmapMaybe = mapMaybe
