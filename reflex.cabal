@@ -112,7 +112,7 @@ library
     Reflex.Widget.Basic,
     Reflex.Workflow
 
-  ghc-options: -Wall -fwarn-redundant-constraints -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively -ddump-simpl -ddump-to-file -dsuppress-coercions -dsuppress-idinfo
+  ghc-options: -Wall -fwarn-redundant-constraints -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively
   ghc-prof-options: -fprof-auto
 
   if flag(debug-trace-events)
