@@ -161,6 +161,13 @@ test-suite semantics
     reflex,
     split,
     transformers >= 0.3
+  other-modules:
+    Reflex.Bench.Focused
+    Reflex.Plan.Pure
+    Reflex.Plan.Reflex
+    Reflex.Test
+    Reflex.Test.Micro
+    Reflex.TestPlan
 
 test-suite CrossImpl
   type: exitcode-stdio-1.0
