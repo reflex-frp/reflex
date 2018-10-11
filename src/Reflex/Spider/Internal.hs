@@ -1217,8 +1217,8 @@ coincidence a = eventCoincidence $ Coincidence
 run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> SpiderHost x b
 run roots after = do
   tracePropagate (Proxy :: Proxy x) $ "Running an event frame with " <> show (length roots) <> " events"
-  t <- SpiderHost ask
-  result <- SpiderHost $ lift $ withMVar (_spiderTimeline_lock t) $ \_ -> flip runReaderT t $ unSpiderHost $ runFrame $ do
+  let t = spiderTimeline :: SpiderTimelineEnv x
+  result <- SpiderHost $ withMVar (_spiderTimeline_lock t) $ \_ -> unSpiderHost $ runFrame $ do
     rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readIORef occRef
@@ -2085,7 +2085,7 @@ clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeI
 
 -- | Run an event action outside of a frame
 runFrame :: forall x a. HasSpiderTimeline x => EventM x a -> SpiderHost x a --TODO: This function also needs to hold the mutex
-runFrame a = SpiderHost $ ask >>= \_ -> lift $ do
+runFrame a = SpiderHost $ do
   let env = _spiderTimeline_eventEnv (spiderTimeline :: SpiderTimelineEnv x)
   let go = do
         result <- a
@@ -2126,7 +2126,7 @@ runFrame a = SpiderHost $ ask >>= \_ -> lift $ do
     runEventM $ runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
     --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
     sub <- newSubscriberSwitch subscribed
-    subscription <- runReaderT (unSpiderHost (runFrame ({-# SCC "subscribeSwitch" #-} subscribe e sub))) spiderTimeline --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
+    subscription <- unSpiderHost $ runFrame $ {-# SCC "subscribeSwitch" #-} subscribe e sub --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
     {-
     stackTrace <- liftIO $ fmap renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
     liftIO $ putStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
@@ -2416,8 +2416,8 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadReadEvent (SpiderTimeline
     return result
 
 instance Reflex.Host.Class.MonadReflexCreateTrigger (SpiderTimeline x) (SpiderHost x) where
-  newEventWithTrigger = SpiderHost . lift . fmap SpiderEvent . newEventWithTriggerIO
-  newFanEventWithTrigger f = SpiderHost $ lift $ do
+  newEventWithTrigger = SpiderHost . fmap SpiderEvent . newEventWithTriggerIO
+  newFanEventWithTrigger f = SpiderHost $ do
     es <- newFanEventWithTriggerIO f
     return $ Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es
 
@@ -2554,7 +2554,7 @@ instance MonadAtomicRef (EventM x) where
   atomicModifyRef r f = liftIO $ atomicModifyRef r f
 
 -- | The monad for actions that manipulate a Spider timeline identified by @x@
-newtype SpiderHost x a = SpiderHost { unSpiderHost :: ReaderT (SpiderTimelineEnv x) IO a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
+newtype SpiderHost x a = SpiderHost { unSpiderHost :: IO a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 instance Monad (SpiderHost x) where
   {-# INLINABLE (>>=) #-}
@@ -2569,12 +2569,12 @@ instance Monad (SpiderHost x) where
 -- | Run an action affecting the global Spider timeline; this will be guarded by
 -- a mutex for that timeline
 runSpiderHost :: SpiderHost Global a -> IO a
-runSpiderHost (SpiderHost a) = runReaderT a globalSpiderTimelineEnv
+runSpiderHost (SpiderHost a) = a
 
 -- | Run an action affecting a given Spider timeline; this will be guarded by a
 -- mutex for that timeline
 runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimelineEnv x -> IO a
-runSpiderHostForTimeline (SpiderHost a) = runReaderT a
+runSpiderHostForTimeline (SpiderHost a) _ = a
 
 newtype SpiderHostFrame x a = SpiderHostFrame { runSpiderHostFrame :: EventM x a }
   deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
