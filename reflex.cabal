@@ -37,10 +37,10 @@ library
   hs-source-dirs: src
   build-depends:
     MemoTrie == 0.6.*,
-    base >= 4.7 && < 4.12,
+    base >= 4.7 && < 4.13,
     bifunctors >= 5.2 && < 5.6,
     comonad,
-    containers == 0.5.*,
+    containers >= 0.5 && < 0.7,
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.2.4 && < 0.3,
     exception-transformers == 0.4.*,
@@ -55,7 +55,7 @@ library
     reflection == 2.1.*,
     semigroupoids >= 4.0 && < 6,
     semigroups >= 0.16 && < 0.19,
-    stm == 2.4.*,
+    stm >= 2.4 && < 2.6,
     syb >= 0.5 && < 0.8,
     these >= 0.4 && < 0.8,
     time >= 1.4 && < 1.9,
@@ -130,7 +130,7 @@ library
       dependent-sum >= 0.3 && < 0.5,
       haskell-src-exts >= 1.16 && < 1.21,
       haskell-src-meta >= 0.6 && < 0.9,
-      template-haskell >= 2.9 && < 2.14
+      template-haskell >= 2.9 && < 2.15
     exposed-modules:
       Reflex.Dynamic.TH
     other-extensions: TemplateHaskell

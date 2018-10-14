@@ -26,7 +26,8 @@ import Prelude hiding (map, null)
 import Data.Coerce
 import Data.Default
 import Data.Map (Map)
-import qualified Data.Map as Map
+import qualified Data.Map as Map hiding (showTree, showTreeWith)
+import qualified Data.Map.Internal.Debug as Map (showTree, showTreeWith)
 import Data.Map.Monoidal
 import Reflex.Class (FunctorMaybe (..))
 import Reflex.Patch (Additive, Group (..))
