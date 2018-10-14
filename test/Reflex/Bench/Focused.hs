@@ -184,7 +184,7 @@ switchMergeBehaviors mapChanges = pull . joinMap <$> holdMap mapChanges
 
 -- | Turn an UpdatedMap into a Dynamic by applying the differences to the initial value
 holdMapDyn :: (Reflex t, MonadHold t m, MonadFix m, Ord k) => UpdatedMap t k a -> m (Dynamic t (Map k a))
-holdMapDyn (UpdatedMap initial changes) = foldDyn (flip (Map.foldWithKey modify)) initial changes
+holdMapDyn (UpdatedMap initial changes) = foldDyn (flip (Map.foldrWithKey modify)) initial changes
 
   where
     modify k Nothing items = Map.delete k items

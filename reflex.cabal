@@ -178,9 +178,17 @@ test-suite CrossImpl
     base,
     containers,
     dependent-map,
+    dependent-sum,
+    deepseq >= 1.3 && < 1.5,
     mtl,
+    transformers,
     ref-tf,
     reflex
+  other-modules:
+    Reflex.Test
+    Reflex.TestPlan
+    Reflex.Plan.Reflex
+    Reflex.Plan.Pure
 
 test-suite hlint
   type: exitcode-stdio-1.0
@@ -199,12 +207,21 @@ test-suite EventWriterT
   main-is: EventWriterT.hs
   hs-source-dirs: test
   build-depends: base
+               , containers
+               , deepseq >= 1.3 && < 1.5
                , dependent-sum
                , lens
+               , mtl
                , these
                , transformers
                , reflex
                , ref-tf
+  other-modules:
+    Reflex.Test
+    Reflex.TestPlan
+    Reflex.Plan.Reflex
+    Reflex.Plan.Pure
+    Test.Run
 
 test-suite RequesterT
   type: exitcode-stdio-1.0
@@ -219,6 +236,9 @@ test-suite RequesterT
                , reflex
                , ref-tf
   buildable: False
+  other-modules:
+    Reflex.TestPlan
+    Reflex.Plan.Pure
 
 test-suite QueryT
   type: exitcode-stdio-1.0
@@ -228,35 +248,59 @@ test-suite QueryT
                , containers
                , dependent-map
                , dependent-sum
+               , deepseq >= 1.3 && < 1.5
                , lens
                , monoidal-containers
+               , mtl
                , ref-tf
                , reflex
                , semigroups
                , these
                , transformers
-  other-modules: Test.Run
+  other-modules:
+    Test.Run
+    Reflex.TestPlan
+    Reflex.Plan.Reflex
+    Reflex.Plan.Pure
 
 test-suite GC-Semantics
   type: exitcode-stdio-1.0
   main-is: GC.hs
   hs-source-dirs: test
   build-depends: base
+               , containers
                , dependent-sum
                , dependent-map
+               , deepseq >= 1.3 && < 1.5
+               , mtl
                , these
                , transformers
                , reflex
                , ref-tf
   if impl(ghc < 8)
     build-depends: semigroups
+  other-modules:
+    Reflex.Plan.Pure
+    Reflex.Plan.Reflex
+    Reflex.TestPlan
+    Test.Run
 
 test-suite rootCleanup
   type: exitcode-stdio-1.0
   main-is: rootCleanup.hs
   hs-source-dirs: test
   build-depends: base
+               , containers
+               , deepseq >= 1.3 && < 1.5
+               , dependent-sum
+               , mtl
                , reflex
+               , ref-tf
+               , these
+  other-modules:
+    Reflex.Plan.Pure
+    Reflex.TestPlan
+    Test.Run
 
 benchmark spider-bench
   type: exitcode-stdio-1.0

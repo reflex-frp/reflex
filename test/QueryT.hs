@@ -28,14 +28,14 @@ instance Query MyQuery where
   type QueryResult MyQuery = ()
   crop _ _ = ()
 
-instance (Ord k, Query a, Eq (QueryResult a)) => Query (Selector k a) where
+instance (Ord k, Query a, Eq (QueryResult a), Align (MonoidalMap k)) => Query (Selector k a) where
   type QueryResult (Selector k a) = Selector k (QueryResult a)
   crop q r = undefined
 
 newtype Selector k a = Selector { unSelector :: MonoidalMap k a }
   deriving (Show, Read, Eq, Ord, Functor)
 
-instance (Ord k, Eq a, Monoid a) => Semigroup (Selector k a) where
+instance (Ord k, Eq a, Monoid a, Align (MonoidalMap k)) => Semigroup (Selector k a) where
   (Selector a) <> (Selector b) = Selector $ fmapMaybe id $ f a b
     where
       f = alignWith $ \case
@@ -45,14 +45,14 @@ instance (Ord k, Eq a, Monoid a) => Semigroup (Selector k a) where
           let z = x `mappend` y
           in if z == mempty then Nothing else Just z
 
-instance (Ord k, Eq a, Monoid a) => Monoid (Selector k a) where
+instance (Ord k, Eq a, Monoid a, Align (MonoidalMap k)) => Monoid (Selector k a) where
   mempty = Selector AMap.empty
   mappend = (<>)
 
-instance (Eq a, Ord k, Group a) => Group (Selector k a) where
+instance (Eq a, Ord k, Group a, Align (MonoidalMap k)) => Group (Selector k a) where
   negateG = fmap negateG
 
-instance (Eq a, Ord k, Group a) => Additive (Selector k a)
+instance (Eq a, Ord k, Group a, Align (MonoidalMap k)) => Additive (Selector k a)
 
 main :: IO ()
 main = do
