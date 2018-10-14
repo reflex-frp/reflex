@@ -12,7 +12,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-module Reflex.Test.CrossImpl (test) where
 
 import Prelude hiding (and, foldl, mapM, mapM_, sequence, sequence_)
 
@@ -26,7 +25,6 @@ import qualified Reflex.Spider.Internal as S
 import Control.Arrow (second, (&&&))
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Control.Monad.Writer hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Data.Dependent.Map (DSum (..))
 import Data.Foldable
 import Data.Map.Strict (Map)
@@ -248,8 +246,8 @@ splitRecombineEvent e =
   in leftmost [ea, eb]
 
 
-test :: IO ()
-test = do
+main :: IO ()
+main = do
   results <- forM testCases $ \(name, TestCase inputs builder) -> do
     putStrLn $ "Test: " <> name
     testAgreement builder inputs

@@ -263,13 +263,13 @@ testCases =
   , testB "factorDyn"  $ do
       d <- holdDyn (Left "a") =<< eithers
 
-      eithers <- eitherDyn d
+      eithers' <- eitherDyn d
       let unFactor = either id id
-      return $ current (join (fmap unFactor eithers))
+      return $ current (join (fmap unFactor eithers'))
 
   , testB "pushDynDeep"  $ do
-      e1 <- events1
-      e2 <- events2
+      _ <- events1
+      _ <- events2
 
       d1 <- holdDyn "d1" =<< events1
       d2 <- holdDyn "d2" =<< events2
