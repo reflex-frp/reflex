@@ -42,7 +42,7 @@ typedef struct Task_ {
     // or just continue immediately.  It's a workaround for the fact
     // that signalling a condition variable doesn't do anything if the
     // thread is already running, but we want it to be sticky.
-    rtsBool wakeup;
+    bool wakeup;
 #endif
 
     // This points to the Capability that the Task "belongs" to.  If
@@ -62,14 +62,14 @@ typedef struct Task_ {
     // The current top-of-stack InCall
     struct InCall_ *incall;
 
-    nat n_spare_incalls;
+    uint32_t n_spare_incalls;
     struct InCall_ *spare_incalls;
 
-    rtsBool    worker;          // == rtsTrue if this is a worker Task
-    rtsBool    stopped;         // this task has stopped or exited Haskell
+    bool    worker;          // == rtsTrue if this is a worker Task
+    bool    stopped;         // this task has stopped or exited Haskell
 
     // So that we can detect when a finalizer illegally calls back into Haskell
-    rtsBool running_finalizers;
+    bool running_finalizers;
 
     // Links tasks on the returning_tasks queue of a Capability, and
     // on spare_workers.
@@ -88,7 +88,7 @@ struct Capability_ {
     StgFunTable f;
     StgRegTable r;
 
-    nat no;  // capability number.
+    uint32_t no;  // capability number.
 
     // The Task currently holding this Capability.  This task has
     // exclusive access to the contents of this Capability (apart from
@@ -98,12 +98,12 @@ struct Capability_ {
 
     // true if this Capability is running Haskell code, used for
     // catching unsafe call-ins.
-    rtsBool in_haskell;
+    bool in_haskell;
 
     // Has there been any activity on this Capability since the last GC?
-    nat idle;
+    uint32_t idle;
 
-    rtsBool disabled;
+    bool disabled;
 
     // The run queue.  The Task owning this Capability has exclusive
     // access to its run queue, so can wake up threads without
@@ -159,7 +159,7 @@ struct Capability_ {
 #if defined(THREADED_RTS)
     // Worker Tasks waiting in the wings.  Singly-linked.
     Task *spare_workers;
-    nat n_spare_workers; // count of above
+    uint32_t n_spare_workers; // count of above
 
     // This lock protects:
     //    running_task
@@ -192,10 +192,9 @@ struct Capability_ {
 
     // Per-capability STM-related data
     StgTVarWatchQueue *free_tvar_watch_queues;
-    StgInvariantCheckQueue *free_invariant_check_queues;
     StgTRecChunk *free_trec_chunks;
     StgTRecHeader *free_trec_headers;
-    nat transaction_tokens;
+    uint32_t transaction_tokens;
 } // typedef Capability is defined in RtsAPI.h
   // We never want a Capability to overlap a cache line with anything
   // else, so round it up to a cache line size:

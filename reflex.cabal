@@ -303,20 +303,27 @@ test-suite rootCleanup
 
 benchmark spider-bench
   type: exitcode-stdio-1.0
-  hs-source-dirs: bench
+  hs-source-dirs: bench test
   main-is: Main.hs
   ghc-options: -Wall -O2 -rtsopts
   build-depends:
     base,
-    criterion == 1.1.*,
+    containers,
+    criterion >= 1.1 && < 1.6,
     deepseq >= 1.3 && < 1.5,
     dependent-map,
     dependent-sum,
+    ref-tf,
     mtl,
     primitive,
     reflex,
+    split,
     stm,
     transformers >= 0.3
+  other-modules:
+    Reflex.TestPlan
+    Reflex.Plan.Reflex
+    Reflex.Bench.Focused
 
 benchmark saulzar-bench
   type: exitcode-stdio-1.0
@@ -327,7 +334,7 @@ benchmark saulzar-bench
   build-depends:
     base,
     containers >= 0.5 && < 0.7,
-    criterion == 1.1.*,
+    criterion >= 1.1 && < 1.6,
     deepseq >= 1.3 && < 1.5,
     dependent-map,
     dependent-sum,
@@ -341,6 +348,10 @@ benchmark saulzar-bench
     stm,
     time,
     transformers >= 0.3
+  other-modules:
+    Reflex.TestPlan
+    Reflex.Plan.Reflex
+    Reflex.Bench.Focused
 
 source-repository head
   type: git
