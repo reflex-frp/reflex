@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Main where
@@ -6,6 +7,9 @@ module Main where
 import Control.Lens
 import Control.Monad
 import Control.Monad.Fix
+import qualified Data.Dependent.Map as DMap
+import Data.Functor.Misc
+import qualified Data.Map as M
 import Data.These
 
 import Reflex
@@ -28,6 +32,8 @@ main = do
   print os2
   os3@[[Nothing, Just [2]]] <- runApp' (unwrapApp testMoribundTellEvent) [Just ()]
   print os3
+  os4@[[Nothing, Just [2]]] <- runApp' (unwrapApp testMoribundTellEventDMap) [Just ()]
+  print os4
   return ()
 
 unwrapApp :: (Reflex t, Monad m) => (a -> EventWriterT t [Int] m ()) -> a -> m (Event t [Int])
@@ -62,4 +68,23 @@ testMoribundTellEvent pulse = do
   rec let tellIntOnReplce :: Int -> EventWriterT t [Int] m ()
           tellIntOnReplce x = tellEvent $ [x] <$ rwrFinished
       (_, rwrFinished) <- runWithReplace (tellIntOnReplce 1) $ tellIntOnReplce 2 <$ pulse
+  return ()
+
+testMoribundTellEventDMap
+  :: forall t m
+  .  ( Reflex t
+     , Adjustable t m
+     , MonadHold t m
+     , MonadFix m
+     )
+  => Event t ()
+  -> EventWriterT t [Int] m ()
+testMoribundTellEventDMap pulse = do
+  rec let tellIntOnReplce :: Int -> EventWriterT t [Int] m ()
+          tellIntOnReplce x = tellEvent $ [x] <$ rwrFinished
+      (_, rwrFinished :: Event t (PatchDMap (Const2 Int ()) Identity)) <-
+        traverseDMapWithKeyWithAdjust
+          (\(Const2 k) _ -> Identity <$> tellIntOnReplce k)
+          (mapToDMap $ M.singleton (1 :: Int) ())
+          ((PatchDMap $ DMap.map (ComposeMaybe . Just) $ mapToDMap $ M.singleton (2 :: Int) ()) <$ pulse)
   return ()
