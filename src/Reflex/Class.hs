@@ -44,6 +44,7 @@ module Reflex.Class
     -- ** Combining 'Event's
   , leftmost
   , mergeMap
+  , mergeIntMap
   , mergeMapIncremental
   , mergeMapIncrementalWithMove
   , mergeIntMapIncremental
@@ -66,6 +67,7 @@ module Reflex.Class
   , switchHold
   , switchHoldPromptly
   , switchHoldPromptOnly
+  , switchHoldPromptOnlyIncremental
     -- ** Using 'Event's to sample 'Behavior's
   , tag
   , tagMaybe
@@ -781,6 +783,10 @@ unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIn
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
 
+-- | Like 'mergeMap' but for 'IntMap'.
+mergeIntMap :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
+mergeIntMap = fmap dmapToIntMap . merge . intMapWithFunctorToDMap
+
 -- | Create a merge whose parents can change over time
 mergeMapIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Event t a)) -> Event t (Map k a)
 mergeMapIncremental = fmap dmapToMap . mergeIncremental . unsafeMapIncremental mapWithFunctorToDMap (const2PatchDMapWith id)
@@ -858,6 +864,43 @@ switchHoldPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event
 switchHoldPromptOnly e0 e' = do
   eLag <- switch <$> hold e0 e'
   return $ coincidence $ leftmost [e', eLag <$ eLag]
+
+data ApplyElement p
+  = Append (PatchTarget p)
+  | Apply p
+
+-- | Like 'switchHoldPromptOnly' but for a patchable data structure of events.
+switchHoldPromptOnlyIncremental
+  :: forall t m p pt w
+  .  ( Reflex t
+     , MonadHold t m
+     , Functor p
+     , Functor pt
+     , FunctorMaybe pt
+     , Monoid (pt (Maybe w))
+     , Patch (p (Maybe w))
+     , PatchTarget (p (Maybe w)) ~ pt (Maybe w)
+     , Patch (p (Event t w))
+     , PatchTarget (p (Event t w)) ~ pt (Event t w)
+     )
+  => pt (Event t w)
+  -> Event t (p (Event t w))
+  -> (p (Event t w) -> Event t (pt w))
+  -> (Incremental t (p (Event t w)) -> Event t (pt w))
+  -> m (Event t (pt w))
+switchHoldPromptOnlyIncremental e0 ee mergePatchNewElements mergePatchIncremental = do
+  let replaced :: Event t (p (Maybe w))
+      replaced = fmap (const Nothing) <$> ee
+      new :: Event t (pt (Maybe w))
+      new = fmap (fmap Just) $ coincidence $ fmapCheap mergePatchNewElements ee
+  held <- fmap (fmap Just) . mergePatchIncremental <$> holdIncremental e0 ee
+  let e = mergeList [fmapCheap Append held, fmapCheap Apply replaced, fmapCheap Append new]
+  return $ fmap (fmapMaybe id) $ ffor e $ \chain -> foldl applyElement mempty chain
+ where
+  applyElement :: pt (Maybe w) -> ApplyElement (p (Maybe w)) -> pt (Maybe w)
+  applyElement pt = \case
+    Append new -> new <> pt
+    Apply p -> applyAlways p pt
 
 instance Reflex t => Align (Event t) where
   nil = never
