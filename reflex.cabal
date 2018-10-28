@@ -40,6 +40,7 @@ library
     base >= 4.7 && < 4.13,
     bifunctors >= 5.2 && < 5.6,
     comonad,
+    constraints,
     containers >= 0.5 && < 0.7,
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.2.4 && < 0.3,
@@ -114,7 +115,7 @@ library
     Reflex.Widget.Basic,
     Reflex.Workflow
 
-  ghc-options: -Wall -fwarn-redundant-constraints -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively
+  ghc-options: -Wall -fwarn-redundant-constraints -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively -fprint-explicit-kinds
 
   if flag(debug-trace-events)
     cpp-options: -DDEBUG_TRACE_EVENTS
@@ -184,7 +185,8 @@ test-suite CrossImpl
     mtl,
     transformers,
     ref-tf,
-    reflex
+    reflex,
+    these
   other-modules:
     Reflex.Test
     Reflex.TestPlan

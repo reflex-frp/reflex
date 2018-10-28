@@ -9,6 +9,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -25,17 +26,22 @@ import qualified Reflex.Spider.Internal as S
 import Control.Arrow (second, (&&&))
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Data.Align
+import Data.Bits
 import Data.Dependent.Map (DSum (..))
 import Data.Foldable
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Data.Monoid
+import Data.These
 import Data.Traversable
 import System.Exit
 import System.Mem
 
 import System.IO.Unsafe
+
+import Debug.Trace
 
 mapToPureBehavior :: Map Int a -> Behavior PureReflexDomain a
 mapToPureBehavior m = P.Behavior $ \t -> case Map.lookupLE t m of
@@ -101,8 +107,10 @@ tracePerf = flip const
 testAgreement :: (Eq c, Eq d, Show c, Show d) => (forall m t. TestCaseConstraint t m => (Behavior t a, Event t b) -> m (Behavior t c, Event t d)) -> (Map Int a, Map Int b) -> IO Bool
 testAgreement builder inputs = do
   let identityResult = testPure builder inputs
+  print identityResult
   tracePerf "---------" $ return ()
   let spiderResult = testSpider builder inputs
+  print spiderResult
   tracePerf "---------" $ return ()
   let resultsAgree = identityResult == spiderResult
   if resultsAgree
@@ -230,6 +238,29 @@ testCases =
           d <- holdDyn (0 :: Int) e
       return (current result, updated result)
 
+  , (,) "fanCell-id" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList (zip [1 :: Int ..] [1 :: Int, 2, 2, 3, 3, 3, 4, 4, 4, 4])) $ \(_, e :: Event t Int) -> do
+      (_, e') <- holdPushCell e newCellEvent fireCellEvent
+      pure (pure (0 :: Int), e')
+
+  -- Ensure that additional firings of the same CellTrigger don't have any effect
+  , (,) "fanCell-doubleId" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList (zip [1 :: Int ..] [1 :: Int, 2, 2, 3, 3, 3, 4, 4, 4, 4])) $ \(_, e :: Event t Int) -> do
+      (_, e') <- holdPushCell e newCellEvent $ \(trigger :: CellTrigger t Int x) occ -> withMonadCellM @t @x $ do
+        fireCellEvent trigger occ
+        fireCellEvent trigger (-1)
+      pure (pure (0 :: Int), e')
+
+  , (,) "fanCell-evenOdd" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList (zip [1 :: Int ..] [1 :: Int, 2, 2, 3, 3, 3, 4, 4, 4, 4])) $ \(_, e :: Event t Int) -> do
+      let build :: forall x. CellBuilderM t x (BitTriggers t x, Event t (These Int Int))
+          build = withMonadCellBuilderM @t @x $ do
+            (t0, e0) <- newCellEvent
+            (t1, e1) <- newCellEvent
+            return (BitTriggers t0 t1, align e0 e1)
+      (_, e') <- holdPushCell e build $ \(BitTriggers t0 t1 :: BitTriggers t x) occ -> withMonadCellM @t @x $ do
+        traceM $ show occ
+        when (occ `testBit` 0) $ fireCellEvent t0 occ
+        when (occ `testBit` 1) $ fireCellEvent t1 occ
+      pure (pure (0 :: Int), e')
+
 
 
   {-
@@ -239,6 +270,11 @@ testCases =
        return (b, e')
   -}
   ]
+
+data BitTriggers t x = BitTriggers
+  { _evenOddTriggers_bit0 :: CellTrigger t Int x
+  , _evenOddTriggers_bit1 :: CellTrigger t Int x
+  }
 
 splitRecombineEvent :: Reflex t => Event t a -> Event t String
 splitRecombineEvent e =

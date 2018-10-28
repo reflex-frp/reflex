@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -14,6 +15,7 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -28,6 +30,10 @@ module Reflex.Class
   ( module Reflex.Patch
     -- * Primitives
   , Reflex (..)
+  , withMonadCellBuilderM
+  , withMonadCellM
+  , CreateCellEvent (..)
+  , FireCellEvent (..)
   , mergeInt
   , coerceBehavior
   , coerceEvent
@@ -173,6 +179,7 @@ import Control.Monad.Trans.Writer (WriterT)
 import Data.Align
 import Data.Bifunctor
 import Data.Coerce
+import Data.Constraint
 import Data.Default
 import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
@@ -211,7 +218,10 @@ class ( MonadHold t (PushM t)
       , Functor (Dynamic t)
       , Applicative (Dynamic t) -- Necessary for GHC <= 7.8
       , Monad (Dynamic t)
-      ) => Reflex t where
+      , CreateCellEvent t (CellBuilderM t)
+      , CreateCellEvent t (CellM t)
+      , FireCellEvent t (CellM t)
+      ) => Reflex (t :: *) where
   -- | A container for a value that can change over time.  'Behavior's can be
   -- sampled at will, but it is not possible to be notified when they change
   data Behavior t :: * -> *
@@ -229,10 +239,19 @@ class ( MonadHold t (PushM t)
   -- This is only needed for performance critical code via `mergeIncremental` to make small
   -- changes to large values.
   data Incremental t :: * -> *
+  -- | A region in the data flow graph where stateful computations can take place
+  data Cell t :: (* -> *) -> *
+  -- | A region in the data flow graph where stateful computations can take place
+  data CellTrigger t :: * -> * -> *
   -- | A monad for doing complex push-based calculations efficiently
   type PushM t :: * -> *
   -- | A monad for doing complex pull-based calculations efficiently
   type PullM t :: * -> *
+  --TODO: The x in Cell t x a could be of a kind set by the implementer of the Reflex class
+  -- | A monad for operating within a 'Cell'
+  data CellBuilderM t :: * -> * -> *
+  -- | A monad for operating within a 'Cell'
+  data CellM t :: * -> * -> *
   -- | An 'Event' with no occurrences
   never :: Event t a
   -- | Create a 'Behavior' that always has the given value
@@ -292,6 +311,31 @@ class ( MonadHold t (PushM t)
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
+  monadCellBuilderM :: forall x. Dict (Monad (CellBuilderM t x))
+  default monadCellBuilderM :: Monad (CellBuilderM t x) => Dict (Monad (CellBuilderM t x))
+  monadCellBuilderM = Dict
+  monadCellM :: forall x. Dict (Monad (CellM t x))
+  default monadCellM :: Monad (CellM t x) => Dict (Monad (CellM t x))
+  monadCellM = Dict
+--  monadHoldCellMDict :: Dict (MonadHold t (CellM t x))
+
+withMonadCellBuilderM :: forall t x r. Reflex t => (Monad (CellBuilderM t x) => r) -> r
+withMonadCellBuilderM r = case monadCellBuilderM @t @x of
+  Dict -> r
+
+withMonadCellM :: forall t x r. Reflex t => (Monad (CellM t x) => r) -> r
+withMonadCellM r = case monadCellM @t @x of
+  Dict -> r
+
+class CreateCellEvent t m | m -> t where
+  -- | Construct a new 'Event' within the current 'Cell'.  The 'Event' can be
+  -- used outside the 'Cell'
+  newCellEvent :: m x (CellTrigger t a x, Event t a)
+
+class FireCellEvent t m | m -> t where
+  -- | Cause the associated 'Event' to fire this frame.  If the 'Event' has
+  -- already been fired this frame, do nothing.
+  fireCellEvent :: CellTrigger t a x -> a -> m x ()
 
 --TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
 mergeInt :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
@@ -354,13 +398,47 @@ class MonadSample t m => MonadHold t m where
   default holdIncremental :: (Patch p, m ~ f m', MonadTrans f, MonadHold t m') => PatchTarget p -> Event t p -> m (Incremental t p)
   holdIncremental v0 = lift . holdIncremental v0
   buildDynamic :: PushM t a -> Event t a -> m (Dynamic t a)
-  {-
-  default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PullM t a -> Event t a -> m (Dynamic t a)
+  default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PushM t a -> Event t a -> m (Dynamic t a)
   buildDynamic getV0 = lift . buildDynamic getV0
-  -}
   -- | Create a new 'Event' that only occurs only once, on the first occurrence of
   -- the supplied 'Event'.
   headE :: Event t a -> m (Event t a)
+  default headE :: (m ~ f m', MonadTrans f, MonadHold t m') => Event t a -> m (Event t a)
+  headE = lift . headE
+  holdPushCell :: Event t a -> (forall x. CellBuilderM t x (f x, b)) -> (forall x. f x -> a -> CellM t x ()) -> m (Cell t f, b)
+  default holdPushCell :: (m ~ g m', MonadTrans g, MonadHold t m') => Event t a -> (forall x. CellBuilderM t x (f x, b)) -> (forall x. f x -> a -> CellM t x ()) -> m (Cell t f, b)
+  holdPushCell e build update = lift $ holdPushCell e build update
+
+-- instance Reflex t => Functor (CellM t x) where
+--   fmap = withDict (monadHoldCellMDict @t @x) fmap
+-- #if MIN_VERSION_base(4,11,0)
+--   (<$) = withDict (monadHoldCellMDict @t @x) (<$)
+-- #endif
+--
+-- instance Reflex t => Applicative (CellM t x) where
+--   (<*>) = withDict (monadHoldCellMDict @t @x) (<*>)
+--   (*>) = withDict (monadHoldCellMDict @t @x) (*>)
+--   (<*) = withDict (monadHoldCellMDict @t @x) (<*)
+--   pure = withDict (monadHoldCellMDict @t @x) pure
+-- #if MIN_VERSION_base(4,11,0)
+--   liftA2 = withDict (monadHoldCellMDict @t @x) liftA2
+-- #endif
+--
+-- instance Reflex t => Monad (CellM t x) where
+--   (>>=) = withDict (monadHoldCellMDict @t @x) (>>=)
+--   return = withDict (monadHoldCellMDict @t @x) return
+--
+-- instance Reflex t => MonadSample t (CellM t x) where
+--   sample = withDict (monadHoldCellMDict @t @x) sample
+--
+-- --TODO: Won't work
+-- instance Reflex t => MonadHold t (CellM t x) where
+--   hold = withDict (monadHoldCellMDict @t @x) hold
+--   holdDyn = withDict (monadHoldCellMDict @t @x) holdDyn
+--   holdIncremental = withDict (monadHoldCellMDict @t @x) holdIncremental
+--   buildDynamic = withDict (monadHoldCellMDict @t @x) buildDynamic
+--   headE = withDict (monadHoldCellMDict @t @x) headE
+--   holdPushCell e build update = withDict (monadHoldCellMDict @t @x) (holdPushCell e build update)
 
 accumIncremental :: (Reflex t, Patch p, MonadHold t m, MonadFix m) => (PatchTarget p -> b -> p) -> PatchTarget p -> Event t b -> m (Incremental t p)
 accumIncremental f = accumMaybeIncremental $ \v o -> Just $ f v o
@@ -427,6 +505,7 @@ instance MonadHold t m => MonadHold t (ReaderT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
   sample = lift . sample
@@ -437,6 +516,7 @@ instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance MonadSample t m => MonadSample t (StateT s m) where
   sample = lift . sample
@@ -447,6 +527,7 @@ instance MonadHold t m => MonadHold t (StateT s m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance MonadSample t m => MonadSample t (ExceptT e m) where
   sample = lift . sample
@@ -457,6 +538,7 @@ instance MonadHold t m => MonadHold t (ExceptT e m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance (MonadSample t m, Monoid w) => MonadSample t (RWST r w s m) where
   sample = lift . sample
@@ -467,6 +549,7 @@ instance (MonadHold t m, Monoid w) => MonadHold t (RWST r w s m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance MonadSample t m => MonadSample t (ContT r m) where
   sample = lift . sample
@@ -477,6 +560,7 @@ instance MonadHold t m => MonadHold t (ContT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  holdPushCell e build update = lift $ holdPushCell e build update
 
 --------------------------------------------------------------------------------
 -- Convenience functions

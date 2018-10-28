@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Reflex.Profiled where
@@ -18,6 +19,7 @@ import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict (StateT, execStateT, modify)
+import Data.Bifunctor
 import Data.Coerce
 import Data.Dependent.Map (DMap, GCompare)
 import Data.FastMutableIntMap
@@ -120,8 +122,12 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   newtype Event (ProfiledTimeline t) a = Event_Profiled { unEvent_Profiled :: Event t a }
   newtype Dynamic (ProfiledTimeline t) a = Dynamic_Profiled { unDynamic_Profiled :: Dynamic t a }
   newtype Incremental (ProfiledTimeline t) p = Incremental_Profiled { unIncremental_Profiled :: Incremental t p }
+  newtype Cell (ProfiledTimeline t) f = Cell_Profiled (Cell t f)
   type PushM (ProfiledTimeline t) = ProfiledM (PushM t)
   type PullM (ProfiledTimeline t) = ProfiledM (PullM t)
+  newtype CellBuilderM (ProfiledTimeline t) x a = CellBuilderM_Profiled { unCellBuilderM_Profiled :: CellBuilderM t x a }
+  newtype CellM (ProfiledTimeline t) x a = CellM_Profiled { unCellM_Profiled :: CellM t x a }
+  newtype CellTrigger (ProfiledTimeline t) a x = CellTrigger_Profiled { unCellTrigger_Profiled :: CellTrigger t a x}
   never = Event_Profiled never
   constant = Behavior_Profiled . constant
   push f (Event_Profiled e) = coerce $ push (coerce f) $ profileEvent e -- Profile before rather than after; this way fanout won't count against us
@@ -150,9 +156,49 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   mergeIntIncremental = Event_Profiled . mergeIntIncremental . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchIntMap (Event (ProfiledTimeline t) a)) -> Incremental t (PatchIntMap (Event t a)))
   fanInt (Event_Profiled e) = coerce $ fanInt $ profileEvent e
 
+instance Reflex t => CreateCellEvent (ProfiledTimeline t) (CellBuilderM (ProfiledTimeline t)) where
+  newCellEvent = coerce <$> CellBuilderM_Profiled newCellEvent
+
+instance Reflex t => CreateCellEvent (ProfiledTimeline t) (CellM (ProfiledTimeline t)) where
+  newCellEvent = coerce <$> CellM_Profiled newCellEvent
+
+instance Reflex t => FireCellEvent (ProfiledTimeline t) (CellM (ProfiledTimeline t)) where
+  fireCellEvent (CellTrigger_Profiled t) o = CellM_Profiled $ fireCellEvent t o
+
 deriving instance Functor (Dynamic t) => Functor (Dynamic (ProfiledTimeline t))
 deriving instance Applicative (Dynamic t) => Applicative (Dynamic (ProfiledTimeline t))
 deriving instance Monad (Dynamic t) => Monad (Dynamic (ProfiledTimeline t))
+
+
+instance Reflex t => Functor (CellBuilderM (ProfiledTimeline t) x) where
+  fmap = withMonadCellBuilderM @t fmap
+
+instance Reflex t => Applicative (CellBuilderM (ProfiledTimeline t) x) where
+  pure = withMonadCellBuilderM @t pure
+  (<*>) = withMonadCellBuilderM @t (<*>)
+  (*>) = withMonadCellBuilderM @t (*>)
+  (<*) = withMonadCellBuilderM @t (<*)
+
+instance Reflex t => Monad (CellBuilderM (ProfiledTimeline t) x) where
+  (>>=) = withMonadCellBuilderM @t (>>=)
+  (>>) = withMonadCellBuilderM @t (>>)
+  return = withMonadCellBuilderM @t return
+  fail = withMonadCellBuilderM @t fail
+
+instance Reflex t => Functor (CellM (ProfiledTimeline t) x) where
+  fmap = withMonadCellM @t fmap
+
+instance Reflex t => Applicative (CellM (ProfiledTimeline t) x) where
+  pure = withMonadCellM @t pure
+  (<*>) = withMonadCellM @t (<*>)
+  (*>) = withMonadCellM @t (*>)
+  (<*) = withMonadCellM @t (<*)
+
+instance Reflex t => Monad (CellM (ProfiledTimeline t) x) where
+  (>>=) = withMonadCellM @t (>>=)
+  (>>) = withMonadCellM @t (>>)
+  return = withMonadCellM @t return
+  fail = withMonadCellM @t fail
 
 instance MonadHold t m => MonadHold (ProfiledTimeline t) (ProfiledM m) where
   hold v0 (Event_Profiled v') = ProfiledM $ Behavior_Profiled <$> hold v0 v'
@@ -160,6 +206,7 @@ instance MonadHold t m => MonadHold (ProfiledTimeline t) (ProfiledM m) where
   holdIncremental v0 (Event_Profiled v') = ProfiledM $ Incremental_Profiled <$> holdIncremental v0 v'
   buildDynamic (ProfiledM v0) (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> buildDynamic v0 v'
   headE (Event_Profiled e) = ProfiledM $ Event_Profiled <$> headE e
+  holdPushCell (Event_Profiled e) build update = ProfiledM $ first Cell_Profiled <$> holdPushCell e (coerce build) (coerce update)
 
 instance MonadSample t m => MonadSample (ProfiledTimeline t) (ProfiledM m) where
   sample (Behavior_Profiled b) = ProfiledM $ sample b

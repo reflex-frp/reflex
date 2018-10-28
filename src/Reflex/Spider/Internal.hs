@@ -12,6 +12,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -2263,7 +2264,29 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
   buildDynamic = buildDynamicSpiderEventM
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
---  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
+--  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e --TODO
+  {-# INLINABLE holdPushCell #-}
+  holdPushCell (SpiderEvent e) (SpiderCellBuilderM buildState) update = do
+    --TODO: Option where buildState can be deferred to the end of the frame, to improve laziness
+    subscribers <- liftIO FastWeakBag.empty
+    liftIO $ putStrLn "a"
+    rec (state, result) <- runReaderT buildState (heightRef, subscribers, subn)
+        liftIO $ putStrLn "b"
+        let heightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed subn
+            doUpdate occ = runReaderT (unSpiderCellM $ update state occ) (heightRef, subscribers, subn)
+        liftIO $ putStrLn "c"
+        (subn, mOcc) <- subscribeAndRead e $ Subscriber
+          { subscriberPropagate = doUpdate
+          , subscriberInvalidateHeight = \old -> do
+              FastWeakBag.traverse subscribers $ \(Some.This sub) -> do
+                subscriberInvalidateHeight sub old
+          , subscriberRecalculateHeight = \new -> do
+              FastWeakBag.traverse subscribers $ \(Some.This sub) -> do
+                subscriberRecalculateHeight sub new
+          }
+        liftIO $ putStrLn "d"
+        mapM_ doUpdate mOcc
+    pure (SpiderCell state subscribers subn, result)
 
 instance Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPullM x) where
   {-# INLINABLE sample #-}
@@ -2285,6 +2308,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+  {-# INLINABLE holdPushCell #-}
+  holdPushCell e buildState update = SpiderPushM $ R.holdPushCell e buildState update
 
 instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) where
   {-# INLINE return #-}
@@ -2342,6 +2367,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   buildDynamic getV0 e = runFrame . runSpiderHostFrame $ Reflex.Class.buildDynamic getV0 e
   {-# INLINABLE headE #-}
   headE e = runFrame . runSpiderHostFrame $ Reflex.Class.headE e
+  {-# INLINABLE holdPushCell #-}
+  holdPushCell e buildState update = runFrame . runSpiderHostFrame $ R.holdPushCell e buildState update
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
   sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
@@ -2358,6 +2385,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+  {-# INLINABLE holdPushCell #-}
+  holdPushCell e buildState update = SpiderHostFrame $ R.holdPushCell e buildState update
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHost x) where
   {-# INLINABLE sample #-}
@@ -2378,6 +2407,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
   buildDynamic getV0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.buildDynamic getV0 e
   {-# INLINABLE headE #-}
   headE e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.headE e
+  {-# INLINABLE holdPushCell #-}
+  holdPushCell e buildState update = Reflex.Spider.Internal.ReadPhase $ R.holdPushCell e buildState update
 
 --------------------------------------------------------------------------------
 -- Deprecated items
@@ -2487,6 +2518,19 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   newtype Incremental (SpiderTimeline x) p = SpiderIncremental { unSpiderIncremental :: Dynamic x p }
   type PullM (SpiderTimeline x) = SpiderPullM x
   type PushM (SpiderTimeline x) = SpiderPushM x
+  newtype CellBuilderM (SpiderTimeline x) y a = SpiderCellBuilderM { unSpiderCellBuilderM :: ReaderT (IORef Height, FastWeakBag (Some (Subscriber x)), EventSubscription x) (EventM x) a }
+    deriving (Functor, Applicative, Monad)
+  newtype CellM (SpiderTimeline x) y a = SpiderCellM { unSpiderCellM :: ReaderT (IORef Height, FastWeakBag (Some (Subscriber x)), EventSubscription x) (EventM x) a }
+    deriving (Functor, Applicative, Monad)
+  data Cell (SpiderTimeline x) f = SpiderCell
+    { _spiderCell_state :: f RealWorld
+    , _spiderCell_outputEvents :: FastWeakBag (Some (Subscriber x)) --TODO: eliminate Some wrappers, since they aren't free
+    , _spiderCell_subscription :: EventSubscription x
+    }
+  data CellTrigger (SpiderTimeline x) a y = SpiderCellTrigger
+    { _spiderCellTrigger_subscribers :: FastWeakBag (Subscriber x a)
+    , _spiderCellTrigger_occRef :: IORef (Maybe a)
+    }
   {-# INLINABLE never #-}
   never = SpiderEvent eventNever
   {-# INLINABLE constant #-}
@@ -2532,6 +2576,35 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   mergeIntIncremental = SpiderEvent . mergeInt . (unsafeCoerce :: Dynamic x (PatchIntMap (R.Event (SpiderTimeline x) a)) -> Dynamic x (PatchIntMap (Event x a))) . unSpiderIncremental
   {-# INLINABLE fanInt #-}
   fanInt e = R.EventSelectorInt $ SpiderEvent . selectInt (fanInt (unSpiderEvent e))
+
+newCellEventInternal :: ReaderT (IORef Height, FastWeakBag (Some (Subscriber x)), EventSubscription x) (EventM x) (R.CellTrigger (SpiderTimeline x) a y, R.Event (SpiderTimeline x) a)
+newCellEventInternal = do
+  (heightRef, cellSubscribers, subn) <- ask
+  liftIO $ do
+    subscribers <- FastWeakBag.empty
+    occRef <- newIORef Nothing
+    let e = SpiderEvent $ Event $ \sub -> liftIO $ do
+          ticket1 <- FastWeakBag.insert (Some.This sub) cellSubscribers
+          ticket2 <- FastWeakBag.insert sub subscribers
+          mOcc <- readIORef occRef
+          pure (EventSubscription (FastWeakBag.remove ticket1 >> FastWeakBag.remove ticket2) $ EventSubscribed heightRef $ toAny (ticket1, ticket2, subn), mOcc)
+    pure (SpiderCellTrigger subscribers occRef, e)
+
+instance R.CreateCellEvent (SpiderTimeline t) (R.CellBuilderM (SpiderTimeline t)) where
+  newCellEvent = SpiderCellBuilderM newCellEventInternal
+
+instance R.CreateCellEvent (SpiderTimeline t) (R.CellM (SpiderTimeline t)) where
+  newCellEvent = SpiderCellM newCellEventInternal
+
+instance HasSpiderTimeline t => R.FireCellEvent (SpiderTimeline t) (R.CellM (SpiderTimeline t)) where
+  fireCellEvent (SpiderCellTrigger subscribers occRef) occ = SpiderCellM $ lift $ do
+    liftIO (readIORef occRef) >>= \case --TODO: Expose a primitive that skips this check
+      Just _ -> pure () -- Event already firing; ignore this occurrence
+      Nothing -> do
+        liftIO $ writeIORef occRef $! Just occ
+        scheduleClear occRef
+        FastWeakBag.traverse subscribers $ \sub -> do
+          subscriberPropagate sub occ
 
 data RootTrigger x a = forall k. GCompare k => RootTrigger (WeakBag (Subscriber x a), IORef (DMap k Identity), k a)
 
