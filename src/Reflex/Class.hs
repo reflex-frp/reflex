@@ -63,6 +63,7 @@ module Reflex.Class
   , factorEvent
   , filterEventKey
     -- ** Collapsing 'Event . Event'
+  , eventJoin
   , switchHold
   , switchHoldPromptly
   , switchHoldPromptOnly
@@ -816,6 +817,10 @@ fanThese e =
 -- the individual 'Event's.
 fanMap :: (Reflex t, Ord k) => Event t (Map k a) -> EventSelector t (Const2 k a)
 fanMap = fan . fmap mapToDMap
+
+-- | switcHold never = eventjoin
+eventJoin :: (Reflex t, MonadHold t m) => Event t (Event t a) -> m (Event t a)
+eventJoin = switchHold never
 
 -- | Switches to the new event whenever it receives one. Only the old event is
 -- considered the moment a new one is switched in; the output event will fire at
