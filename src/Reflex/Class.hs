@@ -889,13 +889,13 @@ switchHoldPromptOnlyIncremental
   -> (Incremental t (p (Event t w)) -> Event t (pt w))
   -> m (Event t (pt w))
 switchHoldPromptOnlyIncremental e0 ee mergePatchNewElements mergePatchIncremental = do
-  let replaced :: Event t (p (Maybe w))
-      replaced = fmap (const Nothing) <$> ee
-      new :: Event t (pt (Maybe w))
-      new = fmap (fmap Just) $ coincidence $ fmapCheap mergePatchNewElements ee
-  held <- fmap (fmap Just) . mergePatchIncremental <$> holdIncremental e0 ee
-  let e = mergeList [fmapCheap Append held, fmapCheap Apply replaced, fmapCheap Append new]
-  return $ fmap (fmapMaybe id) $ ffor e $ \chain -> foldl applyElement mempty chain
+  let replaced :: Event t (ApplyElement (p (Maybe w)))
+      replaced = fmapCheap (Apply . (Nothing <$)) ee
+      new :: Event t (ApplyElement (p (Maybe w)))
+      new = fmapCheap (Append . fmap Just) $ coincidence $ fmapCheap mergePatchNewElements ee
+  held <- fmapCheap (Append . fmap Just) . mergePatchIncremental <$> holdIncremental e0 ee
+  let e = mergeList [held, replaced, new]
+  return $ fmap (fmapMaybe id . foldl' applyElement mempty) e
  where
   applyElement :: pt (Maybe w) -> ApplyElement (p (Maybe w)) -> pt (Maybe w)
   applyElement pt = \case
