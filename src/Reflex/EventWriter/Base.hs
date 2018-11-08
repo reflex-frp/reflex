@@ -4,7 +4,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -136,9 +135,9 @@ instance MonadHold t m => MonadHold t (EventWriterT t w m) where
 
 instance (Reflex t, Adjustable t m, MonadHold t m, Semigroup w) => Adjustable t (EventWriterT t w m) where
   runWithReplace = runWithReplaceEventWriterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
-  traverseIntMapWithKeyWithAdjust = sequenceIntMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseIntMapWithKeyWithAdjust f dm0 dm') (mergeIntMap . patchIntMapNewElementsMap) mergeIntIncremental
-  traverseDMapWithKeyWithAdjust = sequenceDMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjust f dm0 dm') mapPatchDMap weakenPatchDMapWith (mergeMap . patchMapNewElementsMap) mergeMapIncremental
-  traverseDMapWithKeyWithAdjustWithMove = sequenceDMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjustWithMove f dm0 dm') mapPatchDMapWithMove weakenPatchDMapWithMoveWith (mergeMap . patchMapWithMoveNewElementsMap) mergeMapIncrementalWithMove
+  traverseIntMapWithKeyWithAdjust = sequenceIntMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseIntMapWithKeyWithAdjust f dm0 dm') mergeIntIncremental coincidencePatchIntMap
+  traverseDMapWithKeyWithAdjust = sequenceDMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjust f dm0 dm') mapPatchDMap weakenPatchDMapWith mergeMapIncremental coincidencePatchMap
+  traverseDMapWithKeyWithAdjustWithMove = sequenceDMapWithAdjustEventWriterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjustWithMove f dm0 dm') mapPatchDMapWithMove weakenPatchDMapWithMoveWith mergeMapIncrementalWithMove coincidencePatchMapWithMove
 
 instance Requester t m => Requester t (EventWriterT t w m) where
   type Request (EventWriterT t w m) = Request m
@@ -161,19 +160,29 @@ runWithReplaceEventWriterTWith f a0 a' = do
   return (fst result0, fmapCheap fst result')
 
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceIntMapWithAdjust'.
-sequenceIntMapWithAdjustEventWriterTWith :: forall t m p w v v'. (Reflex t, MonadHold t m, Semigroup w, Functor p, Patch (p (Event t w)), PatchTarget (p (Event t w)) ~ IntMap (Event t w), Patch (p (Maybe w)), PatchTarget (p (Maybe w)) ~ IntMap (Maybe w))
-                                       => (   (IntMap.Key -> v -> m (Event t w, v'))
-                                           -> IntMap v
-                                           -> Event t (p v)
-                                           -> EventWriterT t w m (IntMap (Event t w, v'), Event t (p (Event t w, v')))
-                                          )
-                                       -> (p (Event t w) -> Event t (IntMap w))
-                                       -> (Incremental t (p (Event t w)) -> Event t (IntMap w))
-                                       -> (IntMap.Key -> v -> EventWriterT t w m v')
-                                       -> IntMap v
-                                       -> Event t (p v)
-                                       -> EventWriterT t w m (IntMap v', Event t (p v'))
-sequenceIntMapWithAdjustEventWriterTWith base mergePatchNewElements mergePatchIncremental f dm0 dm' = do
+sequenceIntMapWithAdjustEventWriterTWith
+  :: forall t m p w v v'
+  .  ( Reflex t
+     , MonadHold t m
+     , Semigroup w
+     , Functor p
+     , Patch (p (Event t w))
+     , PatchTarget (p (Event t w)) ~ IntMap (Event t w)
+     , Patch (p w)
+     , PatchTarget (p w) ~ IntMap w
+     )
+  => (   (IntMap.Key -> v -> m (Event t w, v'))
+      -> IntMap v
+      -> Event t (p v)
+      -> EventWriterT t w m (IntMap (Event t w, v'), Event t (p (Event t w, v')))
+     )
+  -> (Incremental t (p (Event t w)) -> Event t (PatchTarget (p w)))
+  -> (Event t (p (Event t w)) -> Event t (p w))
+  -> (IntMap.Key -> v -> EventWriterT t w m v')
+  -> IntMap v
+  -> Event t (p v)
+  -> EventWriterT t w m (IntMap v', Event t (p v'))
+sequenceIntMapWithAdjustEventWriterTWith base mergePatchIncremental coincidencePatch f dm0 dm' = do
   let f' :: IntMap.Key -> v -> m (Event t w, v')
       f' k v = swap <$> runEventWriterT (f k v)
   (children0, children') <- base f' dm0 dm'
@@ -183,7 +192,7 @@ sequenceIntMapWithAdjustEventWriterTWith base mergePatchNewElements mergePatchIn
       requests0 = fmap fst children0
       requests' :: Event t (p (Event t w))
       requests' = fmapCheap (fmap fst) children'
-  e <- switchHoldPromptOnlyIncremental requests0 requests' mergePatchNewElements mergePatchIncremental
+  e <- switchHoldPromptOnlyIncremental mergePatchIncremental coincidencePatch requests0 requests'
   tellEvent $ fforMaybeCheap e $ \m ->
     case IntMap.elems m of
       [] -> Nothing
@@ -191,21 +200,31 @@ sequenceIntMapWithAdjustEventWriterTWith base mergePatchNewElements mergePatchIn
   return (result0, result')
 
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceDMapWithAdjust'.
-sequenceDMapWithAdjustEventWriterTWith :: forall t m p p' w k v v'. (Reflex t, MonadHold t m, Semigroup w, Patch (p' (Some k) (Event t w)), PatchTarget (p' (Some k) (Event t w)) ~ Map (Some k) (Event t w), GCompare k, PatchTarget (p' (Some k) w) ~ Map (Some k) w, Patch (p' (Some k) (Maybe w)), PatchTarget (p' (Some k) (Maybe w)) ~ Map (Some k) (Maybe w), Functor (p' (Some k)))
-                                       => (   (forall a. k a -> v a -> m (Compose ((,) (Event t w)) v' a))
-                                           -> DMap k v
-                                           -> Event t (p k v)
-                                           -> EventWriterT t w m (DMap k (Compose ((,) (Event t w)) v'), Event t (p k (Compose ((,) (Event t w)) v')))
-                                          )
-                                       -> ((forall a. Compose ((,) (Event t w)) v' a -> v' a) -> p k (Compose ((,) (Event t w)) v') -> p k v')
-                                       -> ((forall a. Compose ((,) (Event t w)) v' a -> Event t w) -> p k (Compose ((,) (Event t w)) v') -> p' (Some k) (Event t w))
-                                       -> (p' (Some k) (Event t w) -> Event t (PatchTarget (p' (Some k) w)))
-                                       -> (Incremental t (p' (Some k) (Event t w)) -> Event t (Map (Some k) w))
-                                       -> (forall a. k a -> v a -> EventWriterT t w m (v' a))
-                                       -> DMap k v
-                                       -> Event t (p k v)
-                                       -> EventWriterT t w m (DMap k v', Event t (p k v'))
-sequenceDMapWithAdjustEventWriterTWith base mapPatch weakenPatchWith mergePatchNewElements mergePatchIncremental f dm0 dm' = do
+sequenceDMapWithAdjustEventWriterTWith
+  :: forall t m p p' w k v v'
+  .  ( Reflex t
+     , MonadHold t m
+     , Semigroup w
+     , Patch (p' (Some k) (Event t w))
+     , PatchTarget (p' (Some k) (Event t w)) ~ Map (Some k) (Event t w)
+     , GCompare k
+     , Patch (p' (Some k) w)
+     , PatchTarget (p' (Some k) w) ~ Map (Some k) w
+     )
+  => (   (forall a. k a -> v a -> m (Compose ((,) (Event t w)) v' a))
+      -> DMap k v
+      -> Event t (p k v)
+      -> EventWriterT t w m (DMap k (Compose ((,) (Event t w)) v'), Event t (p k (Compose ((,) (Event t w)) v')))
+     )
+  -> ((forall a. Compose ((,) (Event t w)) v' a -> v' a) -> p k (Compose ((,) (Event t w)) v') -> p k v')
+  -> ((forall a. Compose ((,) (Event t w)) v' a -> Event t w) -> p k (Compose ((,) (Event t w)) v') -> p' (Some k) (Event t w))
+  -> (Incremental t (p' (Some k) (Event t w)) -> Event t (PatchTarget (p' (Some k) w)))
+  -> (Event t (p' (Some k) (Event t w)) -> Event t (p' (Some k) w))
+  -> (forall a. k a -> v a -> EventWriterT t w m (v' a))
+  -> DMap k v
+  -> Event t (p k v)
+  -> EventWriterT t w m (DMap k v', Event t (p k v'))
+sequenceDMapWithAdjustEventWriterTWith base mapPatch weakenPatchWith mergePatchIncremental coincidencePatch f dm0 dm' = do
   let f' :: forall a. k a -> v a -> m (Compose ((,) (Event t w)) v' a)
       f' k v = Compose . swap <$> runEventWriterT (f k v)
   (children0, children') <- base f' dm0 dm'
@@ -215,7 +234,7 @@ sequenceDMapWithAdjustEventWriterTWith base mapPatch weakenPatchWith mergePatchN
       requests0 = weakenDMapWith (fst . getCompose) children0
       requests' :: Event t (p' (Some k) (Event t w))
       requests' = fforCheap children' $ weakenPatchWith $ fst . getCompose
-  e <- switchHoldPromptOnlyIncremental requests0 requests' mergePatchNewElements mergePatchIncremental
+  e <- switchHoldPromptOnlyIncremental mergePatchIncremental coincidencePatch requests0 requests'
   tellEvent $ fforMaybeCheap e $ \m ->
     case Map.elems m of
       [] -> Nothing

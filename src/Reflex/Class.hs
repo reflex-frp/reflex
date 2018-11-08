@@ -48,6 +48,9 @@ module Reflex.Class
   , mergeMapIncremental
   , mergeMapIncrementalWithMove
   , mergeIntMapIncremental
+  , coincidencePatchMap
+  , coincidencePatchMapWithMove
+  , coincidencePatchIntMap
   , mergeList
   , mergeWith
   , difference
@@ -193,6 +196,7 @@ import Data.These
 import Data.Type.Coercion
 import Reflex.FunctorMaybe
 import Reflex.Patch
+import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
 
 import Debug.Trace (trace)
 
@@ -865,42 +869,53 @@ switchHoldPromptOnly e0 e' = do
   eLag <- switch <$> hold e0 e'
   return $ coincidence $ leftmost [e', eLag <$ eLag]
 
-data ApplyElement p
-  = Append (PatchTarget p)
-  | Apply p
+-- | When the given outer event fires, condense the inner events into the contained patch.  Non-firing inner events will be replaced with deletions.
+coincidencePatchMap :: (Reflex t, Ord k) => Event t (PatchMap k (Event t v)) -> Event t (PatchMap k v)
+coincidencePatchMap e = fmapCheap PatchMap $ coincidence $ ffor e $ \(PatchMap m) -> mergeMap $ ffor m $ \case
+  Nothing -> fmapCheap (const Nothing) e
+  Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
 
--- | Like 'switchHoldPromptOnly' but for a patchable data structure of events.
+-- | See 'coincicencePatchMap'
+coincidencePatchIntMap :: Reflex t => Event t (PatchIntMap (Event t v)) -> Event t (PatchIntMap v)
+coincidencePatchIntMap e = fmapCheap PatchIntMap $ coincidence $ ffor e $ \(PatchIntMap m) -> mergeIntMap $ ffor m $ \case
+  Nothing -> fmapCheap (const Nothing) e
+  Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
+
+-- | See 'coincicencePatchMap'
+coincidencePatchMapWithMove :: (Reflex t, Ord k) => Event t (PatchMapWithMove k (Event t v)) -> Event t (PatchMapWithMove k v)
+coincidencePatchMapWithMove e = fmapCheap unsafePatchMapWithMove $ coincidence $ ffor e $ \p -> mergeMap $ ffor (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
+  PatchMapWithMove.From_Delete -> fforCheap e $ \_ ->
+    ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
+  PatchMapWithMove.From_Move k -> fforCheap e $ \_ ->
+    ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Move k }
+  PatchMapWithMove.From_Insert ev -> leftmost
+    [ fforCheap ev $ \v ->
+        ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Insert v }
+    , fforCheap e $ \_ ->
+        ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
+    ]
+
 switchHoldPromptOnlyIncremental
   :: forall t m p pt w
   .  ( Reflex t
      , MonadHold t m
-     , Functor p
-     , Functor pt
-     , FunctorMaybe pt
-     , Monoid (pt (Maybe w))
-     , Patch (p (Maybe w))
-     , PatchTarget (p (Maybe w)) ~ pt (Maybe w)
      , Patch (p (Event t w))
      , PatchTarget (p (Event t w)) ~ pt (Event t w)
+     , Patch (p w)
+     , PatchTarget (p w) ~ pt w
+     , Monoid (pt w)
      )
-  => pt (Event t w)
+  => (Incremental t (p (Event t w)) -> Event t (pt w))
+  -> (Event t (p (Event t w)) -> Event t (p w))
+  -> pt (Event t w)
   -> Event t (p (Event t w))
-  -> (p (Event t w) -> Event t (pt w))
-  -> (Incremental t (p (Event t w)) -> Event t (pt w))
   -> m (Event t (pt w))
-switchHoldPromptOnlyIncremental e0 ee mergePatchNewElements mergePatchIncremental = do
-  let replaced :: Event t (ApplyElement (p (Maybe w)))
-      replaced = fmapCheap (Apply . (Nothing <$)) ee
-      new :: Event t (ApplyElement (p (Maybe w)))
-      new = fmapCheap (Append . fmap Just) $ coincidence $ fmapCheap mergePatchNewElements ee
-  held <- fmapCheap (Append . fmap Just) . mergePatchIncremental <$> holdIncremental e0 ee
-  let e = mergeList [held, replaced, new]
-  return $ fmap (fmapMaybe id . foldl' applyElement mempty) e
- where
-  applyElement :: pt (Maybe w) -> ApplyElement (p (Maybe w)) -> pt (Maybe w)
-  applyElement pt = \case
-    Append new -> new <> pt
-    Apply p -> applyAlways p pt
+switchHoldPromptOnlyIncremental mergePatchIncremental coincidencePatch e0 e' = do
+  lag <- mergePatchIncremental <$> holdIncremental e0 e'
+  pure $ ffor (align lag (coincidencePatch e')) $ \case
+    This old -> old
+    That new -> new `applyAlways` mempty
+    These old new -> new `applyAlways` old
 
 instance Reflex t => Align (Event t) where
   nil = never
