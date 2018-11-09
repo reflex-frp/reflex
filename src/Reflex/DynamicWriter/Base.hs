@@ -38,9 +38,10 @@ import Data.Semigroup
 import Data.Some (Some)
 import Data.These
 
-import Reflex.Class
 import Reflex.Adjustable.Class
+import Reflex.Class
 import Reflex.DynamicWriter.Class
+import Reflex.EventWriter.Class (EventWriter, tellEvent)
 import Reflex.Host.Class
 import qualified Reflex.Patch.MapWithMove as MapWithMove
 import Reflex.PerformEvent.Class
@@ -226,3 +227,6 @@ instance (MonadQuery t q m, Monad m) => MonadQuery t q (DynamicWriterT t w m) wh
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
+
+instance EventWriter t w m => EventWriter t w (DynamicWriterT t v m) where
+  tellEvent = lift . tellEvent
