@@ -44,9 +44,13 @@ module Reflex.Class
     -- ** Combining 'Event's
   , leftmost
   , mergeMap
+  , mergeIntMap
   , mergeMapIncremental
   , mergeMapIncrementalWithMove
   , mergeIntMapIncremental
+  , coincidencePatchMap
+  , coincidencePatchMapWithMove
+  , coincidencePatchIntMap
   , mergeList
   , mergeWith
   , difference
@@ -66,6 +70,7 @@ module Reflex.Class
   , switchHold
   , switchHoldPromptly
   , switchHoldPromptOnly
+  , switchHoldPromptOnlyIncremental
     -- ** Using 'Event's to sample 'Behavior's
   , tag
   , tagMaybe
@@ -191,6 +196,7 @@ import Data.These
 import Data.Type.Coercion
 import Reflex.FunctorMaybe
 import Reflex.Patch
+import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
 
 import Debug.Trace (trace)
 
@@ -781,6 +787,10 @@ unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIn
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
 
+-- | Like 'mergeMap' but for 'IntMap'.
+mergeIntMap :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
+mergeIntMap = fmap dmapToIntMap . merge . intMapWithFunctorToDMap
+
 -- | Create a merge whose parents can change over time
 mergeMapIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Event t a)) -> Event t (Map k a)
 mergeMapIncremental = fmap dmapToMap . mergeIncremental . unsafeMapIncremental mapWithFunctorToDMap (const2PatchDMapWith id)
@@ -858,6 +868,54 @@ switchHoldPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event
 switchHoldPromptOnly e0 e' = do
   eLag <- switch <$> hold e0 e'
   return $ coincidence $ leftmost [e', eLag <$ eLag]
+
+-- | When the given outer event fires, condense the inner events into the contained patch.  Non-firing inner events will be replaced with deletions.
+coincidencePatchMap :: (Reflex t, Ord k) => Event t (PatchMap k (Event t v)) -> Event t (PatchMap k v)
+coincidencePatchMap e = fmapCheap PatchMap $ coincidence $ ffor e $ \(PatchMap m) -> mergeMap $ ffor m $ \case
+  Nothing -> fmapCheap (const Nothing) e
+  Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
+
+-- | See 'coincicencePatchMap'
+coincidencePatchIntMap :: Reflex t => Event t (PatchIntMap (Event t v)) -> Event t (PatchIntMap v)
+coincidencePatchIntMap e = fmapCheap PatchIntMap $ coincidence $ ffor e $ \(PatchIntMap m) -> mergeIntMap $ ffor m $ \case
+  Nothing -> fmapCheap (const Nothing) e
+  Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
+
+-- | See 'coincicencePatchMap'
+coincidencePatchMapWithMove :: (Reflex t, Ord k) => Event t (PatchMapWithMove k (Event t v)) -> Event t (PatchMapWithMove k v)
+coincidencePatchMapWithMove e = fmapCheap unsafePatchMapWithMove $ coincidence $ ffor e $ \p -> mergeMap $ ffor (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
+  PatchMapWithMove.From_Delete -> fforCheap e $ \_ ->
+    ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
+  PatchMapWithMove.From_Move k -> fforCheap e $ \_ ->
+    ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Move k }
+  PatchMapWithMove.From_Insert ev -> leftmost
+    [ fforCheap ev $ \v ->
+        ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Insert v }
+    , fforCheap e $ \_ ->
+        ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
+    ]
+
+switchHoldPromptOnlyIncremental
+  :: forall t m p pt w
+  .  ( Reflex t
+     , MonadHold t m
+     , Patch (p (Event t w))
+     , PatchTarget (p (Event t w)) ~ pt (Event t w)
+     , Patch (p w)
+     , PatchTarget (p w) ~ pt w
+     , Monoid (pt w)
+     )
+  => (Incremental t (p (Event t w)) -> Event t (pt w))
+  -> (Event t (p (Event t w)) -> Event t (p w))
+  -> pt (Event t w)
+  -> Event t (p (Event t w))
+  -> m (Event t (pt w))
+switchHoldPromptOnlyIncremental mergePatchIncremental coincidencePatch e0 e' = do
+  lag <- mergePatchIncremental <$> holdIncremental e0 e'
+  pure $ ffor (align lag (coincidencePatch e')) $ \case
+    This old -> old
+    That new -> new `applyAlways` mempty
+    These old new -> new `applyAlways` old
 
 instance Reflex t => Align (Event t) where
   nil = never
