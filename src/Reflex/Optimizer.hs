@@ -16,6 +16,11 @@ import Control.Arrow
 import CoreMonad
 import Data.String
 import GhcPlugins
+
+#if MIN_VERSION_base(4,9,0)
+import Prelude hiding ((<>))
+#endif
+
 #endif
 
 #ifdef ghcjs_HOST_OS
