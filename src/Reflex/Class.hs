@@ -42,7 +42,6 @@ module Reflex.Class
   , FanCellEvent (..)
   , CreateCellEvent (..)
   , FireCellEvent (..)
-  , ModifyCell (..)
   , mergeInt
   , coerceBehavior
   , coerceEvent
@@ -251,7 +250,6 @@ class ( MonadHold t (PushM t)
   -- changes to large values.
   data Incremental t :: * -> *
   -- | A region in the data flow graph where stateful computations can take place
-  data Cell t :: (* -> *) -> *
   data FanCell t x :: *
   -- | A region in the data flow graph where stateful computations can take place
   data CellTrigger t :: * -> * -> *
@@ -349,9 +347,6 @@ class FireCellEvent t m | m -> t where
   -- already been fired this frame, do nothing.
   fireCellEvent :: CellTrigger t a x -> a -> m x ()
 
-class ModifyCell t m | m -> t where
-  modifyCell :: Cell t f -> (forall x. f x -> CellBuilderM t x a) -> m a
-
 --TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
 mergeInt :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
 mergeInt m = mergeIntIncremental $ unsafeBuildIncremental (return m) never
@@ -420,9 +415,6 @@ class MonadSample t m => MonadHold t m where
   headE :: Event t a -> m (Event t a)
   default headE :: (m ~ f m', MonadTrans f, MonadHold t m') => Event t a -> m (Event t a)
   headE = lift . headE
-  holdPushCell :: Event t a -> (forall x. CellBuilderM t x (f x, b)) -> (forall x. f x -> a -> CellM t x ()) -> m (Cell t f, b)
-  default holdPushCell :: (m ~ g m', MonadTrans g, MonadHold t m') => Event t a -> (forall x. CellBuilderM t x (f x, b)) -> (forall x. f x -> a -> CellM t x ()) -> m (Cell t f, b)
-  holdPushCell e build update = lift $ holdPushCell e build update
   withHoldFanCell' :: Linear' m (FanCell t) (FanCellEvent t) () --TODO: Can we allow the CellM t x () to be inlined somehow?  Perhaps *all* events should be yoneda'd somehow?
   default withHoldFanCell' :: (m ~ g m', MonadTrans g, MonadHold t m') => Linear' m (FanCell t) (FanCellEvent t) ()
   withHoldFanCell' = liftLinear' withHoldFanCell'
@@ -566,7 +558,6 @@ instance MonadHold t m => MonadHold t (ReaderT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
-  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
   sample = lift . sample
@@ -577,7 +568,6 @@ instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
-  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance MonadSample t m => MonadSample t (StateT s m) where
   sample = lift . sample
@@ -588,7 +578,6 @@ instance MonadHold t m => MonadHold t (StateT s m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
-  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance MonadSample t m => MonadSample t (ExceptT e m) where
   sample = lift . sample
@@ -599,7 +588,6 @@ instance MonadHold t m => MonadHold t (ExceptT e m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
-  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance (MonadSample t m, Monoid w) => MonadSample t (RWST r w s m) where
   sample = lift . sample
@@ -610,7 +598,6 @@ instance (MonadHold t m, Monoid w) => MonadHold t (RWST r w s m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
-  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance MonadSample t m => MonadSample t (ContT r m) where
   sample = lift . sample
@@ -621,7 +608,6 @@ instance MonadHold t m => MonadHold t (ContT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
-  holdPushCell e build update = lift $ holdPushCell e build update
 
 --------------------------------------------------------------------------------
 -- Convenience functions

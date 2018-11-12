@@ -19,7 +19,6 @@ import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict (StateT, execStateT, modify)
-import Data.Bifunctor
 import Data.Coerce
 import Data.Dependent.Map (DMap, GCompare)
 import Data.FastMutableIntMap
@@ -122,7 +121,6 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   newtype Event (ProfiledTimeline t) a = Event_Profiled { unEvent_Profiled :: Event t a }
   newtype Dynamic (ProfiledTimeline t) a = Dynamic_Profiled { unDynamic_Profiled :: Dynamic t a }
   newtype Incremental (ProfiledTimeline t) p = Incremental_Profiled { unIncremental_Profiled :: Incremental t p }
-  newtype Cell (ProfiledTimeline t) f = Cell_Profiled (Cell t f)
   newtype FanCell (ProfiledTimeline t) x = FanCell_Profiled (FanCell t x)
   type PushM (ProfiledTimeline t) = ProfiledM (PushM t)
   type PullM (ProfiledTimeline t) = ProfiledM (PullM t)
@@ -207,7 +205,6 @@ instance (Reflex t, MonadHold t m) => MonadHold (ProfiledTimeline t) (ProfiledM 
   holdIncremental v0 (Event_Profiled v') = ProfiledM $ Incremental_Profiled <$> holdIncremental v0 v'
   buildDynamic (ProfiledM v0) (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> buildDynamic v0 v'
   headE (Event_Profiled e) = ProfiledM $ Event_Profiled <$> headE e
-  holdPushCell (Event_Profiled e) build update = ProfiledM $ first Cell_Profiled <$> holdPushCell e (coerce build) (coerce update)
   withHoldFanCell' = hoistLinear' ProfiledM $ mapLinear' FanCell_Profiled (\(FanCellEvent (Event_Profiled e)) -> FanCellEvent $ fmapCheap unCellM_Profiled e) id withHoldFanCell'
 
 instance (Reflex t, MonadMutate t m) => MonadMutate (ProfiledTimeline t) (ProfiledM m) where

@@ -2,7 +2,6 @@
 -- 'Requester'.
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -26,6 +25,7 @@ module Reflex.Requester.Base
   , RequestItem (..)
   , ResponseItem (..)
   , runRequesterT'
+  , traverseRequests
   , runWithReplaceRequesterTWith
   , traverseIntMapWithKeyWithAdjustRequesterTWith
   , traverseDMapWithKeyWithAdjustRequesterTWith
@@ -47,16 +47,17 @@ import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Data.Dependent.Map (DMap)
+import Data.Foldable
+import Data.Functor.Compose
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Map (Map)
+import Data.Maybe
 import qualified Data.Semigroup as S
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Some (Some)
 import Data.Unique.Tag
-
-import GHC.TypeLits
 
 -- | A basic implementation of 'Requester'.
 newtype RequesterT t x (request :: * -> *) (response :: * -> *) m a = RequesterT { unRequesterT :: ReaderT (FanCell t x) (EventWriterT t (Seq (RequestItem t x request response)) m) a }
@@ -108,6 +109,16 @@ runRequesterT' a = withHoldFanCell $ \(c :: FanCell t x) -> do
   rec ((responses, result :: a), requests) <- runEventWriterT $ runReaderT (unRequesterT (a requests)) c
   pure (fmapCheap update responses, result)
 
+traverseRequests
+  :: Applicative f
+  => (forall a. request a -> f (response a))
+  -> Seq (RequestItem t x request response)
+  -> f (Seq (ResponseItem t x response))
+traverseRequests f = fmap (Seq.fromList . catMaybes) . traverse f' . toList
+  where f' (RequestItem mt req) = case mt of
+          Nothing -> Nothing <$ f req
+          Just t -> Just . ResponseItem t <$> f req
+
 instance (Reflex t, Monad m, MonadMutate t m) => Requester t (RequesterT t x request response m) where
   type Request (RequesterT t x request response m) = request
   type Response (RequesterT t x request response m) = response
@@ -150,10 +161,10 @@ instance MonadReader r m => MonadReader r (RequesterT t x request response m) wh
 
 instance (Reflex t, Adjustable t m, MonadHold t m, MonadFix m) => Adjustable t (RequesterT t x request response m) where
   runWithReplace = runWithReplaceRequesterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
-  traverseIntMapWithKeyWithAdjust = traverseIntMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseIntMapWithKeyWithAdjust f dm0 dm') patchIntMapNewElementsMap mergeIntIncremental
+  traverseIntMapWithKeyWithAdjust = traverseIntMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseIntMapWithKeyWithAdjust f dm0 dm') mergeIntIncremental coincidencePatchIntMap
   {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
-  traverseDMapWithKeyWithAdjust = traverseDMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjust f dm0 dm') mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental
-  traverseDMapWithKeyWithAdjustWithMove = traverseDMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjustWithMove f dm0 dm') mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove
+  traverseDMapWithKeyWithAdjust = traverseDMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjust f dm0 dm') mapPatchDMap weakenPatchDMapWith mergeMapIncremental coincidencePatchMap
+  traverseDMapWithKeyWithAdjustWithMove = traverseDMapWithKeyWithAdjustRequesterTWith (\f dm0 dm' -> lift $ traverseDMapWithKeyWithAdjustWithMove f dm0 dm') mapPatchDMapWithMove weakenPatchDMapWithMoveWith mergeMapIncrementalWithMove coincidencePatchMapWithMove
 
 {-# INLINABLE runWithReplaceRequesterTWith #-}
 runWithReplaceRequesterTWith
@@ -171,79 +182,51 @@ runWithReplaceRequesterTWith f a0 a' = do
       r (RequesterT a) = runReaderT a env
   RequesterT $ lift $ runWithReplaceEventWriterTWith (\x0 x' -> r $ f x0 x') (r a0) $ fmapCheap r a'
 
-{-
-data Vec (n :: Nat) a where
-  Vec_Cons :: a -> Vec n a -> Vec (n + 1) a
-  Vec_Nil :: Vec 0 a
-
-newtype UpTo (n :: Nat) = UpTo Int
-
-data Perm (n :: Nat) where
-  Perm_Cons :: UpTo n -> Perm n -> Perm (n + 1)
-  Perm_Nil :: Perm 0
-
-data PatchList a (i :: Nat) (d :: Nat) (k :: Nat) where
-  PatchList_Insert :: a -> PatchList a i d k -> PatchList a (i + 1) d k
-  PatchList_Delete :: PatchList a i d k -> PatchList a i (d + 1) k
-  PatchList_Keep :: PatchList a i d k -> PatchList a i d (k + 1)
-  PatchList_Nil :: PatchList a 0 0 0
-
-applyPatchList :: PatchList a i d k -> Vec (k + d) a -> Vec (k + i) a
-applyPatchList = \case
---  PatchList_Insert a p -> \l -> a `Vec_Cons` applyPatchList p l
---  PatchList_Delete p -> \(_ : t) -> applyPatchList p t
-  PatchList_Keep p -> \(Vec_Cons h t) -> h `Vec_Cons` applyPatchList p t
-
-data PatchMapWithMove a i d k = PatchMapWithMove (Perm k) (PatchList a i d k)
--}
-
-class X m where
-  data ChildData m :: * -> *
-  runChild :: m a -> m (ChildData m a) --TODO: Linear
-  depositChildren :: Traversable t => t (ChildData m a) -> m (t a)
-
-{-
-data PatchList n m a where
-  PatchList :: n + i - d ~ m => Perm n -> 
--}
-
 {-# INLINE traverseIntMapWithKeyWithAdjustRequesterTWith #-}
 traverseIntMapWithKeyWithAdjustRequesterTWith
-  :: forall t x request response m v v' p rd
+  :: forall t x request response m v v' p w
   .  ( Reflex t
      , MonadHold t m
---     , PatchTarget (p (Event t (IntMap (rd request)))) ~ IntMap (Event t (IntMap (rd request)))
---     , Patch (p (Event t (IntMap (rd request))))
+     , Patch (p (Event t w))
+     , PatchTarget (p (Event t w)) ~ IntMap (Event t w)
+     , Patch (p w)
+     , PatchTarget (p w) ~ IntMap w
      , Functor p
-     , MonadFix m
+     , w ~ Seq (RequestItem t x request response)
      )
   => (forall v1 v2.
          (IntMap.Key -> v1 -> m v2)
       -> IntMap v1
-      -> Event t (PatchIntMap v1)
-      -> RequesterT t x request response m (IntMap v2, Event t (PatchIntMap v2))
+      -> Event t (p v1)
+      -> RequesterT t x request response m (IntMap v2, Event t (p v2))
      )
-  -> (p (Event t (Seq (RequestItem t x request response))) -> IntMap (Event t (Seq (RequestItem t x request response))))
-  -> (Incremental t (p (Event t (Seq (RequestItem t x request response)))) -> Event t (IntMap (Seq (RequestItem t x request response))))
+  -> (Incremental t (p (Event t w)) -> Event t (PatchTarget (p w)))
+  -> (Event t (p (Event t w)) -> Event t (p w))
   -> (IntMap.Key -> v -> RequesterT t x request response m v')
   -> IntMap v
   -> Event t (p v)
   -> RequesterT t x request response m (IntMap v', Event t (p v'))
-traverseIntMapWithKeyWithAdjustRequesterTWith base patchNewElements mergePatchIncremental f dm0 dm' = do
+traverseIntMapWithKeyWithAdjustRequesterTWith base mergePatchIncremental coincidencePatch f dm0 dm' = do
   env <- RequesterT ask
-  let r :: forall a'. RequesterT t x request response m a' -> EventWriterT t (Seq (RequestItem t x request response)) m a'
-      r (RequesterT a) = runReaderT a env
-  RequesterT $ lift $ sequenceIntMapWithAdjustEventWriterTWith (\f' x0 x' -> r $ base f' x0 x') patchNewElements mergePatchIncremental undefined (r a0) $ fmapCheap r a'
+  RequesterT $ lift $ sequenceIntMapWithAdjustEventWriterTWith
+    (\f' x0 x' -> runReaderT (unRequesterT $ base f' x0 x') env)
+    mergePatchIncremental
+    coincidencePatch
+    (\x0 x' -> runReaderT (unRequesterT $ f x0 x') env)
+    dm0
+    dm'
 
 {-# INLINE traverseDMapWithKeyWithAdjustRequesterTWith #-}
 traverseDMapWithKeyWithAdjustRequesterTWith
-  :: forall k t x request response m v v' p p' rd
+  :: forall k t x request response m v v' p p' w
   .  ( GCompare k
      , Reflex t
      , MonadHold t m
---     , PatchTarget (p' (Some k) (Event t (Seq (RequestItem t x request response)))) ~ Map (Some k) (Event t (Seq (RequestItem t x request response)))
---     , Patch (p' (Some k) (Event t (Seq (RequestItem t x request response))))
-     , MonadFix m
+     , PatchTarget (p' (Some k) (Event t w)) ~ Map (Some k) (Event t w)
+     , Patch (p' (Some k) (Event t w))
+     , Patch (p' (Some k) w)
+     , PatchTarget (p' (Some k) w) ~ Map (Some k) w
+     , w ~ Seq (RequestItem t x request response)
      )
   => (forall k' v1 v2. GCompare k'
       => (forall a. k' a -> v1 a -> m (v2 a))
@@ -251,12 +234,22 @@ traverseDMapWithKeyWithAdjustRequesterTWith
       -> Event t (p k' v1)
       -> RequesterT t x request response m (DMap k' v2, Event t (p k' v2))
      )
-  -> (forall v1 v2. (forall a. v1 a -> v2 a) -> p k v1 -> p k v2)
-  -> (forall v1 v2. (forall a. v1 a -> v2) -> p k v1 -> p' (Some k) v2)
-  -> (forall v2. p' (Some k) v2 -> Map (Some k) v2)
-  -> (forall a. Incremental t (p' (Some k) (Event t a)) -> Event t (Map (Some k) a))
+  -> ((forall a. Compose ((,) (Event t w)) v' a -> v' a) -> p k (Compose ((,) (Event t w)) v') -> p k v')
+  -> ((forall a. Compose ((,) (Event t w)) v' a -> Event t w) -> p k (Compose ((,) (Event t w)) v') -> p' (Some k) (Event t w))
+  -> (Incremental t (p' (Some k) (Event t w)) -> Event t (PatchTarget (p' (Some k) w)))
+  -> (Event t (p' (Some k) (Event t w)) -> Event t (p' (Some k) w))
   -> (forall a. k a -> v a -> RequesterT t x request response m (v' a))
   -> DMap k v
   -> Event t (p k v)
   -> RequesterT t x request response m (DMap k v', Event t (p k v'))
-traverseDMapWithKeyWithAdjustRequesterTWith base mapPatch weakenPatchWith patchNewElements mergePatchIncremental f dm0 dm' = undefined
+traverseDMapWithKeyWithAdjustRequesterTWith base mapPatch weakenPatchWith mergePatchIncremental coincidencePatch f dm0 dm' = do
+  env <- RequesterT ask
+  RequesterT $ lift $ sequenceDMapWithAdjustEventWriterTWith
+    (\f' x0 x' -> runReaderT (unRequesterT $ base f' x0 x') env)
+    mapPatch
+    weakenPatchWith
+    mergePatchIncremental
+    coincidencePatch
+    (\x0 x' -> runReaderT (unRequesterT $ f x0 x') env)
+    dm0
+    dm'

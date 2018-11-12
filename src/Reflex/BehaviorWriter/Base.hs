@@ -72,7 +72,7 @@ withBehaviorWriterT f dw = do
   tellBehavior d
   return r
 
-deriving instance MonadHold t m => MonadHold t (BehaviorWriterT t w m)
+instance MonadHold t m => MonadHold t (BehaviorWriterT t w m)
 deriving instance MonadSample t m => MonadSample t (BehaviorWriterT t w m)
 
 instance MonadTrans (BehaviorWriterT t w) where

@@ -2265,7 +2265,6 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e --TODO
-  holdPushCell _ _ _ = undefined
   {-# INLINABLE withHoldFanCell' #-}
   withHoldFanCell' = R.Linear' $ \c' -> do
     subscribers <- liftIO FastWeakBag.empty
@@ -2308,8 +2307,6 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
-  {-# INLINABLE holdPushCell #-}
-  holdPushCell e buildState update = SpiderPushM $ R.holdPushCell e buildState update
   {-# INLINABLE withHoldFanCell' #-}
   withHoldFanCell' = R.hoistLinear' SpiderPushM R.withHoldFanCell'
 
@@ -2369,8 +2366,6 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   buildDynamic getV0 e = runFrame . runSpiderHostFrame $ Reflex.Class.buildDynamic getV0 e
   {-# INLINABLE headE #-}
   headE e = runFrame . runSpiderHostFrame $ Reflex.Class.headE e
-  {-# INLINABLE holdPushCell #-}
-  holdPushCell e buildState update = runFrame . runSpiderHostFrame $ R.holdPushCell e buildState update
   {-# INLINABLE withHoldFanCell' #-}
   withHoldFanCell' = R.hoistLinear' (runFrame . runSpiderHostFrame) R.withHoldFanCell'
 
@@ -2389,8 +2384,6 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
-  {-# INLINABLE holdPushCell #-}
-  holdPushCell e buildState update = SpiderHostFrame $ R.holdPushCell e buildState update
   {-# INLINABLE withHoldFanCell' #-}
   withHoldFanCell' = R.hoistLinear' SpiderHostFrame R.withHoldFanCell'
 
@@ -2413,8 +2406,6 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
   buildDynamic getV0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.buildDynamic getV0 e
   {-# INLINABLE headE #-}
   headE e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.headE e
-  {-# INLINABLE holdPushCell #-}
-  holdPushCell e buildState update = Reflex.Spider.Internal.ReadPhase $ R.holdPushCell e buildState update
   {-# INLINABLE withHoldFanCell' #-}
   withHoldFanCell' = R.hoistLinear' Reflex.Spider.Internal.ReadPhase R.withHoldFanCell'
 
@@ -2530,11 +2521,6 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
     deriving (Functor, Applicative, Monad)
   newtype CellM (SpiderTimeline x) y a = SpiderCellM { unSpiderCellM :: ReaderT (IORef Height, FastWeakBag (Some (Subscriber x)), EventSubscription x) (EventM x) a }
     deriving (Functor, Applicative, Monad)
-  data Cell (SpiderTimeline x) f = SpiderCell
-    { _spiderCell_state :: f RealWorld
-    , _spiderCell_outputEvents :: FastWeakBag (Some (Subscriber x)) --TODO: eliminate Some wrappers, since they aren't free
-    , _spiderCell_subscription :: EventSubscription x
-    }
   newtype FanCell (SpiderTimeline x) y = SpiderFanCell (IORef Height, FastWeakBag (Some (Subscriber x)), EventSubscription x)
   data CellTrigger (SpiderTimeline x) a y = SpiderCellTrigger
     { _spiderCellTrigger_subscribers :: FastWeakBag (Subscriber x a)

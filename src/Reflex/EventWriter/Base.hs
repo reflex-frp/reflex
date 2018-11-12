@@ -134,8 +134,6 @@ instance MonadHold t m => MonadHold t (EventWriterT t w m) where
   buildDynamic a0 = lift . buildDynamic a0
   {-# INLINABLE headE #-}
   headE = lift . headE
-  {-# INLINABLE holdPushCell #-}
-  holdPushCell e build update = lift $ holdPushCell e build update
 
 instance (Reflex t, Adjustable t m, MonadHold t m, Semigroup w) => Adjustable t (EventWriterT t w m) where
   runWithReplace = runWithReplaceEventWriterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'

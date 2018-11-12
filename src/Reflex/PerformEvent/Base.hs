@@ -87,9 +87,9 @@ instance ReflexHost t => Adjustable t (PerformEventT t x m) where
             result0 <- lift a0
             result' <- requestingIdentity a'
             return (result0, result')
-  traverseIntMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseIntMapWithKeyWithAdjustRequesterTWith (defaultAdjustIntBase traverseIntMapPatchWithKey) patchIntMapNewElementsMap mergeIntIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
-  traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
-  traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
+  traverseIntMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseIntMapWithKeyWithAdjustRequesterTWith (defaultAdjustIntBase traverseIntMapPatchWithKey) mergeIntIncremental coincidencePatchIntMap (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
+  traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith mergeMapIncremental coincidencePatchMap (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
+  traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith mergeMapIncrementalWithMove coincidencePatchMapWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
 
 defaultAdjustBase :: forall t x v v2 k' p. (Monad (HostFrame t), ReflexHost t)
   => ((forall a. k' a -> v a -> HostFrame t (v2 a)) -> p k' v -> HostFrame t (p k' v2))
@@ -179,8 +179,6 @@ instance (ReflexHost t, MonadHold t m) => MonadHold t (PerformEventT t x m) wher
   buildDynamic getV0 v' = PerformEventT $ lift $ buildDynamic getV0 v'
   {-# INLINABLE headE #-}
   headE = PerformEventT . lift . headE
-  {-# INLINABLE holdPushCell #-}
-  holdPushCell e build update = PerformEventT $ lift $ holdPushCell e build update
   {-# INLINABLE withHoldFanCell' #-}
   withHoldFanCell' = hoistLinear' PerformEventT withHoldFanCell'
 

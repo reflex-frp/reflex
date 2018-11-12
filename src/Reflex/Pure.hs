@@ -66,7 +66,6 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   newtype Event (Pure t) a = Event { unEvent :: t -> Maybe a }
   newtype Dynamic (Pure t) a = Dynamic { unDynamic :: t -> (a, Maybe a) }
   newtype Incremental (Pure t) p = Incremental { unIncremental :: t -> (PatchTarget p, Maybe p) }
-  data Cell (Pure t) f = forall x. Cell (f x)
   data FanCell (Pure t) x = FanCell
   newtype CellBuilderM (Pure t) x a = CellBuilderM { unCellBuilderM :: ReaderT (CellOut t x) (ST x) a }
     deriving (Functor, Applicative, Monad)
@@ -235,14 +234,15 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
 
   headE = slowHeadE
 
-  holdPushCell e build update initialTime = runST $ do
-    rec (f, result) <- runCellBuilder firings build
-        firings :: [(t, DMap (Tag x) Identity)] <- forM [initialTime..] $ \t -> (,) t <$> case unEvent e t of
-          Nothing -> pure mempty
-          Just o -> runCellBuilder firings $ execStateT (unCellM $ update f o) mempty
-    pure (Cell f, result)
+--  holdPushCell e build update initialTime = runST $ do
+--    rec (f, result) <- runCellBuilder firings build
+--        firings :: [(t, DMap (Tag x) Identity)] <- forM [initialTime..] $ \t -> (,) t <$> case unEvent e t of
+--          Nothing -> pure mempty
+--          Just o -> runCellBuilder firings $ execStateT (unCellM $ update f o) mempty
+--    pure (Cell f, result)
   withHoldFanCell' = undefined
 
+{-
 --TODO: Use a better datastructure than a sorted list
 runCellBuilder :: Eq t => [(t, DMap (Tag x) Identity)] -> CellBuilderM (Pure t) x a -> ST x a
 runCellBuilder firings b = runReaderT (unCellBuilderM b) $ CellOut $ \eventId -> Event $ \t ->
@@ -253,3 +253,4 @@ test = do
   let e1 :: Event (Pure Int) Char = Event $ \t -> Prelude.lookup t [(1, 'a'), (2, 'b')]
       (_, e2) = holdPushCell e1 newCellEvent fireCellEvent 0
   forM_ [0..5] $ \t -> print (t, unEvent e2 t)
+-}
