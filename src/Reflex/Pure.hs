@@ -67,6 +67,7 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   newtype Dynamic (Pure t) a = Dynamic { unDynamic :: t -> (a, Maybe a) }
   newtype Incremental (Pure t) p = Incremental { unIncremental :: t -> (PatchTarget p, Maybe p) }
   data Cell (Pure t) f = forall x. Cell (f x)
+  data FanCell (Pure t) x = FanCell
   newtype CellBuilderM (Pure t) x a = CellBuilderM { unCellBuilderM :: ReaderT (CellOut t x) (ST x) a }
     deriving (Functor, Applicative, Monad)
   newtype CellM (Pure t) x a = CellM { unCellM :: StateT (DMap (Tag x) Identity) (CellBuilderM (Pure t) x) a }
@@ -240,6 +241,7 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
           Nothing -> pure mempty
           Just o -> runCellBuilder firings $ execStateT (unCellM $ update f o) mempty
     pure (Cell f, result)
+  withHoldFanCell' = undefined
 
 --TODO: Use a better datastructure than a sorted list
 runCellBuilder :: Eq t => [(t, DMap (Tag x) Identity)] -> CellBuilderM (Pure t) x a -> ST x a

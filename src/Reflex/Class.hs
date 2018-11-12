@@ -32,14 +32,25 @@ module Reflex.Class
   , Reflex (..)
   , withMonadCellBuilderM
   , withMonadCellM
+  , hoistLinear'
+  , mapLinear'
+  , Linear
+  , runLinear
+  , liftLinear
+  , Linear' (..)
+  , Linear'Inner (..)
+  , FanCellEvent (..)
   , CreateCellEvent (..)
   , FireCellEvent (..)
+  , ModifyCell (..)
   , mergeInt
   , coerceBehavior
   , coerceEvent
   , coerceDynamic
   , MonadSample (..)
   , MonadHold (..)
+  , withHoldFanCell
+  , MonadMutate (..)
     -- ** 'fan'-related types
   , EventSelector (..)
   , EventSelectorInt (..)
@@ -241,6 +252,7 @@ class ( MonadHold t (PushM t)
   data Incremental t :: * -> *
   -- | A region in the data flow graph where stateful computations can take place
   data Cell t :: (* -> *) -> *
+  data FanCell t x :: *
   -- | A region in the data flow graph where stateful computations can take place
   data CellTrigger t :: * -> * -> *
   -- | A monad for doing complex push-based calculations efficiently
@@ -337,6 +349,9 @@ class FireCellEvent t m | m -> t where
   -- already been fired this frame, do nothing.
   fireCellEvent :: CellTrigger t a x -> a -> m x ()
 
+class ModifyCell t m | m -> t where
+  modifyCell :: Cell t f -> (forall x. f x -> CellBuilderM t x a) -> m a
+
 --TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
 mergeInt :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
 mergeInt m = mergeIntIncremental $ unsafeBuildIncremental (return m) never
@@ -408,6 +423,52 @@ class MonadSample t m => MonadHold t m where
   holdPushCell :: Event t a -> (forall x. CellBuilderM t x (f x, b)) -> (forall x. f x -> a -> CellM t x ()) -> m (Cell t f, b)
   default holdPushCell :: (m ~ g m', MonadTrans g, MonadHold t m') => Event t a -> (forall x. CellBuilderM t x (f x, b)) -> (forall x. f x -> a -> CellM t x ()) -> m (Cell t f, b)
   holdPushCell e build update = lift $ holdPushCell e build update
+  withHoldFanCell' :: Linear' m (FanCell t) (FanCellEvent t) () --TODO: Can we allow the CellM t x () to be inlined somehow?  Perhaps *all* events should be yoneda'd somehow?
+  default withHoldFanCell' :: (m ~ g m', MonadTrans g, MonadHold t m') => Linear' m (FanCell t) (FanCellEvent t) ()
+  withHoldFanCell' = liftLinear' withHoldFanCell'
+
+newtype FanCellEvent t x = FanCellEvent (Event t (CellM t x ()))
+
+type Linear m down up out = m (down, up -> m out)
+
+runLinear :: Monad m => Linear m a b c -> (a -> m (b, d)) -> m (c, d)
+runLinear before body = do
+  (a, after) <- before
+  (b, d) <- body a
+  c <- after b
+  pure (c, d)
+
+data Linear'Inner m r a b c = forall x. Linear'Inner (a x) (b x -> m (r, c))
+
+data Linear' m a b c = forall r. Linear' (r -> m (Linear'Inner m r a b c))
+
+runLinear' :: MonadFix m => Linear' m a b c -> (forall x. a x -> m (b x, d)) -> m (c, d)
+runLinear' (Linear' before) body = do
+  (_, result) <- mfix $ \(~(r', _)) -> do
+    Linear'Inner a after <- before r'
+    (b, d) <- body a
+    (r, c) <- after b
+    pure (r, (c, d))
+  pure result
+
+liftLinear' :: (Monad m, Monad (t m), MonadTrans t) => Linear' m a b c -> Linear' (t m) a b c
+liftLinear' = hoistLinear' lift
+
+hoistLinear' :: Functor n => (forall x. m x -> n x) -> Linear' m a b c -> Linear' n a b c
+hoistLinear' f (Linear' before) = Linear' $ fmap (\(Linear'Inner a after) -> Linear'Inner a $ f . after) . f . before
+
+mapLinear' :: Functor m => (forall x. a x -> a' x) -> (forall x. b' x -> b x) -> (c -> c') -> Linear' m a b c -> Linear' m a' b' c'
+mapLinear' f g h (Linear' before) = Linear' $ fmap (\(Linear'Inner c after) -> Linear'Inner (f c) (fmap (second h) . after . g)) . before
+
+liftLinear :: (Functor (t m), Monad m, MonadTrans t) => Linear m a b c -> Linear (t m) a b c
+liftLinear before = fmap (second (lift .)) $ lift before
+
+withHoldFanCell :: forall t m a. (MonadFix m, MonadHold t m) => (forall x. FanCell t x -> m (Event t (CellM t x ()), a)) -> m a
+withHoldFanCell b = snd <$> runLinear' withHoldFanCell' (\c -> first FanCellEvent <$> b c)
+
+class MonadHold t m => MonadMutate t m where
+  --TODO: Move to MonadMutate or something like that
+  mutateFanCell :: FanCell t x -> CellBuilderM t x a -> m a
 
 -- instance Reflex t => Functor (CellM t x) where
 --   fmap = withDict (monadHoldCellMDict @t @x) fmap

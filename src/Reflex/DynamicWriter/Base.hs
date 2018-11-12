@@ -91,7 +91,7 @@ mergeDynIncrementalWithMove a = unsafeBuildIncremental (mapM (sample . current) 
 newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic t w] m a }
   deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadAsyncException, MonadException) -- The list is kept in reverse order
 
-deriving instance MonadHold t m => MonadHold t (DynamicWriterT t w m)
+instance MonadHold t m => MonadHold t (DynamicWriterT t w m)
 deriving instance MonadSample t m => MonadSample t (DynamicWriterT t w m)
 
 

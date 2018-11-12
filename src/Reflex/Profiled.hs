@@ -123,6 +123,7 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   newtype Dynamic (ProfiledTimeline t) a = Dynamic_Profiled { unDynamic_Profiled :: Dynamic t a }
   newtype Incremental (ProfiledTimeline t) p = Incremental_Profiled { unIncremental_Profiled :: Incremental t p }
   newtype Cell (ProfiledTimeline t) f = Cell_Profiled (Cell t f)
+  newtype FanCell (ProfiledTimeline t) x = FanCell_Profiled (FanCell t x)
   type PushM (ProfiledTimeline t) = ProfiledM (PushM t)
   type PullM (ProfiledTimeline t) = ProfiledM (PullM t)
   newtype CellBuilderM (ProfiledTimeline t) x a = CellBuilderM_Profiled { unCellBuilderM_Profiled :: CellBuilderM t x a }
@@ -200,13 +201,17 @@ instance Reflex t => Monad (CellM (ProfiledTimeline t) x) where
   return = withMonadCellM @t return
   fail = withMonadCellM @t fail
 
-instance MonadHold t m => MonadHold (ProfiledTimeline t) (ProfiledM m) where
+instance (Reflex t, MonadHold t m) => MonadHold (ProfiledTimeline t) (ProfiledM m) where
   hold v0 (Event_Profiled v') = ProfiledM $ Behavior_Profiled <$> hold v0 v'
   holdDyn v0 (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> holdDyn v0 v'
   holdIncremental v0 (Event_Profiled v') = ProfiledM $ Incremental_Profiled <$> holdIncremental v0 v'
   buildDynamic (ProfiledM v0) (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> buildDynamic v0 v'
   headE (Event_Profiled e) = ProfiledM $ Event_Profiled <$> headE e
   holdPushCell (Event_Profiled e) build update = ProfiledM $ first Cell_Profiled <$> holdPushCell e (coerce build) (coerce update)
+  withHoldFanCell' = hoistLinear' ProfiledM $ mapLinear' FanCell_Profiled (\(FanCellEvent (Event_Profiled e)) -> FanCellEvent $ fmapCheap unCellM_Profiled e) id withHoldFanCell'
+
+instance (Reflex t, MonadMutate t m) => MonadMutate (ProfiledTimeline t) (ProfiledM m) where
+  mutateFanCell (FanCell_Profiled c) (CellBuilderM_Profiled a) = ProfiledM $ mutateFanCell c a
 
 instance MonadSample t m => MonadSample (ProfiledTimeline t) (ProfiledM m) where
   sample (Behavior_Profiled b) = ProfiledM $ sample b
@@ -239,7 +244,7 @@ instance MonadReader r m => MonadReader r (ProfiledM m) where
   local f (ProfiledM a) = ProfiledM $ local f a
   reader = lift . reader
 
-instance ReflexHost t => ReflexHost (ProfiledTimeline t) where
+instance (ReflexHost t) => ReflexHost (ProfiledTimeline t) where
   type EventTrigger (ProfiledTimeline t) = EventTrigger t
   type EventHandle (ProfiledTimeline t) = EventHandle t
   type HostFrame (ProfiledTimeline t) = ProfiledM (HostFrame t)

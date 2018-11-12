@@ -17,6 +17,7 @@ module Reflex.EventWriter.Base
   ( EventWriterT (..)
   , runEventWriterT
   , runWithReplaceEventWriterTWith
+  , sequenceIntMapWithAdjustEventWriterTWith
   , sequenceDMapWithAdjustEventWriterTWith
   , mapEventWriterT
   , withEventWriterT

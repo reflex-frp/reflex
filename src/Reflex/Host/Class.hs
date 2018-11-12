@@ -48,8 +48,7 @@ import Data.GADT.Compare
 -- represented by @t@.
 class ( Reflex t
       , MonadReflexCreateTrigger t (HostFrame t)
-      , MonadSample t (HostFrame t)
-      , MonadHold t (HostFrame t)
+      , MonadMutate t (HostFrame t)
       , MonadFix (HostFrame t)
       , MonadSubscribeEvent t (HostFrame t)
       ) => ReflexHost t where
