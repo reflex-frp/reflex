@@ -73,6 +73,8 @@ library
     Reflex,
     Reflex.Class,
     Reflex.Adjustable.Class,
+    Reflex.BehaviorWriter.Base,
+    Reflex.BehaviorWriter.Class,
     Reflex.Collection,
     Reflex.Dynamic,
     Reflex.Dynamic.Uniq,
@@ -208,6 +210,7 @@ test-suite EventWriterT
   build-depends: base
                , containers
                , deepseq >= 1.3 && < 1.5
+               , dependent-map
                , dependent-sum
                , lens
                , mtl

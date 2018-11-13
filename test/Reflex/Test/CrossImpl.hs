@@ -30,6 +30,7 @@ import Data.Foldable
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import Data.Monoid
 import Data.Traversable
 import System.Exit
 import System.Mem

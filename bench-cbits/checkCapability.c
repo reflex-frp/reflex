@@ -42,7 +42,7 @@ typedef struct Task_ {
     // or just continue immediately.  It's a workaround for the fact
     // that signalling a condition variable doesn't do anything if the
     // thread is already running, but we want it to be sticky.
-    bool wakeup;
+    HsBool wakeup;
 #endif
 
     // This points to the Capability that the Task "belongs" to.  If
@@ -65,11 +65,11 @@ typedef struct Task_ {
     uint32_t n_spare_incalls;
     struct InCall_ *spare_incalls;
 
-    bool    worker;          // == rtsTrue if this is a worker Task
-    bool    stopped;         // this task has stopped or exited Haskell
+    HsBool    worker;          // == rtsTrue if this is a worker Task
+    HsBool    stopped;         // this task has stopped or exited Haskell
 
     // So that we can detect when a finalizer illegally calls back into Haskell
-    bool running_finalizers;
+    HsBool running_finalizers;
 
     // Links tasks on the returning_tasks queue of a Capability, and
     // on spare_workers.
@@ -98,12 +98,12 @@ struct Capability_ {
 
     // true if this Capability is running Haskell code, used for
     // catching unsafe call-ins.
-    bool in_haskell;
+    HsBool in_haskell;
 
     // Has there been any activity on this Capability since the last GC?
     uint32_t idle;
 
-    bool disabled;
+    HsBool disabled;
 
     // The run queue.  The Task owning this Capability has exclusive
     // access to its run queue, so can wake up threads without

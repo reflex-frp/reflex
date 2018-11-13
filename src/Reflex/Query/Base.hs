@@ -278,13 +278,6 @@ instance (Monoid a, Monad m) => Monoid (QueryT t q m a) where
 instance (S.Semigroup a, Monad m) => S.Semigroup (QueryT t q m a) where
   (<>) = liftA2 (S.<>)
 
-
-mapQuery :: QueryMorphism q q' -> q -> q'
-mapQuery = _queryMorphism_mapQuery
-
-mapQueryResult :: QueryMorphism q q' -> QueryResult q' -> QueryResult q
-mapQueryResult = _queryMorphism_mapQueryResult
-
 -- | withQueryT's QueryMorphism argument needs to be a group homomorphism in order to behave correctly
 withQueryT :: (MonadFix m, PostBuild t m, Group q, Group q', Additive q, Additive q', Query q')
            => QueryMorphism q q'

@@ -26,7 +26,11 @@ import Prelude hiding (map, null)
 import Data.Coerce
 import Data.Default
 import Data.Map (Map)
+#if MIN_VERSION_containers(0,5,11)
 import qualified Data.Map.Internal.Debug as Map (showTree, showTreeWith)
+#else
+import qualified Data.Map as Map (showTree, showTreeWith)
+#endif
 import Data.Map.Monoidal
 import Reflex.Class (FunctorMaybe (..))
 import Reflex.Patch (Additive, Group (..))
