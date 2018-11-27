@@ -96,6 +96,7 @@ library
     Reflex.Patch.IntMap,
     Reflex.Patch.Map,
     Reflex.Patch.MapWithMove,
+    Reflex.Patch.MapWithMove2,
     Reflex.PerformEvent.Base,
     Reflex.PerformEvent.Class,
     Reflex.PostBuild.Base,

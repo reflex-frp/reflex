@@ -18,6 +18,10 @@ import Reflex.Patch.MapWithMove as X (PatchMapWithMove, patchMapWithMoveNewEleme
                                       patchMapWithMoveNewElementsMap, unPatchMapWithMove,
                                       unsafePatchMapWithMove)
 
+import Reflex.Patch.MapWithMove2 as X (PatchMapWithMove2, patchMapWithMove2NewElements,
+                                      patchMapWithMove2NewElementsMap, unPatchMapWithMove2,
+                                      unsafePatchMapWithMove2)
+
 import Data.Semigroup (Semigroup (..), (<>))
 
 ---- Patches based on commutative groups
