@@ -7,7 +7,7 @@ Reflex is an fully-deterministic, higher-order Functional Reactive Programming (
 
 A summary of Reflex functions is available in the [quick reference](Quickref.md).
 
-**Visit https://reflex-frp.org/ for more information, tutorials, documentation and examples.**
+**Visit https://reflex-frp.org/ for more information, tutorials, documentation and [examples](https://examples.reflex-frp.org/).**
 
 ### Resources
 [Get started with Reflex](https://github.com/reflex-frp/reflex-platform)
