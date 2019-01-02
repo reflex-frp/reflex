@@ -926,7 +926,7 @@ instance Reflex t => Align (Event t) where
 gate :: Reflex t => Behavior t Bool -> Event t a -> Event t a
 gate = attachWithMaybe $ \allow a -> if allow then Just a else Nothing
 
--- | Create a new behavior given a starting behavior and switch to a the behvior
+-- | Create a new behavior given a starting behavior and switch to a behavior
 --   carried by the event when it fires.
 switcher :: (Reflex t, MonadHold t m)
         => Behavior t a -> Event t (Behavior t a) -> m (Behavior t a)
