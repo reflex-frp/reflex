@@ -2307,8 +2307,12 @@ newJoinDyn d =
   in Reflex.Spider.Internal.unsafeBuildDynamic readV0 v'
 
 instance HasSpiderTimeline x => Functor (Reflex.Class.Dynamic (SpiderTimeline x)) where
-  fmap f = SpiderDynamic . newMapDyn f . unSpiderDynamic
+  fmap = mapDynamicSpider
   x <$ d = R.unsafeBuildDynamic (return x) $ x <$ R.updated d
+
+mapDynamicSpider :: HasSpiderTimeline x => (a -> b) -> Reflex.Class.Dynamic (SpiderTimeline x) a -> Reflex.Class.Dynamic (SpiderTimeline x) b
+mapDynamicSpider f = SpiderDynamic . newMapDyn f . unSpiderDynamic
+{-# INLINE [1] mapDynamicSpider #-}
 
 instance HasSpiderTimeline x => Applicative (Reflex.Class.Dynamic (SpiderTimeline x)) where
   pure = SpiderDynamic . dynamicConst
