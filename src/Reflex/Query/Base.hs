@@ -22,6 +22,7 @@ module Reflex.Query.Base
 import Control.Applicative (liftA2)
 import Control.Monad.Exception
 import Control.Monad.Fix
+import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
@@ -243,6 +244,10 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, Adj
 
 instance MonadTrans (QueryT t q) where
   lift = QueryT . lift . lift . lift
+
+instance PrimMonad m => PrimMonad (QueryT t q m) where
+  type PrimState (QueryT t q m) = PrimState m
+  primitive = lift . primitive
 
 instance PostBuild t m => PostBuild t (QueryT t q m) where
   getPostBuild = lift getPostBuild
