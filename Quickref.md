@@ -299,7 +299,7 @@ Th typeclasses and their associated annotations include:
 
 -- Given a Dynamic of network-creating actions, create a network that is recreated whenever the Dynamic updates. 
 -- The returned Event of network results occurs when the Dynamic does. Note: Often, the type a is an Event, 
--- in which case the return value is an Event-of-Events that would typically be flattened (via switchPromptly).
+-- in which case the return value is an Event-of-Events that would typically be flattened (via switchHold).
 [P,A]   networkView :: Dynamic (m a) -> m (Event a) 
 
 -- Given an initial network and an Event of network-creating actions, create a network that is recreated whenever the 
