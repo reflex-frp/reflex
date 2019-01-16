@@ -1,7 +1,7 @@
 { prs }:
 
 let
-  pkgs = import ./nixpkgs {};
+  pkgs = (import ./reflex-platform.nix {}).nixpkgs;
   mkFetchGithub = value: {
     inherit value;
     type = "git";
