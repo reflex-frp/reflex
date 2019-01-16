@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Main where
@@ -6,6 +7,9 @@ module Main where
 import Control.Lens
 import Control.Monad
 import Control.Monad.Fix
+import qualified Data.Dependent.Map as DMap
+import Data.Functor.Misc
+import qualified Data.Map as M
 import Data.These
 
 import Reflex
@@ -28,6 +32,10 @@ main = do
   print os2
   os3@[[Nothing, Just [2]]] <- runApp' (unwrapApp testMoribundTellEvent) [Just ()]
   print os3
+  os4@[[Nothing, Just [2]]] <- runApp' (unwrapApp testMoribundTellEventDMap) [Just ()]
+  print os4
+  os5@[[Nothing, Just [1, 2]]] <- runApp' (unwrapApp testLiveTellEventDMap) [Just ()]
+  print os5
   return ()
 
 unwrapApp :: (Reflex t, Monad m) => (a -> EventWriterT t [Int] m ()) -> a -> m (Event t [Int])
@@ -59,7 +67,48 @@ testMoribundTellEvent
   => Event t ()
   -> EventWriterT t [Int] m ()
 testMoribundTellEvent pulse = do
-  rec let tellIntOnReplce :: Int -> EventWriterT t [Int] m ()
-          tellIntOnReplce x = tellEvent $ [x] <$ rwrFinished
-      (_, rwrFinished) <- runWithReplace (tellIntOnReplce 1) $ tellIntOnReplce 2 <$ pulse
+  rec let tellIntOnReplace :: Int -> EventWriterT t [Int] m ()
+          tellIntOnReplace x = tellEvent $ [x] <$ rwrFinished
+      (_, rwrFinished) <- runWithReplace (tellIntOnReplace 1) $ tellIntOnReplace 2 <$ pulse
+  return ()
+
+-- | The equivalent of 'testMoribundTellEvent' for 'traverseDMapWithKeyWithAdjust'.
+testMoribundTellEventDMap
+  :: forall t m
+  .  ( Reflex t
+     , Adjustable t m
+     , MonadHold t m
+     , MonadFix m
+     )
+  => Event t ()
+  -> EventWriterT t [Int] m ()
+testMoribundTellEventDMap pulse = do
+  rec let tellIntOnReplace :: Int -> EventWriterT t [Int] m ()
+          tellIntOnReplace x = tellEvent $ [x] <$ rwrFinished
+      (_, rwrFinished :: Event t (PatchDMap (Const2 () Int) Identity)) <-
+        traverseDMapWithKeyWithAdjust
+          (\(Const2 ()) (Identity v) -> Identity . const v <$> tellIntOnReplace v)
+          (mapToDMap $ M.singleton () 1)
+          ((PatchDMap $ DMap.map (ComposeMaybe . Just) $ mapToDMap $ M.singleton () 2) <$ pulse)
+  return ()
+
+-- | Ensures that elements which are _not_ removed can still fire 'tellEvent's
+-- during the same frame as other elements are updated.
+testLiveTellEventDMap
+  :: forall t m
+  .  ( Reflex t
+     , Adjustable t m
+     , MonadHold t m
+     , MonadFix m
+     )
+  => Event t ()
+  -> EventWriterT t [Int] m ()
+testLiveTellEventDMap pulse = do
+  rec let tellIntOnReplace :: Int -> EventWriterT t [Int] m ()
+          tellIntOnReplace x = tellEvent $ [x] <$ rwrFinished
+      (_, rwrFinished :: Event t (PatchDMap (Const2 Int ()) Identity)) <-
+        traverseDMapWithKeyWithAdjust
+          (\(Const2 k) (Identity ()) -> Identity <$> tellIntOnReplace k)
+          (mapToDMap $ M.singleton 1 ())
+          ((PatchDMap $ DMap.map (ComposeMaybe . Just) $ mapToDMap $ M.singleton 2 ()) <$ pulse)
   return ()

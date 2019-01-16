@@ -4,6 +4,10 @@ module Reflex.FunctorMaybe
   ( FunctorMaybe (..)
   ) where
 
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Maybe
 
 --TODO: See if there's a better class in the standard libraries already
@@ -31,3 +35,9 @@ instance FunctorMaybe Maybe where
 -- | @fmapMaybe = mapMaybe@
 instance FunctorMaybe [] where
   fmapMaybe = mapMaybe
+
+instance FunctorMaybe (Map k) where
+  fmapMaybe = Map.mapMaybe
+
+instance FunctorMaybe IntMap where
+  fmapMaybe = IntMap.mapMaybe
