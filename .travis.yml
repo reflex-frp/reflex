@@ -5,11 +5,9 @@ cache:
     - /nix
 matrix:
   include:
-  - env: COMPILER=ghc7103
-  - env: COMPILER=ghc843
   - env: COMPILER=ghc822
-  - env: COMPILER=ghc802
-  - env: COMPILER=ghcjs
+  - env: COMPILER=ghc844
+  - env: COMPILER=ghcjs84
 script:
   - set -e
   - nix-build -E "with (import <nixpkgs> {}); pkgs.haskell.packages.$COMPILER.callPackage ./default.nix { }"
