@@ -10,7 +10,9 @@ module Reflex.Widget.Basic where
 
 import Control.Monad.Fix (MonadFix)
 import Data.Map (Map)
+
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.Patch.MapWithMove
 
 

@@ -25,6 +25,7 @@ module Reflex.PerformEvent.Base
   ) where
 
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.Requester.Base

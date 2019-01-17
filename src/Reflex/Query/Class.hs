@@ -15,12 +15,18 @@ module Reflex.Query.Class
   , MonadQuery (..)
   , tellQueryDyn
   , queryDyn
+  , mapQuery
+  , mapQueryResult
   ) where
 
+import Control.Category (Category)
+import qualified Control.Category as Cat
 import Control.Monad.Reader
 import Data.Bits
 import Data.Data
 import Data.Ix
+import Data.Map.Monoidal (MonoidalMap)
+import qualified Data.Map.Monoidal as MonoidalMap
 import Data.Semigroup
 import Foreign.Storable
 
@@ -30,12 +36,29 @@ class (Monoid (QueryResult a), Semigroup (QueryResult a)) => Query a where
   type QueryResult a :: *
   crop :: a -> QueryResult a -> QueryResult a
 
+instance (Ord k, Query v) => Query (MonoidalMap k v) where
+  type QueryResult (MonoidalMap k v) = MonoidalMap k (QueryResult v)
+  crop q r = MonoidalMap.intersectionWith (flip crop) r q
+
 -- | NB: QueryMorphism's must be group homomorphisms when acting on the query type
 -- and compatible with the query relationship when acting on the query result
 data QueryMorphism q q' = QueryMorphism
   { _queryMorphism_mapQuery :: q -> q'
   , _queryMorphism_mapQueryResult :: QueryResult q' -> QueryResult q
   }
+
+instance Category QueryMorphism where
+  id = QueryMorphism id id
+  qm . qm' = QueryMorphism
+    { _queryMorphism_mapQuery = mapQuery qm . mapQuery qm'
+    , _queryMorphism_mapQueryResult = mapQueryResult qm' . mapQueryResult qm
+    }
+
+mapQuery :: QueryMorphism q q' -> q -> q'
+mapQuery = _queryMorphism_mapQuery
+
+mapQueryResult :: QueryMorphism q q' -> QueryResult q' -> QueryResult q
+mapQueryResult = _queryMorphism_mapQueryResult
 
 -- | This type keeps track of the multiplicity of elements of the view selector that are being used by the app
 newtype SelectedCount = SelectedCount { unSelectedCount :: Int }

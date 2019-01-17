@@ -1135,7 +1135,11 @@ instance HasSpiderTimeline x => Align (Event x) where
   nil = eventNever
   align ea eb = fmapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 
-newtype Dyn x p = Dyn { unDyn :: IORef (Either (BehaviorM x (PatchTarget p), Event x p) (Hold x p)) }
+data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
+                 | BuildDyn  !(EventM x (PatchTarget p), Event x p)
+                 | HoldDyn   !(Hold x p)
+
+newtype Dyn x p = Dyn { unDyn :: IORef (DynType x p) }
 
 newMapDyn :: HasSpiderTimeline x => (a -> b) -> Dynamic x (Identity a) -> Dynamic x (Identity b)
 newMapDyn f d = dynamicDynIdentity $ unsafeBuildDynamic (fmap f $ readBehaviorTracked $ dynamicCurrent d) (Identity . f . runIdentity <$> dynamicUpdated d)
@@ -1156,15 +1160,15 @@ zipDynWith f da db =
         return $ Just $ Identity $ f a b
   in dynamicDynIdentity $ unsafeBuildDynamic (f <$> readBehaviorUntracked (dynamicCurrent da) <*> readBehaviorUntracked (dynamicCurrent db)) ec
 
-buildDynamic :: (Defer (SomeDynInit x) m, Patch p) => BehaviorM x (PatchTarget p) -> Event x p -> m (Dyn x p)
+buildDynamic :: (Defer (SomeDynInit x) m, Patch p) => EventM x (PatchTarget p) -> Event x p -> m (Dyn x p)
 buildDynamic readV0 v' = do
-  result <- liftIO $ newIORef $ Left (readV0, v')
+  result <- liftIO $ newIORef $ BuildDyn (readV0, v')
   let !d = Dyn result
   defer $ SomeDynInit d
   return d
 
 unsafeBuildDynamic :: BehaviorM x (PatchTarget p) -> Event x p -> Dyn x p
-unsafeBuildDynamic readV0 v' = Dyn $ unsafeNewIORef x $ Left x
+unsafeBuildDynamic readV0 v' = Dyn $ unsafeNewIORef x $ UnsafeDyn x
   where x = (readV0, v')
 
 -- ResultM can read behaviors and events
@@ -1213,8 +1217,8 @@ coincidence a = eventCoincidence $ Coincidence
 run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> SpiderHost x b
 run roots after = do
   tracePropagate (Proxy :: Proxy x) $ "Running an event frame with " <> show (length roots) <> " events"
-  t <- SpiderHost ask
-  result <- SpiderHost $ lift $ withMVar (_spiderTimeline_lock t) $ \_ -> flip runReaderT t $ unSpiderHost $ runFrame $ do
+  let t = spiderTimeline :: SpiderTimelineEnv x
+  result <- SpiderHost $ withMVar (_spiderTimeline_lock t) $ \_ -> unSpiderHost $ runFrame $ do
     rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readIORef occRef
@@ -1374,13 +1378,20 @@ getDynHold :: (Defer (SomeHoldInit x) m, Patch p) => Dyn x p -> m (Hold x p)
 getDynHold d = do
   mh <- liftIO $ readIORef $ unDyn d
   case mh of
-    Right h -> return h
-    Left (readV0, v') -> do
+    HoldDyn h -> return h
+    UnsafeDyn (readV0, v') -> do
       holdInits <- getDeferralQueue
       v0 <- liftIO $ runBehaviorM readV0 Nothing holdInits
+      hold' v0 v'
+    BuildDyn (readV0, v') -> do
+      v0 <- liftIO $ runEventM readV0
+      hold' v0 v'
+  where
+    hold' v0 v' = do
       h <- hold v0 v'
-      liftIO $ writeIORef (unDyn d) $ Right h
+      liftIO $ writeIORef (unDyn d) $ HoldDyn h
       return h
+
 
 -- Always refers to 0
 {-# NOINLINE zeroRef #-}
@@ -2074,7 +2085,7 @@ clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeI
 
 -- | Run an event action outside of a frame
 runFrame :: forall x a. HasSpiderTimeline x => EventM x a -> SpiderHost x a --TODO: This function also needs to hold the mutex
-runFrame a = SpiderHost $ ask >>= \_ -> lift $ do
+runFrame a = SpiderHost $ do
   let env = _spiderTimeline_eventEnv (spiderTimeline :: SpiderTimelineEnv x)
   let go = do
         result <- a
@@ -2115,7 +2126,7 @@ runFrame a = SpiderHost $ ask >>= \_ -> lift $ do
     runEventM $ runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
     --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
     sub <- newSubscriberSwitch subscribed
-    subscription <- runReaderT (unSpiderHost (runFrame ({-# SCC "subscribeSwitch" #-} subscribe e sub))) spiderTimeline --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
+    subscription <- unSpiderHost $ runFrame $ {-# SCC "subscribeSwitch" #-} subscribe e sub --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
     {-
     stackTrace <- liftIO $ fmap renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
     liftIO $ putStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
@@ -2296,8 +2307,12 @@ newJoinDyn d =
   in Reflex.Spider.Internal.unsafeBuildDynamic readV0 v'
 
 instance HasSpiderTimeline x => Functor (Reflex.Class.Dynamic (SpiderTimeline x)) where
-  fmap f = SpiderDynamic . newMapDyn f . unSpiderDynamic
+  fmap = mapDynamicSpider
   x <$ d = R.unsafeBuildDynamic (return x) $ x <$ R.updated d
+
+mapDynamicSpider :: HasSpiderTimeline x => (a -> b) -> Reflex.Class.Dynamic (SpiderTimeline x) a -> Reflex.Class.Dynamic (SpiderTimeline x) b
+mapDynamicSpider f = SpiderDynamic . newMapDyn f . unSpiderDynamic
+{-# INLINE [1] mapDynamicSpider #-}
 
 instance HasSpiderTimeline x => Applicative (Reflex.Class.Dynamic (SpiderTimeline x)) where
   pure = SpiderDynamic . dynamicConst
@@ -2317,7 +2332,7 @@ holdDynSpiderEventM v0 e = fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.S
 holdIncrementalSpiderEventM :: (HasSpiderTimeline x, Patch p) => PatchTarget p -> Reflex.Class.Event (SpiderTimeline x) p -> EventM x (Reflex.Class.Incremental (SpiderTimeline x) p)
 holdIncrementalSpiderEventM v0 e = fmap (SpiderIncremental . dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
 
-buildDynamicSpiderEventM :: HasSpiderTimeline x => SpiderPullM x a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Dynamic (SpiderTimeline x) a)
+buildDynamicSpiderEventM :: HasSpiderTimeline x => SpiderPushM x a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Dynamic (SpiderTimeline x) a)
 buildDynamicSpiderEventM getV0 e = fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderHost x) where
@@ -2405,8 +2420,8 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadReadEvent (SpiderTimeline
     return result
 
 instance Reflex.Host.Class.MonadReflexCreateTrigger (SpiderTimeline x) (SpiderHost x) where
-  newEventWithTrigger = SpiderHost . lift . fmap SpiderEvent . newEventWithTriggerIO
-  newFanEventWithTrigger f = SpiderHost $ lift $ do
+  newEventWithTrigger = SpiderHost . fmap SpiderEvent . newEventWithTriggerIO
+  newFanEventWithTrigger f = SpiderHost $ do
     es <- newFanEventWithTriggerIO f
     return $ Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es
 
@@ -2543,7 +2558,7 @@ instance MonadAtomicRef (EventM x) where
   atomicModifyRef r f = liftIO $ atomicModifyRef r f
 
 -- | The monad for actions that manipulate a Spider timeline identified by @x@
-newtype SpiderHost x a = SpiderHost { unSpiderHost :: ReaderT (SpiderTimelineEnv x) IO a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
+newtype SpiderHost x a = SpiderHost { unSpiderHost :: IO a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 instance Monad (SpiderHost x) where
   {-# INLINABLE (>>=) #-}
@@ -2558,14 +2573,15 @@ instance Monad (SpiderHost x) where
 -- | Run an action affecting the global Spider timeline; this will be guarded by
 -- a mutex for that timeline
 runSpiderHost :: SpiderHost Global a -> IO a
-runSpiderHost (SpiderHost a) = runReaderT a globalSpiderTimelineEnv
+runSpiderHost (SpiderHost a) = a
 
 -- | Run an action affecting a given Spider timeline; this will be guarded by a
 -- mutex for that timeline
 runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimelineEnv x -> IO a
-runSpiderHostForTimeline (SpiderHost a) = runReaderT a
+runSpiderHostForTimeline (SpiderHost a) _ = a
 
-newtype SpiderHostFrame x a = SpiderHostFrame { runSpiderHostFrame :: EventM x a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
+newtype SpiderHostFrame x a = SpiderHostFrame { runSpiderHostFrame :: EventM x a }
+  deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 instance Monad (SpiderHostFrame x) where
   {-# INLINABLE (>>=) #-}

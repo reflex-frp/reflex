@@ -47,8 +47,8 @@ qDynPure qe = do
         _ -> gmapM f d
   (e', exprsReversed) <- runStateT (gmapM f e) []
   let exprs = reverse exprsReversed
-      arg = foldr (\a b -> ConE 'FHCons `AppE` a `AppE` b) (ConE 'FHNil) $ map snd exprs
-      param = foldr (\a b -> ConP 'HCons [VarP a, b]) (ConP 'HNil []) $ map fst exprs
+      arg = foldr (\a b -> ConE 'FHCons `AppE` snd a `AppE` b) (ConE 'FHNil) exprs
+      param = foldr (\a b -> ConP 'HCons [VarP (fst a), b]) (ConP 'HNil []) exprs
   [| $(return $ LamE [param] e') <$> distributeFHListOverDynPure $(return arg) |]
 
 -- | Antiquote a 'Dynamic' expression.  This can /only/ be used inside of a

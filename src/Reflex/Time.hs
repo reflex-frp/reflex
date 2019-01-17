@@ -107,7 +107,7 @@ delay dt e = performEventAsync $ ffor e $ \a cb -> liftIO $ void $ forkIO $ do
   cb a
 
 -- | Send events with Poisson timing with the given basis and rate
---   Each occurence of the resulting event will contain the index of
+--   Each occurrence of the resulting event will contain the index of
 --   the current interval, with 0 representing the basis time
 poissonLossyFrom
   :: (RandomGen g, MonadIO (Performable m), PerformEvent t m, TriggerEvent t m)
@@ -126,7 +126,7 @@ poissonLossyFrom rnd rate = inhomogeneousPoissonFrom rnd (constant rate) rate
 
 
 -- | Send events with Poisson timing with the given basis and rate
---   Each occurence of the resulting event will contain the index of
+--   Each occurrence of the resulting event will contain the index of
 --   the current interval, with 0 representing the basis time.
 --   Automatically begin sending events when the DOM is built
 poissonLossy

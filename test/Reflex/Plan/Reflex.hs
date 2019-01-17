@@ -74,13 +74,13 @@ deriving instance ReflexHost t => MonadFix (Plan t)
 
 
 instance (ReflexHost t, MonadRef (HostFrame t), Ref (HostFrame t) ~ Ref IO) => TestPlan t (Plan t) where
-  plan occurances = Plan $ do
+  plan occurrences = Plan $ do
     (e, ref) <- newEventWithTriggerRef
     modify (IntMap.unionWith mappend (firings ref))
     return e
 
     where
-      firings ref = IntMap.fromList (makeFiring ref <$> occurances)
+      firings ref = IntMap.fromList (makeFiring ref <$> occurrences)
       makeFiring ref (t, a) = (fromIntegral t, [Firing ref a])
 
 

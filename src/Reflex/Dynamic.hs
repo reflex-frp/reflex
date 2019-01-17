@@ -102,10 +102,11 @@ import Data.Align
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Product
 import Data.GADT.Compare ((:~:) (..), GCompare (..), GEq (..), GOrdering (..))
 import Data.Map (Map)
 import Data.Maybe
-import Data.Monoid
+import Data.Monoid hiding (Product)
 import Data.These
 
 import Debug.Trace
@@ -173,7 +174,7 @@ foldDynMaybe = accumMaybeDyn . flip
 foldDynMaybeM :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe b)) -> b -> Event t a -> m (Dynamic t b)
 foldDynMaybeM = accumMaybeMDyn . flip
 
--- | Create a new 'Dynamic' that counts the occurences of the 'Event'.
+-- | Create a new 'Dynamic' that counts the occurrences of the 'Event'.
 count :: (Reflex t, MonadHold t m, MonadFix m, Num b) => Event t a -> m (Dynamic t b)
 count e = holdDyn 0 =<< zipListWithEvent const (iterate (+1) 1) e
 
@@ -287,7 +288,7 @@ attachPromptlyDyn = attachPromptlyDynWith (,)
 attachPromptlyDynWith :: Reflex t => (a -> b -> c) -> Dynamic t a -> Event t b -> Event t c
 attachPromptlyDynWith f = attachPromptlyDynWithMaybe $ \a b -> Just $ f a b
 
--- | Create a new 'Event' by combining the value at each occurence with the
+-- | Create a new 'Event' by combining the value at each occurrence with the
 -- current value of the 'Dynamic' value and possibly filtering if the combining
 -- function returns 'Nothing'.
 --
@@ -324,27 +325,20 @@ eitherDyn = fmap (fmap unpack) . factorDyn . fmap eitherToDSum
           LeftTag :=> Compose a -> Left $ coerceDynamic a
           RightTag :=> Compose b -> Right $ coerceDynamic b
 
-factorDyn :: forall t m k v. (Reflex t, MonadFix m, MonadHold t m, GEq k) => Dynamic t (DSum k v) -> m (Dynamic t (DSum k (Compose (Dynamic t) v)))
-factorDyn d = do
-  let inner :: forall m' a. (MonadFix m', MonadHold t m') => k a -> v a -> m' (Dynamic t (v a))
-      inner k v0 = holdDyn v0 . fmapMaybe id =<< takeWhileE isJust newVal
-        where newVal = ffor (updated d) $ \(newK :=> newV) -> case newK `geq` k of
-                Just Refl -> Just newV
-                Nothing -> Nothing
-      getInitial = do
-        k0 :=> (v0 :: v a) <- sample $ current d
-        i0 <- inner k0 v0
-        return $ k0 :=> Compose i0
-      update = flip push (updated d) $ \(newKey :=> newVal) -> do
-        (oldKey :=> _) <- sample $ current d
-        case newKey `geq` oldKey of
-          Just Refl -> return Nothing
-          Nothing -> do
-            newInner <- inner newKey newVal
-            return $ Just $ newKey :=> Compose newInner
-  o0 <- getInitial --TODO: Figure out how to get this to run inside something like the first argument to buildDynamic
-  holdDyn o0 update
+factorDyn :: forall t m k v. (Reflex t, MonadHold t m, GEq k)
+          => Dynamic t (DSum k v) -> m (Dynamic t (DSum k (Compose (Dynamic t) v)))
+factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
+  update :: Event t (DSum k (Compose (Dynamic t) v))
+  update = flip push (updated d) $ \(newKey :=> newVal) -> do
+     (oldKey :=> _) <- sample (current d)
+     case newKey `geq` oldKey of
+      Just Refl -> return Nothing
+      Nothing -> Just <$> holdKey (newKey :=> newVal)
 
+  holdKey (k :=> v) = do
+    inner' <- filterEventKey k (updated d)
+    inner <- holdDyn v inner'
+    return $ k :=> Compose inner
 --------------------------------------------------------------------------------
 -- Demux
 --------------------------------------------------------------------------------

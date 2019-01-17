@@ -110,19 +110,14 @@ instance EqTag k (NodeInfo k v) => Eq (PatchDMapWithMove k v) where
 -- |Higher kinded 2-tuple, identical to @Data.Functor.Product@ from base ≥ 4.9
 data Pair1 f g a = Pair1 (f a) (g a)
 
--- |Compose patches having the same effect as applying the patches in turn: @'applyAlways' (p <> q) == 'applyAlways' p . 'applyAlways' q@
-instance GCompare k => Semigroup (PatchDMapWithMove k v) where
-  (<>) = mappend
-
 -- |Helper data structure used for composing patches using the monoid instance.
 data Fixup k v a
    = Fixup_Delete
    | Fixup_Update (These (From k v a) (To k a))
 
 -- |Compose patches having the same effect as applying the patches in turn: @'applyAlways' (p <> q) == 'applyAlways' p . 'applyAlways' q@
-instance GCompare k => Monoid (PatchDMapWithMove k v) where
-  mempty = PatchDMapWithMove mempty
-  PatchDMapWithMove ma `mappend` PatchDMapWithMove mb = PatchDMapWithMove m
+instance GCompare k => Semigroup (PatchDMapWithMove k v) where
+  PatchDMapWithMove ma <> PatchDMapWithMove mb = PatchDMapWithMove m
     where
       connections = DMap.toList $ DMap.intersectionWithKey (\_ a b -> Pair1 (_nodeInfo_to a) (_nodeInfo_from b)) ma mb
       h :: DSum k (Pair1 (ComposeMaybe k) (From k v)) -> [DSum k (Fixup k v)]
@@ -156,20 +151,21 @@ instance GCompare k => Monoid (PatchDMapWithMove k v) where
           , _nodeInfo_to = fromMaybe (_nodeInfo_to ni) $ getThere u
           }
       m = DMap.differenceWithKey applyFixup (DMap.unionWithKey combineNodeInfos ma mb) fixups
+      getHere :: These a b -> Maybe a
+      getHere = \case
+        This a -> Just a
+        These a _ -> Just a
+        That _ -> Nothing
+      getThere :: These a b -> Maybe b
+      getThere = \case
+        This _ -> Nothing
+        These _ b -> Just b
+        That b -> Just b
 
--- |Project the @a@ from a @'These' a b@, identical to @preview '_Here'@ but without using preview
-getHere :: These a b -> Maybe a
-getHere = \case
-  This a -> Just a
-  These a _ -> Just a
-  That _ -> Nothing
-
--- |Project the @b@ from a @'These' a b@, identical to @preview '_There'@ but without using preview
-getThere :: These a b -> Maybe b
-getThere = \case
-  This _ -> Nothing
-  These _ b -> Just b
-  That b -> Just b
+-- |Compose patches having the same effect as applying the patches in turn: @'applyAlways' (p <> q) == 'applyAlways' p . 'applyAlways' q@
+instance GCompare k => Monoid (PatchDMapWithMove k v) where
+  mempty = PatchDMapWithMove mempty
+  mappend = (<>)
 
 {-
 mappendPatchDMapWithMoveSlow :: forall k v. (ShowTag k v, GCompare k) => PatchDMapWithMove k v -> PatchDMapWithMove k v -> PatchDMapWithMove k v

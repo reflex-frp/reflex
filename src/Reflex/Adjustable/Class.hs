@@ -1,6 +1,8 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -16,22 +18,22 @@ module Reflex.Adjustable.Class
   , sequenceDMapWithAdjust
   , sequenceDMapWithAdjustWithMove
   , mapMapWithAdjustWithMove
+  -- * Deprecated aliases
+  , MonadAdjust
   ) where
 
 import Control.Monad.Identity
 import Control.Monad.Reader
-import Data.Align
 import Data.Dependent.Map (DMap, GCompare (..))
+import qualified Data.Dependent.Map as DMap
 import Data.Functor.Constant
 import Data.Functor.Misc
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import Data.Map (Map)
-import qualified Data.Map as Map
-import Data.Map.Misc
-import Data.These
 
 import Reflex.Class
-import Reflex.Dynamic
-import Reflex.PostBuild.Class
+import Reflex.Patch.DMapWithMove
 
 -- | A 'Monad' that supports adjustment over time.  After an action has been
 -- run, if the given events fire, it will adjust itself so that its net effect
@@ -40,10 +42,43 @@ import Reflex.PostBuild.Class
 -- other side-effects) cannot be undone, so it is up to the instance implementer
 -- to determine what the best meaning for this class is in such cases.
 class (Reflex t, Monad m) => Adjustable t m | m -> t where
-  runWithReplace :: m a -> Event t (m b) -> m (a, Event t b)
-  traverseIntMapWithKeyWithAdjust :: (IntMap.Key -> v -> m v') -> IntMap v -> Event t (PatchIntMap v) -> m (IntMap v', Event t (PatchIntMap v'))
-  traverseDMapWithKeyWithAdjust :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> m (DMap k v', Event t (PatchDMap k v'))
-  traverseDMapWithKeyWithAdjustWithMove :: GCompare k => (forall a. k a -> v a -> m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> m (DMap k v', Event t (PatchDMapWithMove k v'))
+  runWithReplace
+    :: m a
+    -> Event t (m b)
+    -> m (a, Event t b)
+
+  traverseIntMapWithKeyWithAdjust
+    :: (IntMap.Key -> v -> m v')
+    -> IntMap v
+    -> Event t (PatchIntMap v)
+    -> m (IntMap v', Event t (PatchIntMap v'))
+
+  traverseDMapWithKeyWithAdjust
+    :: GCompare k
+    => (forall a. k a -> v a -> m (v' a))
+    -> DMap k v
+    -> Event t (PatchDMap k v)
+    -> m (DMap k v', Event t (PatchDMap k v'))
+  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
+  traverseDMapWithKeyWithAdjust f dm0 dm' = fmap (fmap (fmap fromPatchWithMove)) $
+    traverseDMapWithKeyWithAdjustWithMove f dm0 $ fmap toPatchWithMove dm'
+   where
+    toPatchWithMove (PatchDMap m) = PatchDMapWithMove $ DMap.map toNodeInfoWithMove m
+    toNodeInfoWithMove = \case
+      ComposeMaybe (Just v) -> NodeInfo (From_Insert v) $ ComposeMaybe Nothing
+      ComposeMaybe Nothing -> NodeInfo From_Delete $ ComposeMaybe Nothing
+    fromPatchWithMove (PatchDMapWithMove m) = PatchDMap $ DMap.map fromNodeInfoWithMove m
+    fromNodeInfoWithMove (NodeInfo from _) = ComposeMaybe $ case from of
+      From_Insert v -> Just v
+      From_Delete -> Nothing
+      From_Move _ -> error "traverseDMapWithKeyWithAdjust: implementation of traverseDMapWithKeyWithAdjustWithMove inserted spurious move"
+
+  traverseDMapWithKeyWithAdjustWithMove
+    :: GCompare k
+    => (forall a. k a -> v a -> m (v' a))
+    -> DMap k v
+    -> Event t (PatchDMapWithMove k v)
+    -> m (DMap k v', Event t (PatchDMapWithMove k v'))
 
 instance Adjustable t m => Adjustable t (ReaderT r m) where
   runWithReplace a0 a' = do
@@ -69,3 +104,10 @@ mapMapWithAdjustWithMove :: forall t m k v v'. (Adjustable t m, Ord k) => (k -> 
 mapMapWithAdjustWithMove f m0 m' = do
   (out0 :: DMap (Const2 k v) (Constant v'), out') <- traverseDMapWithKeyWithAdjustWithMove (\(Const2 k) (Identity v) -> Constant <$> f k v) (mapToDMap m0) (const2PatchDMapWithMoveWith Identity <$> m')
   return (dmapToMapWith (\(Constant v') -> v') out0, patchDMapWithMoveToPatchMapWithMoveWith (\(Constant v') -> v') <$> out')
+
+--------------------------------------------------------------------------------
+-- Deprecated functions
+--------------------------------------------------------------------------------
+
+{-# DEPRECATED MonadAdjust "Use Adjustable instead" #-}
+type MonadAdjust = Adjustable

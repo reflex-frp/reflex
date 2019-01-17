@@ -9,6 +9,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
@@ -36,12 +37,16 @@ import qualified Data.Map as Map
 import Data.Semigroup
 import Data.Some (Some)
 import Data.These
+
+import Reflex.Adjustable.Class
 import Reflex.Class
 import Reflex.DynamicWriter.Class
+import Reflex.EventWriter.Class (EventWriter, tellEvent)
 import Reflex.Host.Class
 import qualified Reflex.Patch.MapWithMove as MapWithMove
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
+import Reflex.Query.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
@@ -83,7 +88,12 @@ mergeDynIncrementalWithMove a = unsafeBuildIncremental (mapM (sample . current) 
           in Map.differenceWith (\e _ -> Just $ MapWithMove.nodeInfoSetTo Nothing e) pWithNewVals noLongerMovedMap --TODO: Check if any in the second map are not covered?
 
 -- | A basic implementation of 'MonadDynamicWriter'.
-newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic t w] m a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadHold t, MonadSample t, MonadAsyncException, MonadException) -- The list is kept in reverse order
+newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic t w] m a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadAsyncException, MonadException) -- The list is kept in reverse order
+
+deriving instance MonadHold t m => MonadHold t (DynamicWriterT t w m)
+deriving instance MonadSample t m => MonadSample t (DynamicWriterT t w m)
+
 
 instance MonadRef m => MonadRef (DynamicWriterT t w m) where
   type Ref (DynamicWriterT t w m) = Ref m
@@ -212,3 +222,11 @@ instance Requester t m => Requester t (DynamicWriterT t w m) where
   type Response (DynamicWriterT t w m) = Response m
   requesting = lift . requesting
   requesting_ = lift . requesting_
+
+instance (MonadQuery t q m, Monad m) => MonadQuery t q (DynamicWriterT t w m) where
+  tellQueryIncremental = lift . tellQueryIncremental
+  askQueryResult = lift askQueryResult
+  queryIncremental = lift . queryIncremental
+
+instance EventWriter t w m => EventWriter t w (DynamicWriterT t v m) where
+  tellEvent = lift . tellEvent

@@ -10,6 +10,7 @@ module Reflex.Network
   ) where
 
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.NotReady.Class
 import Reflex.PostBuild.Class
 

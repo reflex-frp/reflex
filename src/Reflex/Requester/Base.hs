@@ -32,6 +32,7 @@ module Reflex.Requester.Base
   ) where
 
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.Dynamic
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class

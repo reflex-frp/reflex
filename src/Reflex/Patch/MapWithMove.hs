@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 -- | 'Patch'es on 'Map' that can insert, delete, and move values from one key to
@@ -19,7 +20,9 @@ import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Semigroup
 import qualified Data.Set as Set
+import Data.These
 import Data.Tuple
 
 -- | Patch a DMap with additions, deletions, and moves.  Invariant: If key @k1@
@@ -47,6 +50,13 @@ patchMapWithMove m = if valid then Just $ PatchMapWithMove m else Nothing
           case _nodeInfo_from v of
             From_Move from -> Just (from, to)
             _ -> Nothing
+
+-- | Create a 'PatchMapWithMove' that inserts everything in the given 'Map'
+patchMapWithMoveInsertAll :: Map k v -> PatchMapWithMove k v
+patchMapWithMoveInsertAll m = PatchMapWithMove $ flip fmap m $ \v -> NodeInfo
+  { _nodeInfo_from = From_Insert v
+  , _nodeInfo_to = Nothing
+  }
 
 -- | Extract the internal representation of the 'PatchMapWithMove'
 unPatchMapWithMove :: PatchMapWithMove k v -> Map k (NodeInfo k v)
@@ -110,11 +120,15 @@ patchThatSortsMapWith cmp m = PatchMapWithMove $ Map.fromList $ catMaybes $ zipW
 -- will produce a 'Map' with the same values as the second 'Map' but with the
 -- values sorted with the given ordering function.
 patchThatChangesAndSortsMapWith :: forall k v. (Ord k, Ord v) => (v -> v -> Ordering) -> Map k v -> Map k v -> PatchMapWithMove k v
-patchThatChangesAndSortsMapWith cmp oldByIndex newByIndexUnsorted = patch
-  where oldByValue = Map.fromListWith Set.union $ swap . first Set.singleton <$> Map.toList oldByIndex
-        newList = Map.toList newByIndexUnsorted
+patchThatChangesAndSortsMapWith cmp oldByIndex newByIndexUnsorted = patchThatChangesMap oldByIndex newByIndex
+  where newList = Map.toList newByIndexUnsorted
         newByIndex = Map.fromList $ zip (fst <$> newList) $ sortBy cmp $ snd <$> newList
-        insertsAndMoves :: Map k (NodeInfo k v)
+
+-- | Create a 'PatchMapWithMove' that, if applied to the first 'Map' provided,
+-- will produce the second 'Map'.
+patchThatChangesMap :: (Ord k, Ord v) => Map k v -> Map k v -> PatchMapWithMove k v
+patchThatChangesMap oldByIndex newByIndex = patch
+  where oldByValue = Map.fromListWith Set.union $ swap . first Set.singleton <$> Map.toList oldByIndex
         (insertsAndMoves, unusedValuesByValue) = flip runState oldByValue $ do
           let f k v = do
                 remainingValues <- get
@@ -129,7 +143,7 @@ patchThatChangesAndSortsMapWith cmp oldByIndex newByIndexUnsorted = patch
                       putRemainingKeys $ Set.delete k fromKs
                       return $ NodeInfo (From_Move k) $ Just undefined -- There's an existing value, and it's here, so no patch necessary
                     else do
-                      Just (fromK, remainingKeys) <- return $ Set.minView fromKs -- There's an existing value, but it's not here; move it here
+                      (fromK, remainingKeys) <- return . fromJust $ Set.minView fromKs -- There's an existing value, but it's not here; move it here
                       putRemainingKeys remainingKeys
                       return $ NodeInfo (From_Move fromK) $ Just undefined
           Map.traverseWithKey f newByIndex
@@ -154,3 +168,61 @@ nodeInfoMapMFrom f ni = fmap (\result -> ni { _nodeInfo_from = result }) $ f $ _
 -- | Set the 'To' field of a 'NodeInfo'
 nodeInfoSetTo :: To k -> NodeInfo k v -> NodeInfo k v
 nodeInfoSetTo to ni = ni { _nodeInfo_to = to }
+
+-- |Helper data structure used for composing patches using the monoid instance.
+data Fixup k v
+   = Fixup_Delete
+   | Fixup_Update (These (From k v) (To k))
+
+-- |Compose patches having the same effect as applying the patches in turn: @'applyAlways' (p <> q) == 'applyAlways' p . 'applyAlways' q@
+instance Ord k => Semigroup (PatchMapWithMove k v) where
+  PatchMapWithMove ma <> PatchMapWithMove mb = PatchMapWithMove m
+    where
+      connections = Map.toList $ Map.intersectionWithKey (\_ a b -> (_nodeInfo_to a, _nodeInfo_from b)) ma mb
+      h :: (k, (Maybe k, From k v)) -> [(k, Fixup k v)]
+      h (_, (mToAfter, editBefore)) = case (mToAfter, editBefore) of
+        (Just toAfter, From_Move fromBefore)
+          | fromBefore == toAfter
+            -> [(toAfter, Fixup_Delete)]
+          | otherwise
+            -> [ (toAfter, Fixup_Update (This editBefore))
+               , (fromBefore, Fixup_Update (That mToAfter))
+               ]
+        (Nothing, From_Move fromBefore) -> [(fromBefore, Fixup_Update (That mToAfter))] -- The item is destroyed in the second patch, so indicate that it is destroyed in the source map
+        (Just toAfter, _) -> [(toAfter, Fixup_Update (This editBefore))]
+        (Nothing, _) -> []
+      mergeFixups _ Fixup_Delete Fixup_Delete = Fixup_Delete
+      mergeFixups _ (Fixup_Update a) (Fixup_Update b)
+        | This x <- a, That y <- b
+        = Fixup_Update $ These x y
+        | That y <- a, This x <- b
+        = Fixup_Update $ These x y
+      mergeFixups _ _ _ = error "PatchMapWithMove: incompatible fixups"
+      fixups = Map.fromListWithKey mergeFixups $ concatMap h connections
+      combineNodeInfos _ nia nib = NodeInfo
+        { _nodeInfo_from = _nodeInfo_from nia
+        , _nodeInfo_to = _nodeInfo_to nib
+        }
+      applyFixup _ ni = \case
+        Fixup_Delete -> Nothing
+        Fixup_Update u -> Just $ NodeInfo
+          { _nodeInfo_from = fromMaybe (_nodeInfo_from ni) $ getHere u
+          , _nodeInfo_to = fromMaybe (_nodeInfo_to ni) $ getThere u
+          }
+      m = Map.differenceWithKey applyFixup (Map.unionWithKey combineNodeInfos ma mb) fixups
+      getHere :: These a b -> Maybe a
+      getHere = \case
+        This a -> Just a
+        These a _ -> Just a
+        That _ -> Nothing
+      getThere :: These a b -> Maybe b
+      getThere = \case
+        This _ -> Nothing
+        These _ b -> Just b
+        That b -> Just b
+
+--TODO: Figure out how to implement this in terms of PatchDMapWithMove rather than duplicating it here
+-- |Compose patches having the same effect as applying the patches in turn: @'applyAlways' (p <> q) == 'applyAlways' p . 'applyAlways' q@
+instance Ord k => Monoid (PatchMapWithMove k v) where
+  mempty = PatchMapWithMove mempty
+  mappend = (<>)

@@ -20,6 +20,7 @@ main = do
         , "--ignore=Use >=>"
         , "--ignore=Use ."
         , "--ignore=Use unless"
+        , "--ignore=Reduce duplication"
         , "--cpp-define=USE_TEMPLATE_HASKELL"
         ]
       recurseInto = and <$> sequence
