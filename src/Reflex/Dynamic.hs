@@ -265,9 +265,9 @@ traceDynWith f d =
 -- | Replace the value of the 'Event' with the current value of the 'Dynamic'
 -- each time the 'Event' occurs.
 --
--- Note: @/tagPromptlyDyn d e@/ differs from @/tag (current d) e/@ in the case that @/e/@ is firing
--- at the same time that @/d/@ is changing.  With @/tagPromptlyDyn d e/@, the __new__ value of @/d@/
--- will replace the value of @/e/@, whereas with @/tag (current d) e@/, the __old__ value
+-- Note: @/tagPromptlyDyn d e/@ differs from @/tag (current d) e/@ in the case that @/e/@ is firing
+-- at the same time that @/d/@ is changing.  With @/tagPromptlyDyn d e/@, the __new__ value of @/d/@
+-- will replace the value of @/e/@, whereas with @/tag (current d) e/@, the __old__ value
 -- will be used, since the 'Behavior' won't be updated until the end of the frame.
 -- Additionally, this means that the output 'Event' may not be used to directly change
 -- the input 'Dynamic', because that would mean its value depends on itself.  __When creating__
@@ -293,8 +293,7 @@ attachPromptlyDynWith f = attachPromptlyDynWithMaybe $ \a b -> Just $ f a b
 -- current value of the 'Dynamic' value and possibly filtering if the combining
 -- function returns 'Nothing'.
 --
--- Note: `attachPromptlyDynWithMaybe f d` is not the same as `attachWithMaybe f
--- (current d)`.  See 'tagPromptlyDyn' for details.
+-- Note: @/attachPromptlyDynWithMaybe f d/@ is not the same as @/attachWithMaybe f (current d)/@.  See 'tagPromptlyDyn' for details.
 attachPromptlyDynWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Dynamic t a -> Event t b -> Event t c
 attachPromptlyDynWithMaybe f d e =
   let e' = attach (current d) e
