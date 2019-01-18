@@ -58,6 +58,7 @@ module Reflex.Dynamic
   , Demux
   , demux
   , demuxed
+    -- * Miscellaneous
     -- Things that probably aren't very useful:
   , HList (..)
   , FHList (..)
@@ -67,7 +68,7 @@ module Reflex.Dynamic
   , AllAreFunctors (..)
   , HListPtr (..)
   , distributeFHListOverDynPure
-    -- Unsafe
+    -- * Unsafe
   , unsafeDynamic
     -- * Deprecated functions
   , apDyn
@@ -130,7 +131,7 @@ holdUniqDyn = holdUniqDynBy (==)
 holdUniqDynBy :: (Reflex t, MonadHold t m, MonadFix m) => (a -> a -> Bool) -> Dynamic t a -> m (Dynamic t a)
 holdUniqDynBy eq = scanDynMaybe id (\new old -> if new `eq` old then Nothing else Just new)
 
--- | Dynamic Maybe that can only update from Nothing to Just or Just to Just (i.e., cannot revert to Nothing)
+-- | @/Dynamic Maybe/@ that can only update from @/Nothing/@ to @/Just/@ or @/Just/@ to @/Just/@ (i.e., cannot revert to @/Nothing/@)
 improvingMaybe :: (Reflex t, MonadHold t m, MonadFix m) => Dynamic t (Maybe a) -> m (Dynamic t (Maybe a))
 improvingMaybe = scanDynMaybe id (\new _ -> if isJust new then Just new else Nothing)
 
@@ -195,9 +196,9 @@ switchDyn :: forall t a. Reflex t => Dynamic t (Event t a) -> Event t a
 switchDyn d = switch (current d)
 
 -- | Switches to the new 'Event' whenever it receives one.  Switching occurs
--- *before* the inner 'Event' fires - so if the 'Dynamic' changes and both the
+-- __before__ the inner 'Event' fires - so if the 'Dynamic' changes and both the
 -- old and new inner Events fire simultaneously, the output will fire with the
--- value of the *new* 'Event'.
+-- value of the __new__ 'Event'.
 --
 -- Prefer 'switchDyn' to this where possible. The timing requirements that
 -- switching before imposes are likely to bring down your app unless you are
@@ -238,7 +239,7 @@ joinDynThroughMap :: forall t k a. (Reflex t, Ord k) => Dynamic t (Map k (Dynami
 joinDynThroughMap = joinDyn . fmap distributeMapOverDynPure
 
 -- | Print the value of the 'Dynamic' when it is first read and on each
--- subsequent change that is observed (as traceEvent), prefixed with the
+-- subsequent change that is observed (as 'traceEvent'), prefixed with the
 -- provided string. This should /only/ be used for debugging.
 --
 -- Note: Just like Debug.Trace.trace, the value will only be shown if something
@@ -248,7 +249,7 @@ traceDyn s = traceDynWith $ \x -> s <> ": " <> show x
 
 -- | Print the result of applying the provided function to the value
 -- of the 'Dynamic' when it is first read and on each subsequent change
--- that is observed (as traceEvent). This should /only/ be used for
+-- that is observed (as 'traceEvent'). This should /only/ be used for
 -- debugging.
 --
 -- Note: Just like Debug.Trace.trace, the value will only be shown if something
@@ -264,27 +265,27 @@ traceDynWith f d =
 -- | Replace the value of the 'Event' with the current value of the 'Dynamic'
 -- each time the 'Event' occurs.
 --
--- Note: `tagPromptlyDyn d e` differs from `tag (current d) e` in the case that `e` is firing
--- at the same time that `d` is changing.  With `tagPromptlyDyn d e`, the *new* value of `d`
--- will replace the value of `e`, whereas with `tag (current d) e`, the *old* value
+-- Note: @/tagPromptlyDyn d e/@ differs from @/tag (current d) e/@ in the case that @/e/@ is firing
+-- at the same time that @/d/@ is changing.  With @/tagPromptlyDyn d e/@, the __new__ value of @/d/@
+-- will replace the value of @/e/@, whereas with @/tag (current d) e/@, the __old__ value
 -- will be used, since the 'Behavior' won't be updated until the end of the frame.
 -- Additionally, this means that the output 'Event' may not be used to directly change
--- the input 'Dynamic', because that would mean its value depends on itself.  When creating
--- cyclic data flows, generally `tag (current d) e` is preferred.
+-- the input 'Dynamic', because that would mean its value depends on itself.  __When creating__
+-- __cyclic data flows, generally @/tag (current d) e/@ is preferred.__
 tagPromptlyDyn :: Reflex t => Dynamic t a -> Event t b -> Event t a
 tagPromptlyDyn = attachPromptlyDynWith const
 
 -- | Attach the current value of the 'Dynamic' to the value of the
 -- 'Event' each time it occurs.
 --
--- Note: `attachPromptlyDyn d` is not the same as `attach (current d)`.  See 'tagPromptlyDyn' for details.
+-- Note: @/attachPromptlyDyn d/@ is not the same as @/attach (current d)/@.  See 'tagPromptlyDyn' for details.
 attachPromptlyDyn :: Reflex t => Dynamic t a -> Event t b -> Event t (a, b)
 attachPromptlyDyn = attachPromptlyDynWith (,)
 
 -- | Combine the current value of the 'Dynamic' with the value of the
 -- 'Event' each time it occurs.
 --
--- Note: `attachPromptlyDynWith f d` is not the same as `attachWith f (current d)`.  See 'tagPromptlyDyn' for details.
+-- Note: @/attachPromptlyDynWith f d/@ is not the same as @/attachWith f (current d)/@.  See 'tagPromptlyDyn' for details.
 attachPromptlyDynWith :: Reflex t => (a -> b -> c) -> Dynamic t a -> Event t b -> Event t c
 attachPromptlyDynWith f = attachPromptlyDynWithMaybe $ \a b -> Just $ f a b
 
@@ -292,8 +293,7 @@ attachPromptlyDynWith f = attachPromptlyDynWithMaybe $ \a b -> Just $ f a b
 -- current value of the 'Dynamic' value and possibly filtering if the combining
 -- function returns 'Nothing'.
 --
--- Note: `attachPromptlyDynWithMaybe f d` is not the same as `attachWithMaybe f
--- (current d)`.  See 'tagPromptlyDyn' for details.
+-- Note: @/attachPromptlyDynWithMaybe f d/@ is not the same as @/attachWithMaybe f (current d)/@.  See 'tagPromptlyDyn' for details.
 attachPromptlyDynWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Dynamic t a -> Event t b -> Event t c
 attachPromptlyDynWithMaybe f d e =
   let e' = attach (current d) e
@@ -302,8 +302,8 @@ attachPromptlyDynWithMaybe f d e =
        These (_, b) a -> f a b -- Both events are firing, so use the newer value
        That _ -> Nothing -- The tagging event isn't firing, so don't fire
 
--- | Factor a @Dynamic t (Maybe a)@ into a @Dynamic t (Maybe (Dynamic t a))@,
--- such that the outer 'Dynamic' is updated only when the 'Maybe''s constructor
+-- | Factor a @/Dynamic t (Maybe a)/@ into a @/Dynamic t (Maybe (Dynamic t a))/@,
+-- such that the outer 'Dynamic' is updated only when the "Maybe"'s constructor
 -- chages from 'Nothing' to 'Just' or vice-versa.  Whenever the constructor
 -- becomes 'Just', an inner 'Dynamic' will be provided, whose value will track
 -- the 'a' inside the 'Just'; when the constructor becomes 'Nothing', the

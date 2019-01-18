@@ -42,8 +42,8 @@ import Data.IORef
 import System.Mem.Weak
 #endif
 
--- | A @FastWeakBag a@ holds a set of values of type @a@, but does not retain them -
--- that is, they can still be garbage-collected.  As long as the @a@s remain
+-- | A 'FastWeakBag' holds a set of values of type @/a/@, but does not retain them -
+-- that is, they can still be garbage-collected.  As long as the @/a/@ values remain
 -- alive, the 'FastWeakBag' will continue to refer to them.
 #ifdef GHCJS_FAST_WEAK
 newtype FastWeakBag a = FastWeakBag JSVal

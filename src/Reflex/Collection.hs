@@ -139,10 +139,10 @@ listWithKeyShallowDiff initialVals valsChanged mkChild = do
 --TODO: Something better than Dynamic t (Map k v) - we want something
 --where the Events carry diffs, not the whole value
 -- | Create a dynamically-changing set of Event-valued widgets.  This
---   is like listWithKey, specialized for widgets returning (Event t
---   a).  listWithKey would return 'Dynamic t (Map k (Event t a))' in
---   this scenario, but listViewWithKey flattens this to 'Event t (Map
---   k a)' via 'switch'.
+--   is like 'listWithKey', specialized for widgets returning @/Event t a/@.
+--   'listWithKey' would return @/Dynamic t (Map k (Event t a))/@ in
+--   this scenario, but 'listViewWithKey' flattens this to
+--   @/Event t (Map k a)/@ via 'switch'.
 listViewWithKey
   :: (Ord k, Adjustable t m, PostBuild t m, MonadHold t m, MonadFix m)
   => Dynamic t (Map k v)

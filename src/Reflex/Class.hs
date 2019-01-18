@@ -34,10 +34,9 @@ module Reflex.Class
   , coerceDynamic
   , MonadSample (..)
   , MonadHold (..)
-    -- ** 'fan'-related types
+    -- ** 'fan' related types
   , EventSelector (..)
   , EventSelectorInt (..)
-    -- ** 'Incremental'-related types
     -- * Convenience functions
   , constDyn
   , pushAlways
@@ -201,7 +200,7 @@ import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
 import Debug.Trace (trace)
 
 -- | The 'Reflex' class contains all the primitive functionality needed for
--- Functional Reactive Programming (FRP).  The @t@ type parameter indicates
+-- Functional Reactive Programming (FRP).  The @/t/@ type parameter indicates
 -- which "timeline" is in use.  Timelines are fully-independent FRP contexts,
 -- and the type of the timeline determines the FRP engine to be used.  For most
 -- purposes, the 'Reflex.Spider' implementation is recommended.
@@ -267,7 +266,7 @@ class ( MonadHold t (PushM t)
   -- | Create a new 'Dynamic'.  The given 'PullM' must always return the most
   -- recent firing of the given 'Event', if any.
   unsafeBuildDynamic :: PullM t a -> Event t a -> Dynamic t a
-  -- | Create a new 'Incremental'.  The given 'PullM''s value must always change
+  -- | Create a new 'Incremental'.  The given "PullM"'s value must always change
   -- in the same way that the accumulated application of patches would change
   -- that value.
   unsafeBuildIncremental :: Patch p => PullM t (PatchTarget p) -> Event t p -> Incremental t p
@@ -310,7 +309,7 @@ coerceDynamic :: (Reflex t, Coercible a b) => Dynamic t a -> Dynamic t b
 coerceDynamic = coerceWith $ dynamicCoercion Coercion
 
 -- | Construct a 'Dynamic' from a 'Behavior' and an 'Event'.  The 'Behavior'
--- _must_ change when and only when the 'Event' fires, such that the
+-- __must__ change when and only when the 'Event' fires, such that the
 -- 'Behavior''s value is always equal to the most recent firing of the 'Event';
 -- if this is not the case, the resulting 'Dynamic' will behave
 -- nondeterministically.
@@ -338,7 +337,7 @@ class MonadSample t m => MonadHold t m where
   -- value and will be updated whenever the given 'Event' occurs.  The update
   -- takes effect immediately after the 'Event' occurs; if the occurrence that
   -- sets the 'Behavior' (or one that is simultaneous with it) is used to sample
-  -- the 'Behavior', it will see the _old_ value of the 'Behavior', not the new
+  -- the 'Behavior', it will see the __old__ value of the 'Behavior', not the new
   -- one.
   hold :: a -> Event t a -> m (Behavior t a)
   default hold :: (m ~ f m', MonadTrans f, MonadHold t m') => a -> Event t a -> m (Behavior t a)
@@ -641,7 +640,7 @@ headTailE e = do
 -- event returns 'True'.
 --
 -- Starting at the current time, fire all the occurrences of the 'Event' for
--- which the given predicate returns 'True'.  When 'False' first is returned,
+-- which the given predicate returns 'True'.  When first 'False' is returned,
 -- do not fire, and permanently stop firing, even if 'True' values would have
 -- been encountered later.
 takeWhileE
@@ -656,7 +655,7 @@ takeWhileE f = takeWhileJustE $ \v -> guard (f v) $> v
 -- event returns 'Just b'.
 --
 -- Starting at the current time, fire all the occurrences of the 'Event' for
--- which the given predicate returns 'Just b'.  When 'Nothing' first is returned,
+-- which the given predicate returns 'Just b'.  When first 'Nothing' is returned,
 -- do not fire, and permanently stop firing, even if 'Just b' values would have
 -- been encountered later.
 takeWhileJustE
@@ -829,7 +828,7 @@ fanMap = fan . fmap mapToDMap
 
 -- | Switches to the new event whenever it receives one. Only the old event is
 -- considered the moment a new one is switched in; the output event will fire at
--- that moment if only if the old event does.
+-- that moment only if the old event does.
 --
 -- Because the simultaneous firing case is irrelevant, this function imposes
 -- laxer "timing requirements" on the overall circuit, avoiding many potential
@@ -875,13 +874,13 @@ coincidencePatchMap e = fmapCheap PatchMap $ coincidence $ ffor e $ \(PatchMap m
   Nothing -> fmapCheap (const Nothing) e
   Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
 
--- | See 'coincicencePatchMap'
+-- | See 'coincidencePatchMap'
 coincidencePatchIntMap :: Reflex t => Event t (PatchIntMap (Event t v)) -> Event t (PatchIntMap v)
 coincidencePatchIntMap e = fmapCheap PatchIntMap $ coincidence $ ffor e $ \(PatchIntMap m) -> mergeIntMap $ ffor m $ \case
   Nothing -> fmapCheap (const Nothing) e
   Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
 
--- | See 'coincicencePatchMap'
+-- | See 'coincidencePatchMap'
 coincidencePatchMapWithMove :: (Reflex t, Ord k) => Event t (PatchMapWithMove k (Event t v)) -> Event t (PatchMapWithMove k v)
 coincidencePatchMapWithMove e = fmapCheap unsafePatchMapWithMove $ coincidence $ ffor e $ \p -> mergeMap $ ffor (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
   PatchMapWithMove.From_Delete -> fforCheap e $ \_ ->
@@ -942,7 +941,7 @@ zipDyn = zipDynWith (,)
 
 -- | Combine two 'Dynamic's with a combining function.  The result will change
 -- whenever either (or both) input 'Dynamic' changes.
--- More efficient than liftA2.
+-- More efficient than 'liftA2'.
 zipDynWith :: Reflex t => (a -> b -> c) -> Dynamic t a -> Dynamic t b -> Dynamic t c
 zipDynWith f da db =
   let eab = align (updated da) (updated db)
@@ -973,7 +972,7 @@ instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
 
 -- | This function converts a 'DMap' whose elements are 'Dynamic's into a
 -- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same
--- through the use of multiple uses of 'zipWithDyn' or 'Applicative' operators.
+-- through the use of multiple uses of 'zipDynWith' or 'Applicative' operators.
 distributeDMapOverDynPure :: forall t k. (Reflex t, GCompare k) => DMap k (Dynamic t) -> Dynamic t (DMap k Identity)
 distributeDMapOverDynPure dm = case DMap.toList dm of
   [] -> constDyn DMap.empty
