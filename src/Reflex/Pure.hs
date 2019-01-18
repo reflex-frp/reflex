@@ -43,12 +43,12 @@ import Data.Type.Coercion
 import Reflex.Class
 
 -- | A completely pure-functional 'Reflex' timeline, identifying moments in time
--- with the type @t@.
+-- with the type @/t/@.
 data Pure t
 
--- | The Enum instance of t must be dense: for all x :: t, there must not exist
--- any y :: t such that pred x < y < x. The HasTrie instance will be used
--- exclusively to memoize functions of t, not for any of its other capabilities.
+-- | The 'Enum' instance of @/t/@ must be dense: for all @/x :: t/@, there must not exist
+-- any @/y :: t/@ such that @/'pred' x < y < x/@. The 'HasTrie' instance will be used
+-- exclusively to memoize functions of @/t/@, not for any of its other capabilities.
 instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
 
   newtype Behavior (Pure t) a = Behavior { unBehavior :: t -> a }
