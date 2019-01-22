@@ -12,6 +12,9 @@ Build-type: Simple
 Cabal-version: >=1.9.2
 homepage: https://reflex-frp.org
 bug-reports: https://github.com/reflex-frp/reflex/issues
+extra-source-files:
+  README.md
+  Quickref.md
 
 flag use-reflex-optimizer
   description: Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.
