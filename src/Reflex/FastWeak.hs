@@ -74,7 +74,7 @@ unsafeToRawJSVal :: a -> JSVal
 unsafeToRawJSVal v = unsafeCoerce (Val v)
 #else
 -- | A 'FastWeak' which has been promoted to a strong reference. 'getFastWeakTicketValue'
--- can be used to get the referred to value without fear of @Nothing,
+-- can be used to get the referred to value without fear of @Nothing@,
 -- and 'getFastWeakTicketWeak' can be used to get the weak version.
 data FastWeakTicket a = FastWeakTicket
   { _fastWeakTicket_val :: !a
@@ -85,7 +85,8 @@ data FastWeakTicket a = FastWeakTicket
 --
 -- 'getFastWeakValue' can be used to try and obtain a strong reference to the value.
 --
--- The value in a @FastWeak@ can also be kept alive by obtaining a 'FastWeakTicket' using 'getFastWeakTicket' if the value hasn't been collected yet.
+-- The value in a @FastWeak@ can also be kept alive by obtaining a 'FastWeakTicket' using 'getFastWeakTicket'
+-- if the value hasn't been collected yet.
 --
 -- Synonymous with 'Weak'.
 type FastWeak a = Weak a
