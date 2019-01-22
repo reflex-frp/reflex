@@ -27,6 +27,7 @@ module Reflex.Requester.Base
   , RequesterData
   , RequesterDataKey
   , traverseRequesterData
+  , forRequesterData
   , requesterDataToList
   , singletonRequesterData
   ) where
@@ -129,6 +130,10 @@ traverseRequesterData f (RequesterData m) = RequesterData <$> traverseTagMapWith
           MyTagType_Multi -> traverse (traverseRequesterData f) request
           MyTagType_Multi2 -> traverse (traverse (traverseRequesterData f)) request
           MyTagType_Multi3 -> traverse (traverse (traverseRequesterData f)) request
+
+-- | 'traverseRequesterData' with its arguments flipped
+forRequesterData :: forall request response m. Applicative m => RequesterData request -> (forall a. request a -> m (response a)) -> m (RequesterData response)
+forRequesterData r f = traverseRequesterData f r
 
 data MyTagType :: * -> * where
   MyTagType_Single :: MyTagType (Single a)
