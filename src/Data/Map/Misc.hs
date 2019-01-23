@@ -46,12 +46,13 @@ diffMap olds news = flip Map.mapMaybe (align olds news) $ \case
 -- See also 'Reflex.Patch.Map' and 'Reflex.Patch.MapWithMove'.
 applyMap :: Ord k => Map k (Maybe v) -> Map k v -> Map k v
 applyMap patch old = insertions `Map.union` (old `Map.difference` deletions)
-  where (deletions, insertions) = mapPartitionEithers $ maybeToEither <$> patch
+  where (deletions, insertions) = Map.mapEither id $ maybeToEither <$> patch
         maybeToEither = \case
           Nothing -> Left ()
           Just r -> Right r
 
 -- |Split a @'Map' k (Either a b)@ into @Map k a@ and @Map k b@, equivalent to @'Map.mapEither' id@
+{-# DEPRECATED mapPartitionEithers "Use 'mapEither' instead" #-}
 mapPartitionEithers :: Map k (Either a b) -> (Map k a, Map k b)
 mapPartitionEithers = Map.mapEither id
 
