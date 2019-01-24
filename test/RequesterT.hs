@@ -42,11 +42,14 @@ main = do
   print os4
   os5 <- runApp' (unwrapApp testLiveRequestDMap) [Just ()]
   print os5
+  os6 <- runApp' (unwrapApp delayedPulse) [Just ()]
+  print os6
   let ![[Just [10,9,8,7,6,5,4,3,2,1]]] = os1
   let ![[Just [1,3,5,7,9]],[Nothing,Nothing],[Just [2,4,6,8,10]],[Just [2,4,6,8,10],Nothing]] = os2
   let ![[Nothing, Just [2]]] = os3
   let ![[Nothing, Just [2]]] = os4
   let ![[Nothing, Just [1, 2]]] = os5
+  let ![[Nothing, Nothing]] = os6
   return ()
 
 unwrapRequest :: DSum tag RequestInt -> Int
@@ -146,3 +149,21 @@ testLiveRequestDMap pulse = do
           (mapToDMap $ M.singleton 1 ())
           ((PatchDMap $ DMap.map (ComposeMaybe . Just) $ mapToDMap $ M.singleton 2 ()) <$ pulse)
   return ()
+
+delayedPulse
+  :: forall t m
+  .  ( Reflex t
+     , Adjustable t m
+     , MonadHold t m
+     , MonadFix m
+     , Response m ~ Identity
+     , Request m ~ RequestInt
+     , PerformEvent t m
+     , Requester t m
+     )
+  => Event t ()
+  -> m ()
+delayedPulse pulse = void $ flip runWithReplace (pure () <$ pulse) $ do
+    -- This has the effect of delaying pulse' from pulse
+    (_, pulse') <- runWithReplace (pure ()) $ pure (RequestInt 1) <$ pulse
+    requestingIdentity pulse'
