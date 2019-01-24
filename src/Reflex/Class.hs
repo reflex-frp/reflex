@@ -991,7 +991,16 @@ distributeListOverDyn = distributeListOverDynWith id
 
 -- | Create a new 'Dynamic' by applying a combining function to a list of 'Dynamic's
 distributeListOverDynWith :: Reflex t => ([a] -> b) -> [Dynamic t a] -> Dynamic t b
-distributeListOverDynWith f = fmap (f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..]
+distributeListOverDynWith f =
+  fmap (f . map fromDSum . DMap.toAscList) .
+  distributeDMapOverDynPure .
+  DMap.fromDistinctAscList .
+  zipWith toDSum [0..]
+  where
+    toDSum :: Int -> Dynamic t a -> DSum (Const2 Int a) (Dynamic t)
+    toDSum k v = Const2 k :=> v
+    fromDSum :: DSum (Const2 Int a) Identity -> a
+    fromDSum (Const2 _ :=> Identity v) = v
 
 -- | Create a new 'Event' that occurs when the first supplied 'Event' occurs
 -- unless the second supplied 'Event' occurs simultaneously.

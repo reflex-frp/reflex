@@ -220,17 +220,9 @@ distributeMapOverDynPure = fmap dmapToMap . distributeDMapOverDynPure . mapWithF
 
 -- | Convert a list with 'Dynamic' elements into a 'Dynamic' of a list with
 -- non-'Dynamic' elements, preserving the order of the elements.
+{-# DEPRECATED distributeListOverDynPure "Use 'distributeListOverDyn' instead" #-}
 distributeListOverDynPure :: Reflex t => [Dynamic t v] -> Dynamic t [v]
-distributeListOverDynPure =
-  fmap (map fromDSum . DMap.toAscList) .
-  distributeDMapOverDynPure .
-  DMap.fromDistinctAscList .
-  zipWith toDSum [0..]
-  where
-    toDSum :: Int -> Dynamic t a -> DSum (Const2 Int a) (Dynamic t)
-    toDSum k v = Const2 k :=> v
-    fromDSum :: DSum (Const2 Int a) Identity -> a
-    fromDSum (Const2 _ :=> Identity v) = v
+distributeListOverDynPure = distributeListOverDyn
 
 --TODO: Generalize this to functors other than Maps
 -- | Combine a 'Dynamic' of a 'Map' of 'Dynamic's into a 'Dynamic'
