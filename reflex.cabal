@@ -61,7 +61,7 @@ library
     stm >= 2.4 && < 2.6,
     syb >= 0.5 && < 0.8,
     these >= 0.4 && < 0.7.6,
-    time >= 1.4 && < 1.9,
+    time >= 1.4,
     transformers >= 0.2,
     transformers-compat >= 0.3,
     unbounded-delays >= 0.1.0.0 && < 0.2
@@ -132,8 +132,8 @@ library
     cpp-options: -DUSE_TEMPLATE_HASKELL
     build-depends:
       dependent-sum >= 0.3 && < 0.5,
-      haskell-src-exts >= 1.16 && < 1.21,
-      haskell-src-meta >= 0.6 && < 0.9,
+      haskell-src-exts >= 1.16,
+      haskell-src-meta >= 0.6,
       template-haskell >= 2.9
     exposed-modules:
       Reflex.Dynamic.TH
