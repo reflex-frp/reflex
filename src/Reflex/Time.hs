@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecursiveDo #-}
@@ -24,12 +26,15 @@ import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Data.Align
+import Data.Data (Data)
 import Data.Fixed
+import Data.Semigroup
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
 import Data.These
 import Data.Time.Clock
 import Data.Typeable
+import GHC.Generics (Generic)
 import System.Random
 
 data TickInfo
@@ -266,6 +271,92 @@ throttle t e = do
       delayed <- delay t outE
   return outE
 
+data ThrottleState b
+  = ThrottleState_Immediate
+  | ThrottleState_Buffered (ThrottleBuffer b)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data, Typeable)
+
+data ThrottleBuffer b
+  = ThrottleBuffer_Empty -- Empty conflicts with lens, and hiding it would require turning
+           -- on PatternSynonyms
+  | ThrottleBuffer_Full b
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data, Typeable)
+
+instance Semigroup b => Semigroup (ThrottleBuffer b) where
+  x <> y = case x of
+    ThrottleBuffer_Empty -> y
+    ThrottleBuffer_Full b1 -> case y of
+      ThrottleBuffer_Empty -> x
+      ThrottleBuffer_Full b2 -> ThrottleBuffer_Full $ b1 <> b2
+  {-# INLINE (<>) #-}
+
+instance Semigroup b => Monoid (ThrottleBuffer b) where
+  mempty = ThrottleBuffer_Empty
+  {-# INLINE mempty #-}
+  mappend = (<>)
+  {-# INLINE mappend #-}
+
+-- | Throttle an input event, ensuring that the output event doesn't occur more often than you are ready for it. If the input event occurs too
+-- frequently, the output event will contain semigroup-based summaries of the input firings that happened since the last output firing.
+-- If the output event has not occurred recently, occurrences of the input event will cause the output event to fire immediately.
+-- The first parameter is a function that receives access to the output event, and should construct an event that fires when the receiver is
+-- ready for more input.  For example, using @delay 20@ would give a simple time-based throttle.
+--
+-- NB: The provided lag function must *actually* delay the event.
+throttleBatchWithLag :: (MonadFix m, MonadHold t m, PerformEvent t m, Semigroup a) => (Event t () -> m (Event t ())) -> Event t a -> m (Event t a)
+-- Invariants:
+-- * Immediate mode must turn off whenever output is produced.
+-- * Output must be produced whenever immediate mode turns from on to off.
+-- * Immediate mode can only go from off to on when the delayed event fires.
+-- * Every input firing must go into either an immediate output firing or the
+--   buffer, but not both.
+-- * An existing full buffer must either stay in the buffer or go to output,
+--   but not both.
+throttleBatchWithLag lag e = do
+  let f state x = case x of -- (Just $ newState, out)
+        This a -> -- If only the input event fires
+          case state of
+            ThrottleState_Immediate -> -- and we're in immediate mode
+              -- Immediate mode turns off, and the buffer is empty.
+              -- We fire the output event with the input event value immediately.
+              (Just $ ThrottleState_Buffered $ ThrottleBuffer_Empty, Just a)
+            ThrottleState_Buffered b -> -- and we're not in immediate mode
+              -- Immediate mode remains off, and we accumulate the input value.
+              -- We don't fire the output event.
+              (Just $ ThrottleState_Buffered $ b <> ThrottleBuffer_Full a, Nothing)
+        That _ -> -- If only the delayed output event fires,
+          case state of
+            ThrottleState_Immediate -> -- and we're in immediate mode
+              -- Nothing happens.
+              (Nothing, Nothing)
+            ThrottleState_Buffered ThrottleBuffer_Empty -> -- and the buffer is empty:
+              -- Immediate mode turns back on, and the buffer remains empty.
+              -- We don't fire.
+              (Just ThrottleState_Immediate, Nothing)
+            ThrottleState_Buffered (ThrottleBuffer_Full b) -> -- and the buffer is full:
+              -- Immediate mode remains off, and the buffer is cleared.
+              -- We fire with the buffered value.
+              (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just b)
+        These a _ -> -- If both the input and delayed output event fire simultaneously:
+          case state of
+            ThrottleState_Immediate -> -- and we're in immediate mode
+              -- Immediate mode turns off, and the buffer is empty.
+              -- We fire with the input event's value, as it is the most recent we have seen at this moment.
+              (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just a)
+            ThrottleState_Buffered ThrottleBuffer_Empty -> -- and the buffer is empty:
+              -- Immediate mode stays off, and the buffer remains empty.
+              -- We fire with the input event's value.
+              (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just a)
+            ThrottleState_Buffered (ThrottleBuffer_Full b) -> -- and the buffer is full:
+              -- Immediate mode remains off, and the buffer is cleared.
+              -- We fire with everything including the buffered value.
+              (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just (b <> a))
+  rec (_stateDyn, outE) <- mapAccumMaybeDyn f
+        ThrottleState_Immediate -- We start in immediate mode with an empty buffer.
+        (align e delayed)
+      delayed <- lag (void outE)
+  return outE
+
 #ifdef USE_TEMPLATE_HASKELL
 makeLensesWith (lensRules & simpleLenses .~ True) ''TickInfo
 #else
@@ -281,4 +372,3 @@ tickInfo_alreadyElapsed :: Lens' TickInfo NominalDiffTime
 tickInfo_alreadyElapsed f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 x2 y) <$> f x3
 {-# INLINE tickInfo_alreadyElapsed #-}
 #endif
-
