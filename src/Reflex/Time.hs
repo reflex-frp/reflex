@@ -301,6 +301,8 @@ instance Semigroup b => Monoid (ThrottleBuffer b) where
 -- If the output event has not occurred recently, occurrences of the input event will cause the output event to fire immediately.
 -- The first parameter is a function that receives access to the output event, and should construct an event that fires when the receiver is
 -- ready for more input.  For example, using @delay 20@ would give a simple time-based throttle.
+--
+-- NB: The provided lag function must *actually* delay the event.
 throttleBatchWithLag :: (MonadFix m, MonadHold t m, PerformEvent t m, Semigroup a) => (Event t () -> m (Event t ())) -> Event t a -> m (Event t a)
 -- Invariants:
 -- * Immediate mode must turn off whenever output is produced.
