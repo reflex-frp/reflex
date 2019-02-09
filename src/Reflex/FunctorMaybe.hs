@@ -1,3 +1,7 @@
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
 -- | This module defines the FunctorMaybe class, which extends Functors with the
 -- ability to delete values.
 module Reflex.FunctorMaybe
@@ -9,6 +13,7 @@ import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Semigroup (Option(..))
 
 --TODO: See if there's a better class in the standard libraries already
 
@@ -31,6 +36,10 @@ class FunctorMaybe f where
 -- | @fmapMaybe = (=<<)
 instance FunctorMaybe Maybe where
   fmapMaybe = (=<<)
+
+#if MIN_VERSION_base(4,9,0)
+deriving instance FunctorMaybe Option
+#endif
 
 -- | @fmapMaybe = mapMaybe@
 instance FunctorMaybe [] where
