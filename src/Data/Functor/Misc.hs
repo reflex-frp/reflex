@@ -86,9 +86,6 @@ deriving instance Read k => Read (Const2 k v v)
 instance Show k => GShow (Const2 k v) where
   gshowsPrec n x@(Const2 _) = showsPrec n x
 
-instance (Show k, Show (f v)) => ShowTag (Const2 k v) f where
-  showTaggedPrec (Const2 _) = showsPrec
-
 instance Eq k => GEq (Const2 k v) where
   geq (Const2 a) (Const2 b) =
     if a == b
@@ -220,11 +217,6 @@ instance GShow (EitherTag l r) where
   gshowsPrec _ a = case a of
     LeftTag -> showString "LeftTag"
     RightTag -> showString "RightTag"
-
-instance (Show l, Show r) => ShowTag (EitherTag l r) Identity where
-  showTaggedPrec t n (Identity a) = case t of
-    LeftTag -> showsPrec n a
-    RightTag -> showsPrec n a
 
 -- | Convert 'Either' to a 'DSum'. Inverse of 'dsumToEither'.
 eitherToDSum :: Either a b -> DSum (EitherTag a b) Identity
