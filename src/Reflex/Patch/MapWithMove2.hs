@@ -186,7 +186,7 @@ data Fixup k v
    | Fixup_Update (These (From k v) (To k))
 
 -- |Compose patches having the same effect as applying the patches in turn: @'applyAlways' (p <> q) == 'applyAlways' p . 'applyAlways' q@
-instance (Ord k, Monoid p, Eq p) => Semigroup (PatchMapWithMove2 k p) where
+instance (Ord k, Monoid p, Eq p, Patch p) => Semigroup (PatchMapWithMove2 k p) where
   PatchMapWithMove2 ma <> PatchMapWithMove2 mb = PatchMapWithMove2 m
     where
       connections = Map.toList $ Map.intersectionWithKey (\_ a b -> (_nodeInfo_to a, _nodeInfo_from b)) ma mb
@@ -217,13 +217,13 @@ instance (Ord k, Monoid p, Eq p) => Semigroup (PatchMapWithMove2 k p) where
       applyFixup _ ni = \case
         Fixup_Delete -> Nothing
         Fixup_Update u -> Just $ NodeInfo
-          { _nodeInfo_from = case getHere u of -- The `from` fixup comes from the "old" patch
-              Nothing -> _nodeInfo_from ni -- If there's no `from` fixup, just use the "new" `from`
-              Just (From_Insert v) -> From_Insert v
-              Just From_Delete -> From_Delete
-              Just (From_Move oldKey p) -> case _nodeInfo_from ni of
-                From_Move _ p' -> From_Move oldKey $ p' <> p
-                _ -> error "PatchMapWithMove2: fixup for non-move From"
+          { _nodeInfo_from = case _nodeInfo_from ni of
+              f@(From_Move _ p') -> case getHere u of -- The `from` fixup comes from the "old" patch
+                Nothing -> f -- If there's no `from` fixup, just use the "new" `from`
+                Just (From_Insert v) -> From_Insert $ applyAlways p' v
+                Just From_Delete -> From_Delete
+                Just (From_Move oldKey p) -> From_Move oldKey $ p' <> p
+              _ -> error "PatchMapWithMove2: fixup for non-move From"
           , _nodeInfo_to = fromMaybe (_nodeInfo_to ni) $ getThere u
           }
       m = Map.differenceWithKey applyFixup (Map.unionWithKey combineNodeInfos ma mb) fixups
@@ -240,6 +240,6 @@ instance (Ord k, Monoid p, Eq p) => Semigroup (PatchMapWithMove2 k p) where
 
 --TODO: Figure out how to implement this in terms of PatchDMapWithMove rather than duplicating it here
 -- |Compose patches having the same effect as applying the patches in turn: @'applyAlways' (p <> q) == 'applyAlways' p . 'applyAlways' q@
-instance (Ord k, Monoid p, Eq p) => Monoid (PatchMapWithMove2 k p) where
+instance (Ord k, Monoid p, Eq p, Patch p) => Monoid (PatchMapWithMove2 k p) where
   mempty = PatchMapWithMove2 mempty
   mappend = (<>)
