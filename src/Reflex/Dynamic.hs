@@ -352,7 +352,7 @@ factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
 --
 -- > demuxed (demux d) k === fmap (== k) d
 --
--- However, the when getDemuxed is used multiple times, the complexity is only
+-- However, when getDemuxed is used multiple times, the complexity is only
 -- /O(log(n))/, rather than /O(n)/ for fmap.
 data Demux t k = Demux { demuxValue :: Behavior t k
                        , demuxSelector :: EventSelector t (Const2 k Bool)
@@ -506,7 +506,7 @@ instance AllAreFunctors f t => AllAreFunctors f (h ': t) where
 
 -- | Convert a datastructure whose constituent parts are all 'Dynamic's into a
 -- single 'Dynamic' whose value represents all the current values of the input's
--- consitutent 'Dynamic's.
+-- constituent 'Dynamic's.
 collectDynPure :: ( RebuildSortedHList (HListElems b)
                   , IsHList a, IsHList b
                   , AllAreFunctors (Dynamic t) (HListElems b)
@@ -585,7 +585,7 @@ distributeDMapOverDyn = return . distributeDMapOverDynPure
 combineDyn :: forall t m a b c. (Reflex t, Monad m) => (a -> b -> c) -> Dynamic t a -> Dynamic t b -> m (Dynamic t c)
 combineDyn f a b = return $ zipDynWith f a b
 
--- | A psuedo applicative version of ap for 'Dynamic'. Example useage:
+-- | A pseudo applicative version of ap for 'Dynamic'. Example useage:
 --
 -- > do
 -- >    person <- Person `mapDyn` dynFirstName
