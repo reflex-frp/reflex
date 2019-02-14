@@ -30,6 +30,9 @@ module Reflex.Requester.Base
   , forRequesterData
   , requesterDataToList
   , singletonRequesterData
+  , multiEntry
+  , unMultiEntry
+  , requesting'
   ) where
 
 import Reflex.Class
@@ -44,6 +47,7 @@ import Reflex.TriggerEvent.Class
 import Control.Applicative (liftA2)
 import Control.Monad.Exception
 import Control.Monad.Identity
+import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
@@ -243,6 +247,10 @@ deriving instance MonadSample t m => MonadSample t (RequesterT t request respons
 deriving instance MonadHold t m => MonadHold t (RequesterT t request response m)
 deriving instance PostBuild t m => PostBuild t (RequesterT t request response m)
 deriving instance TriggerEvent t m => TriggerEvent t (RequesterT t request response m)
+
+instance PrimMonad m => PrimMonad (RequesterT t request response m) where
+  type PrimState (RequesterT t request response m) = PrimState m
+  primitive = lift . primitive
 
 -- TODO: Monoid and Semigroup can likely be derived once StateT has them.
 instance (Monoid a, Monad m) => Monoid (RequesterT t request response m a) where
