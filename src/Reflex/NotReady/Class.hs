@@ -39,6 +39,10 @@ instance NotReady t m => NotReady t (ReaderT r m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 
+instance (NotReady t m, Monoid w) => NotReady t (WriterT w m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
 instance NotReady t m => NotReady t (PostBuildT t m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
@@ -48,6 +52,10 @@ instance NotReady t m => NotReady t (EventWriterT t w m) where
   notReady = lift notReady
 
 instance NotReady t m => NotReady t (DynamicWriterT t w m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
+instance (NotReady t m, Monoid w) => NotReady t (BehaviorWriterT t w m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 
