@@ -15,7 +15,9 @@ module Reflex.NotReady.Class
 
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.Trans
+import Control.Monad.Trans.Writer (WriterT)
 
+import Reflex.BehaviorWriter.Base (BehaviorWriterT)
 import Reflex.Class
 import Reflex.DynamicWriter.Base (DynamicWriterT)
 import Reflex.EventWriter.Base (EventWriterT)
