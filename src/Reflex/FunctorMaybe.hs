@@ -13,7 +13,9 @@ import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+#if MIN_VERSION_base(4,9,0)
 import Data.Semigroup (Option(..))
+#endif
 
 --TODO: See if there's a better class in the standard libraries already
 
