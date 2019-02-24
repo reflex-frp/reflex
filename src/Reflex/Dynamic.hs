@@ -101,11 +101,13 @@ import Control.Applicative ((<*>))
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity
+import Control.Monad.State
 import Data.Align
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
 import Data.Distributive
+import Data.Foldable
 import Data.Functor.Product
 import Data.GADT.Compare ((:~:) (..), GCompare (..), GEq (..), GOrdering (..))
 import Data.Map (Map)
@@ -243,7 +245,21 @@ joinDynThroughMap = joinDyn . fmap distributeMapOverDynPure
 -- | Combine a 'Dynamic' of a 'Traversable' of 'Dynamic's into a 'Dynamic'
 -- with the current values of the 'Dynamic's in the functor.
 joinDynThroughTraversable :: (Reflex t, Traversable f) => Dynamic t (f (Dynamic t a)) -> Dynamic t (f a)
-joinDynThroughTraversable = join . fmap sequence
+joinDynThroughTraversable = join . fmap (unsafeViaList distributeListOverDynPure)
+  where
+    -- Requires 'f' to preserve number and order of elements
+    unsafeViaList :: (Functor f, Traversable t) => ([a] -> f [b]) -> t a -> f (t b)
+    unsafeViaList f t = unsafeReifyContents t <$> f (toList t)
+
+    -- Requires the list to have at least as many elements as the traversable
+    unsafeReifyContents :: Traversable t => t a -> [b] -> t b
+    unsafeReifyContents = evalState . sequence . (f <$)
+      where
+       f = do
+         (b:bs') <- get
+         put bs'
+         return b
+
 
 -- | Combine a 'Dynamic' of a 'Distributive' of 'Dynamic's into a functor of 'Dynamic's.
 -- The current value at each hole in the resulting functor will be the current value of that hole in the current original functor
