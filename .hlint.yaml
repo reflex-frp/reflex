@@ -1,0 +1,3 @@
+- warn: {lhs: either Just (const Nothing), rhs: preview _Left}
+- warn: {lhs: either (const Nothing) Just, rhs: preview _Right}
+- warn: {lhs: \x -> if f x then Just x else Nothing, rhs: mfilter f . Just}

@@ -193,6 +193,7 @@ import qualified Data.Some as Some
 import Data.String
 import Data.These
 import Data.Type.Coercion
+import Control.Lens
 import Reflex.FunctorMaybe
 import Reflex.Patch
 import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
@@ -557,15 +558,15 @@ fforMaybe = flip fmapMaybe
 -- | Filter 'f a' using the provided predicate.
 -- Relies on 'fforMaybe'.
 ffilter :: FunctorMaybe f => (a -> Bool) -> f a -> f a
-ffilter f = fmapMaybe $ \x -> if f x then Just x else Nothing
+ffilter f = fmapMaybe $ mfilter f . Just
 
 -- | Filter 'Left's from 'f (Either a b)' into 'a'.
 filterLeft :: FunctorMaybe f => f (Either a b) -> f a
-filterLeft = fmapMaybe (either Just (const Nothing))
+filterLeft = fmapMaybe $ preview _Left
 
 -- | Filter 'Right's from 'f (Either a b)' into 'b'.
 filterRight :: FunctorMaybe f => f (Either a b) -> f b
-filterRight = fmapMaybe (either (const Nothing) Just)
+filterRight = fmapMaybe $ preview _Right
 
 -- | Left-biased event union (prefers left event on simultaneous
 -- occurrence).
@@ -804,22 +805,12 @@ mergeMapIncrementalWithMove = fmap dmapToMap . mergeIncrementalWithMove . unsafe
 
 -- | Split the event into separate events for 'Left' and 'Right' values.
 fanEither :: Reflex t => Event t (Either a b) -> (Event t a, Event t b)
-fanEither e =
-  let justLeft = either Just (const Nothing)
-      justRight = either (const Nothing) Just
-  in (fmapMaybe justLeft e, fmapMaybe justRight e)
+fanEither e = (fmapMaybe (preview _Left) e, fmapMaybe (preview _Right) e)
 
 -- | Split the event into separate events for 'This' and 'That' values,
 -- allowing them to fire simultaneously when the input value is 'These'.
 fanThese :: Reflex t => Event t (These a b) -> (Event t a, Event t b)
-fanThese e =
-  let this (This x) = Just x
-      this (These x _) = Just x
-      this _ = Nothing
-      that (That y) = Just y
-      that (These _ y) = Just y
-      that _ = Nothing
-  in (fmapMaybe this e, fmapMaybe that e)
+fanThese e = (fmapMaybe (preview here) e, fmapMaybe (preview there) e)
 
 -- | Split the event into an 'EventSelector' that allows efficient selection of
 -- the individual 'Event's.
