@@ -183,6 +183,9 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 -- Output updated whenever inner OR outer Dynamic updates.
 [ ]   join              ::          Dynamic        (Dynamic a)  ->  Dynamic a
 [ ]   joinDynThroughMap :: Ord k => Dynamic (Map k (Dynamic a)) ->  Dynamic (Map k a)
+[ ]   joinDynThroughTraversable :: Traversable f => Dynamic t (f (Dynamic t a)) -> Dynamic t (f a)
+[ ]   joinDynThroughDistributive :: Distributive f => Dynamic t (f (Dynamic t a)) -> f (Dynamic t a)
+
 
 -- Analogous to 'hold':  Create a Behavior that is initially identical to the
 -- supplied Behavior.  Updated to track a new Behavior whenever the Event fires.
