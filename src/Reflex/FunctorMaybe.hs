@@ -21,7 +21,7 @@ import Data.Semigroup (Option(..))
 
 -- | A class for values that combines filtering and mapping using 'Maybe'.
 -- Morally, @'FunctorMaybe' ~ KleisliFunctor 'Maybe'@. Also similar is the
--- @Witherable@ typeclass, but it requires @Foldable f@ and @Traverable f@,
+-- @Witherable@ typeclass, but it requires @'Foldable' f@ and @'Traversable' f@,
 -- and e.g. 'Event' is instance of neither.
 --
 -- A definition of 'fmapMaybe' must satisfy the following laws:
