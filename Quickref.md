@@ -57,15 +57,15 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   mergeWith  :: (a -> a -> a) -> [Event a] -> Event a
 [ ]   leftmost   :: [Event a] -> Event a
 [ ]   mergeList  :: [Event a] -> Event (NonEmpty a)
-[ ]   merge      :: GCompare k => DMap (WrapArg Event k) -> Event (DMap k)
+[ ]   merge      :: GCompare k => DMap k Event -> Event (DMap k Identity)
 [ ]   mergeMap   :: Ord k => Map k (Event a) -> Event (Map k a)
 
 -- Efficient one-to-many fanout
-[ ]   fanMap    ::      Ord k => Event (Map k a) -> EventSelector (Const2 k a)
-[ ]   fan       :: GCompare k => Event  (DMap k) -> EventSelector k
-[ ]   select    ::                                  EventSelector k -> k a -> Event a
-[ ]   fanEither ::            Event (Either a b) -> (Event a, Event b)
-[ ]   fanThese  ::            Event (These a b)  -> (Event a, Event b)
+[ ]   fanMap    :: Ord k      => Event (Map k a)         -> EventSelector (Const2 k a)
+[ ]   fan       :: GCompare k => Event (DMap k Identity) -> EventSelector k
+[ ]   select    ::                                          EventSelector k -> k a -> Event a
+[ ]   fanEither :: Event (Either a b) -> (Event a, Event b)
+[ ]   fanThese  :: Event (These a b)  -> (Event a, Event b)
 
 -- Event to Event via function that can sample current values
 [ ]   push       :: (a -> m (Maybe b)) -> Event a -> Event b
