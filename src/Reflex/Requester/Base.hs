@@ -21,6 +21,7 @@
 module Reflex.Requester.Base
   ( RequesterT (..)
   , runRequesterT
+  , withRequesterT
   , runWithReplaceRequesterTWith
   , traverseIntMapWithKeyWithAdjustRequesterTWith
   , traverseDMapWithKeyWithAdjustRequesterTWith
@@ -265,7 +266,6 @@ instance (S.Semigroup a, Monad m) => S.Semigroup (RequesterT t request response 
 -- requests are made, and responses should be provided in the input 'Event'.
 -- The 'Tag' keys will be used to return the responses to the same place the
 -- requests were issued.
-
 runRequesterT :: (Reflex t, Monad m)
               => RequesterT t request response m a
               -> Event t (RequesterData response) --TODO: This DMap will be in reverse order, so we need to make sure the caller traverses it in reverse
@@ -274,6 +274,20 @@ runRequesterT (RequesterT a) responses = do
   (result, s) <- runReaderT (runStateT a $ RequesterState (-4) []) $ fanInt $
     coerceEvent responses
   return (result, fmapCheap (RequesterData . TagMap) $ mergeInt $ IntMap.fromDistinctAscList $ _requesterState_requests s)
+
+-- | Map a function over the request and response of a 'RequesterT'
+withRequesterT
+  :: (Reflex t, MonadFix m)
+  => (forall x. req x -> req' x) -- ^ The function to map over the request
+  -> (forall x. rsp' x -> rsp x) -- ^ The function to map over the response
+  -> RequesterT t req rsp m a -- ^ The internal 'RequesterT' whose input and output will be transformed
+  -> RequesterT t req' rsp' m a -- ^ The resulting 'RequesterT'
+withRequesterT freq frsp child = do
+  rec let rsp = fmap (runIdentity . traverseRequesterData (Identity . frsp)) rsp'
+      (a, req) <- lift $ runRequesterT child rsp
+      rsp' <- fmap (flip selectInt 0 . fanInt . fmapCheap unMultiEntry) $ requesting' $
+        fmapCheap (multiEntry . IntMap.singleton 0) $ fmap (runIdentity . traverseRequesterData (Identity . freq)) req
+  return a
 
 instance (Reflex t, Monad m) => Requester t (RequesterT t request response m) where
   type Request (RequesterT t request response m) = request
