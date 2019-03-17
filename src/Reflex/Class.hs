@@ -151,6 +151,9 @@ module Reflex.Class
   , appendEvents
   , onceE
   , sequenceThese
+  , switchPromptly
+  , switchPromptOnly
+  -- * "Cheap" functions
   , fmapMaybeCheap
   , fmapCheap
   , fforCheap
@@ -159,8 +162,6 @@ module Reflex.Class
   , tagCheap
   , mergeWithCheap
   , mergeWithCheap'
-  , switchPromptly
-  , switchPromptOnly
     -- * Slow, but general, implementations
   , slowHeadE
   ) where
