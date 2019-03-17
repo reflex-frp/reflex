@@ -10,6 +10,11 @@
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
+-- |
+-- Module:
+--   Reflex.Collection
+-- Description:
+--
 module Reflex.Collection
   (
   -- * Widgets on Collections
@@ -38,6 +43,9 @@ import Reflex.Adjustable.Class
 import Reflex.Dynamic
 import Reflex.PostBuild.Class
 
+-- | Create a set of widgets based on the provided 'Map'. When the
+-- input 'Event' fires, remove widgets for keys with the value 'Nothing'
+-- and add/replace widgets for keys with 'Just' values.
 listHoldWithKey
   :: forall t m k v a
    . (Ord k, Adjustable t m, MonadHold t m)
@@ -182,6 +190,8 @@ selectViewListWithKey selection vals mkChild = do
     return $ fmap ((,) k) selectSelf
   return $ switchPromptlyDyn $ leftmost . Map.elems <$> selectChild
 
+-- | Like 'selectViewListWithKey' but discards the value of the list
+-- item widget's output 'Event'.
 selectViewListWithKey_
   :: forall t m k v a
    . (Adjustable t m, Ord k, PostBuild t m, MonadHold t m, MonadFix m)

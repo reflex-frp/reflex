@@ -1,6 +1,10 @@
--- | This module defines the 'Patch' class, which is used by Reflex to manage
--- changes to 'Reflex.Class.Incremental' values.
 {-# LANGUAGE TypeFamilies #-}
+-- |
+-- Module:
+--   Reflex.Patch
+-- Description:
+--   This module defines the 'Patch' class, which is used by Reflex to manage
+--   changes to 'Reflex.Class.Incremental' values.
 module Reflex.Patch
   ( module Reflex.Patch
   , module X
@@ -17,10 +21,7 @@ import Reflex.Patch.Map as X
 import Reflex.Patch.MapWithMove as X (PatchMapWithMove, patchMapWithMoveNewElements,
                                       patchMapWithMoveNewElementsMap, unPatchMapWithMove,
                                       unsafePatchMapWithMove)
-
 import Data.Semigroup (Semigroup (..), (<>))
-
----- Patches based on commutative groups
 
 -- | A 'Group' is a 'Monoid' where every element has an inverse.
 class (Semigroup q, Monoid q) => Group q where

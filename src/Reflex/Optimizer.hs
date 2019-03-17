@@ -1,10 +1,14 @@
--- | This module provides a GHC plugin designed to improve code that uses
--- Reflex.  Currently, it just adds an INLINABLE pragma to any top-level
--- definition that doesn't have an explicit inlining pragma.  In the future,
--- additional optimizations are likely to be added.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+-- |
+-- Module:
+--   Reflex.Optimizer
+-- Description:
+--   This module provides a GHC plugin designed to improve code that uses
+--   Reflex.  Currently, it just adds an INLINABLE pragma to any top-level
+--   definition that doesn't have an explicit inlining pragma.  In the future,
+--   additional optimizations are likely to be added.
 module Reflex.Optimizer
   ( plugin
   ) where

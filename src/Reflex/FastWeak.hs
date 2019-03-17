@@ -6,14 +6,18 @@
 {-# LANGUAGE JavaScriptFFI #-}
 #endif
 
--- | 'FastWeak' is a weak pointer to some value, and 'FastWeakTicket' ensures the value
--- referred to by a 'FastWeak' stays live while the ticket is held (live).
+-- |
+-- Module:
+--   Reflex.FastWeak
+-- Description:
+--   'FastWeak' is a weak pointer to some value, and 'FastWeakTicket' ensures the value
+--   referred to by a 'FastWeak' stays live while the ticket is held (live).
 --
--- On GHC or GHCJS when not built with the @fast-weak@ cabal flag, 'FastWeak' is a wrapper
--- around the simple version of 'System.Mem.Weak.Weak' where the key and value are the same.
+--   On GHC or GHCJS when not built with the @fast-weak@ cabal flag, 'FastWeak' is a wrapper
+--   around the simple version of 'System.Mem.Weak.Weak' where the key and value are the same.
 --
--- On GHCJS when built with the @fast-weak@ cabal flag, 'FastWeak' is implemented directly
--- in JS using @h$FastWeak@ and @h$FastWeakTicket@ which are a nonstandard part of the GHCJS RTS.
+--   On GHCJS when built with the @fast-weak@ cabal flag, 'FastWeak' is implemented directly
+--   in JS using @h$FastWeak@ and @h$FastWeakTicket@ which are a nonstandard part of the GHCJS RTS.
 module Reflex.FastWeak
   ( FastWeakTicket
   , FastWeak

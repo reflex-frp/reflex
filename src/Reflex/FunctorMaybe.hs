@@ -2,8 +2,12 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
--- | This module defines the FunctorMaybe class, which extends Functors with the
--- ability to delete values.
+-- |
+-- Module:
+--   Reflex.FunctorMaybe
+-- Description:
+--   This module defines the FunctorMaybe class, which extends Functors with the
+--   ability to delete values.
 module Reflex.FunctorMaybe
   ( FunctorMaybe (..)
   ) where
