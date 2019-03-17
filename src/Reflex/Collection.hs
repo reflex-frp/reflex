@@ -13,8 +13,6 @@
 -- |
 -- Module:
 --   Reflex.Collection
--- Description:
---
 module Reflex.Collection
   (
   -- * Widgets on Collections
