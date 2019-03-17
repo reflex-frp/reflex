@@ -57,7 +57,7 @@ instance NotReady t m => NotReady t (DynamicWriterT t w m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 
-instance (NotReady t m, Monoid w) => NotReady t (BehaviorWriterT t w m) where
+instance NotReady t m => NotReady t (BehaviorWriterT t w m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 
