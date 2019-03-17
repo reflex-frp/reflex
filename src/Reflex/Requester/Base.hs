@@ -378,7 +378,7 @@ traverseIntMapWithKeyWithAdjustRequesterTWith base patchNewElements mergePatchIn
           pack = Entry
           f' :: IntMap.Key -> (Int, v) -> m (Event t (IntMap (RequesterData request)), v')
           f' k (n, v) = do
-            (result, myRequests) <- runRequesterT (f k v) $ fmapMaybeCheap (IntMap.lookup n) $ selectInt responses k --TODO: Instead of doing fmapMaybeCheap, can we share a fanInt across all instances of a given key, or at least the ones that are adjacent in time?
+            (result, myRequests) <- runRequesterT (f k v) $ mapMaybeCheap (IntMap.lookup n) $ selectInt responses k --TODO: Instead of doing mapMaybeCheap, can we share a fanInt across all instances of a given key, or at least the ones that are adjacent in time?
             return (fmapCheap (IntMap.singleton n) myRequests, result)
       ndm' <- numberOccurrencesFrom 1 dm'
       (children0, children') <- base f' (fmap ((,) 0) dm0) $ fmap (\(n, dm) -> fmap ((,) n) dm) ndm' --TODO: Avoid this somehow, probably by adding some sort of per-cohort information passing to Adjustable
@@ -426,7 +426,7 @@ traverseDMapWithKeyWithAdjustRequesterTWith base mapPatch weakenPatchWith patchN
           pack = Entry
           f' :: forall a. k a -> Compose ((,) Int) v a -> m (Compose ((,) (Event t (IntMap (RequesterData request)))) v' a)
           f' k (Compose (n, v)) = do
-            (result, myRequests) <- runRequesterT (f k v) $ fmapMaybeCheap (IntMap.lookup n) $ select responses (Const2 (Some.This k))
+            (result, myRequests) <- runRequesterT (f k v) $ mapMaybeCheap (IntMap.lookup n) $ select responses (Const2 (Some.This k))
             return $ Compose (fmapCheap (IntMap.singleton n) myRequests, result)
       ndm' <- numberOccurrencesFrom 1 dm'
       (children0, children') <- base f' (DMap.map (\v -> Compose (0, v)) dm0) $ fmap (\(n, dm) -> mapPatch (\v -> Compose (n, v)) dm) ndm'

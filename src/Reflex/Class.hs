@@ -133,8 +133,9 @@ module Reflex.Class
     -- * Unsafe functions
   , unsafeDynamic
   , unsafeMapIncremental
-    -- * 'FunctorMaybe'
-  , FunctorMaybe (..)
+    -- * 'Filterable' convenience functions
+  , FunctorMaybe -- fmapMaybe is purposely not exported from deprecated 'FunctorMaybe' and the new alias is exported instead
+  , fmapMaybe
   , fforMaybe
   , ffilter
   , filterLeft
@@ -147,6 +148,7 @@ module Reflex.Class
   , appendEvents
   , onceE
   , sequenceThese
+  , mapMaybeCheap
   , fmapMaybeCheap
   , fmapCheap
   , fforCheap
@@ -193,7 +195,10 @@ import qualified Data.Some as Some
 import Data.String
 import Data.These
 import Data.Type.Coercion
-import Reflex.FunctorMaybe
+import Data.Witherable (Filterable(..))
+import qualified Data.Witherable as W
+import Reflex.FunctorMaybe (FunctorMaybe)
+import qualified Reflex.FunctorMaybe
 import Reflex.Patch
 import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
 
@@ -388,8 +393,8 @@ mapAccumMaybeMIncremental f z e = do
             return $ case result of
               (Nothing, Nothing) -> Nothing
               _ -> Just result
-      d' <- holdIncremental z $ fmapMaybe fst e'
-  return (d', fmapMaybe snd e')
+      d' <- holdIncremental z $ mapMaybe fst e'
+  return (d', mapMaybe snd e')
 
 slowHeadE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
 slowHeadE e = do
@@ -399,14 +404,14 @@ slowHeadE e = do
 
 -- | An 'EventSelector' allows you to efficiently 'select' an 'Event' based on a
 -- key.  This is much more efficient than filtering for each key with
--- 'fmapMaybe'.
+-- 'mapMaybe'.
 newtype EventSelector t k = EventSelector
   { -- | Retrieve the 'Event' for the given key.  The type of the 'Event' is
     -- determined by the type of the key, so this can be used to fan-out
     -- 'Event's whose sub-'Event's have different types.
     --
     -- Using 'EventSelector's and the 'fan' primitive is far more efficient than
-    -- (but equivalent to) using 'fmapMaybe' to select only the relevant
+    -- (but equivalent to) using 'mapMaybe' to select only the relevant
     -- occurrences of an 'Event'.
     select :: forall a. k a -> Event t a
   }
@@ -550,22 +555,25 @@ instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
   times1p n = fmap $ times1p n
 #endif
 
--- | Flipped version of 'fmapMaybe'.
-fforMaybe :: FunctorMaybe f => f a -> (a -> Maybe b) -> f b
-fforMaybe = flip fmapMaybe
+-- | Alias for 'mapMaybe'
+fmapMaybe :: Filterable f => (a -> Maybe b) -> f a -> f b
+fmapMaybe = mapMaybe
+
+-- | Flipped version of 'mapMaybe'.
+fforMaybe :: Filterable f => f a -> (a -> Maybe b) -> f b
+fforMaybe = flip mapMaybe
 
 -- | Filter 'f a' using the provided predicate.
--- Relies on 'fforMaybe'.
-ffilter :: FunctorMaybe f => (a -> Bool) -> f a -> f a
-ffilter f = fmapMaybe $ \x -> if f x then Just x else Nothing
+ffilter :: Filterable f => (a -> Bool) -> f a -> f a
+ffilter = W.filter
 
 -- | Filter 'Left's from 'f (Either a b)' into 'a'.
-filterLeft :: FunctorMaybe f => f (Either a b) -> f a
-filterLeft = fmapMaybe (either Just (const Nothing))
+filterLeft :: Filterable f => f (Either a b) -> f a
+filterLeft = mapMaybe (either Just (const Nothing))
 
 -- | Filter 'Right's from 'f (Either a b)' into 'b'.
-filterRight :: FunctorMaybe f => f (Either a b) -> f b
-filterRight = fmapMaybe (either (const Nothing) Just)
+filterRight :: Filterable f => f (Either a b) -> f b
+filterRight = mapMaybe (either (const Nothing) Just)
 
 -- | Left-biased event union (prefers left event on simultaneous
 -- occurrence).
@@ -583,13 +591,18 @@ instance Reflex t => Bind (Event t) where
 
 instance Reflex t => Functor (Event t) where
   {-# INLINE fmap #-}
-  fmap f = fmapMaybe $ Just . f
+  fmap f = mapMaybe $ Just . f
   {-# INLINE (<$) #-}
   x <$ e = fmapCheap (const x) e
 
+-- TODO Remove this instance
 instance Reflex t => FunctorMaybe (Event t) where
   {-# INLINE fmapMaybe #-}
-  fmapMaybe f = push $ return . f
+  fmapMaybe = mapMaybe
+
+instance Reflex t => Filterable (Event t) where
+  {-# INLINE mapMaybe #-}
+  mapMaybe f = push $ return . f
 
 -- | Never: @'zero' = 'never'@.
 instance Reflex t => Plus (Event t) where
@@ -807,7 +820,7 @@ fanEither :: Reflex t => Event t (Either a b) -> (Event t a, Event t b)
 fanEither e =
   let justLeft = either Just (const Nothing)
       justRight = either (const Nothing) Just
-  in (fmapMaybe justLeft e, fmapMaybe justRight e)
+  in (mapMaybe justLeft e, mapMaybe justRight e)
 
 -- | Split the event into separate events for 'This' and 'That' values,
 -- allowing them to fire simultaneously when the input value is 'These'.
@@ -819,7 +832,7 @@ fanThese e =
       that (That y) = Just y
       that (These _ y) = Just y
       that _ = Nothing
-  in (fmapMaybe this e, fmapMaybe that e)
+  in (mapMaybe this e, mapMaybe that e)
 
 -- | Split the event into an 'EventSelector' that allows efficient selection of
 -- the individual 'Event's.
@@ -1002,9 +1015,11 @@ difference = alignEventWithMaybe $ \case
 
 alignEventWithMaybe :: Reflex t => (These a b -> Maybe c) -> Event t a -> Event t b -> Event t c
 alignEventWithMaybe f ea eb =
-  fmapMaybe (f <=< dmapToThese)
+  mapMaybe (f <=< dmapToThese)
     $ merge
     $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
+alignEventWithMaybe f ea eb = mapMaybe (f <=< dmapToThese) $
+  merge $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
 
 filterEventKey
   :: forall t m k v a.
@@ -1100,8 +1115,8 @@ mapAccumMaybeMDyn f z e = do
             return $ case result of
               (Nothing, Nothing) -> Nothing
               _ -> Just result
-      d' <- holdDyn z $ fmapMaybe fst e'
-  return (d', fmapMaybe snd e')
+      d' <- holdDyn z $ mapMaybe fst e'
+  return (d', mapMaybe snd e')
 
 {-# INLINE accumB #-}
 accumB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> a) -> a -> Event t b -> m (Behavior t a)
@@ -1139,8 +1154,8 @@ mapAccumMaybeMB f z e = do
             return $ case result of
               (Nothing, Nothing) -> Nothing
               _ -> Just result
-      d' <- hold z $ fmapMaybe fst e'
-  return (d', fmapMaybe snd e')
+      d' <- hold z $ mapMaybe fst e'
+  return (d', mapMaybe snd e')
 
 -- | Accumulate occurrences of an 'Event', producing an output occurrence each
 -- time.  Discard the underlying 'Accumulator'.
@@ -1288,13 +1303,19 @@ infixl 4 <@
 pushAlwaysCheap :: Reflex t => (a -> PushM t b) -> Event t a -> Event t b
 pushAlwaysCheap f = pushCheap (fmap Just . f)
 
+{-# INLINE mapMaybeCheap #-}
+mapMaybeCheap :: Reflex t => (a -> Maybe b) -> Event t a -> Event t b
+mapMaybeCheap f = pushCheap $ return . f
+
+-- | An alias for 'mapMaybeCheap'
 {-# INLINE fmapMaybeCheap #-}
 fmapMaybeCheap :: Reflex t => (a -> Maybe b) -> Event t a -> Event t b
-fmapMaybeCheap f = pushCheap $ return . f
+fmapMaybeCheap = mapMaybeCheap
+
 
 {-# INLINE fforMaybeCheap #-}
 fforMaybeCheap :: Reflex t => Event t a -> (a -> Maybe b) -> Event t b
-fforMaybeCheap = flip fmapMaybeCheap
+fforMaybeCheap = flip mapMaybeCheap
 
 {-# INLINE fforCheap #-}
 fforCheap :: Reflex t => Event t a -> (a -> b) -> Event t b

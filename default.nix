@@ -6,7 +6,7 @@
 , template-haskell , these, time, transformers
 , transformers-compat, unbounded-delays, prim-uniq
 , data-default, filepath, directory, filemanip, ghcjs-base
-, monoidal-containers
+, monoidal-containers, witherable
 , useTemplateHaskell ? true
 }:
 mkDerivation {
@@ -21,7 +21,7 @@ mkDerivation {
     transformers-compat prim-uniq
     base bifunctors containers deepseq dependent-map dependent-sum
     mtl ref-tf split transformers data-default
-    random time unbounded-delays monoidal-containers
+    random time unbounded-delays monoidal-containers witherable
   ] ++ (if ghc.isGhcjs or false then [
     ghcjs-base
   ] else []) ++ (if !useTemplateHaskell then [] else [

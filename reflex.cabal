@@ -64,7 +64,8 @@ library
     time >= 1.4 && < 1.9,
     transformers >= 0.2,
     transformers-compat >= 0.3,
-    unbounded-delays >= 0.1.0.0 && < 0.2
+    unbounded-delays >= 0.1.0.0 && < 0.2,
+    witherable >= 0.2 && < 0.4
 
   exposed-modules:
     Data.AppendMap,

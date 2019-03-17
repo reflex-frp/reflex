@@ -28,7 +28,7 @@ import Control.Monad.IO.Class
 import Data.Align
 import Data.Data (Data)
 import Data.Fixed
-import Data.Semigroup
+import Data.Semigroup ((<>))
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
 import Data.These
