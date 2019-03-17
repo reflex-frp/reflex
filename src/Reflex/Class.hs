@@ -148,9 +148,9 @@ module Reflex.Class
   , ffor2
   , ffor3
     -- * Deprecated functions
-  , appendEvents
-  , onceE
-  , sequenceThese
+  , switchPromptly
+  , switchPromptOnly
+  -- * "Cheap" functions
   , fmapMaybeCheap
   , fmapCheap
   , fforCheap
@@ -159,8 +159,6 @@ module Reflex.Class
   , tagCheap
   , mergeWithCheap
   , mergeWithCheap'
-  , switchPromptly
-  , switchPromptOnly
     -- * Slow, but general, implementations
   , slowHeadE
   ) where
@@ -1462,28 +1460,6 @@ mergeWithFoldCheap' f es =
 --------------------------------------------------------------------------------
 -- Deprecated functions
 --------------------------------------------------------------------------------
-
--- | Create a new 'Event' that occurs if at least one of the supplied 'Event's
--- occurs. If both occur at the same time they are combined using 'mappend'.
-{-# DEPRECATED appendEvents "If a 'Semigroup a' instance is available, use 'mappend'; otherwise, use 'alignWith (mergeThese mappend)' instead" #-}
-appendEvents :: (Reflex t, Monoid a) => Event t a -> Event t a -> Event t a
-appendEvents = alignWith $ mergeThese mappend
-
--- | Alias for 'headE'
-{-# DEPRECATED onceE "Use 'headE' instead" #-}
-onceE :: MonadHold t m => Event t a -> m (Event t a)
-onceE = headE
-
--- | Run both sides of a 'These' monadically, combining the results.
-{-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
-#ifdef USE_TEMPLATE_HASKELL
-{-# ANN sequenceThese "HLint: ignore Use fmap" #-}
-#endif
-sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
-sequenceThese t = case t of
-  This ma -> fmap This ma
-  These ma mb -> liftM2 These ma mb
-  That mb -> fmap That mb
 
 {-# DEPRECATED switchPromptly "Use 'switchHoldPromptly' instead. The 'switchHold*' naming convention was chosen because those functions are more closely related to each other than they are to 'switch'. " #-}
 switchPromptly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)

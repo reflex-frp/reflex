@@ -27,7 +27,7 @@ import Data.Data
 import Data.Ix
 import Data.Map.Monoidal (MonoidalMap)
 import qualified Data.Map.Monoidal as MonoidalMap
-import Data.Semigroup
+import Data.Semigroup (Semigroup(..))
 import Foreign.Storable
 
 import Reflex.Class
