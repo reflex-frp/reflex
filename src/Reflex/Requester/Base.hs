@@ -31,6 +31,7 @@ module Reflex.Requester.Base
   , forRequesterData
   , requesterDataToList
   , singletonRequesterData
+  , matchResponsesWithRequests
   , multiEntry
   , unMultiEntry
   , requesting'
@@ -454,3 +455,84 @@ traverseDMapWithKeyWithAdjustRequesterTWith base mapPatch weakenPatchWith patchN
           promptRequests = coincidence $ fmapCheap (mergeMap . patchNewElements) requests' --TODO: Create a mergeIncrementalPromptly, and use that to eliminate this 'coincidence'
       requests <- holdIncremental requests0 requests'
   return (result0, result')
+
+data Decoder rawResponse response =
+  forall a. Decoder (RequesterDataKey a) (rawResponse -> response a)
+
+-- | Matches incoming responses with previously-sent requests
+-- and uses the provided request "decoder" function to process
+-- incoming responses.
+matchResponsesWithRequests
+  :: forall t rawRequest rawResponse request response m.
+     ( MonadFix m
+     , MonadHold t m
+     , Reflex t
+     )
+  => (forall a. request a -> (rawRequest, rawResponse -> response a))
+  -- ^ Given a request (from 'Requester'), produces the wire format of the
+  -- request and a function used to process the associated response
+  -> Event t (RequesterData request)
+  -- ^ The outgoing requests
+  -> Event t (Int, rawResponse)
+  -- ^ The incoming responses, tagged by an identifying key
+  -> m ( Event t (Map Int rawRequest)
+       , Event t (RequesterData response)
+       )
+  -- ^ A map of outgoing wire-format requests and an event of responses keyed
+  -- by the 'RequesterData' key of the associated outgoing request
+matchResponsesWithRequests f send recv = do
+  rec nextId <- hold 1 $ fmap (\(next, _, _) -> next) outgoing
+      waitingFor :: Incremental t (PatchMap Int (Decoder rawResponse response)) <-
+        holdIncremental mempty $ leftmost
+          [ fmap (\(_, outstanding, _) -> outstanding) outgoing
+          , snd <$> incoming
+          ]
+      let outgoing = processOutgoing nextId send
+          incoming = processIncoming waitingFor recv
+  return (fmap (\(_, _, rawReqs) -> rawReqs) outgoing, fst <$> incoming)
+  where
+    -- Tags each outgoing request with an identifying integer key
+    -- and returns the next available key, a map of response decoders
+    -- for requests for which there are outstanding responses, and the
+    -- raw requests to be sent out.
+    processOutgoing
+      :: Behavior t Int
+      -- The next available key
+      -> Event t (RequesterData request)
+      -- The outgoing request
+      -> Event t ( Int
+                 , PatchMap Int (Decoder rawResponse response)
+                 , Map Int rawRequest )
+      -- The new next-available-key, a map of requests expecting responses, and the tagged raw requests
+    processOutgoing nextId out = flip pushAlways out $ \dm -> do
+      oldNextId <- sample nextId
+      let (result, newNextId) = flip runState oldNextId $ forM (requesterDataToList dm) $ \(k :=> v) -> do
+            n <- get
+            put $ succ n
+            let (rawReq, rspF) = f v
+            return (n, rawReq, Decoder k rspF)
+          patchWaitingFor = PatchMap $ Map.fromList $
+            (\(n, _, dec) -> (n, Just dec)) <$> result
+          toSend = Map.fromList $ (\(n, rawReq, _) -> (n, rawReq)) <$> result
+      return (newNextId, patchWaitingFor, toSend)
+    -- Looks up the each incoming raw response in a map of response
+    -- decoders and returns the decoded response and a patch that can
+    -- be used to clear the ID of the consumed response out of the queue
+    -- of expected responses.
+    processIncoming
+      :: Incremental t (PatchMap Int (Decoder rawResponse response))
+      -- A map of outstanding expected responses
+      -> Event t (Int, rawResponse)
+      -- A incoming response paired with its identifying key
+      -> Event t (RequesterData response, PatchMap Int v)
+      -- The decoded response and a patch that clears the outstanding responses queue
+    processIncoming waitingFor inc = flip push inc $ \(n, rawRsp) -> do
+      wf <- sample $ currentIncremental waitingFor
+      case Map.lookup n wf of
+        Nothing -> return Nothing -- TODO How should lookup failures be handled here? They shouldn't ever happen..
+        Just (Decoder k rspF) -> do
+          let rsp = rspF rawRsp
+          return $ Just
+            ( singletonRequesterData k rsp
+            , PatchMap $ Map.singleton n Nothing
+            )
