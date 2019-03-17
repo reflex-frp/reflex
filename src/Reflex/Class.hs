@@ -139,6 +139,7 @@ module Reflex.Class
   , unsafeMapIncremental
     -- * 'Filterable' convenience functions
   , FunctorMaybe -- fmapMaybe is purposely not exported from deprecated 'FunctorMaybe' and the new alias is exported instead
+  , mapMaybe -- Re-exported for convenience
   , fmapMaybe
   , fforMaybe
   , ffilter
