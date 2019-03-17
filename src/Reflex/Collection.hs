@@ -20,7 +20,6 @@ module Reflex.Collection
   -- * Widgets on Collections
     listHoldWithKey
   , listWithKey
-  , listWithKey'
   , listWithKeyShallowDiff
   , listViewWithKey
   , selectViewListWithKey
@@ -103,15 +102,6 @@ listWithKey vals mkChild = do
               ]
   listHoldWithKey Map.empty changeVals $ \k v ->
     mkChild k =<< holdDyn v (select childValChangedSelector $ Const2 k)
-
-{-# DEPRECATED listWithKey' "listWithKey' has been renamed to listWithKeyShallowDiff; also, its behavior has changed to fix a bug where children were always rebuilt (never updated)" #-}
-listWithKey'
-  :: (Ord k, Adjustable t m, MonadFix m, MonadHold t m)
-  => Map k v
-  -> Event t (Map k (Maybe v))
-  -> (k -> v -> Event t v -> m a)
-  -> m (Dynamic t (Map k a))
-listWithKey' = listWithKeyShallowDiff
 
 -- | Display the given map of items (in key order) using the builder
 -- function provided, and update it with the given event.  'Nothing'
