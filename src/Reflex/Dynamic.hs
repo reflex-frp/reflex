@@ -17,8 +17,12 @@
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
--- | This module contains various functions for working with 'Dynamic' values.
--- 'Dynamic' and its primitives have been moved to the 'Reflex' class.
+-- |
+-- Module:
+--   Reflex.Dynamic
+-- Description:
+--   This module contains various functions for working with 'Dynamic' values.
+--   'Dynamic' and its primitives have been moved to the 'Reflex' class.
 module Reflex.Dynamic
   ( -- * Basics
     Dynamic -- Abstract so we can preserve the law that the current value is always equal to the most recent update
