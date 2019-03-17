@@ -1,15 +1,10 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | 'Data.Map' with a better 'Monoid' instance
@@ -31,10 +26,9 @@ import qualified Data.Map.Internal.Debug as Map (showTree, showTreeWith)
 #else
 import qualified Data.Map as Map (showTree, showTreeWith)
 #endif
-import Reflex.Patch (Additive, Group (..))
-import Data.Map.Monoidal hiding (mapMaybe)
-import qualified Data.Map.Monoidal as M
 import Data.Witherable (Filterable(..))
+import Data.Map.Monoidal (MonoidalMap(..), delete, null, empty)
+import qualified Data.Map.Monoidal as M
 
 {-# DEPRECATED AppendMap "Use 'MonoidalMap' instead" #-}
 type AppendMap = MonoidalMap
@@ -67,11 +61,6 @@ mapMaybeNoNull f as =
        else Just bs
 
 -- TODO: Move instances to `Reflex.Patch`
-instance (Ord k, Group q) => Group (MonoidalMap k q) where
-  negateG = map negateG
-
-instance (Ord k, Additive q) => Additive (MonoidalMap k q)
-
 showTree :: forall k a. (Show k, Show a) => MonoidalMap k a -> String
 showTree = coerce (Map.showTree :: Map k a -> String)
 

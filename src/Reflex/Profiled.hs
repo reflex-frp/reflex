@@ -8,6 +8,12 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+-- |
+-- Module:
+--   Reflex.Profiled
+-- Description:
+--   This module contains an instance of the 'Reflex' class that provides
+--   profiling/cost-center information.
 module Reflex.Profiled where
 
 import Control.Lens hiding (children)

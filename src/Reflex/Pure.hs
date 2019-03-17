@@ -13,11 +13,13 @@
 --   * MonadSample (Pure t) ((->) t)
 --   * MonadHold (Pure t) ((->) t)
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-
--- | This module provides a pure implementation of Reflex, which is intended to
--- serve as a reference for the semantics of the Reflex class.  All
--- implementations of Reflex should produce the same results as this
--- implementation, although performance and laziness/strictness may differ.
+-- |
+-- Module: Reflex.Pure
+-- Description:
+--   This module provides a pure implementation of Reflex, which is intended to
+--   serve as a reference for the semantics of the Reflex class.  All
+--   implementations of Reflex should produce the same results as this
+--   implementation, although performance and laziness/strictness may differ.
 module Reflex.Pure
   ( Pure
   , Behavior (..)
