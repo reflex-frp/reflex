@@ -96,7 +96,7 @@ nsToDSum = hcollapse . ap_NS (hmap (\tag -> (fn $ \val -> K (tag :=> val))) make
 -}
 
 -- |Convert a 'DS.DSum' indexed by 'TypeListTag' xs into a 'NS' indexed by xs
-dSumToNS :: SListI xs => DS.DSum (TypeListTag xs) f -> NS f xs
+dSumToNS :: DS.DSum (TypeListTag xs) f -> NS f xs
 dSumToNS (tag :=> fa) = go tag fa
   where
     go::TypeListTag ys y -> f y -> NS f ys
@@ -107,7 +107,7 @@ dSumToNS (tag :=> fa) = go tag fa
 makeTypeListTagNP :: SListI xs => NP (TypeListTag xs) xs
 makeTypeListTagNP = go sList
   where
-    go :: forall ys. SListI ys => SList ys -> NP (TypeListTag ys) ys
+    go :: SList ys -> NP (TypeListTag ys) ys
     go SNil = Nil
     go SCons = TLHead :* hmap TLTail (go sList)
 
@@ -124,7 +124,7 @@ type family FunctorWrapTypeListOfLists (f :: * -> *) (xss :: [[*]]) :: [[*]] whe
 -- composition has been moved to the type-list.  The values in the product remain the same (up to types representing composition of the functors). E.g.,
 --
 -- > (f :.: g) 2 :* (f :.: g) 3.0 :* 'Nil :: NP (f :.: g) '[Int,Double] -> f (g 2) :* f (g 3.0) :* 'Nil :: NP f '[g Int, g Double]
-npUnCompose :: forall f g xs. SListI xs => NP (f :.: g) xs -> NP f (FunctorWrapTypeList g xs)
+npUnCompose :: forall f g xs. NP (f :.: g) xs -> NP f (FunctorWrapTypeList g xs)
 npUnCompose = go
   where
     go :: NP (f :.: g) ys -> NP f (FunctorWrapTypeList g ys)
@@ -132,9 +132,9 @@ npUnCompose = go
     go (fgx :* npTail) = unComp fgx :* go npTail
 
 -- | UnCompose all of the 'NP's in an "NS (NP f) xss".
-nsOfnpUnCompose :: forall f g xss. (SListI xss, SListI2 xss) => NS (NP (f :.: g)) xss -> NS (NP f) (FunctorWrapTypeListOfLists g xss)
+nsOfnpUnCompose :: forall f g xss. (SListI2 xss) => NS (NP (f :.: g)) xss -> NS (NP f) (FunctorWrapTypeListOfLists g xss)
 nsOfnpUnCompose = go sList where
-  go :: forall yss. (SListI yss, SListI2 yss) => SList yss -> NS (NP (f :.: g)) yss -> NS (NP f) (FunctorWrapTypeListOfLists g yss)
+  go :: forall yss. (SListI2 yss) => SList yss -> NS (NP (f :.: g)) yss -> NS (NP f) (FunctorWrapTypeListOfLists g yss)
   go SNil _ = error "An NS cannot be empty"
   go SCons (Z np) = Z (npUnCompose np)
   go SCons (S ns') = S (go sList ns')
@@ -145,15 +145,15 @@ nsOfnpUnCompose = go sList where
 npReCompose :: forall f g xs. SListI xs => NP f (FunctorWrapTypeList g xs) -> NP (f :.: g) xs
 npReCompose = go sList
   where
-    go :: forall ys. SListI ys => SList ys ->  NP f (FunctorWrapTypeList g ys) -> NP (f :.: g) ys
+    go :: forall ys. SList ys ->  NP f (FunctorWrapTypeList g ys) -> NP (f :.: g) ys
     go SNil Nil = Nil
     go SCons (fgx :* npTail) = Comp fgx :* go sList npTail
 
 -- | ReCompose all the 'NP's in an "NS (NP f) xss".
-nsOfnpReCompose :: forall f g xss. (SListI xss, SListI2 xss) => NS (NP f) (FunctorWrapTypeListOfLists g xss) -> NS (NP (f :.: g)) xss
+nsOfnpReCompose :: forall f g xss. (SListI2 xss) => NS (NP f) (FunctorWrapTypeListOfLists g xss) -> NS (NP (f :.: g)) xss
 nsOfnpReCompose = go sList
   where
-    go :: forall yss. (SListI2 yss, SListI yss) => SList yss -> NS (NP f) (FunctorWrapTypeListOfLists g yss) -> NS (NP (f :.: g)) yss
+    go :: forall yss. (SListI2 yss) => SList yss -> NS (NP f) (FunctorWrapTypeListOfLists g yss) -> NS (NP (f :.: g)) yss
     go SNil _ = error "NS must be non-empty." -- this shouldn't happen since an NS can't be empty
     go SCons (Z np) = Z $ npReCompose np
     go SCons (S nsTail) = S $ go sList nsTail
@@ -173,7 +173,7 @@ functorWrappedSListIsSList pf SCons = goCons (sList :: SList xs)
 -- This is useful in cases where an efficient general solution exists for DMaps.
 -- This can be done more simply for Applicative f but the efficiency will depend on
 -- the particular functor and given function over 'DM.DMap'.
-npSequenceViaDMap :: forall k (f :: * -> *)  (g :: * -> *) (xs :: [*]). (Functor f, SListI xs, DM.GCompare k
+npSequenceViaDMap :: forall k (f :: * -> *)  (g :: * -> *) (xs :: [*]). (Functor f, SListI xs
                                                                         , k ~ TypeListTag (FunctorWrapTypeList g xs))
   =>(DM.DMap k f -> f (DM.DMap k Identity))->NP (f :.: g) xs -> f (NP g xs)
 npSequenceViaDMap sequenceDMap =

@@ -34,7 +34,7 @@ import Generics.SOP.Dict (Dict, withDict)
 -- | Turn a sum into a product with Maybes
 expand :: forall (f :: [k] -> *) xs. (SListI xs) => NS f xs -> NP (Maybe :.: f) xs
 expand ns = go sList (Just ns) where
-  go :: forall ys.SListI ys => SList ys -> Maybe (NS f ys) -> NP (Maybe :.: f) ys
+  go :: forall ys. SList ys -> Maybe (NS f ys) -> NP (Maybe :.: f) ys
   go SNil _ = Nil
   go SCons mNS = case mNS of
     Nothing -> Comp Nothing :* go sList Nothing -- after Z
@@ -103,8 +103,9 @@ reconstructA :: (Functor h, Generic a) => NP (h :.: NP I) (Code a) -> NP (K (h a
 reconstructA = hliftA (K . fmap (to . SOP) . unK) . hap wrappedInjections
 
 -- | Utility for turning a constraint into a POP (an NP of NP) of natural transformations at a given type.
-functionPOPFromClass :: forall c f g xss. SListI2 xss
-  => Dict (All2 c) xss
+functionPOPFromClass
+  :: forall c f g xss
+  .  Dict (All2 c) xss
   -> (forall a. c a => f a -> g a)
   -> POP (f -.-> g) xss
 functionPOPFromClass d f = withDict d $ hcpure (Proxy :: Proxy c) $ Fn f
@@ -116,5 +117,3 @@ functionPOPFromClass' fn =
       dict = all_POP hdicts
   in  withDict dict $ hcpure (Proxy :: Proxy c) $ Fn fn
 -}
-
-
