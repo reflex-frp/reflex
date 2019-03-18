@@ -548,6 +548,15 @@ instance (Reflex t, Num a) => Num (Behavior t a) where
   negate = fmap negate
   signum = fmap signum
 
+instance (Num a, Reflex t) => Num (Dynamic t a) where
+  (+) = liftA2 (+)
+  (*) = liftA2 (*)
+  abs = fmap abs
+  signum = fmap signum
+  fromInteger = pure . fromInteger
+  negate = fmap negate
+  (-) = liftA2 (-)
+
 instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
   a <> b = pull $ liftM2 (<>) (sample a) (sample b)
   sconcat = pull . fmap sconcat . mapM sample
