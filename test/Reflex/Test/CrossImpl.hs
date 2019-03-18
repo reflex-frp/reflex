@@ -12,7 +12,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-module Reflex.Test.CrossImpl (test) where
 
 import Prelude hiding (and, foldl, mapM, mapM_, sequence, sequence_)
 
@@ -20,21 +19,18 @@ import Control.Monad.Ref
 import Reflex.Class
 import Reflex.Dynamic
 import Reflex.Host.Class
-import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
 import qualified Reflex.Pure as P
 import qualified Reflex.Spider.Internal as S
 
 import Control.Arrow (second, (&&&))
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Control.Monad.Writer hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Data.Dependent.Map (DMap, DSum (..))
-import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Map (DSum (..))
 import Data.Foldable
-import Data.Functor.Misc
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
+import Data.Monoid
 import Data.Traversable
 import System.Exit
 import System.Mem
@@ -155,35 +151,35 @@ testCases =
        let e' = leftmost [e, e]
        e'' <- switch <$> hold e' (fmap (const e) e)
        return (b, e'')
-  , (,) "switchPromptly-1" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-1" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = fmap (const e) e
-       e'' <- switchPromptly never e'
+       e'' <- switchHoldPromptly never e'
        return (b, e'')
-  , (,) "switchPromptly-2" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-2" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = fmap (const e) e
-       e'' <- switchPromptly never $ leftmost [e', e']
+       e'' <- switchHoldPromptly never $ leftmost [e', e']
        return (b, e'')
-  , (,) "switchPromptly-3" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-3" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = leftmost [e, e]
-       e'' <- switchPromptly never (fmap (const e) e')
+       e'' <- switchHoldPromptly never (fmap (const e) e')
        return (b, e'')
-  , (,) "switchPromptly-4" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj"), (3, "asdf")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-4" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj"), (3, "asdf")]) $ \(b, e) -> do
        let e' = leftmost [e, e]
-       e'' <- switchPromptly never (fmap (const e') e)
+       e'' <- switchHoldPromptly never (fmap (const e') e)
        return (b, e'')
   , (,) "switch-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = leftmost [e, e]
        e'' <- switch <$> hold never (fmap (const e') e)
        return (b, e'')
-  , (,) "switchPromptly-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip push e $ \_ -> do
              Just <$> headE e
-       e'' <- switchPromptly never e'
+       e'' <- switchHoldPromptly never e'
        return (b, e'')
-  , (,) "switchPromptly-6" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
+  , (,) "switchHoldPromptly-6" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip pushAlways e $ \_ -> do
-             switchPromptly e never
-       e'' <- switchPromptly never e'
+             switchHoldPromptly e never
+       e'' <- switchHoldPromptly never e'
        return (b, e'')
   , (,) "coincidence-1" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        let e' = flip pushAlways e $ \_ -> return e
@@ -233,6 +229,9 @@ testCases =
       rec result <- holdUniqDyn d
           d <- holdDyn (0 :: Int) e
       return (current result, updated result)
+
+
+
   {-
   , (,) "mergeIncrementalWithMove" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, PatchDMapWithMove.moveDMapKey LeftTag RightTag), (2, mempty)]) $ \(b, e :: Event t (PatchDMapWithMove (EitherTag () ()) (Const2 () ()))) -> do
        x <- holdIncremental (DMap.singleton LeftTag $ void e) $ PatchDMapWithMove.mapPatchDMapWithMove (\(Const2 _) -> void e) <$> e
@@ -248,8 +247,8 @@ splitRecombineEvent e =
   in leftmost [ea, eb]
 
 
-test :: IO ()
-test = do
+main :: IO ()
+main = do
   results <- forM testCases $ \(name, TestCase inputs builder) -> do
     putStrLn $ "Test: " <> name
     testAgreement builder inputs

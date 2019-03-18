@@ -4,8 +4,8 @@ import Control.Monad
 import Language.Haskell.HLint3 (hlint)
 import System.Directory
 import System.Exit (exitFailure, exitSuccess)
-import System.FilePath.Find
 import System.FilePath
+import System.FilePath.Find
 
 main :: IO ()
 main = do
@@ -20,6 +20,7 @@ main = do
         , "--ignore=Use >=>"
         , "--ignore=Use ."
         , "--ignore=Use unless"
+        , "--ignore=Reduce duplication"
         , "--cpp-define=USE_TEMPLATE_HASKELL"
         ]
       recurseInto = and <$> sequence
@@ -31,7 +32,7 @@ main = do
         , let notElem' = liftOp notElem
           in filePath `notElem'` filePathExceptions pwd
         ]
-  files <- find recurseInto matchFile pwd
+  files <- find recurseInto matchFile (pwd </> "src") --TODO: Someday fix all hints in tests, etc.
   ideas <- fmap concat $ forM files $ \f -> do
     putStr $ "linting file " ++ drop (length pwd + 1) f ++ "... "
     runHlint f

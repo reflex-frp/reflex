@@ -1,4 +1,9 @@
-{-# LANGUAGE OverloadedStrings, FlexibleContexts, GADTs, TypeFamilies, RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 module Main where
 
 import Control.Monad
@@ -17,11 +22,11 @@ import Data.These
 import Data.Functor.Misc
 import Reflex.Patch
 
-import qualified Reflex.Spider.Internal as S
 import qualified Reflex.Host.Class as Host
+import qualified Reflex.Spider.Internal as S
 
-import System.Mem
 import System.Exit
+import System.Mem
 
 main :: IO ()
 main = do

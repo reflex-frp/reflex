@@ -1,7 +1,3 @@
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 module Data.FastMutableIntMap
   ( FastMutableIntMap
@@ -26,13 +22,13 @@ module Data.FastMutableIntMap
 --TODO: Fast copy to FastIntMap
 --TODO: Fast patch type
 
+import Prelude hiding (lookup)
+
 import Control.Monad.IO.Class
 import Data.Foldable (traverse_)
-import Data.IORef
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import Data.Maybe
-import Prelude hiding (lookup)
+import Data.IORef
 import Reflex.Patch.Class
 import Reflex.Patch.IntMap
 

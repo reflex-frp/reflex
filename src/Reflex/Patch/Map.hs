@@ -7,10 +7,10 @@ module Reflex.Patch.Map where
 
 import Reflex.Patch.Class
 
-import Data.Semigroup
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
+import Data.Semigroup
 
 -- | A set of changes to a 'Map'.  Any element may be inserted/updated or
 -- deleted.  Insertions are represented as values wrapped in 'Just', while
@@ -18,8 +18,7 @@ import Data.Maybe
 newtype PatchMap k v = PatchMap { unPatchMap :: Map k (Maybe v) }
   deriving (Show, Read, Eq, Ord)
 
--- | Applying a 'PatchMap' will update the 'Map' by performing the insertions
--- and deletions specified
+-- | Apply the insertions or deletions to a given 'Map'.
 instance Ord k => Patch (PatchMap k v) where
   type PatchTarget (PatchMap k v) = Map k v
   {-# INLINABLE apply #-}

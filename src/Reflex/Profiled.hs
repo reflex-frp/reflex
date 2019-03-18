@@ -1,4 +1,5 @@
 {-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
@@ -7,10 +8,17 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+-- |
+-- Module:
+--   Reflex.Profiled
+-- Description:
+--   This module contains an instance of the 'Reflex' class that provides
+--   profiling/cost-center information.
 module Reflex.Profiled where
 
 import Control.Lens hiding (children)
 import Control.Monad
+import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Primitive
 import Control.Monad.Reader
@@ -18,21 +26,22 @@ import Control.Monad.Ref
 import Control.Monad.State.Strict (StateT, execStateT, modify)
 import Data.Coerce
 import Data.Dependent.Map (DMap, GCompare)
-import Data.List
 import Data.FastMutableIntMap
 import Data.IORef
+import Data.List
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import Data.Monoid
+import Data.Monoid ((<>))
 import Data.Ord
+import qualified Data.Semigroup as S
 import Data.Type.Coercion
 import Foreign.Ptr
 import GHC.Foreign
 import GHC.IO.Encoding
 import GHC.Stack
 import Reflex.Class
-import Reflex.PerformEvent.Class
 import Reflex.Host.Class
+import Reflex.PerformEvent.Class
 
 import System.IO.Unsafe
 import Unsafe.Coerce
@@ -50,9 +59,13 @@ data CostCentreTree = CostCentreTree
   }
   deriving (Show, Eq, Ord)
 
+instance S.Semigroup CostCentreTree where
+  (CostCentreTree oa ea ca) <> (CostCentreTree ob eb cb) =
+      CostCentreTree (oa + ob) (ea + eb) $ Map.unionWith (S.<>) ca cb
+
 instance Monoid CostCentreTree where
   mempty = CostCentreTree 0 0 mempty
-  CostCentreTree oa ea ca `mappend` CostCentreTree ob eb cb = CostCentreTree (oa + ob) (ea + eb) $ Map.unionWith (<>) ca cb
+  mappend = (S.<>)
 
 getCostCentreStack :: Ptr CostCentreStack -> IO [Ptr CostCentre]
 getCostCentreStack = go []
@@ -95,7 +108,8 @@ writeProfilingData :: FilePath -> IO ()
 writeProfilingData p = do
   writeFile p =<< formatCostCentreTree =<< getCostCentreTree
 
-newtype ProfiledM m a = ProfiledM { runProfiledM :: m a } deriving (Functor, Applicative, Monad, MonadFix)
+newtype ProfiledM m a = ProfiledM { runProfiledM :: m a }
+  deriving (Functor, Applicative, Monad, MonadFix, MonadException, MonadAsyncException)
 
 profileEvent :: Reflex t => Event t a -> Event t a
 profileEvent e = unsafePerformIO $ do

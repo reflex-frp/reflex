@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
@@ -22,6 +23,24 @@ import qualified Data.Map as Map
 import Data.Monoid
 
 import Prelude
+
+pushDyn :: (Reflex t, MonadHold t m) => (a -> PushM t b) -> Dynamic t a -> m (Dynamic t b)
+pushDyn f d = buildDynamic (sample (current d) >>= f) (pushAlways f (updated d))
+
+foldedDyn :: (Reflex t, MonadHold t m) => (a -> a -> a) -> Dynamic t a -> m (Dynamic t a)
+foldedDyn f d = fmap join $ flip buildDynamic never $ do
+ a <- sample (current d)
+ foldDyn f a (updated d)
+
+scannedDyn :: (Reflex t, MonadHold t m) => Dynamic t a -> m (Dynamic t [a])
+scannedDyn = fmap (fmap reverse) . foldedDyn (<>) . fmap pure
+
+scanInnerDyns :: (Reflex t, MonadHold t m) => Dynamic t (Dynamic t a) -> m (Dynamic t [a])
+scanInnerDyns d = do
+  scans <- scannedDyn d
+  return (join (fmap distributeListOverDynPure scans))
+
+
 
 {-# ANN testCases "HLint: ignore Functor law" #-}
 testCases :: [(String, TestCase)]
@@ -128,36 +147,36 @@ testCases =
       return $ coincidence $ flip pushAlways e $ const $ do
             switch <$> hold ("x" <$ e) (e <$ e)
 
-  , testE "switchPromptly-1" $ do
+  , testE "switchHoldPromptly-1" $ do
       e <- events1
       let e' = e <$ e
-      switchPromptly never $ e <$ e'
+      switchHoldPromptly never $ e <$ e'
 
-  , testE "switchPromptly-2" $ do
+  , testE "switchHoldPromptly-2" $ do
       e <- events1
-      switchPromptly never $ deep (e <$ e)
+      switchHoldPromptly never $ deep (e <$ e)
 
-  , testE "switchPromptly-3" $ do
+  , testE "switchHoldPromptly-3" $ do
       e <- events1
-      switchPromptly never $ (e <$ deep e)
+      switchHoldPromptly never $ (e <$ deep e)
 
-  , testE "switchPromptly-4" $ do
+  , testE "switchHoldPromptly-4" $ do
       e <- events1
-      switchPromptly never $ (deep e <$ e)
+      switchHoldPromptly never $ (deep e <$ e)
 
   , testE "switch-5" $ do
       e <- events1
       switch <$> hold never (deep e <$ e)
 
-  , testE "switchPromptly-5" $ do
+  , testE "switchHoldPromptly-5" $ do
     e <- events1
-    switchPromptly never $ flip push e $
+    switchHoldPromptly never $ flip push e $
       const (Just <$> headE e)
 
-  , testE "switchPromptly-6" $ do
+  , testE "switchHoldPromptly-6" $ do
       e <- events1
-      switchPromptly never $ flip pushAlways e $
-        const (switchPromptly e never)
+      switchHoldPromptly never $ flip pushAlways e $
+        const (switchHoldPromptly e never)
 
   , testE "coincidence-1" $ do
       e <- events1
@@ -201,6 +220,14 @@ testCases =
       bb <- hold (constant "x") $ pushAlways (const $ hold "a" eo) eo
       return $ pull $ sample =<< sample bb
 
+
+  , testB "foldDynWhileFiring"  $ do
+    e <- events1
+    d <- foldDyn (:) [] $
+      pushAlways (\a -> foldDyn (:) [a] e) e
+
+    return $ current (join (fmap distributeListOverDynPure d))
+
   , testE "joinDyn" $ do
       e <- events1
       bb <- hold "b" e
@@ -223,6 +250,38 @@ testCases =
       d2 <- fmap (fmap (map toUpper)) $ foldDyn (++) "0" =<< events2
 
       return $ current $ zipDynWith (<>) d1 d2
+
+  , testB "buildDynamicStrictness"  $ do
+      rec
+        d'' <- pushDyn return d'
+        d' <- pushDyn return d
+        d <- holdDyn "0" =<< events1
+
+      _ <- sample (current d'')
+      return (current d'')
+
+  , testB "factorDyn"  $ do
+      d <- holdDyn (Left "a") =<< eithers
+
+      eithers' <- eitherDyn d
+      let unFactor = either id id
+      return $ current (join (fmap unFactor eithers'))
+
+  , testB "pushDynDeep"  $ do
+      _ <- events1
+      _ <- events2
+
+      d1 <- holdDyn "d1" =<< events1
+      d2 <- holdDyn "d2" =<< events2
+
+      d <- flip pushDyn d1 $ \a ->
+        flip pushDyn d2 $ \b ->
+          flip pushDyn d1 $ \c ->
+            return (a <> b <> c)
+
+      d' <- pushDyn scanInnerDyns d >>= scanInnerDyns
+      return $ current d'
+
   , testE "fan-1" $ do
       e <- fmap toMap <$> events1
       let es = select (fanMap e) . Const2 <$> values
@@ -264,13 +323,17 @@ testCases =
             return $ void e
       lazyHold
 
+
   ] where
 
     events1, events2, events3 ::  TestPlan t m => m (Event t String)
     events1 = plan [(1, "a"), (2, "b"), (5, "c"), (7, "d"), (8, "e")]
     events2 = plan [(1, "e"), (3, "d"), (4, "c"), (6, "b"), (7, "a")]
-
     events3 = liftA2 mappend events1 events2
+
+    eithers ::  TestPlan t m => m (Event t (Either String String))
+    eithers = plan [(1, Left "e"), (3, Left "d"), (4, Right "c"), (6, Right "b"), (7, Left "a")]
+
 
     values = "abcde"
     toMap str = Map.fromList $ map (\c -> (c, c)) str
@@ -281,5 +344,3 @@ testCases =
 
     deep e = leftmost [e, e]
     leftmost2 e1 e2 = leftmost [e1, e2]
-
-

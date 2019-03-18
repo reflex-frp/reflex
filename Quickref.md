@@ -30,7 +30,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   ffilter   :: (a ->    Bool) ->        Event a -> Event a
 [ ]   ffor      ::        Event a -> (a ->       b) -> Event b
 [ ]   fforMaybe ::        Event a -> (a -> Maybe b) -> Event b
-[ ]   <$        ::              b ->        Event a -> Event b
+[ ]   <$        ::              a ->        Event b -> Event a
 
 -- Event to identical Event with debug trace.  (Only prints if Event is ultimately used.)
 [ ]   traceEvent     :: Show a => String -> Event a -> Event a
@@ -47,7 +47,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   attachWithMaybe            :: (a -> b -> Maybe c) -> Behavior a -> Event b -> Event c
 [ ]   attachPromptlyDynWithMaybe :: (a -> b -> Maybe c) ->  Dynamic a -> Event b -> Event c
 [ ]   <@>                        ::                 Behavior (a -> b) -> Event a -> Event b
-[ ]   <@                         ::                        Behavior b -> Event a -> Event b
+[ ]   <@                         ::                        Behavior a -> Event b -> Event a
 
 -- Combine multiple Events
 [ ]   <>         ::      Semigroup a => Event a -> Event a -> Event a
@@ -57,15 +57,15 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   mergeWith  :: (a -> a -> a) -> [Event a] -> Event a
 [ ]   leftmost   :: [Event a] -> Event a
 [ ]   mergeList  :: [Event a] -> Event (NonEmpty a)
-[ ]   merge      :: GCompare k => DMap (WrapArg Event k) -> Event (DMap k)
+[ ]   merge      :: GCompare k => DMap k Event -> Event (DMap k Identity)
 [ ]   mergeMap   :: Ord k => Map k (Event a) -> Event (Map k a)
 
 -- Efficient one-to-many fanout
-[ ]   fanMap    ::      Ord k => Event (Map k a) -> EventSelector (Const2 k a)
-[ ]   fan       :: GCompare k => Event  (DMap k) -> EventSelector k
-[ ]   select    ::                                  EventSelector k -> k a -> Event a
-[ ]   fanEither ::            Event (Either a b) -> (Event a, Event b)
-[ ]   fanThese  ::            Event (These a b)  -> (Event a, Event b)
+[ ]   fanMap    :: Ord k      => Event (Map k a)         -> EventSelector (Const2 k a)
+[ ]   fan       :: GCompare k => Event (DMap k Identity) -> EventSelector k
+[ ]   select    ::                                          EventSelector k -> k a -> Event a
+[ ]   fanEither :: Event (Either a b) -> (Event a, Event b)
+[ ]   fanThese  :: Event (These a b)  -> (Event a, Event b)
 
 -- Event to Event via function that can sample current values
 [ ]   push       :: (a -> m (Maybe b)) -> Event a -> Event b
@@ -97,6 +97,10 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   >>=  ::             Behavior a -> (a -> Behavior b) -> Behavior b
 [ ]   <>   :: Monoid a => Behavior a ->        Behavior a -> Behavior a
 -- ... plus many more due to typeclass membership
+
+-- Combine multiple behaviors via applicative instance
+[ ]   ffor2 :: Behavior a -> Behavior b ->               (a -> b -> c)      -> Behavior c
+[ ]   ffor3 :: Behavior a -> Behavior b -> Behavior c -> (a -> b -> c -> d) -> Behavior d
 
 -- Behavior to Behavior by sampling current values
 [S]   sample :: Behavior a -> m a
@@ -135,6 +139,10 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   >>=                       ::                  Dynamic a -> (a -> Dynamic b) -> Dynamic b
 [ ]   zipDynWith                :: (a -> b -> c) -> Dynamic a -> Dynamic b        -> Dynamic c
 
+-- Combine multiple dynamics via applicative instance
+[ ]   ffor2 :: Dynamic a -> Dynamic b ->              (a -> b -> c)      -> Dynamic c
+[ ]   ffor3 :: Dynamic a -> Dynamic b -> Dynamic c -> (a -> b -> c -> d) -> Dynamic d
+
 -- Efficient one-to-many fanout
 [ ]   demux   :: Ord k => Dynamic k -> Demux k
 [ ]   demuxed :: Eq k  =>              Demux k -> k -> Dynamic Bool
@@ -159,7 +167,7 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 [ ]   switch            ::                  Behavior (Event a)  ->    Event a
 
 -- Flatten Dyanmic-of-Event to Event.  New Event is used immediately.
-[ ]   switchPromptlyDyn ::                   Dynamic (Event a)  ->    Event a
+[ ]   switchDyn         ::                   Dynamic (Event a)  ->    Event a
 
 -- Flatten Event-of-Event to Event that fires when both wrapper AND new Event fire.
 [ ]   coincidence       ::                     Event (Event a)  ->    Event a
@@ -182,7 +190,7 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 
 -- Similar to above, for Events.  Created Event initially tracks the first argument.
 -- At switchover, the output Event immediately tracks the new Event.
-[H]   switchPromptly    ::       Event a ->    Event (Event a)  -> m (Event a)
+[H]   switchHold        ::       Event a ->    Event (Event a)  -> m (Event a)
 ```
 
 ## Typeclasses to introspect and modify an FRP network.
@@ -247,7 +255,7 @@ Th typeclasses and their associated annotations include:
             Dynamic (Map k v) -> (k -> Dynamic v -> Dynamic Bool -> m (Event a)) -> m (Event k)
 
 -- Same as listWithKey, but takes initial values and an updates Event instead of a Dynamic.
-[H,A,B]   listWithKey' :: Ord k =>
+[H,A]     listWithKeyShallowDiff :: Ord k =>
             Map k v -> Event (Map k (Maybe v)) -> (k -> v -> Event v -> m a) -> m (Dynamic (Map k a))
 ```
 
@@ -284,3 +292,20 @@ Th typeclasses and their associated annotations include:
 [P,T]   delay :: NominalDiffTime -> Event t a -> m (Event t a)
 ```
 
+## Networks
+
+```haskell
+-- Functions from Reflex.Network used to deal with Dynamics/Events carrying (m a)
+
+-- Given a Dynamic of network-creating actions, create a network that is recreated whenever the Dynamic updates. 
+-- The returned Event of network results occurs when the Dynamic does. Note: Often, the type a is an Event, 
+-- in which case the return value is an Event-of-Events that would typically be flattened (via switchHold).
+[P,A]   networkView :: Dynamic (m a) -> m (Event a) 
+
+-- Given an initial network and an Event of network-creating actions, create a network that is recreated whenever the 
+-- Event fires. The returned Dynamic of network results occurs when the Event does. Note: Often, the type a is an 
+-- Event, in which case the return value is a Dynamic-of-Events that would typically be flattened.
+[H,A]   networkHold :: m a -> Event (m a) -> m (Dynamic a) 
+
+-- Render a placeholder network to be shown while another network is not yet done building
+[P,A]   untilReady :: m a -> m b -> m (a, Event b) 

@@ -13,9 +13,6 @@ module Reflex.Dynamic.TH
   ( qDynPure
   , unqDyn
   , mkDynPure
-    -- * Deprecated functions
-  , qDyn
-  , mkDyn
   ) where
 
 import Generics.SOP (I (..), NP (..))
@@ -24,7 +21,7 @@ import Reflex.Dynamic.CollectDynGeneric (collectDynNP)
 import Control.Monad.State
 import Data.Data
 import Data.Generics
-import Data.Monoid
+import Data.Monoid ((<>))
 import qualified Language.Haskell.Exts as Hs
 import qualified Language.Haskell.Meta.Syntax.Translate as Hs
 import Language.Haskell.TH
@@ -51,7 +48,6 @@ qDynPure qe = do
       arg = foldr (\a b -> ConE '(:*) `AppE` a `AppE` b) (ConE 'Nil) $ map snd exprs
       param = foldr (\a b -> ConP '(:*) [ConP 'I [VarP a], b]) (ConP 'Nil []) $ map fst exprs
   [| $(return $ LamE [param] e') <$> collectDynNP $(return arg) |]
-
 
 -- | Antiquote a 'Dynamic' expression.  This can /only/ be used inside of a
 -- 'qDyn' quotation.
@@ -109,24 +105,3 @@ mkDynExp s = case Hs.parseExpWithMode (Hs.defaultParseMode { Hs.extensions = [ H
           reinstateUnqDyn (TH.Name (TH.OccName occName') (TH.NameQ (TH.ModName modName')))
             | modName == modName' && occName == occName' = 'unqMarker
           reinstateUnqDyn x = x
-
---------------------------------------------------------------------------------
--- Deprecated
---------------------------------------------------------------------------------
-
-{-# DEPRECATED qDyn "Instead of $(qDyn x), use return $(qDynPure x)" #-}
--- | Like 'qDynPure', but wraps its result monadically using 'return'.  This is
--- no longer necessary, due to 'Dynamic' being an instance of 'Functor'.
-qDyn :: Q Exp -> Q Exp
-qDyn qe = [| return $(qDynPure qe) |]
-
-{-# DEPRECATED mkDyn "Instead of [mkDyn| x |], use return [mkDynPure| x |]" #-}
--- | Like 'mkDynPure', but wraps its result monadically using 'return'.  This is
--- no longer necessary, due to 'Dynamic' being an instance of 'Functor'.
-mkDyn :: QuasiQuoter
-mkDyn = QuasiQuoter
-  { quoteExp = \s -> [| return $(mkDynExp s) |]
-  , quotePat = error "mkDyn: pattern splices are not supported"
-  , quoteType = error "mkDyn: type splices are not supported"
-  , quoteDec = error "mkDyn: declaration splices are not supported"
-  }

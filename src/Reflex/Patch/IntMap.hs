@@ -1,20 +1,25 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+-- | Module containing 'PatchIntMap', a 'Patch' for 'IntMap' which allows for
+-- insert/update or delete of associations.
 module Reflex.Patch.IntMap where
 
-import Prelude hiding (lookup)
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Maybe
 import Data.Semigroup
 import Reflex.Patch.Class
 
+-- | 'Patch' for 'IntMap' which represents insertion or deletion of keys in the mapping.
+-- Internally represented by 'IntMap (Maybe a)', where @Just@ means insert/update
+-- and @Nothing@ means delete.
 newtype PatchIntMap a = PatchIntMap (IntMap (Maybe a)) deriving (Functor, Foldable, Traversable, Monoid)
 
+-- | Apply the insertions or deletions to a given 'IntMap'.
 instance Patch (PatchIntMap a) where
   type PatchTarget (PatchIntMap a) = IntMap a
   apply (PatchIntMap p) v = if IntMap.null p then Nothing else Just $
@@ -37,14 +42,26 @@ instance Semigroup (PatchIntMap v) where
     GT -> x
 #endif
 
-traverseIntMapPatchWithKey :: Applicative t => (Int -> a -> t b) -> PatchIntMap a -> t (PatchIntMap b)
+-- | Map a function @Int -> a -> b@ over all @a@s in the given @'PatchIntMap' a@
+-- (that is, all inserts/updates), producing a @PatchIntMap b@.
+mapIntMapPatchWithKey :: (Int -> a -> b) -> PatchIntMap a -> PatchIntMap b
+mapIntMapPatchWithKey f (PatchIntMap m) = PatchIntMap $ IntMap.mapWithKey (\ k mv -> f k <$> mv) m
+
+-- | Map an effectful function @Int -> a -> f b@ over all @a@s in the given @'PatchIntMap' a@
+-- (that is, all inserts/updates), producing a @f (PatchIntMap b)@.
+traverseIntMapPatchWithKey :: Applicative f => (Int -> a -> f b) -> PatchIntMap a -> f (PatchIntMap b)
 traverseIntMapPatchWithKey f (PatchIntMap m) = PatchIntMap <$> IntMap.traverseWithKey (\k mv -> traverse (f k) mv) m
 
+-- | Extract all @a@s inserted/updated by the given @'PatchIntMap' a@.
 patchIntMapNewElements :: PatchIntMap a -> [a]
 patchIntMapNewElements (PatchIntMap m) = catMaybes $ IntMap.elems m
 
+-- | Convert the given @'PatchIntMap' a@ into an @'IntMap' a@ with all
+-- the inserts/updates in the given patch.
 patchIntMapNewElementsMap :: PatchIntMap a -> IntMap a
 patchIntMapNewElementsMap (PatchIntMap m) = IntMap.mapMaybe id m
 
+-- | Subset the given @'IntMap' a@ to contain only the keys that would be
+-- deleted by the given @'PatchIntMap' a@.
 getDeletions :: PatchIntMap v -> IntMap v' -> IntMap v'
 getDeletions (PatchIntMap m) v = IntMap.intersection v m

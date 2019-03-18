@@ -22,8 +22,10 @@ import Control.Monad.Ref
 import Data.Coerce
 import Data.Dependent.Sum
 import Data.IORef
+import Data.Monoid ((<>))
 import qualified Data.Semigroup as S
 import Reflex.Class
+import Reflex.Adjustable.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
@@ -134,7 +136,7 @@ instance Adjustable t m => Adjustable t (TriggerEventT t m) where
 -- TODO: Monoid and Semigroup can likely be derived once ReaderT has them.
 instance (Monoid a, Applicative m) => Monoid (TriggerEventT t m a) where
   mempty = pure mempty
-  mappend = liftA2 mappend
+  mappend = (<>)
 
 instance (S.Semigroup a, Applicative m) => S.Semigroup (TriggerEventT t m a) where
   (<>) = liftA2 (S.<>)

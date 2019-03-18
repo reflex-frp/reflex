@@ -5,13 +5,15 @@
 , semigroupoids, semigroups, split, stdenv, stm, syb
 , template-haskell, these, time, transformers
 , transformers-compat, unbounded-delays, prim-uniq
-, data-default, filepath, directory, filemanip, generics-sop
+
+, data-default, filepath, directory, filemanip, ghcjs-base
+, monoidal-containers, witherable, generics-sop
 , useTemplateHaskell ? true
 }:
 
 mkDerivation {
   pname = "reflex";
-  version = "0.5.0";
+  version = "0.5.0.1";
   src = builtins.filterSource (path: type: !(builtins.elem (baseNameOf path) [ ".git" "dist" ])) ./.;
   libraryHaskellDepends = [
     base bifunctors containers dependent-map dependent-sum
@@ -21,8 +23,11 @@ mkDerivation {
     transformers-compat prim-uniq
     base bifunctors containers deepseq dependent-map dependent-sum
     mtl ref-tf split transformers data-default
-    random time unbounded-delays generics-sop
-  ] ++ (if !useTemplateHaskell then [] else [
+    random time unbounded-delays monoidal-containers witherable
+    generics-sop
+  ] ++ (if ghc.isGhcjs or false then [
+    ghcjs-base
+  ] else []) ++ (if !useTemplateHaskell then [] else [
     haskell-src-exts haskell-src-meta
   ]);
   testHaskellDepends = if ghc.isGhcjs or false then [] else [

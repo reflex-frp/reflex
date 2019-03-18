@@ -6,14 +6,20 @@ module Reflex
   ) where
 
 import Reflex.Class as X
+import Reflex.Adjustable.Class as X
+import Reflex.BehaviorWriter.Base as X
+import Reflex.BehaviorWriter.Class as X
 import Reflex.Collection as X
-import Reflex.EventWriter as X
 import Reflex.Dynamic as X
+import Reflex.EventWriter.Base as X
+import Reflex.EventWriter.Class as X
 #ifdef USE_TEMPLATE_HASKELL
 import Reflex.Dynamic.TH as X
 #endif
 import Reflex.Dynamic.Uniq as X
-import Reflex.DynamicWriter as X
+import Reflex.DynamicWriter.Base as X
+import Reflex.DynamicWriter.Class as X
+import Reflex.NotReady.Class as X
 import Reflex.PerformEvent.Base as X
 import Reflex.PerformEvent.Class as X
 import Reflex.PostBuild.Base as X

@@ -30,38 +30,19 @@ module Reflex.Host.Class
 
 import Reflex.Class
 
-import Control.Applicative
-import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Ref
 import Control.Monad.Trans
-import Control.Monad.Trans.Cont (ContT ())
-import Control.Monad.Trans.Except (ExceptT ())
-import Control.Monad.Trans.Reader (ReaderT ())
-import Control.Monad.Trans.RWS (RWST ())
-import Control.Monad.Trans.State (StateT ())
+import Control.Monad.Trans.Cont (ContT)
+import Control.Monad.Trans.Except (ExceptT)
+import Control.Monad.Trans.Reader (ReaderT)
+import Control.Monad.Trans.RWS (RWST)
+import Control.Monad.Trans.State (StateT)
 import qualified Control.Monad.Trans.State.Strict as Strict
-import Control.Monad.Trans.Writer (WriterT ())
+import Control.Monad.Trans.Writer (WriterT)
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
-import Data.Monoid
-
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-import Control.Monad.Primitive (touch)
-import Data.IORef
-import Reflex.Spider.Internal (EventM (..), HasSpiderTimeline, RootTrigger, SpiderEventHandle (..),
-                               SpiderHost (..), SpiderHostFrame (..), Subscriber (..), newEventWithTriggerIO,
-                               newFanEventWithTriggerIO, run, runFrame, scheduleClear, subscribe)
-import qualified Reflex.Spider.Internal
-#endif
-
--- Note: this import must come last to silence warnings from AMP
-import Prelude hiding (foldl, mapM, mapM_, sequence, sequence_)
-
-#ifdef SPECIALIZE_TO_SPIDERTIMELINE_GLOBAL
-#include "../Spider/SpiderTimelineHost.include.hs"
-#endif
 
 -- | Framework implementation support class for the reflex implementation
 -- represented by @t@.

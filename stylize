@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+for x in **/*.hs ; do stylish-haskell -i "$x" ; done
