@@ -1,6 +1,9 @@
 {-# LANGUAGE CPP #-}
--- | This module exports all of the user-facing functionality of the 'Spider'
--- 'Reflex' engine
+-- |
+-- Module:
+--   Reflex.Spider
+-- Description:
+--   This module exports all of the user-facing functionality of the 'Spider' 'Reflex' engine
 module Reflex.Spider
        ( Spider
        , SpiderTimeline

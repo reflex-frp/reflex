@@ -58,7 +58,7 @@ import Unsafe.Coerce
 
 {-# DEPRECATED TellId "Do not construct this directly; use tellId instead" #-}
 newtype TellId w x
-  = TellId Int -- ^ WARNING: Do not construct this directly; use 'TellId' instead
+  = TellId Int -- ^ WARNING: Do not construct this directly; use 'tellId' instead
   deriving (Show, Eq, Ord, Enum)
 
 tellId :: Int -> TellId w w

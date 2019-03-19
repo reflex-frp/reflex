@@ -38,17 +38,10 @@ module Data.Functor.Misc
   , dmapToThese
   , eitherToDSum
   , dsumToEither
-    -- * Deprecated functions
-  , sequenceDmap
-  , wrapDMap
-  , rewrapDMap
-  , unwrapDMap
-  , unwrapDMapMaybe
-  , extractFunctorDMap
   , ComposeMaybe (..)
   ) where
 
-import Control.Applicative (Applicative, (<$>))
+import Control.Applicative ((<$>))
 import Control.Monad.Identity
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
@@ -249,39 +242,3 @@ newtype ComposeMaybe f a =
   ComposeMaybe { getComposeMaybe :: Maybe (f a) } deriving (Show, Eq, Ord)
 
 deriving instance Functor f => Functor (ComposeMaybe f)
-
---------------------------------------------------------------------------------
--- Deprecated functions
---------------------------------------------------------------------------------
-
-{-# INLINE sequenceDmap #-}
-{-# DEPRECATED sequenceDmap "Use 'Data.Dependent.Map.traverseWithKey (\\_ -> fmap Identity)' instead" #-}
--- | Run the actions contained in the 'DMap'
-sequenceDmap :: Applicative t => DMap f t -> t (DMap f Identity)
-sequenceDmap = DMap.traverseWithKey $ \_ t -> Identity <$> t
-
-{-# DEPRECATED wrapDMap "Use 'Data.Dependent.Map.map (f . runIdentity)' instead" #-}
--- | Replace the 'Identity' functor for a 'DMap''s values with a different functor
-wrapDMap :: (forall a. a -> f a) -> DMap k Identity -> DMap k f
-wrapDMap f = DMap.map $ f . runIdentity
-
-{-# DEPRECATED rewrapDMap "Use 'Data.Dependent.Map.map' instead" #-}
--- | Replace one functor for a 'DMap''s values with a different functor
-rewrapDMap :: (forall (a :: *). f a -> g a) -> DMap k f -> DMap k g
-rewrapDMap = DMap.map
-
-{-# DEPRECATED unwrapDMap "Use 'Data.Dependent.Map.map (Identity . f)' instead" #-}
--- | Replace one functor for a 'DMap''s values with the 'Identity' functor
-unwrapDMap :: (forall a. f a -> a) -> DMap k f -> DMap k Identity
-unwrapDMap f = DMap.map $ Identity . f
-
-{-# DEPRECATED unwrapDMapMaybe "Use 'Data.Dependent.Map.mapMaybeWithKey (\\_ a -> fmap Identity $ f a)' instead" #-}
--- | Like 'unwrapDMap', but possibly delete some values from the DMap
-unwrapDMapMaybe :: GCompare k => (forall a. f a -> Maybe a) -> DMap k f -> DMap k Identity
-unwrapDMapMaybe f = DMap.mapMaybeWithKey $ \_ a -> Identity <$> f a
-
-{-# DEPRECATED extractFunctorDMap "Use 'mapKeyValuePairsMonotonic (\\(Const2 k :=> Identity v) -> Const2 k :=> v)' instead" #-}
--- | Eliminate the 'Identity' functor in a 'DMap' and replace it with the
--- underlying functor
-extractFunctorDMap :: DMap (Const2 k (f v)) Identity -> DMap (Const2 k v) f
-extractFunctorDMap = mapKeyValuePairsMonotonic $ \(Const2 k :=> Identity v) -> Const2 k :=> v

@@ -22,6 +22,7 @@ module Reflex.DynamicWriter.Base
 import Control.Monad.Exception
 import Control.Monad.Identity
 import Control.Monad.IO.Class
+import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
@@ -34,7 +35,7 @@ import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Semigroup
+import Data.Semigroup (Semigroup(..))
 import Data.Some (Some)
 import Data.These
 
@@ -139,6 +140,10 @@ instance PostBuild t m => PostBuild t (DynamicWriterT t w m) where
 instance MonadState s m => MonadState s (DynamicWriterT t w m) where
   get = lift get
   put = lift . put
+
+instance PrimMonad m => PrimMonad (DynamicWriterT t w m) where
+  type PrimState (DynamicWriterT t w m) = PrimState m
+  primitive = lift . primitive
 
 newtype DynamicWriterTLoweredResult t w v a = DynamicWriterTLoweredResult (v a, Dynamic t w)
 

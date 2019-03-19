@@ -49,16 +49,16 @@ import Data.GADT.Compare
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
-import Data.Maybe
+import Data.Maybe hiding (mapMaybe)
 import Data.Monoid ((<>))
 import Data.Proxy
 import Data.These
 import Data.Traversable
+import Data.Witherable (Filterable, mapMaybe)
 import GHC.Exts
 import GHC.IORef (IORef (..))
 import GHC.Stack
 import Reflex.FastWeak
-import Reflex.FunctorMaybe
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
@@ -1128,12 +1128,12 @@ newInvalidatorSwitch subd = return $! InvalidatorSwitch subd
 newInvalidatorPull :: Pull x a -> IO (Invalidator x)
 newInvalidatorPull p = return $! InvalidatorPull p
 
-instance HasSpiderTimeline x => FunctorMaybe (Event x) where
-  fmapMaybe f = push $ return . f
+instance HasSpiderTimeline x => Filterable (Event x) where
+  mapMaybe f = push $ return . f
 
 instance HasSpiderTimeline x => Align (Event x) where
   nil = eventNever
-  align ea eb = fmapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
+  align ea eb = mapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 
 data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
                  | BuildDyn  !(EventM x (PatchTarget p), Event x p)
@@ -2307,8 +2307,12 @@ newJoinDyn d =
   in Reflex.Spider.Internal.unsafeBuildDynamic readV0 v'
 
 instance HasSpiderTimeline x => Functor (Reflex.Class.Dynamic (SpiderTimeline x)) where
-  fmap f = SpiderDynamic . newMapDyn f . unSpiderDynamic
+  fmap = mapDynamicSpider
   x <$ d = R.unsafeBuildDynamic (return x) $ x <$ R.updated d
+
+mapDynamicSpider :: HasSpiderTimeline x => (a -> b) -> Reflex.Class.Dynamic (SpiderTimeline x) a -> Reflex.Class.Dynamic (SpiderTimeline x) b
+mapDynamicSpider f = SpiderDynamic . newMapDyn f . unSpiderDynamic
+{-# INLINE [1] mapDynamicSpider #-}
 
 instance HasSpiderTimeline x => Applicative (Reflex.Class.Dynamic (SpiderTimeline x)) where
   pure = SpiderDynamic . dynamicConst

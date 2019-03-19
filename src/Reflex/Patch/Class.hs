@@ -4,7 +4,7 @@ module Reflex.Patch.Class where
 
 import Control.Monad.Identity
 import Data.Maybe
-import Data.Semigroup
+import Data.Semigroup (Semigroup(..))
 
 -- | A 'Patch' type represents a kind of change made to a datastructure.
 --

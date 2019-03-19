@@ -31,8 +31,8 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
 import System.Mem.Weak
 
--- | A @WeakBag a@ holds a set of values of type @a@, but does not retain them -
--- that is, they can still be garbage-collected.  As long as the @a@s remain
+-- | A 'WeakBag' holds a set of values of type @/a/@, but does not retain them -
+-- that is, they can still be garbage-collected.  As long as the @/a/@ values remain
 -- alive, the 'WeakBag' will continue to refer to them.
 data WeakBag a = WeakBag
   { _weakBag_nextId :: {-# UNPACK #-} !(IORef Int) --TODO: what if this wraps around?
