@@ -15,6 +15,7 @@ bug-reports: https://github.com/reflex-frp/reflex/issues
 extra-source-files:
   README.md
   Quickref.md
+  ChangeLog.md
 
 flag use-reflex-optimizer
   description: Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.
