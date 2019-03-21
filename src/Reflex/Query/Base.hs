@@ -340,5 +340,5 @@ instance Requester t m => Requester t (QueryT t q m) where
 instance EventWriter t w m => EventWriter t w (QueryT t q m) where
   tellEvent = lift . tellEvent
 
-instance MonadDynamicWriter t w m => MonadDynamicWriter t w (QueryT t q m) where
+instance DynamicWriter t w m => DynamicWriter t w (QueryT t q m) where
   tellDyn = lift . tellDyn
