@@ -166,7 +166,7 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 -- Flatten Behavior-of-Event to Event.  Old Event is used during switchover.
 [ ]   switch            ::                  Behavior (Event a)  ->    Event a
 
--- Flatten Dyanmic-of-Event to Event.  New Event is used immediately.
+-- Flatten Dynamic-of-Event to Event.  New Event is used immediately.
 [ ]   switchDyn         ::                   Dynamic (Event a)  ->    Event a
 
 -- Flatten Event-of-Event to Event that fires when both wrapper AND new Event fire.
