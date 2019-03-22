@@ -9,3 +9,4 @@
 * Add matchRequestsWithResponses to make it easier to use Requester with protocols that don't do this matching for you.
 * Add withRequesterT to map functions over the request and response of a RequesterT.
 * Suppress nil patches in QueryT as an optimization. The Query type must now have an Eq instance.
+* Add throttleBatchWithLag to Reflex.Time. See that module for details.
