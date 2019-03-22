@@ -25,7 +25,7 @@ module Reflex.EventWriter.Base
 import Reflex.Adjustable.Class
 import Reflex.Class
 import Reflex.EventWriter.Class (EventWriter, tellEvent)
-import Reflex.DynamicWriter.Class (MonadDynamicWriter, tellDyn)
+import Reflex.DynamicWriter.Class (DynamicWriter, tellDyn)
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
@@ -278,7 +278,7 @@ instance (MonadQuery t q m, Monad m) => MonadQuery t q (EventWriterT t w m) wher
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
 
-instance MonadDynamicWriter t w m => MonadDynamicWriter t w (EventWriterT t v m) where
+instance DynamicWriter t w m => DynamicWriter t w (EventWriterT t v m) where
   tellDyn = lift . tellDyn
 
 instance PrimMonad m => PrimMonad (EventWriterT t w m) where

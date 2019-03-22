@@ -74,26 +74,19 @@ getQueryTLoweredResultValue (QueryTLoweredResult (v, _)) = v
 getQueryTLoweredResultWritten :: QueryTLoweredResult t q v -> [Behavior t q]
 getQueryTLoweredResultWritten (QueryTLoweredResult (_, w)) = w
 
-{-
-let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
-    sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
-    bs' = fmapCheap snd $ r'
-    patches = unsafeBuildIncremental (sampleBs bs0) $
-      flip pushCheap bs' $ \bs -> do
-        p <- (~~) <$> sampleBs bs <*> sample (currentIncremental patches)
-        return (Just (AdditivePatch p))
--}
+maskMempty :: (Eq a, Monoid a) => a -> Maybe a
+maskMempty x = if x == mempty then Nothing else Just x
 
-instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, Adjustable t m) => Adjustable t (QueryT t q m) where
+instance (Reflex t, MonadFix m, Group q, Additive q, Query q, Eq q, MonadHold t m, Adjustable t m) => Adjustable t (QueryT t q m) where
   runWithReplace (QueryT a0) a' = do
     ((r0, bs0), r') <- QueryT $ lift $ runWithReplace (runStateT a0 []) $ fmapCheap (flip runStateT [] . unQueryT) a'
     let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
         sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
         bs' = fmapCheap snd $ r'
     bbs <- hold bs0 bs'
-    let patches = flip pushAlwaysCheap bs' $ \newBs -> do
+    let patches = flip pushCheap bs' $ \newBs -> do
           oldBs <- sample bbs
-          (~~) <$> sampleBs newBs <*> sampleBs oldBs
+          maskMempty <$> ((~~) <$> sampleBs newBs <*> sampleBs oldBs)
     QueryT $ modify $ (:) $ pull $ sampleBs =<< sample bbs
     QueryT $ lift $ tellEvent patches
     return (r0, fmapCheap fst r')
@@ -171,19 +164,19 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, Adj
           let p k bs = case Map.lookup k bs0 of
                 Nothing -> case bs of
                   -- If the update is to delete the state for a child that doesn't exist, the patch is mempty.
-                  Nothing -> return mempty
+                  Nothing -> return Nothing
                   -- If the update is to update the state for a child that doesn't exist, the patch is the sample of the new state.
-                  Just newBs -> sampleBs newBs
+                  Just newBs -> maskMempty <$> sampleBs newBs
                 Just oldBs -> case bs of
                   -- If the update is to delete the state for a child that already exists, the patch is the negation of the child's current state
-                  Nothing -> negateG <$> sampleBs oldBs
+                  Nothing -> maskMempty . negateG <$> sampleBs oldBs
                   -- If the update is to update the state for a child that already exists, the patch is the negation of sampling the child's current state
                   -- composed with the sampling the child's new state.
-                  Just newBs -> (~~) <$> sampleBs newBs <*> sampleBs oldBs
+                  Just newBs -> maskMempty <$> ((~~) <$> sampleBs newBs <*> sampleBs oldBs)
           -- we compute the patch by iterating over the update PatchMap and proceeding by cases. Then we fold over the
           -- child patches and wrap them in AdditivePatch.
-          patch <- AdditivePatch . fold <$> Map.traverseWithKey p bs'
-          return (apply pbs bs0, Just patch)
+          patch <- fold <$> Map.traverseWithKey p bs'
+          return (apply pbs bs0, AdditivePatch <$> patch)
     (qpatch :: Event t (AdditivePatch q)) <- mapAccumMaybeM_ accumBehaviors liftedBs0 liftedBs'
     tellQueryIncremental $ unsafeBuildIncremental (fold <$> mapM sampleBs liftedBs0) qpatch
     return (liftedResult0, liftedResult')
@@ -216,28 +209,28 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, MonadHold t m, Adj
               p k bs = case Map.lookup k bs0 of
                 Nothing -> case MapWithMove._nodeInfo_from bs of
                   -- If the update is to delete the state for a child that doesn't exist, the patch is mempty.
-                  MapWithMove.From_Delete -> return mempty
+                  MapWithMove.From_Delete -> return Nothing
                   -- If the update is to update the state for a child that doesn't exist, the patch is the sample of the new state.
-                  MapWithMove.From_Insert newBs -> sampleBs newBs
+                  MapWithMove.From_Insert newBs -> maskMempty <$> sampleBs newBs
                   MapWithMove.From_Move k' -> case Map.lookup k' bs0 of
-                    Nothing -> return mempty
-                    Just newBs -> sampleBs newBs
+                    Nothing -> return Nothing
+                    Just newBs -> maskMempty <$> sampleBs newBs
                 Just oldBs -> case MapWithMove._nodeInfo_from bs of
                   -- If the update is to delete the state for a child that already exists, the patch is the negation of the child's current state
-                  MapWithMove.From_Delete -> negateG <$> sampleBs oldBs
+                  MapWithMove.From_Delete -> maskMempty . negateG <$> sampleBs oldBs
                   -- If the update is to update the state for a child that already exists, the patch is the negation of sampling the child's current state
                   -- composed with the sampling the child's new state.
-                  MapWithMove.From_Insert newBs -> (~~) <$> sampleBs newBs <*> sampleBs oldBs
+                  MapWithMove.From_Insert newBs -> maskMempty <$> ((~~) <$> sampleBs newBs <*> sampleBs oldBs)
                   MapWithMove.From_Move k'
-                    | k' == k -> return mempty
+                    | k' == k -> return Nothing
                     | otherwise -> case Map.lookup k' bs0 of
                   -- If we are moving from a non-existent key, that is a delete
-                        Nothing -> negateG <$> sampleBs oldBs
-                        Just newBs -> (~~) <$> sampleBs newBs <*> sampleBs oldBs
+                        Nothing -> maskMempty . negateG <$> sampleBs oldBs
+                        Just newBs -> maskMempty <$> ((~~) <$> sampleBs newBs <*> sampleBs oldBs)
           -- we compute the patch by iterating over the update PatchMap and proceeding by cases. Then we fold over the
           -- child patches and wrap them in AdditivePatch.
-          patch <- AdditivePatch . fold <$> Map.traverseWithKey p bs'
-          return (apply pbs bs0, Just patch)
+          patch <- fold <$> Map.traverseWithKey p bs'
+          return (apply pbs bs0, AdditivePatch <$> patch)
     (qpatch :: Event t (AdditivePatch q)) <- mapAccumMaybeM_ accumBehaviors' liftedBs0 liftedBs'
     tellQueryIncremental $ unsafeBuildIncremental (fold <$> mapM sampleBs liftedBs0) qpatch
     return (liftedResult0, liftedResult')
@@ -340,5 +333,5 @@ instance Requester t m => Requester t (QueryT t q m) where
 instance EventWriter t w m => EventWriter t w (QueryT t q m) where
   tellEvent = lift . tellEvent
 
-instance MonadDynamicWriter t w m => MonadDynamicWriter t w (QueryT t q m) where
+instance DynamicWriter t w m => DynamicWriter t w (QueryT t q m) where
   tellDyn = lift . tellDyn

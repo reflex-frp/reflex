@@ -15,7 +15,9 @@ module Reflex.NotReady.Class
 
 import Control.Monad.Reader (ReaderT)
 import Control.Monad.Trans
+import Control.Monad.Trans.Writer (WriterT)
 
+import Reflex.BehaviorWriter.Base (BehaviorWriterT)
 import Reflex.Class
 import Reflex.DynamicWriter.Base (DynamicWriterT)
 import Reflex.EventWriter.Base (EventWriterT)
@@ -39,6 +41,10 @@ instance NotReady t m => NotReady t (ReaderT r m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 
+instance (NotReady t m, Monoid w) => NotReady t (WriterT w m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
 instance NotReady t m => NotReady t (PostBuildT t m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
@@ -48,6 +54,10 @@ instance NotReady t m => NotReady t (EventWriterT t w m) where
   notReady = lift notReady
 
 instance NotReady t m => NotReady t (DynamicWriterT t w m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
+instance NotReady t m => NotReady t (BehaviorWriterT t w m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 

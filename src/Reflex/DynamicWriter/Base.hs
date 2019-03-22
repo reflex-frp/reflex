@@ -22,6 +22,7 @@ module Reflex.DynamicWriter.Base
 import Control.Monad.Exception
 import Control.Monad.Identity
 import Control.Monad.IO.Class
+import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
@@ -34,7 +35,7 @@ import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Semigroup
+import Data.Semigroup (Semigroup(..))
 import Data.Some (Some)
 import Data.These
 
@@ -87,7 +88,7 @@ mergeDynIncrementalWithMove a = unsafeBuildIncremental (mapM (sample . current) 
               noLongerMovedMap = Map.fromList $ fmap (, ()) noLongerMoved
           in Map.differenceWith (\e _ -> Just $ MapWithMove.nodeInfoSetTo Nothing e) pWithNewVals noLongerMovedMap --TODO: Check if any in the second map are not covered?
 
--- | A basic implementation of 'MonadDynamicWriter'.
+-- | A basic implementation of 'DynamicWriter'.
 newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic t w] m a }
   deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadAsyncException, MonadException) -- The list is kept in reverse order
 
@@ -115,7 +116,7 @@ runDynamicWriterT (DynamicWriterT a) = do
   (result, ws) <- runStateT a []
   return (result, mconcat $ reverse ws)
 
-instance (Monad m, Monoid w, Reflex t) => MonadDynamicWriter t w (DynamicWriterT t w m) where
+instance (Monad m, Monoid w, Reflex t) => DynamicWriter t w (DynamicWriterT t w m) where
   tellDyn w = DynamicWriterT $ modify (w :)
 
 instance MonadReader r m => MonadReader r (DynamicWriterT t w m) where
@@ -139,6 +140,10 @@ instance PostBuild t m => PostBuild t (DynamicWriterT t w m) where
 instance MonadState s m => MonadState s (DynamicWriterT t w m) where
   get = lift get
   put = lift . put
+
+instance PrimMonad m => PrimMonad (DynamicWriterT t w m) where
+  type PrimState (DynamicWriterT t w m) = PrimState m
+  primitive = lift . primitive
 
 newtype DynamicWriterTLoweredResult t w v a = DynamicWriterTLoweredResult (v a, Dynamic t w)
 

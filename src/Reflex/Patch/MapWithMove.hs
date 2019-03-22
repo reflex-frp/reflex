@@ -22,7 +22,7 @@ import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup (Semigroup (..), (<>))
 import qualified Data.Set as Set
-import Data.These
+import Data.These (These(..))
 import Data.Tuple
 
 -- | Patch a DMap with additions, deletions, and moves.  Invariant: If key @k1@
