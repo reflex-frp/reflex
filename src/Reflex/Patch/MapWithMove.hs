@@ -20,9 +20,9 @@ import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
-import Data.Semigroup
+import Data.Semigroup (Semigroup (..), (<>))
 import qualified Data.Set as Set
-import Data.These
+import Data.These (These(..))
 import Data.Tuple
 
 -- | Patch a DMap with additions, deletions, and moves.  Invariant: If key @k1@
@@ -40,6 +40,18 @@ data NodeInfo k v = NodeInfo
     -- replaced), where is it going?
   }
   deriving (Show, Read, Eq, Ord, Functor, Foldable, Traversable)
+
+-- | Describe how a key's new value should be produced
+data From k v
+   = From_Insert v -- ^ Insert the given value here
+   | From_Delete -- ^ Delete the existing value, if any, from here
+   | From_Move !k -- ^ Move the value here from the given key
+   deriving (Show, Read, Eq, Ord, Functor, Foldable, Traversable)
+
+-- | Describe where a key's old value will go.  If this is 'Just', that means
+-- the key's old value will be moved to the given other key; if it is 'Nothing',
+-- that means it will be deleted.
+type To = Maybe
 
 -- | Create a 'PatchMapWithMove', validating it
 patchMapWithMove :: Ord k => Map k (NodeInfo k v) -> Maybe (PatchMapWithMove k v)
@@ -62,22 +74,51 @@ patchMapWithMoveInsertAll m = PatchMapWithMove $ flip fmap m $ \v -> NodeInfo
 unPatchMapWithMove :: PatchMapWithMove k v -> Map k (NodeInfo k v)
 unPatchMapWithMove (PatchMapWithMove p) = p
 
--- | Warning: when using this function, you must ensure that the invariants of
--- 'PatchMapWithMove' are preserved; they will not be checked.
+-- | Make a @'PatchMapWithMove' k v@ which has the effect of inserting or updating a value @v@ to the given key @k@, like 'Map.insert'.
+insertMapKey :: k -> v -> PatchMapWithMove k v
+insertMapKey k v = PatchMapWithMove . Map.singleton k $ NodeInfo (From_Insert v) Nothing
+
+-- |Make a @'PatchMapWithMove' k v@ which has the effect of moving the value from the first key @k@ to the second key @k@, equivalent to:
+--
+-- @
+--     'Map.delete' src (maybe map ('Map.insert' dst) (Map.lookup src map))
+-- @
+moveMapKey :: Ord k => k -> k -> PatchMapWithMove k v
+moveMapKey src dst
+  | src == dst = mempty
+  | otherwise =
+      PatchMapWithMove $ Map.fromList
+        [ (dst, NodeInfo (From_Move src) Nothing)
+        , (src, NodeInfo From_Delete (Just dst))
+        ]
+
+-- |Make a @'PatchMapWithMove' k v@ which has the effect of swapping two keys in the mapping, equivalent to:
+--
+-- @
+--     let aMay = Map.lookup a map
+--         bMay = Map.lookup b map
+--     in maybe id (Map.insert a) (bMay `mplus` aMay)
+--      . maybe id (Map.insert b) (aMay `mplus` bMay)
+--      . Map.delete a . Map.delete b $ map
+-- @
+swapMapKey :: Ord k => k -> k -> PatchMapWithMove k v
+swapMapKey src dst
+  | src == dst = mempty
+  | otherwise =
+    PatchMapWithMove $ Map.fromList
+      [ (dst, NodeInfo (From_Move src) (Just src))
+      , (src, NodeInfo (From_Move dst) (Just dst))
+      ]
+
+-- |Make a @'PatchMapWithMove' k v@ which has the effect of deleting a key in the mapping, equivalent to 'Map.delete'.
+deleteMapKey :: k -> PatchMapWithMove k v
+deleteMapKey k = PatchMapWithMove . Map.singleton k $ NodeInfo From_Delete Nothing
+
+-- | Wrap a @'Map' k (NodeInfo k v)@ representing patch changes into a @'PatchMapWithMove' k v@, without checking any invariants.
+--
+-- __Warning:__ when using this function, you must ensure that the invariants of 'PatchMapWithMove' are preserved; they will not be checked.
 unsafePatchMapWithMove :: Map k (NodeInfo k v) -> PatchMapWithMove k v
 unsafePatchMapWithMove = PatchMapWithMove
-
--- | Describe how a key's new value should be produced
-data From k v
-   = From_Insert v -- ^ Insert the given value here
-   | From_Delete -- ^ Delete the existing value, if any, from here
-   | From_Move !k -- ^ Move the value here from the given key
-   deriving (Show, Read, Eq, Ord, Functor, Foldable, Traversable)
-
--- | Describe where a key's old value will go.  If this is 'Just', that means
--- the key's old value will be moved to the given other key; if it is 'Nothing',
--- that means it will be deleted.
-type To = Maybe
 
 -- | Apply the insertions, deletions, and moves to a given 'Map'
 instance Ord k => Patch (PatchMapWithMove k v) where
@@ -91,10 +132,11 @@ instance Ord k => Patch (PatchMapWithMove k v) where
             From_Delete -> Just ()
             _ -> Nothing
 
--- | Returns all the new elements that will be added to the 'Map'
+-- | Returns all the new elements that will be added to the 'Map'.
 patchMapWithMoveNewElements :: PatchMapWithMove k v -> [v]
 patchMapWithMoveNewElements = Map.elems . patchMapWithMoveNewElementsMap
 
+-- | Return a @'Map' k v@ with all the inserts/updates from the given @'PatchMapWithMove' k v@.
 patchMapWithMoveNewElementsMap :: PatchMapWithMove k v -> Map k v
 patchMapWithMoveNewElementsMap (PatchMapWithMove p) = Map.mapMaybe f p
   where f ni = case _nodeInfo_from ni of

@@ -1,15 +1,10 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | 'Data.Map' with a better 'Monoid' instance
@@ -31,9 +26,9 @@ import qualified Data.Map.Internal.Debug as Map (showTree, showTreeWith)
 #else
 import qualified Data.Map as Map (showTree, showTreeWith)
 #endif
-import Data.Map.Monoidal
-import Reflex.Class (FunctorMaybe (..))
-import Reflex.Patch (Additive, Group (..))
+import Data.Witherable (Filterable(..))
+import Data.Map.Monoidal (MonoidalMap(..), delete, null, empty)
+import qualified Data.Map.Monoidal as M
 
 {-# DEPRECATED AppendMap "Use 'MonoidalMap' instead" #-}
 type AppendMap = MonoidalMap
@@ -45,8 +40,8 @@ _unAppendMap = getMonoidalMap
 pattern AppendMap :: Map k v -> MonoidalMap k v
 pattern AppendMap m = MonoidalMap m
 
-instance FunctorMaybe (MonoidalMap k) where
-  fmapMaybe = mapMaybe
+instance Filterable (MonoidalMap k) where
+  mapMaybe = M.mapMaybe
 
 -- | Deletes a key, returning 'Nothing' if the result is empty.
 nonEmptyDelete :: Ord k => k -> MonoidalMap k a -> Maybe (MonoidalMap k a)
@@ -60,17 +55,12 @@ mapMaybeNoNull :: (a -> Maybe b)
                -> MonoidalMap token a
                -> Maybe (MonoidalMap token b)
 mapMaybeNoNull f as =
-  let bs = fmapMaybe f as
+  let bs = mapMaybe f as
   in if null bs
        then Nothing
        else Just bs
 
 -- TODO: Move instances to `Reflex.Patch`
-instance (Ord k, Group q) => Group (MonoidalMap k q) where
-  negateG = map negateG
-
-instance (Ord k, Additive q) => Additive (MonoidalMap k q)
-
 showTree :: forall k a. (Show k, Show a) => MonoidalMap k a -> String
 showTree = coerce (Map.showTree :: Map k a -> String)
 

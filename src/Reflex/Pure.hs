@@ -13,11 +13,13 @@
 --   * MonadSample (Pure t) ((->) t)
 --   * MonadHold (Pure t) ((->) t)
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-
--- | This module provides a pure implementation of Reflex, which is intended to
--- serve as a reference for the semantics of the Reflex class.  All
--- implementations of Reflex should produce the same results as this
--- implementation, although performance and laziness/strictness may differ.
+-- |
+-- Module: Reflex.Pure
+-- Description:
+--   This module provides a pure implementation of Reflex, which is intended to
+--   serve as a reference for the semantics of the Reflex class.  All
+--   implementations of Reflex should produce the same results as this
+--   implementation, although performance and laziness/strictness may differ.
 module Reflex.Pure
   ( Pure
   , Behavior (..)
@@ -43,12 +45,12 @@ import Data.Type.Coercion
 import Reflex.Class
 
 -- | A completely pure-functional 'Reflex' timeline, identifying moments in time
--- with the type @t@.
+-- with the type @/t/@.
 data Pure t
 
--- | The Enum instance of t must be dense: for all x :: t, there must not exist
--- any y :: t such that pred x < y < x. The HasTrie instance will be used
--- exclusively to memoize functions of t, not for any of its other capabilities.
+-- | The 'Enum' instance of @/t/@ must be dense: for all @/x :: t/@, there must not exist
+-- any @/y :: t/@ such that @/'pred' x < y < x/@. The 'HasTrie' instance will be used
+-- exclusively to memoize functions of @/t/@, not for any of its other capabilities.
 instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
 
   newtype Behavior (Pure t) a = Behavior { unBehavior :: t -> a }

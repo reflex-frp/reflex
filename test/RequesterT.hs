@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
@@ -20,18 +21,19 @@ data RequestInt a where
 
 main :: IO ()
 main = do
-  os1@[[Just [10,9,8,7,6,5,4,3,2,1]]] <- runApp' (unwrapApp testOrdering) $
+  os1 <- runApp' (unwrapApp testOrdering) $
     [ Just ()
     ]
   print os1
-  os2@[[Just [1,3,5,7,9]],[Nothing,Nothing],[Just [2,4,6,8,10]],[Just [2,4,6,8,10],Nothing]]
-    <- runApp' (unwrapApp testSimultaneous) $ map Just $
-         [ This ()
-         , That ()
-         , This ()
-         , These () ()
-         ]
+  let ![[Just [10,9,8,7,6,5,4,3,2,1]]] = os1
+  os2 <- runApp' (unwrapApp testSimultaneous) $ map Just $
+    [ This ()
+    , That ()
+    , This ()
+    , These () ()
+    ]
   print os2
+  let ![[Just [1,3,5,7,9]],[Nothing,Nothing],[Just [2,4,6,8,10]],[Just [2,4,6,8,10],Nothing]] = os2
   return ()
 
 unwrapRequest :: DSum tag RequestInt -> Int
@@ -43,7 +45,7 @@ unwrapApp :: ( Reflex t, Monad m )
           -> m (Event t [Int])
 unwrapApp x appIn = do
   ((), e) <- runRequesterT (x appIn) never
-  return $ fmap (map unwrapRequest . DMap.toList) e
+  return $ fmap (map unwrapRequest . requesterDataToList) e
 
 testOrdering :: ( Response m ~ Identity
                 , Request m ~ RequestInt
