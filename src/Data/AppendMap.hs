@@ -26,9 +26,8 @@ import qualified Data.Map.Internal.Debug as Map (showTree, showTreeWith)
 #else
 import qualified Data.Map as Map (showTree, showTreeWith)
 #endif
-import Data.Witherable (Filterable(..))
-import Data.Map.Monoidal (MonoidalMap(..), delete, null, empty)
-import qualified Data.Map.Monoidal as M
+import qualified Data.Witherable as W
+import Data.Map.Monoidal
 
 {-# DEPRECATED AppendMap "Use 'MonoidalMap' instead" #-}
 type AppendMap = MonoidalMap
@@ -40,8 +39,8 @@ _unAppendMap = getMonoidalMap
 pattern AppendMap :: Map k v -> MonoidalMap k v
 pattern AppendMap m = MonoidalMap m
 
-instance Filterable (MonoidalMap k) where
-  mapMaybe = M.mapMaybe
+instance W.Filterable (MonoidalMap k) where
+  mapMaybe = mapMaybe
 
 -- | Deletes a key, returning 'Nothing' if the result is empty.
 nonEmptyDelete :: Ord k => k -> MonoidalMap k a -> Maybe (MonoidalMap k a)

@@ -219,7 +219,7 @@ distributeListOverDynPure =
 -- | Combine a 'Dynamic' of a 'Map' of 'Dynamic's into a 'Dynamic'
 -- with the current values of the 'Dynamic's in a map.
 joinDynThroughMap :: forall t k a. (Reflex t, Ord k) => Dynamic t (Map k (Dynamic t a)) -> Dynamic t (Map k a)
-joinDynThroughMap = join . fmap distributeMapOverDynPure
+joinDynThroughMap = (distributeMapOverDynPure =<<)
 
 -- | Print the value of the 'Dynamic' when it is first read and on each
 -- subsequent change that is observed (as 'traceEvent'), prefixed with the
