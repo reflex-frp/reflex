@@ -10,3 +10,8 @@
 * Add withRequesterT to map functions over the request and response of a RequesterT.
 * Suppress nil patches in QueryT as an optimization. The Query type must now have an Eq instance.
 * Add throttleBatchWithLag to Reflex.Time. See that module for details.
+
+## 0.6.1.0
+
+* Re-export all of Data.Map.Monoidal
+* Fix QueryT and RequesterT tests
