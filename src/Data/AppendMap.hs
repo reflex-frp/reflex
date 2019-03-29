@@ -7,10 +7,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
--- | 'Data.Map' with a better 'Monoid' instance
---
--- 'Data.Map' has @mappend = union@, which is left-biased.  AppendMap has
--- @mappend = unionWith mappend@ instead.
+-- |
+-- Module:
+--   Data.AppendMap
+-- Description:
+--   Instances and convenience functions for 'Data.Map.Monoidal'. We use
+--   monoidal-containers to take advantage of its better monoid instance.
+--   'Data.Map' has @mappend = union@, which is left-biased.  'MonoidalMap'
+--   has @mappend = unionWith mappend@ instead.
 module Data.AppendMap
   ( module Data.AppendMap
   , module Data.Map.Monoidal
@@ -30,12 +34,15 @@ import qualified Data.Witherable as W
 import Data.Map.Monoidal
 
 {-# DEPRECATED AppendMap "Use 'MonoidalMap' instead" #-}
+-- | AppendMap is a synonym for 'Data.Map.Monoidal.MonoidalMap'
 type AppendMap = MonoidalMap
 
 {-# DEPRECATED _unAppendMap "Use 'getMonoidalMap' instead" #-}
+-- | A synonym for 'getMonoidalMap'
 _unAppendMap :: MonoidalMap k v -> Map k v
 _unAppendMap = getMonoidalMap
 
+-- | Pattern synonym for 'MonoidalMap'
 pattern AppendMap :: Map k v -> MonoidalMap k v
 pattern AppendMap m = MonoidalMap m
 
@@ -50,6 +57,7 @@ nonEmptyDelete k vs =
        then Nothing
        else Just deleted
 
+-- | Like 'mapMaybe' but indicates whether the resulting container is empty
 mapMaybeNoNull :: (a -> Maybe b)
                -> MonoidalMap token a
                -> Maybe (MonoidalMap token b)
@@ -60,9 +68,11 @@ mapMaybeNoNull f as =
        else Just bs
 
 -- TODO: Move instances to `Reflex.Patch`
+-- | Displays a 'MonoidalMap' as a tree. See 'Data.Map.Lazy.showTree' for details.
 showTree :: forall k a. (Show k, Show a) => MonoidalMap k a -> String
 showTree = coerce (Map.showTree :: Map k a -> String)
 
+-- | Displays a 'MonoidalMap' as a tree, using the supplied function to convert nodes to string.
 showTreeWith :: forall k a. (k -> a -> String) -> Bool -> Bool -> MonoidalMap k a -> String
 showTreeWith = coerce (Map.showTreeWith :: (k -> a -> String) -> Bool -> Bool -> Map k a -> String)
 
