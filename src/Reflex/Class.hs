@@ -305,20 +305,18 @@ class ( MonadHold t (PushM t)
 -- | Class representing things that can be switched when the provided 'Event' occurs.
 class Reflex t => SwitchHold t a | a -> t where
   -- | Switches to the new value whenever it is received (via firing of an 'Event').
-  -- When the update 'Event' fires, the previous value is no longer considered (even
-  -- if it is updating at the same time).
-  --
-  -- Because the simultaneous firing case is irrelevant, this function imposes
-  -- laxer "timing requirements" on the overall circuit, avoiding many potential
-  -- cyclic dependency / metastability failures. It's also more performant. Use
-  -- this rather than 'switchHoldPromptly' and 'switchHoldPromptOnly' unless you
-  -- are absolutely sure you need to act on the new event in the coincidental
-  -- case.
   switchHold :: MonadHold t m => a -> Event t a -> m a
 
+-- | Because the simultaneous firing case is irrelevant, this function imposes
+-- laxer "timing requirements" on the overall circuit, avoiding many potential
+-- cyclic dependency / metastability failures. It's also more performant. Use
+-- this rather than 'switchHoldPromptly' and 'switchHoldPromptOnly' unless you
+-- are absolutely sure you need to act on the new event in the coincidental
+-- case.
 instance Reflex t => SwitchHold t (Event t a) where
-  switchHold = switchHold
+  switchHold ea0 eea = switch <$> hold ea0 eea
 
+-- | Switches to the new 'Dynamic' immediately (i.e., promptly) on firing
 instance Reflex t => SwitchHold t (Dynamic t a) where
   switchHold a e = join <$> holdDyn a e
 
