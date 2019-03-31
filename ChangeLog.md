@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Add the `SwitchHold` class, for things that can be switched on the occurrence of an `Event`. This deprecates `switcher` and makes `switchHold` a class method.
+
 ## 0.6.1.0
 
 * Re-export all of `Data.Map.Monoidal`

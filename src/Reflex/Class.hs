@@ -70,7 +70,7 @@ module Reflex.Class
   , factorEvent
   , filterEventKey
     -- ** Collapsing 'Event . Event'
-  , switchHold
+  , SwitchHold (..)
   , switchHoldPromptly
   , switchHoldPromptOnly
   , switchHoldPromptOnlyIncremental
@@ -167,9 +167,11 @@ module Reflex.Class
   ) where
 
 import Control.Applicative
-import Control.Monad.Identity
-import Control.Monad.Reader
-import Control.Monad.State.Strict
+import Control.Monad
+import Control.Monad.Fix (MonadFix)
+import Control.Monad.Identity (Identity(..))
+import Control.Monad.Reader (MonadTrans, ReaderT, lift)
+import Control.Monad.State.Strict (StateT)
 import Control.Monad.Trans.Cont (ContT)
 import Control.Monad.Trans.Except (ExceptT)
 import Control.Monad.Trans.RWS (RWST)
@@ -185,7 +187,8 @@ import Data.Functor.Product
 import Data.GADT.Compare (GEq (..), GCompare (..), (:~:) (..))
 import Data.FastMutableIntMap (PatchIntMap)
 import Data.Foldable
-import Data.Functor.Bind
+import Data.Functor.Bind (Bind)
+import qualified Data.Functor.Bind
 import Data.Functor.Misc
 import Data.Functor.Plus
 import Data.IntMap.Strict (IntMap)
@@ -298,6 +301,34 @@ class ( MonadHold t (PushM t)
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
+
+-- | Class representing things that can be switched when the provided 'Event' occurs.
+class Reflex t => SwitchHold t a | a -> t where
+  -- | Switches to the new value whenever it is received (via firing of an 'Event').
+  -- When the update 'Event' fires, the previous value is no longer considered (even
+  -- if it is updating at the same time).
+  --
+  -- Because the simultaneous firing case is irrelevant, this function imposes
+  -- laxer "timing requirements" on the overall circuit, avoiding many potential
+  -- cyclic dependency / metastability failures. It's also more performant. Use
+  -- this rather than 'switchHoldPromptly' and 'switchHoldPromptOnly' unless you
+  -- are absolutely sure you need to act on the new event in the coincidental
+  -- case.
+  switchHold :: MonadHold t m => a -> Event t a -> m a
+
+instance Reflex t => SwitchHold t (Event t a) where
+  switchHold = switchHold
+
+instance Reflex t => SwitchHold t (Dynamic t a) where
+  switchHold a e = join <$> holdDyn a e
+
+instance Reflex t => SwitchHold t (Behavior t a) where
+  switchHold b eb = join <$> hold b eb
+
+instance (Reflex t, SwitchHold t a, SwitchHold t b) => SwitchHold t (a, b) where
+  switchHold (a, b) e = (,)
+    <$> switchHold a (fst <$> e)
+    <*> switchHold b (snd <$> e)
 
 --TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
 -- | Constructs a single 'Event' out of a map of events. The output event may fire with multiple
@@ -925,27 +956,13 @@ fanThese e =
 fanMap :: (Reflex t, Ord k) => Event t (Map k a) -> EventSelector t (Const2 k a)
 fanMap = fan . fmap mapToDMap
 
--- | Switches to the new event whenever it receives one. Only the old event is
--- considered the moment a new one is switched in; the output event will fire at
--- that moment only if the old event does.
---
--- Because the simultaneous firing case is irrelevant, this function imposes
--- laxer "timing requirements" on the overall circuit, avoiding many potential
--- cyclic dependency / metastability failures. It's also more performant. Use
--- this rather than 'switchHoldPromptly' and 'switchHoldPromptOnly' unless you
--- are absolutely sure you need to act on the new event in the coincidental
--- case.
-switchHold :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
-switchHold ea0 eea = switch <$> hold ea0 eea
-
 -- | Switches to the new event whenever it receives one. Whenever a new event is
 -- provided, if it is firing, its value will be the resulting event's value; if
 -- it is not firing, but the old one is, the old one's value will be used.
 --
--- 'switchHold', by always forwarding the old event the moment it is switched
--- out, avoids many potential cyclic dependency problems / metastability
--- problems. It's also more performant. Use it instead unless you are sure you
--- cannot.
+-- Use 'switchHold' instead, unless you are sure you cannot, because by always
+-- forwarding the old event the moment it is switched out, it avoids many potential
+-- cyclic dependency problems / metastability problems. It's also more performant.
 switchHoldPromptly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchHoldPromptly ea0 eea = do
   bea <- hold ea0 eea
@@ -958,10 +975,9 @@ switchHoldPromptly ea0 eea = do
 -- used if it fires; this is the opposite of 'switch', which will use only the
 -- old value.
 --
--- 'switchHold', by always forwarding the old event the moment it is switched
--- out, avoids many potential cyclic dependency problems / metastability
--- problems. It's also more performant. Use it instead unless you are sure you
--- cannot.
+-- Use 'switchHold' instead, unless you are sure you cannot, because by always
+-- forwarding the old event the moment it is switched out, it avoids many potential
+-- cyclic dependency problems / metastability problems. It's also more performant.
 switchHoldPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchHoldPromptOnly e0 e' = do
   eLag <- switch <$> hold e0 e'
@@ -1026,12 +1042,6 @@ instance Reflex t => Align (Event t) where
 -- the 'Behavior' is true at the time of occurrence.
 gate :: Reflex t => Behavior t Bool -> Event t a -> Event t a
 gate = attachWithMaybe $ \allow a -> if allow then Just a else Nothing
-
--- | Create a new behavior given a starting behavior and switch to the behavior
--- carried by the event when it fires.
-switcher :: (Reflex t, MonadHold t m)
-        => Behavior t a -> Event t (Behavior t a) -> m (Behavior t a)
-switcher b eb = pull . (sample <=< sample) <$> hold b eb
 
 instance (Reflex t, IsString a) => IsString (Dynamic t a) where
   fromString = pure . fromString
@@ -1572,7 +1582,15 @@ mergeWithFoldCheap' f es =
 -- | See 'switchHoldPromptly'
 switchPromptly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptly = switchHoldPromptly
+
 {-# DEPRECATED switchPromptOnly "Use 'switchHoldPromptOnly' instead. The 'switchHold*' naming convention was chosen because those functions are more closely related to each other than they are to 'switch'. " #-}
 -- | See 'switchHoldPromptOnly'
 switchPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptOnly = switchHoldPromptOnly
+
+{-# DEPRECATED switcher "Use switchHold from the 'SwitchHold' class instead" #-}
+-- | Create a new behavior given a starting behavior and switch to the behavior
+-- carried by the event when it fires.
+switcher :: (Reflex t, MonadHold t m)
+        => Behavior t a -> Event t (Behavior t a) -> m (Behavior t a)
+switcher b eb = pull . (sample <=< sample) <$> hold b eb
