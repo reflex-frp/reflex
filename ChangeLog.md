@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Fix `holdDyn` so that it is lazy in its event argument
+
 ## 0.6.1.0
 
 * Re-export all of `Data.Map.Monoidal`
