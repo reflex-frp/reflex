@@ -705,7 +705,7 @@ readBehaviorUntracked b = do
 
 data Dynamic x p = Dynamic
   { dynamicCurrent :: !(Behavior x (PatchTarget p))
-  , dynamicUpdated :: !(Event x p)
+  , dynamicUpdated :: Event x p -- This must be lazy; see the comment on holdEvent --TODO: Would this let us eliminate `Dyn`?
   }
 
 dynamicHold :: Hold x p -> Dynamic x p
