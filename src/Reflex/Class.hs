@@ -568,12 +568,12 @@ ffor :: Functor f => f a -> (a -> b) -> f b
 ffor = flip fmap
 
 -- | Rotated version of 'liftA2'.
-ffor2 :: Applicative f => f a -> f b -> (a -> b -> c) -> f c
-ffor2 a b f = liftA2 f a b
+ffor2 :: Apply f => f a -> f b -> (a -> b -> c) -> f c
+ffor2 a b f = liftF2 f a b
 
 -- | Rotated version of 'liftA3'.
-ffor3 :: Applicative f => f a -> f b -> f c -> (a -> b -> c -> d) -> f d
-ffor3 a b c f = liftA3 f a b c
+ffor3 :: Apply f => f a -> f b -> f c -> (a -> b -> c -> d) -> f d
+ffor3 a b c f = liftF3 f a b c
 
 instance Reflex t => Applicative (Behavior t) where
   pure = constant

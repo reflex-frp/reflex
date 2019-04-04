@@ -59,6 +59,9 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   mergeList  :: [Event a] -> Event (NonEmpty a)
 [ ]   merge      :: GCompare k => DMap k Event -> Event (DMap k Identity)
 [ ]   mergeMap   :: Ord k => Map k (Event a) -> Event (Map k a)
+[ ]   ffor2      :: Event a -> Event b ->            (a -> b -> c)      -> Event c
+[ ]   ffor3      :: Event a -> Event b -> Event c -> (a -> b -> c -> d) -> Event d
+
 
 -- Efficient one-to-many fanout
 [ ]   fanMap    :: Ord k      => Event (Map k a)         -> EventSelector (Const2 k a)
@@ -98,7 +101,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   <>   :: Monoid a => Behavior a ->        Behavior a -> Behavior a
 -- ... plus many more due to typeclass membership
 
--- Combine multiple behaviors via applicative instance
+-- Combine multiple behaviors via 'Data.Functor.Plus.Apply' instance
 [ ]   ffor2 :: Behavior a -> Behavior b ->               (a -> b -> c)      -> Behavior c
 [ ]   ffor3 :: Behavior a -> Behavior b -> Behavior c -> (a -> b -> c -> d) -> Behavior d
 
@@ -139,7 +142,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   >>=                       ::                  Dynamic a -> (a -> Dynamic b) -> Dynamic b
 [ ]   zipDynWith                :: (a -> b -> c) -> Dynamic a -> Dynamic b        -> Dynamic c
 
--- Combine multiple dynamics via applicative instance
+-- Combine multiple dynamics via 'Data.Functor.Plus.Apply' instance
 [ ]   ffor2 :: Dynamic a -> Dynamic b ->              (a -> b -> c)      -> Dynamic c
 [ ]   ffor3 :: Dynamic a -> Dynamic b -> Dynamic c -> (a -> b -> c -> d) -> Dynamic d
 

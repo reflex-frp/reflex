@@ -3,6 +3,7 @@
 ## Unreleased
 
 * Fix `holdDyn` so that it is lazy in its event argument
+* Relax constraint from `Applicative` to `Apply` in `ffor2` & `ffor3`. `Event`s and `Map`s can now use these utils.
 
 ## 0.6.1.0
 
