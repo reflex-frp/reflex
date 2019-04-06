@@ -847,21 +847,22 @@ instance (Semigroup a, Reflex t) => Monoid (Event t a) where
 -- list occurs. If multiple occur at the same time they are folded from the left
 -- with the given function.
 {-# INLINE mergeWith #-}
-mergeWith :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
+mergeWith :: (Foldable f, Reflex t) => (a -> a -> a) -> f (Event t a) -> Event t a
 mergeWith = mergeWith' id
 
 {-# INLINE mergeWith' #-}
-mergeWith' :: Reflex t => (a -> b) -> (b -> b -> b) -> [Event t a] -> Event t b
+mergeWith' :: (Foldable f, Reflex t) => (a -> b) -> (b -> b -> b) -> f (Event t a) -> Event t b
 mergeWith' f g es = fmap (Prelude.foldl1 g . fmap f)
                   . mergeInt
                   . IntMap.fromDistinctAscList
-                  $ zip [0 :: Int ..] es
+                  . zip [0 :: Int ..]
+                  $ toList es
 
 -- | Create a new 'Event' that occurs if at least one of the 'Event's in the
 -- list occurs. If multiple occur at the same time the value is the value of the
 -- leftmost event.
 {-# INLINE leftmost #-}
-leftmost :: Reflex t => [Event t a] -> Event t a
+leftmost :: (Foldable f, Reflex t) => f (Event t a) -> Event t a
 leftmost = mergeWith const
 
 -- | Create a new 'Event' that occurs if at least one of the 'Event's in the
@@ -1556,22 +1557,23 @@ tagCheap b = pushAlwaysCheap $ \_ -> sample b
 
 -- | A "cheap" version of 'mergeWithCheap'. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithCheap #-}
-mergeWithCheap :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
+mergeWithCheap :: (Foldable f, Reflex t) => (a -> a -> a) -> f (Event t a) -> Event t a
 mergeWithCheap = mergeWithCheap' id
 
 -- | A "cheap" version of 'mergeWithCheap''. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithCheap' #-}
-mergeWithCheap' :: Reflex t => (a -> b) -> (b -> b -> b) -> [Event t a] -> Event t b
+mergeWithCheap' :: (Foldable f, Reflex t) => (a -> b) -> (b -> b -> b) -> f (Event t a) -> Event t b
 mergeWithCheap' f g = mergeWithFoldCheap' $ foldl1 g . fmap f
 
 -- | A "cheap" version of 'mergeWithFoldCheap''. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithFoldCheap' #-}
-mergeWithFoldCheap' :: Reflex t => (NonEmpty a -> b) -> [Event t a] -> Event t b
+mergeWithFoldCheap' :: (Foldable f, Reflex t) => (NonEmpty a -> b) -> f (Event t a) -> Event t b
 mergeWithFoldCheap' f es =
   fmapCheap (f . (\(h : t) -> h :| t) . IntMap.elems)
   . mergeInt
   . IntMap.fromDistinctAscList
-  $ zip [0 :: Int ..] es
+  . zip [0 :: Int ..]
+  $ toList es
 
 --------------------------------------------------------------------------------
 -- Deprecated functions
