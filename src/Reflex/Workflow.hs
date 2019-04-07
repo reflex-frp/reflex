@@ -38,6 +38,8 @@ import Reflex.PostBuild.Class
 -- When the 'Event' returned by a 'Workflow' fires, the current 'Workflow' is replaced by the one inside the firing 'Event'. A series of 'Workflow's must share the same return type.
 newtype Workflow t m a = Workflow { unWorkflow :: m (a, Event t (Workflow t m a)) } deriving Functor
 
+-- | Creates a workflow that's replaced when either input workflow is replaced.
+-- The value of the output workflow is obtained by applying the provided function to the values of the input workflows
 instance (Apply m, Reflex t) => Apply (Workflow t m) where
   liftF2 f = parallelWorkflows f f f
 
@@ -51,15 +53,22 @@ instance (Apply m, Reflex t, Semigroup a) => Semigroup (Workflow t m a) where
 instance (Apply m, Applicative m, Reflex t, Monoid a) => Monoid (Workflow t m a) where
   mempty = pure mempty
 
+-- | Creates a workflow that's replaced when either input workflow is replaced.
+-- The value of the output workflow is taken from the most-recently replaced input workflow.
 instance (Apply m, Reflex t) => Alt (Workflow t m) where
   (<!>) = parallelWorkflows const (flip const) const
 
 zipWorkflows :: (Apply m, Reflex t) => Workflow t m a -> Workflow t m b -> Workflow t m (a,b)
 zipWorkflows = parallelWorkflows (,) (,) (,)
 
+-- | Combines two independent workflows. The output workflow is replaced when either input is replaced
 parallelWorkflows :: (Apply m, Reflex t)
-                  => (a -> b -> c) -> (a -> b -> c) -> (a -> b -> c)
-                  -> Workflow t m a -> Workflow t m b -> Workflow t m c
+                  => (a -> b -> c) -- ^ Combining function when left workflow is replaced
+                  -> (a -> b -> c) -- ^ Combining function when right workflow is replaced
+                  -> (a -> b -> c) -- ^ Combining function when both workflows are replaced
+                  -> Workflow t m a
+                  -> Workflow t m b
+                  -> Workflow t m c
 parallelWorkflows fL fR fLR = go fLR
   where
     go f0 wl wr = Workflow $ ffor2 (unWorkflow wl) (unWorkflow wr) $ \(l0, wlEv) (r0, wrEv) ->
@@ -69,6 +78,8 @@ parallelWorkflows fL fR fLR = go fLR
           These wl' wr' -> go fLR wl' wr'
       )
 
+-- | Collapse a workflows of workflows into one level
+-- Whenever both outer and inner workflows are replaced at the same time, the inner one is ignored
 instance (Apply m, Monad m, Reflex t) => Bind (Workflow t m) where
   join wwa = Workflow $ do
     let replaceInitial a wa = Workflow $ first (const a) <$> unWorkflow wa
