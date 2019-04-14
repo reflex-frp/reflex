@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
@@ -18,15 +19,18 @@ module Reflex.Workflow (
   , mapWorkflowCheap
   , parallelWorkflows
   , zipWorkflows
+  , zipNEListWithWorkflow
   ) where
 
 import Control.Arrow (first, (***))
 import Control.Monad.Fix (MonadFix)
+import Control.Lens (FunctorWithIndex(..))
 
 import Data.Align
-import Data.These
+import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import Data.Functor.Bind
 import Data.Functor.Plus
+import Data.These
 
 import Reflex.Class
 import Reflex.Adjustable.Class
@@ -89,6 +93,16 @@ instance (Apply m, Monad m, Reflex t) => Bind (Workflow t m) where
 
 instance (Apply m, Monad m, Reflex t) => Monad (Workflow t m) where
   (>>=) = (>>-)
+
+zipNEListWithWorkflow :: (Monad m, Reflex t) => NonEmpty k -> Workflow t m a -> Workflow t m (k, a)
+zipNEListWithWorkflow (k :| ks) w = Workflow $ do
+  (a0, wEv) <- unWorkflow w
+  pure ((k, a0), case nonEmpty ks of
+           Nothing -> never
+           Just nel -> zipNEListWithWorkflow nel <$> wEv)
+
+instance (Monad m, Reflex t) => FunctorWithIndex Int (Workflow t m) where
+  imap f w = uncurry f <$> zipNEListWithWorkflow (0 :| [1..]) w
 
 -- | Runs a 'Workflow' and returns the 'Dynamic' result of the 'Workflow' (i.e., a 'Dynamic' of the value produced by the current 'Workflow' node, and whose update 'Event' fires whenever one 'Workflow' is replaced by another).
 workflow :: forall t m a. (Reflex t, Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (Dynamic t a)
