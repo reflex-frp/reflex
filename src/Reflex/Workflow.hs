@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
@@ -61,6 +62,11 @@ instance (Apply m, Applicative m, Reflex t, Monoid a) => Monoid (Workflow t m a)
 -- The value of the output workflow is taken from the most-recently replaced input workflow.
 instance (Apply m, Reflex t) => Alt (Workflow t m) where
   (<!>) = parallelWorkflows const (flip const) const
+
+#if MIN_VERSION_these(0, 8, 0)
+instance (Apply m, Reflex t) => Semialign (Workflow t m) where
+  align = parallelWorkflows (\a _ -> This a) (\_ b -> That b) These
+#endif
 
 zipWorkflows :: (Apply m, Reflex t) => Workflow t m a -> Workflow t m b -> Workflow t m (a,b)
 zipWorkflows = parallelWorkflows (,) (,) (,)
