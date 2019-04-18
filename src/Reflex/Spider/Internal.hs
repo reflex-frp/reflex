@@ -1131,16 +1131,12 @@ newInvalidatorPull p = return $! InvalidatorPull p
 instance HasSpiderTimeline x => Filterable (Event x) where
   mapMaybe f = push $ return . f
 
+instance HasSpiderTimeline x => Align (Event x) where
+  nil = eventNever
 #if MIN_VERSION_these(0, 8, 0)
 instance HasSpiderTimeline x => Semialign (Event x) where
-  align ea eb = mapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
-instance HasSpiderTimeline x => Align (Event x) where
-  nil = eventNever
-#else
-instance HasSpiderTimeline x => Align (Event x) where
-  nil = eventNever
-  align ea eb = mapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 #endif
+  align ea eb = mapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 
 data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
                  | BuildDyn  !(EventM x (PatchTarget p), Event x p)
