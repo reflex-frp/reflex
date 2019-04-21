@@ -1020,7 +1020,11 @@ switchHoldPromptOnlyIncremental mergePatchIncremental coincidencePatch e0 e' = d
 
 instance Reflex t => Align (Event t) where
   nil = never
+#if MIN_VERSION_these(0, 8, 0)
+instance Reflex t => Semialign (Event t) where
+#endif
   align = alignEventWithMaybe Just
+
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and
 -- the 'Behavior' is true at the time of occurrence.

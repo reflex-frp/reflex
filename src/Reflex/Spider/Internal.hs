@@ -1133,6 +1133,9 @@ instance HasSpiderTimeline x => Filterable (Event x) where
 
 instance HasSpiderTimeline x => Align (Event x) where
   nil = eventNever
+#if MIN_VERSION_these(0, 8, 0)
+instance HasSpiderTimeline x => Semialign (Event x) where
+#endif
   align ea eb = mapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 
 data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
