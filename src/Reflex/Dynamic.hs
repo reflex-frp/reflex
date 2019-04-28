@@ -203,23 +203,15 @@ distributeMapOverDynPure = fmap dmapToMap . distributeDMapOverDynPure . mapWithF
 
 -- | Convert a list with 'Dynamic' elements into a 'Dynamic' of a list with
 -- non-'Dynamic' elements, preserving the order of the elements.
+{-# DEPRECATED distributeListOverDynPure "Use 'distributeListOverDyn' instead" #-}
 distributeListOverDynPure :: Reflex t => [Dynamic t v] -> Dynamic t [v]
-distributeListOverDynPure =
-  fmap (map fromDSum . DMap.toAscList) .
-  distributeDMapOverDynPure .
-  DMap.fromDistinctAscList .
-  zipWith toDSum [0..]
-  where
-    toDSum :: Int -> Dynamic t a -> DSum (Const2 Int a) (Dynamic t)
-    toDSum k v = Const2 k :=> v
-    fromDSum :: DSum (Const2 Int a) Identity -> a
-    fromDSum (Const2 _ :=> Identity v) = v
+distributeListOverDynPure = distributeListOverDyn
 
 --TODO: Generalize this to functors other than Maps
 -- | Combine a 'Dynamic' of a 'Map' of 'Dynamic's into a 'Dynamic'
 -- with the current values of the 'Dynamic's in a map.
 joinDynThroughMap :: forall t k a. (Reflex t, Ord k) => Dynamic t (Map k (Dynamic t a)) -> Dynamic t (Map k a)
-joinDynThroughMap = join . fmap distributeMapOverDynPure
+joinDynThroughMap = (distributeMapOverDynPure =<<)
 
 -- | Print the value of the 'Dynamic' when it is first read and on each
 -- subsequent change that is observed (as 'traceEvent'), prefixed with the
@@ -301,6 +293,8 @@ maybeDyn = fmap (fmap unpack) . eitherDyn . fmap pack
           Left _ -> Nothing
           Right a -> Just a
 
+-- | Turns a 'Dynamic t (Either a b)' into a 'Dynamic t (Either (Dynamic t a) (Dynamic t b))' such that
+-- the outer 'Dynamic' is updated only when the 'Either' constructor changes (e.g., from 'Left' to 'Right').
 eitherDyn :: forall t a b m. (Reflex t, MonadFix m, MonadHold t m) => Dynamic t (Either a b) -> m (Dynamic t (Either (Dynamic t a) (Dynamic t b)))
 eitherDyn = fmap (fmap unpack) . factorDyn . fmap eitherToDSum
   where unpack :: DSum (EitherTag a b) (Compose (Dynamic t) Identity) -> Either (Dynamic t a) (Dynamic t b)
@@ -308,6 +302,9 @@ eitherDyn = fmap (fmap unpack) . factorDyn . fmap eitherToDSum
           LeftTag :=> Compose a -> Left $ coerceDynamic a
           RightTag :=> Compose b -> Right $ coerceDynamic b
 
+-- | Factor a 'Dynamic t DSum' into a 'Dynamic' 'DSum' containing nested 'Dynamic' values.
+-- The outer 'Dynamic' updates only when the key of the 'DSum' changes, while the update of the inner
+-- 'Dynamic' represents updates within the current key.
 factorDyn :: forall t m k v. (Reflex t, MonadHold t m, GEq k)
           => Dynamic t (DSum k v) -> m (Dynamic t (DSum k (Compose (Dynamic t) v)))
 factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
@@ -322,6 +319,7 @@ factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
     inner' <- filterEventKey k (updated d)
     inner <- holdDyn v inner'
     return $ k :=> Compose inner
+
 --------------------------------------------------------------------------------
 -- Demux
 --------------------------------------------------------------------------------

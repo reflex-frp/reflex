@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE RecursiveDo #-}
@@ -36,6 +37,9 @@ main = do
   print os4
   os5@[[Nothing, Just [1, 2]]] <- runApp' (unwrapApp testLiveTellEventDMap) [Just ()]
   print os5
+  os6 <- runApp' (unwrapApp delayedPulse) [Just ()]
+  print os6
+  let ![[Nothing, Nothing]] = os6
   return ()
 
 unwrapApp :: (Reflex t, Monad m) => (a -> EventWriterT t [Int] m ()) -> a -> m (Event t [Int])
@@ -112,3 +116,17 @@ testLiveTellEventDMap pulse = do
           (mapToDMap $ M.singleton 1 ())
           ((PatchDMap $ DMap.map (ComposeMaybe . Just) $ mapToDMap $ M.singleton 2 ()) <$ pulse)
   return ()
+
+delayedPulse
+  :: forall t m
+  .  ( Reflex t
+     , Adjustable t m
+     , MonadHold t m
+     , MonadFix m
+     )
+  => Event t ()
+  -> EventWriterT t [Int] m ()
+delayedPulse pulse = void $ flip runWithReplace (pure () <$ pulse) $ do
+    -- This has the effect of delaying pulse' from pulse
+    (_, pulse') <- runWithReplace (pure ()) $ pure [1] <$ pulse
+    tellEvent pulse'

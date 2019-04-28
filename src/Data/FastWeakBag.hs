@@ -50,7 +50,7 @@ newtype FastWeakBag a = FastWeakBag JSVal
 #else
 data FastWeakBag a = FastWeakBag
   { _weakBag_nextId :: {-# UNPACK #-} !(IORef Int) --TODO: what if this wraps around?
-  , _weakBag_children :: {-# UNPACK #-} !(IORef (IntMap (Weak a)))
+  , _weakBag_children :: {-# UNPACK #-} !(IORef (IntMap (Weak a))) -- ^ Map of items contained by the 'FastWeakBag'
   }
 #endif
 
