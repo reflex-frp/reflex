@@ -92,6 +92,7 @@ library
     Reflex.FastWeak,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,
+    Reflex.Main
     Reflex.Network,
     Reflex.NotReady.Class,
     Reflex.Patch,
