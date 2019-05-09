@@ -1,4 +1,7 @@
 ## [Reflex](https://reflex-frp.org/)
+
+[![Hackage](https://img.shields.io/hackage/v/reflex.svg)](http://hackage.haskell.org/package/reflex)
+
 ### Practical Functional Reactive Programming
 
 Reflex is a fully-deterministic, higher-order Functional Reactive Programming (FRP) interface and an engine that efficiently implements that interface.
@@ -13,8 +16,6 @@ A summary of Reflex functions is available in the [quick reference](Quickref.md)
 [Get started with Reflex](https://github.com/reflex-frp/reflex-platform)
 
 [/r/reflexfrp](https://www.reddit.com/r/reflexfrp)
-
-[hackage](https://hackage.haskell.org/package/reflex)
 
 [irc.freenode.net #reflex-frp](http://webchat.freenode.net?channels=%23reflex-frp&uio=d4)
 
