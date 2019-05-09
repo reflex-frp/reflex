@@ -149,6 +149,10 @@ module Reflex.Class
   , ffor
   , ffor2
   , ffor3
+  , rotl2
+  , rotl3
+  , rotr2
+  , rotr3
     -- * Deprecated functions
   , switchPromptly
   , switchPromptOnly
@@ -569,11 +573,27 @@ ffor = flip fmap
 
 -- | Rotated version of 'liftA2'.
 ffor2 :: Applicative f => f a -> f b -> (a -> b -> c) -> f c
-ffor2 a b f = liftA2 f a b
+ffor2 = rotl2 liftA2
 
 -- | Rotated version of 'liftA3'.
 ffor3 :: Applicative f => f a -> f b -> f c -> (a -> b -> c -> d) -> f d
-ffor3 a b c f = liftA3 f a b c
+ffor3 = rotl3 liftA3
+
+-- | Rotate binary function leftward
+rotl2 :: (a -> b -> c -> d) -> (b -> c -> a -> d)
+rotl2 f b c a = f a b c
+
+-- | Rotate ternary function leftward
+rotl3 :: (a -> b -> c -> d -> e) -> (b -> c -> d -> a -> e)
+rotl3 f b c d a = f a b c d
+
+-- | Rotate binary function rightward
+rotr2 :: (a -> b -> c -> d) -> (c -> a -> b -> d)
+rotr2 f c a b = f a b c
+
+-- | Rotate ternary function rightward
+rotr3 :: (a -> b -> c -> d -> e) -> (d -> a -> b -> c -> e)
+rotr3 f d a b c = f a b c d
 
 instance Reflex t => Applicative (Behavior t) where
   pure = constant
