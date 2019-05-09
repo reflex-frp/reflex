@@ -19,6 +19,7 @@ import Reflex.Patch.Class
 import Reflex.Patch.MapWithMove (PatchMapWithMove (..))
 import qualified Reflex.Patch.MapWithMove as MapWithMove
 
+import Data.Constraint.Extras
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (EqTag (..))
@@ -105,7 +106,7 @@ validationErrorsForPatchDMapWithMove m =
     unbalancedMove _ = Nothing
 
 -- |Test whether two @'PatchDMapWithMove' k v@ contain the same patch operations.
-instance EqTag k (NodeInfo k v) => Eq (PatchDMapWithMove k v) where
+instance (GEq k, Has' Eq k (NodeInfo k v)) => Eq (PatchDMapWithMove k v) where
   PatchDMapWithMove a == PatchDMapWithMove b = a == b
 
 -- |Higher kinded 2-tuple, identical to @Data.Functor.Product@ from base ≥ 4.9
