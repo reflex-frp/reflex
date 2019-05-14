@@ -106,7 +106,8 @@ validationErrorsForPatchDMapWithMove m =
     unbalancedMove _ = Nothing
 
 -- |Test whether two @'PatchDMapWithMove' k v@ contain the same patch operations.
-instance (GEq k, Has' Eq k (NodeInfo k v)) => Eq (PatchDMapWithMove k v) where
+-- TODO: Get rid of EqTag constraint once dependent-map > 0.2.4.0, which drops this requirement, is released
+instance (GEq k, Has' Eq k (NodeInfo k v), EqTag k (NodeInfo k v)) => Eq (PatchDMapWithMove k v) where
   PatchDMapWithMove a == PatchDMapWithMove b = a == b
 
 -- |Higher kinded 2-tuple, identical to @Data.Functor.Product@ from base ≥ 4.9
