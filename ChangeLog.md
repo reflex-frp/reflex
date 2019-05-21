@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Add `Reflex.Query.Base.mapQueryT`. See that module for documentation
+
 ## 0.6.3
 
 * `Data.WeakBag.traverse` and `Data.FastWeakBag.traverse` have been deprecated.
