@@ -3,6 +3,7 @@
 ## Unreleased
 
 * Fix `holdDyn` so that it is lazy in its event argument
+* Add `Reflex.Query.Base.mapQueryT`. See that module for documentation
 
 ## 0.6.1.0
 
