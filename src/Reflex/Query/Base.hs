@@ -17,6 +17,7 @@ module Reflex.Query.Base
   , mapQueryResult
   , dynWithQueryT
   , withQueryT
+  , mapQueryT
   ) where
 
 import Control.Applicative (liftA2)
@@ -288,6 +289,10 @@ withQueryT f a = do
     (fmap (mapQuery f) (sample (currentIncremental q)))
     (fmapCheap (AdditivePatch . mapQuery f . unAdditivePatch) $ updatedIncremental q)
   return result
+
+-- | Maps a function over a 'QueryT' that can change the underlying monad
+mapQueryT :: (forall b. m b -> n b) -> QueryT t q m a -> QueryT t q n a
+mapQueryT f (QueryT a) = QueryT $ mapStateT (mapEventWriterT (mapReaderT f)) a
 
 -- | dynWithQueryT's (Dynamic t QueryMorphism) argument needs to be a group homomorphism at all times in order to behave correctly
 dynWithQueryT :: (MonadFix m, PostBuild t m, Group q, Additive q, Group q', Additive q', Query q')
