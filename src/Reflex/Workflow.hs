@@ -55,7 +55,7 @@ pureW :: (Applicative m, Reflex t) => a -> Workflow t m a
 pureW a = Workflow $ pure (a, never)
 
 -- | Create a workflow that's replaced when either input workflow is replaced.
--- The value of the output workflow is obtained by applying the provided function to the values of the input workflows
+-- Occurrences of the left workflow cause the right workflow to be reset
 instance (Apply m, Monad m, Reflex t) => Apply (Workflow t m) where
   liftF2 f wa wb = join $ ffor wa $ \a -> ffor wb $ \b -> f a b
 
@@ -82,6 +82,8 @@ instance (Apply m, Reflex t) => Semialign (Workflow t m) where
 zipWorkflows :: (Apply m, Reflex t) => Workflow t m a -> Workflow t m b -> Workflow t m (a,b)
 zipWorkflows = zipWorkflowsWith (,)
 
+-- | Create a workflow that's replaced when either input workflow is replaced.
+-- The value of the output workflow is obtained by applying the provided function to the values of the input workflows
 zipWorkflowsWith :: (Apply m, Reflex t) => (a -> b -> c) -> Workflow t m a -> Workflow t m b -> Workflow t m c
 zipWorkflowsWith f = parallelWorkflows f' f' f' zip
   where f' = uncurry f
