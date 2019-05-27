@@ -659,7 +659,7 @@ behaviorPull !p = Behavior $ do
     val <- liftIO $ readIORef $ pullValue p
     case val of
       Just subscribed -> do
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
+        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some.This (BehaviorSubscribedPull subscribed)) :))
         askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (pullSubscribedInvalidators subscribed) (wi:))
         liftIO $ touch $ pullSubscribedOwnInvalidator subscribed
         return $ pullSubscribedValue subscribed
@@ -678,7 +678,7 @@ behaviorPull !p = Behavior $ do
               , pullSubscribedParents = parents
               }
         liftIO $ writeIORef (pullValue p) $ Just subscribed
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedPull subscribed) :))
+        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some.This (BehaviorSubscribedPull subscribed)) :))
         return a
 
 behaviorDyn :: Patch p => Dyn x p -> Behavior x (PatchTarget p)
@@ -689,7 +689,7 @@ readHoldTracked :: Hold x p -> BehaviorM x (PatchTarget p)
 readHoldTracked h = do
   result <- liftIO $ readIORef $ holdValue h
   askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (holdInvalidators h) (wi:))
-  askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (BehaviorSubscribedHold h) :))
+  askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some.This (BehaviorSubscribedHold h)) :))
   liftIO $ touch h -- Otherwise, if this gets inlined enough, the hold's parent reference may get collected
   return result
 
@@ -782,9 +782,9 @@ data EventEnv x
               , eventEnvDynInits :: !(IORef [SomeDynInit x])
               , eventEnvMergeUpdates :: !(IORef [SomeMergeUpdate x])
               , eventEnvMergeInits :: !(IORef [SomeMergeInit x]) -- Needed for Subscribe
-              , eventEnvClears :: !(IORef [SomeClear]) -- Needed for Subscribe
-              , eventEnvIntClears :: !(IORef [SomeIntClear])
-              , eventEnvRootClears :: !(IORef [SomeRootClear])
+              , eventEnvClears :: !(IORef [Some Clear]) -- Needed for Subscribe
+              , eventEnvIntClears :: !(IORef [Some IntClear])
+              , eventEnvRootClears :: !(IORef [Some RootClear])
               , eventEnvCurrentHeight :: !(IORef Height) -- Needed for Subscribe
               , eventEnvResetCoincidences :: !(IORef [SomeResetCoincidence x]) -- Needed for Subscribe
               , eventEnvDelayedMerges :: !(IORef (IntMap [EventM x ()]))
@@ -856,29 +856,29 @@ putCurrentHeight h = do
   heightRef <- asksEventEnv eventEnvCurrentHeight
   liftIO $ writeIORef heightRef $! h
 
-instance HasSpiderTimeline x => Defer SomeClear (EventM x) where
+instance HasSpiderTimeline x => Defer (Some Clear) (EventM x) where
   {-# INLINE getDeferralQueue #-}
   getDeferralQueue = asksEventEnv eventEnvClears
 
 {-# INLINE scheduleClear #-}
-scheduleClear :: Defer SomeClear m => IORef (Maybe a) -> m ()
-scheduleClear r = defer $ SomeClear r
+scheduleClear :: Defer (Some Clear) m => IORef (Maybe a) -> m ()
+scheduleClear r = defer $ Some.This $ Clear r
 
-instance HasSpiderTimeline x => Defer SomeIntClear (EventM x) where
+instance HasSpiderTimeline x => Defer (Some IntClear) (EventM x) where
   {-# INLINE getDeferralQueue #-}
   getDeferralQueue = asksEventEnv eventEnvIntClears
 
 {-# INLINE scheduleIntClear #-}
-scheduleIntClear :: Defer SomeIntClear m => IORef (IntMap a) -> m ()
-scheduleIntClear r = defer $ SomeIntClear r
+scheduleIntClear :: Defer (Some IntClear) m => IORef (IntMap a) -> m ()
+scheduleIntClear r = defer $ Some.This $ IntClear r
 
-instance HasSpiderTimeline x => Defer SomeRootClear (EventM x) where
+instance HasSpiderTimeline x => Defer (Some RootClear) (EventM x) where
   {-# INLINE getDeferralQueue #-}
   getDeferralQueue = asksEventEnv eventEnvRootClears
 
 {-# INLINE scheduleRootClear #-}
-scheduleRootClear :: Defer SomeRootClear m => IORef (DMap k Identity) -> m ()
-scheduleRootClear r = defer $ SomeRootClear r
+scheduleRootClear :: Defer (Some RootClear) m => IORef (DMap k Identity) -> m ()
+scheduleRootClear r = defer $ Some.This $ RootClear r
 
 instance HasSpiderTimeline x => Defer (SomeResetCoincidence x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
@@ -951,7 +951,7 @@ data BehaviorSubscribed x a
    = forall p. BehaviorSubscribedHold (Hold x p)
    | BehaviorSubscribedPull (PullSubscribed x a)
 
-data SomeBehaviorSubscribed x = forall a. SomeBehaviorSubscribed (BehaviorSubscribed x a)
+newtype SomeBehaviorSubscribed x = SomeBehaviorSubscribed (Some (BehaviorSubscribed x))
 
 --type role PullSubscribed representational
 data PullSubscribed x a
@@ -1131,16 +1131,12 @@ newInvalidatorPull p = return $! InvalidatorPull p
 instance HasSpiderTimeline x => Filterable (Event x) where
   mapMaybe f = push $ return . f
 
+instance HasSpiderTimeline x => Align (Event x) where
+  nil = eventNever
 #if MIN_VERSION_these(0, 8, 0)
 instance HasSpiderTimeline x => Semialign (Event x) where
-  align ea eb = mapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
-instance HasSpiderTimeline x => Align (Event x) where
-  nil = eventNever
-#else
-instance HasSpiderTimeline x => Align (Event x) where
-  nil = eventNever
-  align ea eb = mapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 #endif
+  align ea eb = mapMaybe dmapToThese $ merge $ dynamicConst $ DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 
 data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
                  | BuildDyn  !(EventM x (PatchTarget p), Event x p)
@@ -1263,11 +1259,11 @@ scheduleMerge' initialHeight heightRef a = scheduleMerge initialHeight $ do
     GT -> scheduleMerge' height heightRef a -- The height has been increased (by a coincidence event; TODO: is this the only way?)
     EQ -> a
 
-data SomeClear = forall a. SomeClear {-# UNPACK #-} !(IORef (Maybe a))
+newtype Clear a = Clear (IORef (Maybe a))
 
-data SomeIntClear = forall a. SomeIntClear {-# UNPACK #-} !(IORef (IntMap a))
+newtype IntClear a = IntClear (IORef (IntMap a))
 
-data SomeRootClear = forall k. SomeRootClear {-# UNPACK #-} !(IORef (DMap k Identity))
+newtype RootClear k = RootClear (IORef (DMap k Identity))
 
 data SomeAssignment x = forall a. SomeAssignment {-# UNPACK #-} !(IORef a) {-# UNPACK #-} !(IORef [Weak (Invalidator x)]) a
 
@@ -2100,11 +2096,11 @@ runFrame a = SpiderHost $ do
         return result
   result <- runEventM go
   toClear <- readIORef $ eventEnvClears env
-  forM_ toClear $ \(SomeClear ref) -> {-# SCC "clear" #-} writeIORef ref Nothing
+  forM_ toClear $ \(Some.This (Clear ref)) -> {-# SCC "clear" #-} writeIORef ref Nothing
   toClearInt <- readIORef $ eventEnvIntClears env
-  forM_ toClearInt $ \(SomeIntClear ref) -> {-# SCC "intClear" #-} writeIORef ref $! IntMap.empty
+  forM_ toClearInt $ \(Some.This (IntClear ref)) -> {-# SCC "intClear" #-} writeIORef ref $! IntMap.empty
   toClearRoot <- readIORef $ eventEnvRootClears env
-  forM_ toClearRoot $ \(SomeRootClear ref) -> {-# SCC "rootClear" #-} writeIORef ref $! DMap.empty
+  forM_ toClearRoot $ \(Some.This (RootClear ref)) -> {-# SCC "rootClear" #-} writeIORef ref $! DMap.empty
   toAssign <- readIORef $ eventEnvAssignments env
   toReconnectRef <- newIORef []
   coincidenceInfos <- readIORef $ eventEnvResetCoincidences env
