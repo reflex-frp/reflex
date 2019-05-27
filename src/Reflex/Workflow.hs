@@ -21,6 +21,7 @@ module Reflex.Workflow (
   , mapWorkflowCheap
   , parallelWorkflows
   , zipWorkflows
+  , zipWorkflowsWith
   , zipNEListWithWorkflow
   ) where
 
@@ -49,23 +50,26 @@ newtype Workflow t m a = Workflow { unWorkflow :: m (a, Event t (Workflow t m a)
 zip :: Apply f => (f a, f b) -> f (a,b)
 zip (a,b) = liftF2 (,) a b
 
+-- Prevent `Monad m` constraint from `liftF2` from infecting uses of `pure`
+pureW :: (Applicative m, Reflex t) => a -> Workflow t m a
+pureW a = Workflow $ pure (a, never)
+
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is obtained by applying the provided function to the values of the input workflows
-instance (Apply m, Reflex t) => Apply (Workflow t m) where
-  liftF2 f = parallelWorkflows f' f' f' zip
-    where f' = uncurry f
+instance (Apply m, Monad m, Reflex t) => Apply (Workflow t m) where
+  liftF2 f wa wb = join $ ffor wa $ \a -> ffor wb $ \b -> f a b
 
-instance (Apply m, Applicative m, Reflex t) => Applicative (Workflow t m) where
+instance (Apply m, Monad m, Reflex t) => Applicative (Workflow t m) where
   pure a = Workflow $ pure (a, never)
   (<*>) = (<.>)
 
 instance (Apply m, Reflex t, Semigroup a) => Semigroup (Workflow t m a) where
-  (<>) = liftF2 (<>)
+  (<>) = zipWorkflowsWith (<>)
 
 instance (Apply m, Applicative m, Reflex t, Monoid a) => Monoid (Workflow t m a) where
-  mempty = pure mempty
+  mempty = pureW mempty
 
--- | Creates a workflow that's replaced when either input workflow is replaced.
+-- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is taken from the most-recently replaced input workflow (leftmost wins when simultaneous).
 instance (Apply m, Reflex t) => Alt (Workflow t m) where
   (<!>) = parallelWorkflows fst snd fst zip
@@ -76,7 +80,11 @@ instance (Apply m, Reflex t) => Semialign (Workflow t m) where
 #endif
 
 zipWorkflows :: (Apply m, Reflex t) => Workflow t m a -> Workflow t m b -> Workflow t m (a,b)
-zipWorkflows = parallelWorkflows id id id zip
+zipWorkflows = zipWorkflowsWith (,)
+
+zipWorkflowsWith :: (Apply m, Reflex t) => (a -> b -> c) -> Workflow t m a -> Workflow t m b -> Workflow t m c
+zipWorkflowsWith f = parallelWorkflows f' f' f' zip
+  where f' = uncurry f
 
 -- | Combine two independent workflows. The output workflow is replaced when either input is replaced
 parallelWorkflows :: (Apply m, Reflex t)
