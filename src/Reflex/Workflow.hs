@@ -28,15 +28,16 @@ module Reflex.Workflow (
 
 import Control.Arrow (first, (***))
 import Control.Monad.Fix (MonadFix)
-import Control.Lens (FunctorWithIndex(..))
+import Control.Lens (FunctorWithIndex(..), set)
 
 import Data.Align
+import Data.Bifunctor (Bifunctor(bimap))
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import Data.Functor.Bind
 import Data.Functor.Plus
 import Data.These
-
-import Prelude hiding (zip)
+import Data.These.Lens (here, there)
+import Data.Tuple (swap)
 
 import Reflex.Class
 import Reflex.Adjustable.Class
@@ -86,25 +87,31 @@ instance (Functor m, Reflex t) => FunctorWithIndex Int (Workflow t m) where
   imap f = zipNEListWithWorkflow f (0 :| [1..])
 
 --------------------------------------------------------------------------------
--- Combining payloads
+-- Combining occurrences
 --------------------------------------------------------------------------------
-thesePayloads :: ((a,b) -> c) -> ((a,b) -> c) -> ((a,b) -> c) -> These () () -> (a,b) -> c
-thesePayloads fa fb fab = \case
-  This () -> fa
-  That () -> fb
-  These () () -> fab
+withLastOccurrences :: (a -> b -> c) -> (a, b) -> These () () -> c
+withLastOccurrences f (a,b) _ = f a b
 
-leftBiasedLastOccurrence :: These () () -> (a,a) -> a
-leftBiasedLastOccurrence = thesePayloads fst snd fst
+theseOccurrence :: (a,b) -> These () () -> These a b
+theseOccurrence (a,b) = set here a . set there b
 
-ignoreTimings :: ((a,b) -> c) -> These () () -> (a,b) -> c
-ignoreTimings = const
+leftmostOccurrence :: (a,a) -> These () () -> a
+leftmostOccurrence (a,b) = \case
+  This () -> a
+  That () -> b
+  These () () -> a
 
 --------------------------------------------------------------------------------
 -- Combining widgets
 --------------------------------------------------------------------------------
-zipWidgets :: Apply f => (f a, f b) -> f (a,b)
-zipWidgets (a,b) = liftF2 (,) a b
+forwardRender :: Apply f => (f a, f b) -> f (a,b)
+forwardRender (a,b) = liftF2 (,) a b
+
+backwardRender :: Apply f => (f a, f b) -> f (a,b)
+backwardRender = fmap swap . forwardRender . swap
+
+intercalateWidgets :: Apply f => f c -> (f a, f b) -> f (a,b)
+intercalateWidgets c (a,b) = (,) <$> a <. c <.> b
 
 --------------------------------------------------------------------------------
 -- Combining workflows
@@ -118,17 +125,17 @@ instance (Apply m, Applicative m, Reflex t, Monoid a) => Monoid (Workflow t m a)
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is taken from the most-recently replaced input workflow (leftmost wins when simultaneous).
 instance (Apply m, Reflex t) => Alt (Workflow t m) where
-  (<!>) = independentWorkflows zipWidgets leftBiasedLastOccurrence
+  (<!>) = independentWorkflows forwardRender leftmostOccurrence
 
 #if MIN_VERSION_these(0, 8, 0)
 instance (Apply m, Reflex t) => Semialign (Workflow t m) where
-  align = independentWorkflows zip (This . fst) (That . snd) (uncurry These)
+  align = independentWorkflows forwardRender theseOccurrence
 #endif
 
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- Occurrences of the left workflow cause the right workflow to be reset
 instance (Apply m, Reflex t) => Apply (Workflow t m) where
-  liftF2 f = chainWorkflows zipWidgets (const $ uncurry f)
+  liftF2 f = chainWorkflows forwardRender (withLastOccurrences f)
 
 instance (Apply m, Applicative m, Reflex t) => Applicative (Workflow t m) where
   pure a = Workflow $ pure (a, never)
@@ -138,7 +145,7 @@ instance (Apply m, Applicative m, Reflex t) => Applicative (Workflow t m) where
 chainWorkflows
   :: (Functor m, Reflex t)
   => (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
-  -> (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
+  -> ((a,b) -> These () () -> c) -- ^ Payload combining function based on ocurring workflow
   -> Workflow t m a
   -> Workflow t m b
   -> Workflow t m c
@@ -153,14 +160,13 @@ zipWorkflows = zipWorkflowsWith (,)
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is obtained by applying the provided function to the values of the input workflows
 zipWorkflowsWith :: (Apply m, Reflex t) => (a -> b -> c) -> Workflow t m a -> Workflow t m b -> Workflow t m c
-zipWorkflowsWith f = independentWorkflows zipWidgets (ignoreTimings f')
-  where f' = uncurry f
+zipWorkflowsWith f = independentWorkflows forwardRender (withLastOccurrences f)
 
 -- | Combine two workflows via `combineWorkflows`. Triggers of one workflow do not affect the other one.
 independentWorkflows
   :: (Functor m, Reflex t)
   => (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
-  -> (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
+  -> ((a,b) -> These () () -> c) -- ^ Payload combining function based on ocurring workflow
   -> Workflow t m a
   -> Workflow t m b
   -> Workflow t m c
@@ -174,19 +180,19 @@ combineWorkflows
   :: (Functor m, Reflex t, w ~ Workflow t m)
   => ((w a, w b) -> (w a, w b) -> These (w a) (w b) -> (w a, w b))
   -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
-  -> (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
+  -> ((a,b) -> These () () -> c) -- ^ Payload combining function based on ocurring workflow
   -> w a
   -> w b
   -> w c
-combineWorkflows triggerWorflows combineWidgets combinePayloads wa0 wb0 = go (These () ()) (wa0, wb0)
+combineWorkflows triggerWorflows combineWidgets combineOccurrence wa0 wb0 = go (These () ()) (wa0, wb0)
   where
     go occurring (wa, wb) = Workflow $ ffor (combineWidgets (unWorkflow wa, unWorkflow wb)) $ \((a0, waEv), (b0, wbEv)) ->
-      let t = triggerWorflows (wa0, wb0) (wa, wb)
-      in (combinePayloads occurring (a0, b0), ffor (align waEv wbEv) $ \case
-             This wa' -> go (This ()) (t (This wa'))
-             That wb' -> go (That ()) (t (That wb'))
-             These wa' wb' -> go (These () ()) (t (These wa' wb'))
-         )
+      ( combineOccurrence (a0, b0) occurring
+      , ffor (align waEv wbEv) $ \tw -> go (bivoid tw) (trigger tw)
+      )
+      where
+        trigger = triggerWorflows (wa0, wb0) (wa, wb)
+        bivoid = bimap (const ()) (const ())
 
 --------------------------------------------------------------------------------
 -- Flattening workflows
