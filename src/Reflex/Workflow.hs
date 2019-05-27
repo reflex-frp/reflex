@@ -110,12 +110,13 @@ zipNEListWithWorkflow (k :| ks) w = Workflow $ ffor (unWorkflow w) $ \(a0, wEv) 
       Just nel -> zipNEListWithWorkflow nel <$> wEv)
 
 
-chainWorkflows :: (Apply m, Reflex t)
-                  => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
-                  -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
-                  -> Workflow t m a
-                  -> Workflow t m b
-                  -> Workflow t m c
+chainWorkflows
+  :: (Apply m, Reflex t)
+  => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
+  -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
+  -> Workflow t m a
+  -> Workflow t m b
+  -> Workflow t m c
 chainWorkflows combineP combineW wl0 wr0 = go (These () ()) wl0 wr0
   where
     go occurring wl wr = Workflow $ ffor (combineW (unWorkflow wl, unWorkflow wr)) $ \((l0, wlEv), (r0, wrEv)) ->
@@ -135,12 +136,13 @@ zipWorkflowsWith f = parallelWorkflows (ignoreTimings f') zipWidgets
   where f' = uncurry f
 
 -- | Combine two independent workflows. The output workflow is replaced when either input is replaced
-parallelWorkflows :: (Functor m, Reflex t)
-                  => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
-                  -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
-                  -> Workflow t m a
-                  -> Workflow t m b
-                  -> Workflow t m c
+parallelWorkflows
+  :: (Functor m, Reflex t)
+  => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
+  -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
+  -> Workflow t m a
+  -> Workflow t m b
+  -> Workflow t m c
 parallelWorkflows combineP combineW = go (These () ())
   where
     go occurring wl wr = Workflow $ ffor (combineW (unWorkflow wl, unWorkflow wr)) $ \((l0, wlEv), (r0, wrEv)) ->
