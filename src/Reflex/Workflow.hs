@@ -47,8 +47,20 @@ import Reflex.PostBuild.Class
 -- When the 'Event' returned by a 'Workflow' fires, the current 'Workflow' is replaced by the one inside the firing 'Event'. A series of 'Workflow's must share the same return type.
 newtype Workflow t m a = Workflow { unWorkflow :: m (a, Event t (Workflow t m a)) } deriving Functor
 
-zip :: Apply f => (f a, f b) -> f (a,b)
-zip (a,b) = liftF2 (,) a b
+zipWidgets :: Apply f => (f a, f b) -> f (a,b)
+zipWidgets (a,b) = liftF2 (,) a b
+
+thesePayloads :: ((a,b) -> c) -> ((a,b) -> c) -> ((a,b) -> c) -> These () () -> (a,b) -> c
+thesePayloads fa fb fab = \case
+  This () -> fa
+  That () -> fb
+  These () () -> fab
+
+leftBiasedLastOccurrence :: These () () -> (a,a) -> a
+leftBiasedLastOccurrence = thesePayloads fst snd fst
+
+ignoreTimings :: ((a,b) -> c) -> These () () -> (a,b) -> c
+ignoreTimings = const
 
 -- Prevent `Monad m` constraint from `liftF2` from infecting uses of `pure`
 pureW :: (Applicative m, Reflex t) => a -> Workflow t m a
@@ -72,7 +84,7 @@ instance (Apply m, Applicative m, Reflex t, Monoid a) => Monoid (Workflow t m a)
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is taken from the most-recently replaced input workflow (leftmost wins when simultaneous).
 instance (Apply m, Reflex t) => Alt (Workflow t m) where
-  (<!>) = parallelWorkflows fst snd fst zip
+  (<!>) = parallelWorkflows leftBiasedLastOccurrence zipWidgets
 
 #if MIN_VERSION_these(0, 8, 0)
 instance (Apply m, Reflex t) => Semialign (Workflow t m) where
@@ -85,25 +97,23 @@ zipWorkflows = zipWorkflowsWith (,)
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is obtained by applying the provided function to the values of the input workflows
 zipWorkflowsWith :: (Apply m, Reflex t) => (a -> b -> c) -> Workflow t m a -> Workflow t m b -> Workflow t m c
-zipWorkflowsWith f = parallelWorkflows f' f' f' zip
+zipWorkflowsWith f = parallelWorkflows (ignoreTimings f') zipWidgets
   where f' = uncurry f
 
 -- | Combine two independent workflows. The output workflow is replaced when either input is replaced
 parallelWorkflows :: (Apply m, Reflex t)
-                  => ((a,b) -> c) -- ^ Payload combining function when left workflow is replaced
-                  -> ((a,b) -> c) -- ^ Payload combining function when right workflow is replaced
-                  -> ((a,b) -> c) -- ^ Payload combining function when both workflows are replaced
+                  => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
                   -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
                   -> Workflow t m a
                   -> Workflow t m b
                   -> Workflow t m c
-parallelWorkflows fL fR fLR combineW = go fLR
+parallelWorkflows combineP combineW = go (These () ())
   where
-    go f0 wl wr = Workflow $ ffor (combineW (unWorkflow wl, unWorkflow wr)) $ \((l0, wlEv), (r0, wrEv)) ->
-      (f0 (l0, r0), ffor (align wlEv wrEv) $ \case
-          This wl' -> go fL wl' wr
-          That wr' -> go fR wl wr'
-          These wl' wr' -> go fLR wl' wr'
+    go occurring wl wr = Workflow $ ffor (combineW (unWorkflow wl, unWorkflow wr)) $ \((l0, wlEv), (r0, wrEv)) ->
+      (combineP occurring (l0, r0), ffor (align wlEv wrEv) $ \case
+          This wl' -> go (This ()) wl' wr
+          That wr' -> go (That ()) wl wr'
+          These wl' wr' -> go (These () ()) wl' wr'
       )
 
 -- | Collapse a workflow of workflows into one level
