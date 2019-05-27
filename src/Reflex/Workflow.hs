@@ -20,7 +20,7 @@ module Reflex.Workflow (
   , workflowView
   , mapWorkflow
   , mapWorkflowCheap
-  , parallelWorkflows
+  , independentWorkflows
   , zipWorkflows
   , zipWorkflowsWith
   , zipNEListWithWorkflow
@@ -118,11 +118,11 @@ instance (Apply m, Applicative m, Reflex t, Monoid a) => Monoid (Workflow t m a)
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is taken from the most-recently replaced input workflow (leftmost wins when simultaneous).
 instance (Apply m, Reflex t) => Alt (Workflow t m) where
-  (<!>) = parallelWorkflows leftBiasedLastOccurrence zipWidgets
+  (<!>) = independentWorkflows leftBiasedLastOccurrence zipWidgets
 
 #if MIN_VERSION_these(0, 8, 0)
 instance (Apply m, Reflex t) => Semialign (Workflow t m) where
-  align = parallelWorkflows (This . fst) (That . snd) (uncurry These) zip
+  align = independentWorkflows (This . fst) (That . snd) (uncurry These) zip
 #endif
 
 -- | Create a workflow that's replaced when either input workflow is replaced.
@@ -142,10 +142,10 @@ chainWorkflows
   -> Workflow t m a
   -> Workflow t m b
   -> Workflow t m c
-chainWorkflows combineP combineW = combineWorkflows combineP combineW $ \(_, wr0) (wl, _) -> \case
-  This wl' -> (wl', wr0)
-  That wr' -> (wl, wr')
-  These wl' _ -> (wl', wr0)
+chainWorkflows combinePayloads combineWidgets = combineWorkflows combinePayloads combineWidgets $ \(_, wb0) (wa, _) -> \case
+  This wa' -> (wa', wb0)
+  That wb' -> (wa, wb')
+  These wa' _ -> (wa', wb0)
 
 zipWorkflows :: (Apply m, Reflex t) => Workflow t m a -> Workflow t m b -> Workflow t m (a,b)
 zipWorkflows = zipWorkflowsWith (,)
@@ -153,21 +153,21 @@ zipWorkflows = zipWorkflowsWith (,)
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is obtained by applying the provided function to the values of the input workflows
 zipWorkflowsWith :: (Apply m, Reflex t) => (a -> b -> c) -> Workflow t m a -> Workflow t m b -> Workflow t m c
-zipWorkflowsWith f = parallelWorkflows (ignoreTimings f') zipWidgets
+zipWorkflowsWith f = independentWorkflows (ignoreTimings f') zipWidgets
   where f' = uncurry f
 
 -- | Combine two workflows via `combineWorkflows`. Triggers of one workflow do not affect the other one.
-parallelWorkflows
+independentWorkflows
   :: (Functor m, Reflex t)
   => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
   -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
   -> Workflow t m a
   -> Workflow t m b
   -> Workflow t m c
-parallelWorkflows combineP combineW = combineWorkflows combineP combineW $ \(_, _) (wl, wr) -> \case
-  This wl' -> (wl', wr)
-  That wr' -> (wl, wr')
-  These wl' wr' -> (wl', wr')
+independentWorkflows combinePayloads combineWidgets = combineWorkflows combinePayloads combineWidgets $ \(_, _) (wa, wb) -> \case
+  This wa' -> (wa', wb)
+  That wb' -> (wa, wb')
+  These wa' wb' -> (wa', wb')
 
 -- | Combine two workflows. The output workflow triggers when either input triggers
 combineWorkflows
@@ -178,14 +178,14 @@ combineWorkflows
   -> w a
   -> w b
   -> w c
-combineWorkflows combineP combineW trigger wl0 wr0 = go (These () ()) (wl0, wr0)
+combineWorkflows combinePayloads combineWidgets triggerWorflows wa0 wb0 = go (These () ()) (wa0, wb0)
   where
-    go occurring (wl, wr) = Workflow $ ffor (combineW (unWorkflow wl, unWorkflow wr)) $ \((l0, wlEv), (r0, wrEv)) ->
-      let t = trigger (wl0, wr0) (wl, wr)
-      in (combineP occurring (l0, r0), ffor (align wlEv wrEv) $ \case
-             This wl' -> go (This ()) (t (This wl'))
-             That wr' -> go (That ()) (t (That wr'))
-             These wl' wr' -> go (These () ()) (t (These wl' wr'))
+    go occurring (wa, wb) = Workflow $ ffor (combineWidgets (unWorkflow wa, unWorkflow wb)) $ \((a0, waEv), (b0, wbEv)) ->
+      let t = triggerWorflows (wa0, wb0) (wa, wb)
+      in (combinePayloads occurring (a0, b0), ffor (align waEv wbEv) $ \case
+             This wa' -> go (This ()) (t (This wa'))
+             That wb' -> go (That ()) (t (That wb'))
+             These wa' wb' -> go (These () ()) (t (These wa' wb'))
          )
 
 --------------------------------------------------------------------------------
