@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
@@ -33,6 +34,8 @@ import Data.Functor.Bind
 import Data.Functor.Plus
 import Data.These
 
+import Prelude hiding (zip)
+
 import Reflex.Class
 import Reflex.Adjustable.Class
 import Reflex.Network
@@ -43,10 +46,13 @@ import Reflex.PostBuild.Class
 -- When the 'Event' returned by a 'Workflow' fires, the current 'Workflow' is replaced by the one inside the firing 'Event'. A series of 'Workflow's must share the same return type.
 newtype Workflow t m a = Workflow { unWorkflow :: m (a, Event t (Workflow t m a)) } deriving Functor
 
+zip :: Apply f => (f a, f b) -> f (a,b)
+zip (a,b) = liftF2 (,) a b
+
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is obtained by applying the provided function to the values of the input workflows
 instance (Apply m, Reflex t) => Apply (Workflow t m) where
-  liftF2 f = parallelWorkflows f' f' f'
+  liftF2 f = parallelWorkflows f' f' f' zip
     where f' = uncurry f
 
 instance (Apply m, Applicative m, Reflex t) => Applicative (Workflow t m) where
@@ -62,27 +68,28 @@ instance (Apply m, Applicative m, Reflex t, Monoid a) => Monoid (Workflow t m a)
 -- | Creates a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is taken from the most-recently replaced input workflow (leftmost wins when simultaneous).
 instance (Apply m, Reflex t) => Alt (Workflow t m) where
-  (<!>) = parallelWorkflows fst snd fst
+  (<!>) = parallelWorkflows fst snd fst zip
 
 #if MIN_VERSION_these(0, 8, 0)
 instance (Apply m, Reflex t) => Semialign (Workflow t m) where
-  align = parallelWorkflows (This . fst) (That . snd) (uncurry These)
+  align = parallelWorkflows (This . fst) (That . snd) (uncurry These) zip
 #endif
 
 zipWorkflows :: (Apply m, Reflex t) => Workflow t m a -> Workflow t m b -> Workflow t m (a,b)
-zipWorkflows = parallelWorkflows id id id
+zipWorkflows = parallelWorkflows id id id zip
 
 -- | Combine two independent workflows. The output workflow is replaced when either input is replaced
 parallelWorkflows :: (Apply m, Reflex t)
-                  => ((a,b) -> c) -- ^ Combining function when left workflow is replaced
-                  -> ((a,b) -> c) -- ^ Combining function when right workflow is replaced
-                  -> ((a,b) -> c) -- ^ Combining function when both workflows are replaced
+                  => ((a,b) -> c) -- ^ Payload combining function when left workflow is replaced
+                  -> ((a,b) -> c) -- ^ Payload combining function when right workflow is replaced
+                  -> ((a,b) -> c) -- ^ Payload combining function when both workflows are replaced
+                  -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
                   -> Workflow t m a
                   -> Workflow t m b
                   -> Workflow t m c
-parallelWorkflows fL fR fLR = go fLR
+parallelWorkflows fL fR fLR combineW = go fLR
   where
-    go f0 wl wr = Workflow $ ffor2 (unWorkflow wl) (unWorkflow wr) $ \(l0, wlEv) (r0, wrEv) ->
+    go f0 wl wr = Workflow $ ffor (combineW (unWorkflow wl, unWorkflow wr)) $ \((l0, wlEv), (r0, wrEv)) ->
       (f0 (l0, r0), ffor (align wlEv wrEv) $ \case
           This wl' -> go fL wl' wr
           That wr' -> go fR wl wr'
