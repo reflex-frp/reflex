@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
@@ -110,21 +111,18 @@ zipNEListWithWorkflow (k :| ks) w = Workflow $ ffor (unWorkflow w) $ \(a0, wEv) 
       Just nel -> zipNEListWithWorkflow nel <$> wEv)
 
 
+-- | Combine two workflows via `combineWorkflows`. Triggers of the first workflow reset the second one.
 chainWorkflows
-  :: (Apply m, Reflex t)
+  :: (Functor m, Reflex t)
   => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
   -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
   -> Workflow t m a
   -> Workflow t m b
   -> Workflow t m c
-chainWorkflows combineP combineW wl0 wr0 = go (These () ()) wl0 wr0
-  where
-    go occurring wl wr = Workflow $ ffor (combineW (unWorkflow wl, unWorkflow wr)) $ \((l0, wlEv), (r0, wrEv)) ->
-      (combineP occurring (l0, r0), ffor (align wlEv wrEv) $ \case
-          This wl' -> go (This ()) wl' wr0
-          That wr' -> go (That ()) wl wr'
-          These wl' _ -> go (These () ()) wl' wr0
-      )
+chainWorkflows combineP combineW = combineWorkflows combineP combineW $ \(_, wr0) (wl, _) -> \case
+  This wl' -> (wl', wr0)
+  That wr' -> (wl, wr')
+  These wl' _ -> (wl', wr0)
 
 zipWorkflows :: (Apply m, Reflex t) => Workflow t m a -> Workflow t m b -> Workflow t m (a,b)
 zipWorkflows = zipWorkflowsWith (,)
@@ -135,7 +133,7 @@ zipWorkflowsWith :: (Apply m, Reflex t) => (a -> b -> c) -> Workflow t m a -> Wo
 zipWorkflowsWith f = parallelWorkflows (ignoreTimings f') zipWidgets
   where f' = uncurry f
 
--- | Combine two independent workflows. The output workflow is replaced when either input is replaced
+-- | Combine two workflows via `combineWorkflows`. Triggers of one workflow do not affect the other one.
 parallelWorkflows
   :: (Functor m, Reflex t)
   => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
@@ -143,14 +141,29 @@ parallelWorkflows
   -> Workflow t m a
   -> Workflow t m b
   -> Workflow t m c
-parallelWorkflows combineP combineW = go (These () ())
+parallelWorkflows combineP combineW = combineWorkflows combineP combineW $ \(_, _) (wl, wr) -> \case
+  This wl' -> (wl', wr)
+  That wr' -> (wl, wr')
+  These wl' wr' -> (wl', wr')
+
+-- | Combine two workflows. The output workflow triggers when either input triggers
+combineWorkflows
+  :: (Functor m, Reflex t, w ~ Workflow t m)
+  => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
+  -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
+  -> ((w a, w b) -> (w a, w b) -> These (w a) (w b) -> (w a, w b))
+  -> w a
+  -> w b
+  -> w c
+combineWorkflows combineP combineW trigger wl0 wr0 = go (These () ()) (wl0, wr0)
   where
-    go occurring wl wr = Workflow $ ffor (combineW (unWorkflow wl, unWorkflow wr)) $ \((l0, wlEv), (r0, wrEv)) ->
-      (combineP occurring (l0, r0), ffor (align wlEv wrEv) $ \case
-          This wl' -> go (This ()) wl' wr
-          That wr' -> go (That ()) wl wr'
-          These wl' wr' -> go (These () ()) wl' wr'
-      )
+    go occurring (wl, wr) = Workflow $ ffor (combineW (unWorkflow wl, unWorkflow wr)) $ \((l0, wlEv), (r0, wrEv)) ->
+      let t = trigger (wl0, wr0) (wl, wr)
+      in (combineP occurring (l0, r0), ffor (align wlEv wrEv) $ \case
+             This wl' -> go (This ()) (t (This wl'))
+             That wr' -> go (That ()) (t (That wr'))
+             These wl' wr' -> go (These () ()) (t (These wl' wr'))
+         )
 
 
 -- | Runs a 'Workflow' and returns the 'Dynamic' result of the 'Workflow' (i.e., a 'Dynamic' of the value produced by the current 'Workflow' node, and whose update 'Event' fires whenever one 'Workflow' is replaced by another).
