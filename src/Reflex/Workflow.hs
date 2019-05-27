@@ -46,7 +46,8 @@ newtype Workflow t m a = Workflow { unWorkflow :: m (a, Event t (Workflow t m a)
 -- | Creates a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is obtained by applying the provided function to the values of the input workflows
 instance (Apply m, Reflex t) => Apply (Workflow t m) where
-  liftF2 f = parallelWorkflows f f f
+  liftF2 f = parallelWorkflows f' f' f'
+    where f' = uncurry f
 
 instance (Apply m, Applicative m, Reflex t) => Applicative (Workflow t m) where
   pure a = Workflow $ pure (a, never)
@@ -61,28 +62,28 @@ instance (Apply m, Applicative m, Reflex t, Monoid a) => Monoid (Workflow t m a)
 -- | Creates a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is taken from the most-recently replaced input workflow.
 instance (Apply m, Reflex t) => Alt (Workflow t m) where
-  (<!>) = parallelWorkflows const (flip const) const
+  (<!>) = parallelWorkflows fst snd fst
 
 #if MIN_VERSION_these(0, 8, 0)
 instance (Apply m, Reflex t) => Semialign (Workflow t m) where
-  align = parallelWorkflows (\a _ -> This a) (\_ b -> That b) These
+  align = parallelWorkflows (This . fst) (That . snd) (uncurry These)
 #endif
 
 zipWorkflows :: (Apply m, Reflex t) => Workflow t m a -> Workflow t m b -> Workflow t m (a,b)
-zipWorkflows = parallelWorkflows (,) (,) (,)
+zipWorkflows = parallelWorkflows id id id
 
 -- | Combines two independent workflows. The output workflow is replaced when either input is replaced
 parallelWorkflows :: (Apply m, Reflex t)
-                  => (a -> b -> c) -- ^ Combining function when left workflow is replaced
-                  -> (a -> b -> c) -- ^ Combining function when right workflow is replaced
-                  -> (a -> b -> c) -- ^ Combining function when both workflows are replaced
+                  => ((a,b) -> c) -- ^ Combining function when left workflow is replaced
+                  -> ((a,b) -> c) -- ^ Combining function when right workflow is replaced
+                  -> ((a,b) -> c) -- ^ Combining function when both workflows are replaced
                   -> Workflow t m a
                   -> Workflow t m b
                   -> Workflow t m c
 parallelWorkflows fL fR fLR = go fLR
   where
     go f0 wl wr = Workflow $ ffor2 (unWorkflow wl) (unWorkflow wr) $ \(l0, wlEv) (r0, wrEv) ->
-      (f0 l0 r0, ffor (align wlEv wrEv) $ \case
+      (f0 (l0, r0), ffor (align wlEv wrEv) $ \case
           This wl' -> go fL wl' wr
           That wr' -> go fR wl wr'
           These wl' wr' -> go fLR wl' wr'
