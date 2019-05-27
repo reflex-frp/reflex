@@ -76,14 +76,14 @@ mapWorkflow = fmap
 mapWorkflowCheap :: (Reflex t, Functor m) => (a -> b) -> Workflow t m a -> Workflow t m b
 mapWorkflowCheap f (Workflow x) = Workflow (fmap (f *** fmapCheap (mapWorkflowCheap f)) x)
 
-zipNEListWithWorkflow :: (Functor m, Reflex t) => NonEmpty k -> Workflow t m a -> Workflow t m (k, a)
-zipNEListWithWorkflow (k :| ks) w = Workflow $ ffor (unWorkflow w) $ \(a0, wEv) ->
-  ((k, a0), case nonEmpty ks of
+zipNEListWithWorkflow :: (Functor m, Reflex t) => (a -> b -> c) -> NonEmpty a -> Workflow t m b -> Workflow t m c
+zipNEListWithWorkflow f (a :| as) w = Workflow $ ffor (unWorkflow w) $ \(b0, wEv) ->
+  (f a b0, case nonEmpty as of
       Nothing -> never
-      Just nel -> zipNEListWithWorkflow nel <$> wEv)
+      Just t -> zipNEListWithWorkflow f t <$> wEv)
 
 instance (Functor m, Reflex t) => FunctorWithIndex Int (Workflow t m) where
-  imap f w = uncurry f <$> zipNEListWithWorkflow (0 :| [1..]) w
+  imap f = zipNEListWithWorkflow f (0 :| [1..])
 
 --------------------------------------------------------------------------------
 -- Combining payloads
