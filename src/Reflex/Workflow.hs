@@ -118,17 +118,17 @@ instance (Apply m, Applicative m, Reflex t, Monoid a) => Monoid (Workflow t m a)
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is taken from the most-recently replaced input workflow (leftmost wins when simultaneous).
 instance (Apply m, Reflex t) => Alt (Workflow t m) where
-  (<!>) = independentWorkflows leftBiasedLastOccurrence zipWidgets
+  (<!>) = independentWorkflows zipWidgets leftBiasedLastOccurrence
 
 #if MIN_VERSION_these(0, 8, 0)
 instance (Apply m, Reflex t) => Semialign (Workflow t m) where
-  align = independentWorkflows (This . fst) (That . snd) (uncurry These) zip
+  align = independentWorkflows zip (This . fst) (That . snd) (uncurry These)
 #endif
 
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- Occurrences of the left workflow cause the right workflow to be reset
 instance (Apply m, Reflex t) => Apply (Workflow t m) where
-  liftF2 f = chainWorkflows (const $ uncurry f) zipWidgets
+  liftF2 f = chainWorkflows zipWidgets (const $ uncurry f)
 
 instance (Apply m, Applicative m, Reflex t) => Applicative (Workflow t m) where
   pure a = Workflow $ pure (a, never)
@@ -137,12 +137,12 @@ instance (Apply m, Applicative m, Reflex t) => Applicative (Workflow t m) where
 -- | Combine two workflows via `combineWorkflows`. Triggers of the first workflow reset the second one.
 chainWorkflows
   :: (Functor m, Reflex t)
-  => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
-  -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
+  => (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
+  -> (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
   -> Workflow t m a
   -> Workflow t m b
   -> Workflow t m c
-chainWorkflows combinePayloads combineWidgets = combineWorkflows combinePayloads combineWidgets $ \(_, wb0) (wa, _) -> \case
+chainWorkflows = combineWorkflows $ \(_, wb0) (wa, _) -> \case
   This wa' -> (wa', wb0)
   That wb' -> (wa, wb')
   These wa' _ -> (wa', wb0)
@@ -153,18 +153,18 @@ zipWorkflows = zipWorkflowsWith (,)
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is obtained by applying the provided function to the values of the input workflows
 zipWorkflowsWith :: (Apply m, Reflex t) => (a -> b -> c) -> Workflow t m a -> Workflow t m b -> Workflow t m c
-zipWorkflowsWith f = independentWorkflows (ignoreTimings f') zipWidgets
+zipWorkflowsWith f = independentWorkflows zipWidgets (ignoreTimings f')
   where f' = uncurry f
 
 -- | Combine two workflows via `combineWorkflows`. Triggers of one workflow do not affect the other one.
 independentWorkflows
   :: (Functor m, Reflex t)
-  => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
-  -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
+  => (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
+  -> (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
   -> Workflow t m a
   -> Workflow t m b
   -> Workflow t m c
-independentWorkflows combinePayloads combineWidgets = combineWorkflows combinePayloads combineWidgets $ \(_, _) (wa, wb) -> \case
+independentWorkflows = combineWorkflows $ \(_, _) (wa, wb) -> \case
   This wa' -> (wa', wb)
   That wb' -> (wa, wb')
   These wa' wb' -> (wa', wb')
@@ -172,13 +172,13 @@ independentWorkflows combinePayloads combineWidgets = combineWorkflows combinePa
 -- | Combine two workflows. The output workflow triggers when either input triggers
 combineWorkflows
   :: (Functor m, Reflex t, w ~ Workflow t m)
-  => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
+  => ((w a, w b) -> (w a, w b) -> These (w a) (w b) -> (w a, w b))
   -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
-  -> ((w a, w b) -> (w a, w b) -> These (w a) (w b) -> (w a, w b))
+  -> (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
   -> w a
   -> w b
   -> w c
-combineWorkflows combinePayloads combineWidgets triggerWorflows wa0 wb0 = go (These () ()) (wa0, wb0)
+combineWorkflows triggerWorflows combineWidgets combinePayloads wa0 wb0 = go (These () ()) (wa0, wb0)
   where
     go occurring (wa, wb) = Workflow $ ffor (combineWidgets (unWorkflow wa, unWorkflow wb)) $ \((a0, waEv), (b0, wbEv)) ->
       let t = triggerWorflows (wa0, wb0) (wa, wb)
