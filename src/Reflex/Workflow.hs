@@ -62,16 +62,27 @@ leftBiasedLastOccurrence = thesePayloads fst snd fst
 ignoreTimings :: ((a,b) -> c) -> These () () -> (a,b) -> c
 ignoreTimings = const
 
--- Prevent `Monad m` constraint from `liftF2` from infecting uses of `pure`
-pureW :: (Applicative m, Reflex t) => a -> Workflow t m a
-pureW a = Workflow $ pure (a, never)
-
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- Occurrences of the left workflow cause the right workflow to be reset
-instance (Apply m, Monad m, Reflex t) => Apply (Workflow t m) where
-  liftF2 f wa wb = join $ ffor wa $ \a -> ffor wb $ \b -> f a b
+instance (Apply m, Reflex t) => Apply (Workflow t m) where
+  liftF2 f = chainWorkflows (const $ uncurry f) zipWidgets
 
-instance (Apply m, Monad m, Reflex t) => Applicative (Workflow t m) where
+chainWorkflows :: (Apply m, Reflex t)
+                  => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
+                  -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
+                  -> Workflow t m a
+                  -> Workflow t m b
+                  -> Workflow t m c
+chainWorkflows combineP combineW wl0 wr0 = go (These () ()) wl0 wr0
+  where
+    go occurring wl wr = Workflow $ ffor (combineW (unWorkflow wl, unWorkflow wr)) $ \((l0, wlEv), (r0, wrEv)) ->
+      (combineP occurring (l0, r0), ffor (align wlEv wrEv) $ \case
+          This wl' -> go (This ()) wl' wr0
+          That wr' -> go (That ()) wl wr'
+          These wl' _ -> go (These () ()) wl' wr0
+      )
+
+instance (Apply m, Applicative m, Reflex t) => Applicative (Workflow t m) where
   pure a = Workflow $ pure (a, never)
   (<*>) = (<.>)
 
@@ -79,7 +90,7 @@ instance (Apply m, Reflex t, Semigroup a) => Semigroup (Workflow t m a) where
   (<>) = zipWorkflowsWith (<>)
 
 instance (Apply m, Applicative m, Reflex t, Monoid a) => Monoid (Workflow t m a) where
-  mempty = pureW mempty
+  mempty = pure mempty
 
 -- | Create a workflow that's replaced when either input workflow is replaced.
 -- The value of the output workflow is taken from the most-recently replaced input workflow (leftmost wins when simultaneous).
@@ -101,7 +112,7 @@ zipWorkflowsWith f = parallelWorkflows (ignoreTimings f') zipWidgets
   where f' = uncurry f
 
 -- | Combine two independent workflows. The output workflow is replaced when either input is replaced
-parallelWorkflows :: (Apply m, Reflex t)
+parallelWorkflows :: (Functor m, Reflex t)
                   => (These () () -> (a,b) -> c) -- ^ Payload combining function based on ocurring workflow
                   -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
                   -> Workflow t m a
@@ -128,14 +139,13 @@ instance (Apply m, Monad m, Reflex t) => Bind (Workflow t m) where
 instance (Apply m, Monad m, Reflex t) => Monad (Workflow t m) where
   (>>=) = (>>-)
 
-zipNEListWithWorkflow :: (Monad m, Reflex t) => NonEmpty k -> Workflow t m a -> Workflow t m (k, a)
-zipNEListWithWorkflow (k :| ks) w = Workflow $ do
-  (a0, wEv) <- unWorkflow w
-  pure ((k, a0), case nonEmpty ks of
-           Nothing -> never
-           Just nel -> zipNEListWithWorkflow nel <$> wEv)
+zipNEListWithWorkflow :: (Functor m, Reflex t) => NonEmpty k -> Workflow t m a -> Workflow t m (k, a)
+zipNEListWithWorkflow (k :| ks) w = Workflow $ ffor (unWorkflow w) $ \(a0, wEv) ->
+  ((k, a0), case nonEmpty ks of
+      Nothing -> never
+      Just nel -> zipNEListWithWorkflow nel <$> wEv)
 
-instance (Monad m, Reflex t) => FunctorWithIndex Int (Workflow t m) where
+instance (Functor m, Reflex t) => FunctorWithIndex Int (Workflow t m) where
   imap f w = uncurry f <$> zipNEListWithWorkflow (0 :| [1..]) w
 
 -- | Runs a 'Workflow' and returns the 'Dynamic' result of the 'Workflow' (i.e., a 'Dynamic' of the value produced by the current 'Workflow' node, and whose update 'Event' fires whenever one 'Workflow' is replaced by another).
