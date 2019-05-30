@@ -7,6 +7,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 -- |
 -- Module:
 --   Reflex.Workflow
@@ -28,10 +29,9 @@ module Reflex.Workflow (
 
 import Control.Arrow (first, (***))
 import Control.Monad.Fix (MonadFix)
-import Control.Lens (FunctorWithIndex(..), set)
+import Control.Lens (FunctorWithIndex(..), set, (&), (.~))
 
 import Data.Align
-import Data.Bifunctor (Bifunctor(bimap))
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import Data.Functor.Bind
 import Data.Functor.Plus
@@ -135,23 +135,25 @@ instance (Apply m, Reflex t) => Semialign (Workflow t m) where
 #endif
 
 -- | Create a workflow that's replaced when either input workflow is replaced.
--- Occurrences of the left workflow cause the right workflow to be reset
+-- Occurrences of the first workflow cause the second workflow to be reset
 instance (Apply m, Reflex t) => Apply (Workflow t m) where
-  liftF2 f = chainWorkflows forwardRender (withLastOccurrences f)
+  liftF2 f = hierarchicalWorkflows forwardRender (withLastOccurrences f)
 
 instance (Apply m, Applicative m, Reflex t) => Applicative (Workflow t m) where
   pure a = Workflow $ pure (a, never)
   (<*>) = (<.>)
 
 -- | Combine two workflows via `combineWorkflows`. Triggers of the first workflow reset the second one.
-chainWorkflows
+hierarchicalWorkflows
   :: (Functor m, Reflex t)
-  => (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
-  -> ((a,b) -> These () () -> c) -- ^ Payload combining function based on ocurring workflow
+  => (forall x y. (m x, m y) -> m (x,y))
+  -- ^ Compute resulting widget
+  -> ((a,b) -> These () () -> c)
+  -- ^ Compute resulting payload based on current payloads and ocurrences
   -> Workflow t m a
   -> Workflow t m b
   -> Workflow t m c
-chainWorkflows = combineWorkflows $ \(_, wb0) (wa, _) -> \case
+hierarchicalWorkflows = combineWorkflows $ \(_, wb0) (wa, _) -> \case
   This wa' -> (wa', wb0)
   That wb' -> (wa, wb')
   These wa' _ -> (wa', wb0)
@@ -167,22 +169,24 @@ zipWorkflowsWith f = independentWorkflows forwardRender (withLastOccurrences f)
 -- | Combine two workflows via `combineWorkflows`. Triggers of one workflow do not affect the other one.
 independentWorkflows
   :: (Functor m, Reflex t)
-  => (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
-  -> ((a,b) -> These () () -> c) -- ^ Payload combining function based on ocurring workflow
+  => (forall x y. (m x, m y) -> m (x,y))
+  -- ^ Compute resulting widget
+  -> ((a,b) -> These () () -> c)
+  -- ^ Compute resulting payload based on current payloads and ocurrences
   -> Workflow t m a
   -> Workflow t m b
   -> Workflow t m c
-independentWorkflows = combineWorkflows $ \(_, _) (wa, wb) -> \case
-  This wa' -> (wa', wb)
-  That wb' -> (wa, wb')
-  These wa' wb' -> (wa', wb')
+independentWorkflows = combineWorkflows $ \(_, _) (wa, wb) -> fromThese wa wb
 
 -- | Combine two workflows. The output workflow triggers when either input triggers
 combineWorkflows
   :: (Functor m, Reflex t, w ~ Workflow t m)
-  => ((w a, w b) -> (w a, w b) -> These (w a) (w b) -> (w a, w b))
-  -> (forall x y. (m x, m y) -> m (x,y)) -- ^ Widget combining function
-  -> ((a,b) -> These () () -> c) -- ^ Payload combining function based on ocurring workflow
+  => (forall x y. (w x, w y) -> (w x, w y) -> These (w x) (w y) -> (w x, w y))
+  -- ^ Choose the resulting workflows among original, current, and ocurring workflows
+  -> (forall x y. (m x, m y) -> m (x,y))
+  -- ^ Compute resulting widget
+  -> ((a,b) -> These () () -> c)
+  -- ^ Compute resulting payload based on current payloads and ocurrences
   -> w a
   -> w b
   -> w c
@@ -190,11 +194,9 @@ combineWorkflows triggerWorflows combineWidgets combineOccurrence wa0 wb0 = go (
   where
     go occurring (wa, wb) = Workflow $ ffor (combineWidgets (unWorkflow wa, unWorkflow wb)) $ \((a0, waEv), (b0, wbEv)) ->
       ( combineOccurrence (a0, b0) occurring
-      , ffor (align waEv wbEv) $ \tw -> go (bivoid tw) (trigger tw)
+      , ffor (align waEv wbEv) $ \tw ->
+          go (tw & here .~ () & there .~ ()) (triggerWorflows (wa0, wb0) (wa, wb) tw)
       )
-      where
-        trigger = triggerWorflows (wa0, wb0) (wa, wb)
-        bivoid = bimap (const ()) (const ())
 
 --------------------------------------------------------------------------------
 -- Flattening workflows
