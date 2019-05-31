@@ -32,6 +32,7 @@ import Control.Monad.Fix (MonadFix)
 import Control.Lens (FunctorWithIndex(..), set, (&), (.~))
 
 import Data.Align
+import Data.Align.Indexed (AlignWithIndex)
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import Data.Functor.Bind
 import Data.Functor.Plus
@@ -132,6 +133,7 @@ instance (Apply m, Reflex t) => Alt (Workflow t m) where
 #if MIN_VERSION_these(0, 8, 0)
 instance (Apply m, Reflex t) => Semialign (Workflow t m) where
   align = independentWorkflows forwardRender theseOccurrence
+instance (Apply m, Reflex t) => AlignWithIndex Int (Workflow t m)
 #endif
 
 -- | Create a workflow that's replaced when either input workflow is replaced.
