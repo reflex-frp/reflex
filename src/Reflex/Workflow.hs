@@ -186,16 +186,16 @@ independentWorkflows = combineWorkflows $ \(_, _) (wa, wb) -> fromThese wa wb
 
 -- | Combine two workflows. The output workflow triggers when either input triggers
 combineWorkflows
-  :: (Functor m, Reflex t, w ~ Workflow t m)
-  => (forall x y. (w x, w y) -> (w x, w y) -> These (w x) (w y) -> (w x, w y))
+  :: (Functor m, Reflex t)
+  => (forall wx wy. (wx, wy) -> (wx, wy) -> These wx wy -> (wx, wy))
   -- ^ Choose the resulting workflows among original, current, and ocurring workflows
   -> (forall x y. (m x, m y) -> m (x,y))
   -- ^ Compute resulting widget
   -> ((a,b) -> These () () -> c)
   -- ^ Compute resulting payload based on current payloads and ocurrences
-  -> w a
-  -> w b
-  -> w c
+  -> Workflow t m a
+  -> Workflow t m b
+  -> Workflow t m c
 combineWorkflows triggerWorflows combineWidgets combineOccurrence wa0 wb0 = go (These () ()) (wa0, wb0)
   where
     go occurring (wa, wb) = Workflow $ ffor (combineWidgets (unWorkflow wa, unWorkflow wb)) $ \((a0, waEv), (b0, wbEv)) ->
