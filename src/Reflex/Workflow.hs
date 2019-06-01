@@ -32,13 +32,17 @@ import Control.Monad.Fix (MonadFix)
 import Control.Lens (FunctorWithIndex(..), set, (&), (.~))
 
 import Data.Align
+#if MIN_VERSION_these(0, 8, 0)
 import Data.Align.Indexed (AlignWithIndex)
-import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
+#endif
+import Data.List.NonEmpty (NonEmpty(..), nonEmpty)
 import Data.Functor.Bind
 import Data.Functor.Plus
-import Data.These hiding (swap)
+import Data.These (These(..), fromThese)
 #if MIN_VERSION_these(0, 8, 0)
 import Data.These.Lens (here, there)
+#else
+import Data.These (here, there)
 #endif
 import Data.Tuple (swap)
 
