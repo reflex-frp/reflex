@@ -36,7 +36,7 @@ import Data.Align.Indexed (AlignWithIndex)
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import Data.Functor.Bind
 import Data.Functor.Plus
-import Data.These
+import Data.These hiding (swap)
 #if MIN_VERSION_these(0, 8, 0)
 import Data.These.Lens (here, there)
 #endif
