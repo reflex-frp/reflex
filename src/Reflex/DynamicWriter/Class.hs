@@ -3,7 +3,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
@@ -27,4 +26,3 @@ class (Monad m, Monoid w) => DynamicWriter t w m | m -> t w where
 
 instance DynamicWriter t w m => DynamicWriter t w (ReaderT r m) where
   tellDyn = lift . tellDyn
-
