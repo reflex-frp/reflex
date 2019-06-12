@@ -29,16 +29,9 @@ main = do
         ]
       matchFile = and <$> sequence
         [ extension ==? ".hs"
-        , let notElem' = liftOp notElem
-          in filePath `notElem'` filePathExceptions pwd
         ]
   files <- find recurseInto matchFile (pwd </> "src") --TODO: Someday fix all hints in tests, etc.
   ideas <- fmap concat $ forM files $ \f -> do
     putStr $ "linting file " ++ drop (length pwd + 1) f ++ "... "
     runHlint f
   if null ideas then exitSuccess else exitFailure
-
-filePathExceptions :: FilePath -> [FilePath]
-filePathExceptions pwd = map (pwd </>) $
-  [ "src/Data/AppendMap.hs" -- parse error when hlint runs
-  ]
