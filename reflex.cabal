@@ -44,6 +44,7 @@ library
     base >= 4.9 && < 4.13,
     bifunctors >= 5.2 && < 5.6,
     comonad,
+    constraints-extras >= 0.2,
     containers >= 0.5 && < 0.7,
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.2.4 && < 0.3,
@@ -133,7 +134,7 @@ library
   if flag(use-template-haskell)
     cpp-options: -DUSE_TEMPLATE_HASKELL
     build-depends:
-      dependent-sum >= 0.5 && < 0.6,
+      dependent-sum >= 0.6 && < 0.7,
       haskell-src-exts >= 1.16 && < 1.22,
       haskell-src-meta >= 0.6 && < 0.9,
       template-haskell >= 2.9 && < 2.15
@@ -142,7 +143,7 @@ library
     other-extensions: TemplateHaskell
   else
     build-depends:
-      dependent-sum == 0.5.*
+      dependent-sum == 0.6.*
 
   if flag(fast-weak) && impl(ghcjs)
     cpp-options: -DGHCJS_FAST_WEAK
