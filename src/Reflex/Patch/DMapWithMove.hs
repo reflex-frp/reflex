@@ -30,8 +30,7 @@ import Data.GADT.Show (GShow, gshow)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup (Semigroup (..), (<>))
-import Data.Some (Some)
-import qualified Data.Some as Some
+import Data.Some (Some(Some))
 import Data.These
 
 -- | Like 'PatchMapWithMove', but for 'DMap'. Each key carries a 'NodeInfo' which describes how it will be changed by the patch and connects move sources and
@@ -311,8 +310,8 @@ weakenPatchDMapWithMoveWith f (PatchDMapWithMove p) = PatchMapWithMove $ weakenD
           { MapWithMove._nodeInfo_from = case _nodeInfo_from ni of
               From_Insert v -> MapWithMove.From_Insert $ f v
               From_Delete -> MapWithMove.From_Delete
-              From_Move k -> MapWithMove.From_Move $ Some.This k
-          , MapWithMove._nodeInfo_to = Some.This <$> getComposeMaybe (_nodeInfo_to ni)
+              From_Move k -> MapWithMove.From_Move $ Some k
+          , MapWithMove._nodeInfo_to = Some <$> getComposeMaybe (_nodeInfo_to ni)
           }
 
 -- |"Weaken" a @'PatchDMapWithMove' (Const2 k a) v@ to a @'PatchMapWithMove' k v'@. Weaken is in scare quotes because the 'Const2' has already disabled any
