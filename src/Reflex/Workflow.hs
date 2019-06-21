@@ -17,13 +17,11 @@ module Reflex.Workflow (
   ) where
 
 import Control.Arrow ((***))
+import Control.Monad ((<=<))
 import Control.Monad.Fix (MonadFix)
 
 import Reflex.Class
 import Reflex.Adjustable.Class
-import Reflex.Network
-import Reflex.NotReady.Class
-import Reflex.PostBuild.Class
 
 -- | A widget in a workflow
 -- When the 'Event' returned by a 'Workflow' fires, the current 'Workflow' is replaced by the one inside the firing 'Event'. A series of 'Workflow's must share the same return type.
@@ -37,17 +35,12 @@ runWorkflow w0 = mdo
   return (a, fmap fst eResult)
 
 -- | Similar to 'runWorkflow' but combines the result into a 'Dynamic'.
-workflow :: forall t m a. (Reflex t, Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (Dynamic t a)
-workflow w0 = do
-  rec eResult <- networkHold (unWorkflow w0) $ fmap unWorkflow $ switch $ snd <$> current eResult
-  return $ fmap fst eResult
+workflow :: (Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (Dynamic t a)
+workflow = uncurry holdDyn <=< runWorkflow
 
 -- | Similar to 'runWorkflow', but only returns the 'Event'.
-workflowView :: forall t m a. (Reflex t, NotReady t m, Adjustable t m, MonadFix m, MonadHold t m, PostBuild t m) => Workflow t m a -> m (Event t a)
-workflowView w0 = do
-  rec eResult <- networkView . fmap unWorkflow =<< holdDyn w0 eReplace
-      eReplace <- fmap switch $ hold never $ fmap snd eResult
-  return $ fmap fst eResult
+workflowView :: (Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (Event t a)
+workflowView = fmap snd . runWorkflow
 
 -- | Map a function over a 'Workflow', possibly changing the return type.
 mapWorkflow :: (Reflex t, Functor m) => (a -> b) -> Workflow t m a -> Workflow t m b
