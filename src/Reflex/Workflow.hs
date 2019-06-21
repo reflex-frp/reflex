@@ -9,6 +9,7 @@
 --   "workflows."
 module Reflex.Workflow (
     Workflow (..)
+  , runWorkflow
   , workflow
   , workflowView
   , mapWorkflow
@@ -28,13 +29,20 @@ import Reflex.PostBuild.Class
 -- When the 'Event' returned by a 'Workflow' fires, the current 'Workflow' is replaced by the one inside the firing 'Event'. A series of 'Workflow's must share the same return type.
 newtype Workflow t m a = Workflow { unWorkflow :: m (a, Event t (Workflow t m a)) }
 
--- | Runs a 'Workflow' and returns the 'Dynamic' result of the 'Workflow' (i.e., a 'Dynamic' of the value produced by the current 'Workflow' node, and whose update 'Event' fires whenever one 'Workflow' is replaced by another).
+-- | Runs a 'Workflow' and returns the initial value together with an 'Event' of the value produced whenever one 'Workflow' is replaced by another.
+runWorkflow :: (Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (a, Event t a)
+runWorkflow w0 = mdo
+  ((a, e0), eResult) <- runWithReplace (unWorkflow w0) (fmap unWorkflow eReplace)
+  eReplace <- switchHold e0 $ fmap snd eResult
+  return (a, fmap fst eResult)
+
+-- | Similar to 'runWorkflow' but combines the result into a 'Dynamic'.
 workflow :: forall t m a. (Reflex t, Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (Dynamic t a)
 workflow w0 = do
   rec eResult <- networkHold (unWorkflow w0) $ fmap unWorkflow $ switch $ snd <$> current eResult
   return $ fmap fst eResult
 
--- | Similar to 'workflow', but outputs an 'Event' that fires whenever the current 'Workflow' is replaced by the next 'Workflow'.
+-- | Similar to 'runWorkflow', but only returns the 'Event'.
 workflowView :: forall t m a. (Reflex t, NotReady t m, Adjustable t m, MonadFix m, MonadHold t m, PostBuild t m) => Workflow t m a -> m (Event t a)
 workflowView w0 = do
   rec eResult <- networkView . fmap unWorkflow =<< holdDyn w0 eReplace
