@@ -40,6 +40,7 @@ module Reflex.Class
   , MonadHold (..)
     -- ** 'fan' related types
   , EventSelector (..)
+  , EventSelectorG (..)
   , EventSelectorInt (..)
     -- * Convenience functions
   , constDyn
@@ -60,6 +61,7 @@ module Reflex.Class
   , alignEventWithMaybe
     -- ** Breaking up 'Event's
   , splitE
+  , fan
   , fanEither
   , fanThese
   , fanMap
@@ -259,7 +261,9 @@ class ( MonadHold t (PushM t)
   -- | Efficiently fan-out an event to many destinations.  You should save the
   -- result in a @let@-binding, and then repeatedly 'select' on the result to
   -- create child events
-  fan :: GCompare k => Event t (DMap k Identity) -> EventSelector t k
+
+  fanG :: GCompare k => Event t (DMap k v) -> EventSelectorG t k v
+
   -- | Create an 'Event' that will occur whenever the currently-selected input
   -- 'Event' occurs
   switch :: Behavior t (Event t a) -> Event t a
@@ -297,6 +301,15 @@ class ( MonadHold t (PushM t)
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
+
+fan :: forall t k. (Reflex t, GCompare k)
+    => Event t (DMap k Identity) -> EventSelector t k
+    --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
+fan e = EventSelector (fixup (selectg (fanG e) :: k a -> Event t (Identity a)) :: forall a. k a -> Event t a)
+  where
+    fixup :: forall a. (k a -> Event t (Identity a)) -> k a -> Event t a
+    fixup = case eventCoercion Coercion :: Coercion (Event t (Identity a)) (Event t a) of
+              Coercion -> coerce
 
 --TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
 -- | Constructs a single 'Event' out of a map of events. The output event may fire with multiple
@@ -483,6 +496,17 @@ newtype EventSelector t k = EventSelector
     -- (but equivalent to) using 'mapMaybe' to select only the relevant
     -- occurrences of an 'Event'.
     select :: forall a. k a -> Event t a
+  }
+
+newtype EventSelectorG t k v = EventSelectorG
+  { -- | Retrieve the 'Event' for the given key.  The type of the 'Event' is
+    -- determined by the type of the key, so this can be used to fan-out
+    -- 'Event's whose sub-'Event's have different types.
+    --
+    -- Using 'EventSelector's and the 'fan' primitive is far more efficient than
+    -- (but equivalent to) using 'mapMaybe' to select only the relevant
+    -- occurrences of an 'Event'.
+    selectg :: forall a. k a -> Event t (v a)
   }
 
 -- | Efficiently select an 'Event' keyed on 'Int'. This is more efficient than manually

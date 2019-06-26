@@ -5,6 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+-- {-# LANGUAGE PolyKinds #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
@@ -88,8 +89,8 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
        then Nothing
        else Just currentOccurrences
 
-  fan :: GCompare k => Event (Pure t) (DMap k Identity) -> EventSelector (Pure t) k
-  fan e = EventSelector $ \k -> Event $ \t -> unEvent e t >>= fmap runIdentity . DMap.lookup k
+  -- fanG :: GCompare k => Event (Pure t) (DMap k v) -> EventSelectorG (Pure t) k v
+  fanG e = EventSelectorG $ \k -> Event $ \t -> unEvent e t >>= DMap.lookup k
 
   switch :: Behavior (Pure t) (Event (Pure t) a) -> Event (Pure t) a
   switch b = Event $ memo $ \t -> unEvent (unBehavior b t) t
