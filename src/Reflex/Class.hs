@@ -258,10 +258,10 @@ class ( MonadHold t (PushM t)
   -- least one input event is occurring, and will contain all of the input keys
   -- that are occurring simultaneously
   merge :: GCompare k => DMap k (Event t) -> Event t (DMap k Identity) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
-  -- | Efficiently fan-out an event to many destinations.  You should save the
-  -- result in a @let@-binding, and then repeatedly 'select' on the result to
-  -- create child events
 
+  -- | Efficiently fan-out an event to many destinations.  You should save the
+  -- result in a @let@-binding, and then repeatedly 'selectG' on the result to
+  -- create child events
   fanG :: GCompare k => Event t (DMap k v) -> EventSelectorG t k v
 
   -- | Create an 'Event' that will occur whenever the currently-selected input
@@ -302,6 +302,9 @@ class ( MonadHold t (PushM t)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
 
+-- | Efficiently fan-out an event to many destinations. You should save the
+-- result in a @let@-binding, and then repeatedly 'select' on the result to
+-- create child events
 fan :: forall t k. (Reflex t, GCompare k)
     => Event t (DMap k Identity) -> EventSelector t k
     --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
