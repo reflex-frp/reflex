@@ -55,7 +55,7 @@ hostPerf ref = S.runSpiderHost $ do
                { S.subscriberPropagate = S.subscriberPropagate sub
                }
             return (s, o))
-       $ runIdentity . runIdentity <$> S.selectg
+       $ runIdentity . runIdentity <$> S.selectG
           (S.fanG $ S.pushCheap (return . Just . mapKeyValuePairsMonotonic (\(t :=> e) -> WrapArg t :=> Identity e)) response)
           (WrapArg Request)
     return $ alignWith (mergeThese (<>))

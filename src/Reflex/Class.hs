@@ -308,7 +308,7 @@ class ( MonadHold t (PushM t)
 fan :: forall t k. (Reflex t, GCompare k)
     => Event t (DMap k Identity) -> EventSelector t k
     --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
-fan e = EventSelector (fixup (selectg (fanG e) :: k a -> Event t (Identity a)) :: forall a. k a -> Event t a)
+fan e = EventSelector (fixup (selectG (fanG e) :: k a -> Event t (Identity a)) :: forall a. k a -> Event t a)
   where
     fixup :: forall a. (k a -> Event t (Identity a)) -> k a -> Event t a
     fixup = case eventCoercion Coercion :: Coercion (Event t (Identity a)) (Event t a) of
@@ -509,7 +509,7 @@ newtype EventSelectorG t k v = EventSelectorG
     -- Using 'EventSelector's and the 'fan' primitive is far more efficient than
     -- (but equivalent to) using 'mapMaybe' to select only the relevant
     -- occurrences of an 'Event'.
-    selectg :: forall a. k a -> Event t (v a)
+    selectG :: forall a. k a -> Event t (v a)
   }
 
 -- | Efficiently select an 'Event' keyed on 'Int'. This is more efficient than manually

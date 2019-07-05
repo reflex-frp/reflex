@@ -2029,7 +2029,7 @@ mergeIntCheap d = Event $ \sub -> do
          )
 
 newtype EventSelector x k = EventSelector { select :: forall a. k a -> Event x a }
-newtype EventSelectorG x k v = EventSelectorG { selectg :: forall a. k a -> Event x (v a) }
+newtype EventSelectorG x k v = EventSelectorG { selectG :: forall a. k a -> Event x (v a) }
 
 fanG :: (HasSpiderTimeline x, GCompare k) => Event x (DMap k v) -> EventSelectorG x k v
 fanG e =
@@ -2509,7 +2509,7 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# INLINABLE merge #-}
   merge = SpiderEvent . merge . dynamicConst . (coerce :: DMap k (R.Event (SpiderTimeline x)) -> DMap k (Event x))
   {-# INLINABLE fanG #-}
-  fanG e = R.EventSelectorG $ SpiderEvent . selectg (fanG (unSpiderEvent e))
+  fanG e = R.EventSelectorG $ SpiderEvent . selectG (fanG (unSpiderEvent e))
   {-# INLINABLE switch #-}
   switch = SpiderEvent . switch . (coerce :: Behavior x (R.Event (SpiderTimeline x) a) -> Behavior x (Event x a)) . unSpiderBehavior
   {-# INLINABLE coincidence #-}
