@@ -1,8 +1,10 @@
 -- | This module defines 'TriggerEvent', which describes actions that may create
 -- new 'Event's that can be triggered from 'IO'.
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Reflex.TriggerEvent.Class
   ( TriggerEvent (..)
@@ -22,10 +24,14 @@ class Monad m => TriggerEvent t m | m -> t where
   -- the resulting 'Event' will fire at some point in the future.  Note that
   -- this may not be synchronous.
   newTriggerEvent :: m (Event t a, a -> IO ())
+  default newTriggerEvent :: (m ~ f m', MonadTrans f, TriggerEvent t m') => m (Event t a, a -> IO ())
+  newTriggerEvent = lift newTriggerEvent
   -- | Like 'newTriggerEvent', but the callback itself takes another callback,
   -- to be invoked once the requested 'Event' occurrence has finished firing.
   -- This allows synchronous operation.
   newTriggerEventWithOnComplete :: m (Event t a, a -> IO () -> IO ()) --TODO: This and newTriggerEvent should be unified somehow
+  default newTriggerEventWithOnComplete :: (m ~ f m', MonadTrans f, TriggerEvent t m') => m (Event t a, a -> IO () -> IO ())
+  newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
   -- | Like 'newTriggerEventWithOnComplete', but with setup and teardown.  This
   -- relatively complex type signature allows any external listeners to be
   -- subscribed lazily and then removed whenever the returned 'Event' is no
@@ -33,6 +39,8 @@ class Monad m => TriggerEvent t m | m -> t where
   -- times, and there is no guarantee that the teardown will be executed
   -- promptly, or even at all, in the case of program termination.
   newEventWithLazyTriggerWithOnComplete :: ((a -> IO () -> IO ()) -> IO (IO ())) -> m (Event t a)
+  default newEventWithLazyTriggerWithOnComplete :: (m ~ f m', MonadTrans f, TriggerEvent t m') => ((a -> IO () -> IO ()) -> IO (IO ())) -> m (Event t a)
+  newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete
 
 instance TriggerEvent t m => TriggerEvent t (ReaderT r m) where
   newTriggerEvent = lift newTriggerEvent

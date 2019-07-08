@@ -232,15 +232,18 @@ test-suite RequesterT
   main-is: RequesterT.hs
   hs-source-dirs: test
   build-depends: base
+               , containers
+               , deepseq
                , dependent-sum
                , dependent-map
                , lens
                , these
+               , mtl
                , transformers
                , reflex
                , ref-tf
-  buildable: False
   other-modules:
+    Test.Run
     Reflex.TestPlan
     Reflex.Plan.Pure
 

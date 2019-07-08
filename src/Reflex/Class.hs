@@ -215,7 +215,7 @@ import Reflex.FunctorMaybe
 import Reflex.Patch
 import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
 
-import Debug.Trace (trace)
+import Debug.Trace (trace, traceM)
 
 -- | The 'Reflex' class contains all the primitive functionality needed for
 -- Functional Reactive Programming (FRP).  The @t@ type parameter indicates
@@ -383,6 +383,8 @@ instance (Reflex t, Default a) => Default (Dynamic t a) where
 class (Applicative m, Monad m) => MonadSample t m | m -> t where
   -- | Get the current value in the 'Behavior'
   sample :: Behavior t a -> m a
+  default sample :: (m ~ f m', MonadTrans f, MonadSample t m') => Behavior t a -> m a
+  sample = lift . sample
 
 -- | 'MonadHold' designates monads that can create new 'Behavior's based on
 -- 'Event's; usually this will be 'PushM' or a monad based on it.  'MonadHold'
@@ -437,9 +439,13 @@ data Linear' m a b c = forall r. Linear' (r -> m (Linear'Inner m r a b c))
 runLinear' :: MonadFix m => Linear' m a b c -> (forall x. a x -> m (b x, d)) -> m (c, d)
 runLinear' (Linear' before) body = do
   (_, result) <- mfix $ \(~(r', _)) -> do
+    traceM "runLinear'.a"
     Linear'Inner a after <- before r'
+    traceM "runLinear'.b"
     (b, d) <- body a
+    traceM "runLinear'.c"
     (r, c) <- after b
+    traceM "runLinear'.d"
     pure (r, (c, d))
   pure result
 
@@ -456,11 +462,15 @@ liftLinear :: (Functor (t m), Monad m, MonadTrans t) => Linear m a b c -> Linear
 liftLinear before = fmap (second (lift .)) $ lift before
 
 withHoldFanCell :: forall t m a. (MonadFix m, MonadHold t m) => (forall x. FanCell t x -> m (Event t (CellM t x ()), a)) -> m a
-withHoldFanCell b = snd <$> runLinear' withHoldFanCell' (\c -> first FanCellEvent <$> b c)
+withHoldFanCell b = fmap snd $ runLinear' withHoldFanCell' $ \c -> do
+  xy <- b c
+  pure (trace "withHoldFanCell.x" FanCellEvent $ fst xy, trace "withHoldFanCell.y" $ snd xy)
 
 class MonadHold t m => MonadMutate t m where
   --TODO: Move to MonadMutate or something like that
   mutateFanCell :: FanCell t x -> CellBuilderM t x a -> m a
+  default mutateFanCell :: (m ~ g m', MonadTrans g, MonadMutate t m') => FanCell t x -> CellBuilderM t x a -> m a
+  mutateFanCell c a = lift $ mutateFanCell c a
 
 -- instance Reflex t => Functor (CellM t x) where
 --   fmap = withDict (monadHoldCellMDict @t @x) fmap

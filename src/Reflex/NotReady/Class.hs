@@ -55,11 +55,11 @@ instance NotReady t m => NotReady t (QueryT t q m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 
-instance (ReflexHost t, NotReady t (HostFrame t)) => NotReady t (PerformEventT t x m) where
+instance (ReflexHost t, NotReady t (HostFrame t)) => NotReady t (PerformEventT t m) where
   notReadyUntil = PerformEventT . notReadyUntil
   notReady = PerformEventT notReady
 
-instance NotReady t m => NotReady t (RequesterT t x request response m) where
+instance NotReady t m => NotReady t (RequesterT t request response m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 

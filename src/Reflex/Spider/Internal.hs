@@ -2266,13 +2266,12 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e --TODO
   {-# INLINABLE withHoldFanCell' #-}
-  withHoldFanCell' = R.Linear' $ \c' -> do
-    subscribers <- liftIO FastWeakBag.empty
-    pure $ R.Linear'Inner (SpiderFanCell c') $ \(R.FanCellEvent (SpiderEvent e)) -> do
-      rec let c = (heightRef, subscribers, subn)
-              heightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed subn
-              doUpdate occ = runReaderT (unSpiderCellM occ) c
-          (subn, mOcc) <- subscribeAndRead e $ Subscriber
+  withHoldFanCell' = {-# SCC "h" #-} R.Linear' $ {-# SCC "j" #-} \(~(heightRef', subn')) -> {-# SCC "k" #-} do
+    subscribers <- {-# SCC "l" #-} liftIO FastWeakBag.empty
+    pure $ R.Linear'Inner (SpiderFanCell ({-# SCC "e" #-} heightRef', {-# SCC "f" #-} subscribers, {-# SCC "g" #-} subn')) $ \(R.FanCellEvent (SpiderEvent e)) -> do
+      rec let heightRef = {-# SCC "a" #-} eventSubscribedHeightRef $ _eventSubscription_subscribed subn
+              doUpdate occ = {-# SCC "b" #-} runReaderT (unSpiderCellM occ) (heightRef, subscribers, subn)
+          (subn, mOcc) <- {-# SCC "c" #-} subscribeAndRead e $ Subscriber
             { subscriberPropagate = doUpdate
             , subscriberInvalidateHeight = \old -> do
                 FastWeakBag.traverse subscribers $ \(Some.This sub) -> do
@@ -2281,8 +2280,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
                 FastWeakBag.traverse subscribers $ \(Some.This sub) -> do
                   subscriberRecalculateHeight sub new
             }
-          mapM_ doUpdate mOcc
-      pure (c, ())
+          ({-# SCC "d" #-} mapM_ doUpdate mOcc)
+      pure ({-# SCC "i" #-} (heightRef', subn'), ())
 
 instance HasSpiderTimeline x => Reflex.Class.MonadMutate (SpiderTimeline x) (SpiderHostFrame x) where
   mutateFanCell (SpiderFanCell c) (SpiderCellBuilderM a) = SpiderHostFrame $ runReaderT a c
