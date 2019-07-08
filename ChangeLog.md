@@ -1,5 +1,10 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Generalize `fan` to `fanG` to take a `DMap` with non-`Identity`
+  values.
+
 ## 0.6.2.0
 
 * Stop using the now-deprecated `*Tag` classes (e.g., `ShowTag`).
