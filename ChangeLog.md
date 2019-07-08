@@ -3,6 +3,10 @@
 ## Unreleased
 
 * Fix `holdDyn` so that it is lazy in its event argument
+* Generalize `merge` to `mergeG`, `mergeIncremental` to
+  `mergeIncrementalG`, and `mergeIncrementalWithMove`
+  to `mergeIncrementalWithMoveG`. These produce `DMap`s
+  whose values needn't be `Identity`.
 
 ## 0.6.1.0
 
