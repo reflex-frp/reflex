@@ -62,6 +62,7 @@ import Reflex.FastWeak
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
+import Data.Profunctor.Unsafe
 
 #ifdef DEBUG_CYCLES
 import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
@@ -545,6 +546,10 @@ propagateFast a subscribers = withIncreasedDepth $ do
 toAny :: a -> Any
 toAny = unsafeCoerce
 
+-- Why do we use Any here instead of just giving eventSubscribedRetained
+-- an existential type? Sadly, GHC currently refuses to unpack any types
+-- with existentials! So we coerce to Any (which is safe), and never coerce
+-- back.
 data EventSubscribed x = EventSubscribed
   { eventSubscribedHeightRef :: {-# UNPACK #-} !(IORef Height)
   , eventSubscribedRetained :: {-# NOUNPACK #-} !Any
@@ -668,7 +673,7 @@ behaviorPull !p = Behavior $ do
         wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorPull"
         parentsRef <- liftIO $ newIORef []
         holdInits <- askBehaviorHoldInits
-        a <- liftIO $ runReaderT (unBehaviorM $ pullCompute p) (Just (wi, parentsRef), holdInits)
+        a <- liftIO $ unBehaviorM (pullCompute p) (Just (wi, parentsRef), holdInits)
         invsRef <- liftIO . newIORef . maybeToList =<< askInvalidator
         parents <- liftIO $ readIORef parentsRef
         let subscribed = PullSubscribed
@@ -703,33 +708,34 @@ readBehaviorUntracked b = do
 -- Dynamic
 --------------------------------------------------------------------------------
 
-data Dynamic x p = Dynamic
-  { dynamicCurrent :: !(Behavior x (PatchTarget p))
+type DynamicS x p = Dynamic x (PatchTarget p) p
+data Dynamic x target p = Dynamic
+  { dynamicCurrent :: !(Behavior x target)
   , dynamicUpdated :: Event x p -- This must be lazy; see the comment on holdEvent --TODO: Would this let us eliminate `Dyn`?
   }
 
-dynamicHold :: Hold x p -> Dynamic x p
+dynamicHold :: Hold x p -> DynamicS x p
 dynamicHold !h = Dynamic
   { dynamicCurrent = behaviorHold h
   , dynamicUpdated = eventHold h
   }
 
-dynamicHoldIdentity :: Hold x (Identity a) -> Dynamic x (Identity a)
+dynamicHoldIdentity :: Hold x (Identity a) -> DynamicS x (Identity a)
 dynamicHoldIdentity = dynamicHold
 
-dynamicConst :: PatchTarget p -> Dynamic x p
+dynamicConst :: PatchTarget p -> DynamicS x p
 dynamicConst !a = Dynamic
   { dynamicCurrent = behaviorConst a
   , dynamicUpdated = eventNever
   }
 
-dynamicDyn :: (HasSpiderTimeline x, Patch p) => Dyn x p -> Dynamic x p
+dynamicDyn :: (HasSpiderTimeline x, Patch p) => Dyn x p -> DynamicS x p
 dynamicDyn !d = Dynamic
   { dynamicCurrent = behaviorDyn d
   , dynamicUpdated = eventDyn d
   }
 
-dynamicDynIdentity :: HasSpiderTimeline x => Dyn x (Identity a) -> Dynamic x (Identity a)
+dynamicDynIdentity :: HasSpiderTimeline x => Dyn x (Identity a) -> DynamicS x (Identity a)
 dynamicDynIdentity = dynamicDyn
 
 --------------------------------------------------------------------------------
@@ -820,7 +826,7 @@ instance HasSpiderTimeline x => Defer (SomeDynInit x) (EventM x) where
 
 instance Defer (SomeHoldInit x) (BehaviorM x) where
   {-# INLINE getDeferralQueue #-}
-  getDeferralQueue = BehaviorM $ asks snd
+  getDeferralQueue = asks snd
 
 instance HasSpiderTimeline x => Defer (SomeMergeUpdate x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
@@ -935,17 +941,41 @@ type BehaviorEnv x = (Maybe (Weak (Invalidator x), IORef [SomeBehaviorSubscribed
 
 --type role BehaviorM representational
 -- BehaviorM can sample behaviors
-newtype BehaviorM x a = BehaviorM { unBehaviorM :: ReaderT (BehaviorEnv x) IO a } deriving (Functor, Applicative, MonadIO, MonadFix)
+newtype BehaviorM x a = BehaviorM { unBehaviorM :: BehaviorEnv x -> IO a }
+type role BehaviorM phantom representational
+
+instance Functor (BehaviorM x) where
+  {-# INLINE fmap #-}
+  fmap = liftM
+  {-# INLINE (<$) #-}
+  x <$ m = m >> pure x
+
+instance Applicative (BehaviorM x) where
+  {-# INLINE pure #-}
+  pure x = BehaviorM $ \_ -> pure x
+  {-# INLINE liftA2 #-}
+  liftA2 = liftM2
+  {-# INLINE (*>) #-}
+  (*>) = (>>)
 
 instance Monad (BehaviorM x) where
   {-# INLINE (>>=) #-}
-  BehaviorM x >>= f = BehaviorM $ x >>= unBehaviorM . f
+  BehaviorM x >>= f = BehaviorM $ \e -> x e >>= \a -> unBehaviorM (f a) e
   {-# INLINE (>>) #-}
-  BehaviorM x >> BehaviorM y = BehaviorM $ x >> y
-  {-# INLINE return #-}
-  return x = BehaviorM $ return x
+  BehaviorM x >> BehaviorM y = BehaviorM $ \e -> x e >> y e
   {-# INLINE fail #-}
-  fail s = BehaviorM $ fail s
+  fail s = BehaviorM $ \_ -> fail s
+
+instance MonadIO (BehaviorM x) where
+  {-# INLINE liftIO #-}
+  liftIO m = BehaviorM (\_ -> m)
+
+instance MonadFix (BehaviorM x) where
+  mfix f = BehaviorM $ \e -> mfix $ \r -> unBehaviorM (f r) e
+
+instance MonadReader (BehaviorEnv x) (BehaviorM x) where
+  ask = BehaviorM pure
+  local f (BehaviorM q) = BehaviorM $ q . f
 
 data BehaviorSubscribed x a
    = forall p. BehaviorSubscribedHold (Hold x p)
@@ -1144,11 +1174,11 @@ data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
 
 newtype Dyn x p = Dyn { unDyn :: IORef (DynType x p) }
 
-newMapDyn :: HasSpiderTimeline x => (a -> b) -> Dynamic x (Identity a) -> Dynamic x (Identity b)
+newMapDyn :: HasSpiderTimeline x => (a -> b) -> DynamicS x (Identity a) -> DynamicS x (Identity b)
 newMapDyn f d = dynamicDynIdentity $ unsafeBuildDynamic (fmap f $ readBehaviorTracked $ dynamicCurrent d) (Identity . f . runIdentity <$> dynamicUpdated d)
 
 --TODO: Avoid the duplication between this and R.zipDynWith
-zipDynWith :: HasSpiderTimeline x => (a -> b -> c) -> Dynamic x (Identity a) -> Dynamic x (Identity b) -> Dynamic x (Identity c)
+zipDynWith :: HasSpiderTimeline x => (a -> b -> c) -> DynamicS x (Identity a) -> DynamicS x (Identity b) -> DynamicS x (Identity c)
 zipDynWith f da db =
   let eab = align (dynamicUpdated da) (dynamicUpdated db)
       ec = flip push eab $ \o -> do
@@ -1355,25 +1385,25 @@ propagateSubscriberHold h a = do
 data SomeResetCoincidence x = forall a. SomeResetCoincidence !(EventSubscription x) !(Maybe (CoincidenceSubscribed x a)) -- The CoincidenceSubscriber will be present only if heights need to be reset
 
 runBehaviorM :: BehaviorM x a -> Maybe (Weak (Invalidator x), IORef [SomeBehaviorSubscribed x]) -> IORef [SomeHoldInit x] -> IO a
-runBehaviorM a mwi holdInits = runReaderT (unBehaviorM a) (mwi, holdInits)
+runBehaviorM a mwi holdInits = unBehaviorM a (mwi, holdInits)
 
 askInvalidator :: BehaviorM x (Maybe (Weak (Invalidator x)))
 askInvalidator = do
-  (!m, _) <- BehaviorM ask
+  (!m, _) <- ask
   case m of
     Nothing -> return Nothing
     Just (!wi, _) -> return $ Just wi
 
 askParentsRef :: BehaviorM x (Maybe (IORef [SomeBehaviorSubscribed x]))
 askParentsRef = do
-  (!m, _) <- BehaviorM ask
+  (!m, _) <- ask
   case m of
     Nothing -> return Nothing
     Just (_, !p) -> return $ Just p
 
 askBehaviorHoldInits :: BehaviorM x (IORef [SomeHoldInit x])
 askBehaviorHoldInits = do
-  (_, !his) <- BehaviorM ask
+  (_, !his) <- ask
   return his
 
 {-# INLINE getDynHold #-}
@@ -1689,15 +1719,15 @@ subscribeCoincidenceSubscribed :: CoincidenceSubscribed x a -> Subscriber x a ->
 subscribeCoincidenceSubscribed subscribed sub = WeakBag.insert sub (coincidenceSubscribedSubscribers subscribed) (coincidenceSubscribedWeakSelf subscribed) cleanupCoincidenceSubscribed
 
 {-# INLINE merge #-}
-merge :: forall k x. (HasSpiderTimeline x, GCompare k) => Dynamic x (PatchDMap k (Event x)) -> Event x (DMap k Identity)
+merge :: forall k x. (HasSpiderTimeline x, GCompare k) => DynamicS x (PatchDMap k (Event x)) -> Event x (DMap k Identity)
 merge d = cacheEvent (mergeCheap d)
 
 {-# INLINE mergeWithMove #-}
-mergeWithMove :: forall k x. (HasSpiderTimeline x, GCompare k) => Dynamic x (PatchDMapWithMove k (Event x)) -> Event x (DMap k Identity)
+mergeWithMove :: forall k x. (HasSpiderTimeline x, GCompare k) => DynamicS x (PatchDMapWithMove k (Event x)) -> Event x (DMap k Identity)
 mergeWithMove d = cacheEvent (mergeCheapWithMove d)
 
 {-# INLINE [1] mergeCheap #-}
-mergeCheap :: forall k x. (HasSpiderTimeline x, GCompare k) => Dynamic x (PatchDMap k (Event x)) -> Event x (DMap k Identity)
+mergeCheap :: forall k x. (HasSpiderTimeline x, GCompare k) => DynamicS x (PatchDMap k (Event x)) -> Event x (DMap k Identity)
 mergeCheap = mergeCheap' getInitialSubscribers updateMe destroy
   where
       updateMe :: MergeUpdateFunc k x (PatchDMap k (Event x)) (MergeSubscribedParent x)
@@ -1732,7 +1762,7 @@ mergeCheap = mergeCheap' getInitialSubscribers updateMe destroy
       destroy s = forM_ (DMap.toList s) $ \(_ :=> MergeSubscribedParent sub) -> unsubscribe sub
 
 {-# INLINE [1] mergeCheapWithMove #-}
-mergeCheapWithMove :: forall k x. (HasSpiderTimeline x, GCompare k) => Dynamic x (PatchDMapWithMove k (Event x)) -> Event x (DMap k Identity)
+mergeCheapWithMove :: forall k x. (HasSpiderTimeline x, GCompare k) => DynamicS x (PatchDMapWithMove k (Event x)) -> Event x (DMap k Identity)
 mergeCheapWithMove = mergeCheap' getInitialSubscribers updateMe destroy
   where
       updateMe :: MergeUpdateFunc k x (PatchDMapWithMove k (Event x)) (MergeSubscribedParentWithMove x k)
@@ -1878,7 +1908,7 @@ updateMerge m updateFunc p = SomeMergeUpdate updateMe (invalidateMergeHeight m) 
           return subscriptionsToKill
 
 {-# INLINE mergeCheap' #-}
-mergeCheap' :: forall k x p s. (HasSpiderTimeline x, GCompare k, PatchTarget p ~ DMap k (Event x)) => MergeInitFunc k x s -> MergeUpdateFunc k x p s -> MergeDestroyFunc k s -> Dynamic x p -> Event x (DMap k Identity)
+mergeCheap' :: forall k x p s. (HasSpiderTimeline x, GCompare k, PatchTarget p ~ DMap k (Event x)) => MergeInitFunc k x s -> MergeUpdateFunc k x p s -> MergeDestroyFunc k s -> DynamicS x p -> Event x (DMap k Identity)
 mergeCheap' getInitialSubscribers updateFunc destroy d = Event $ \sub -> do
   initialParents <- readBehaviorUntracked $ dynamicCurrent d
   accumRef <- liftIO $ newIORef $ error "merge: accumRef not yet initialized"
@@ -1927,11 +1957,11 @@ mergeCheap' getInitialSubscribers updateFunc destroy d = Event $ \sub -> do
          , occ
          )
 
-mergeInt :: forall x a. (HasSpiderTimeline x) => Dynamic x (PatchIntMap (Event x a)) -> Event x (IntMap a)
+mergeInt :: forall x a. (HasSpiderTimeline x) => DynamicS x (PatchIntMap (Event x a)) -> Event x (IntMap a)
 mergeInt = cacheEvent . mergeIntCheap
 
 {-# INLINABLE mergeIntCheap #-}
-mergeIntCheap :: forall x a. (HasSpiderTimeline x) => Dynamic x (PatchIntMap (Event x a)) -> Event x (IntMap a)
+mergeIntCheap :: forall x a. (HasSpiderTimeline x) => DynamicS x (PatchIntMap (Event x a)) -> Event x (IntMap a)
 mergeIntCheap d = Event $ \sub -> do
   initialParents <- readBehaviorUntracked $ dynamicCurrent d
   accum <- liftIO $ FastMutableIntMap.newEmpty
@@ -2282,7 +2312,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE holdDyn #-}
   holdDyn v0 (SpiderEvent e) = SpiderPushM $ fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce e
   {-# INLINABLE holdIncremental #-}
-  holdIncremental v0 (SpiderEvent e) = SpiderPushM $ SpiderIncremental . dynamicHold <$> Reflex.Spider.Internal.hold v0 e
+  holdIncremental v0 (SpiderEvent e) = SpiderPushM $ (R.Incr . SpiderIncremental) #. dynamicHold <$> Reflex.Spider.Internal.hold v0 e
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 (SpiderEvent e) = SpiderPushM $ fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce e
   {-# INLINABLE headE #-}
@@ -2300,7 +2330,7 @@ instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) 
   fail _ = error "Dynamic does not support 'fail'"
 
 {-# INLINABLE newJoinDyn #-}
-newJoinDyn :: HasSpiderTimeline x => Reflex.Spider.Internal.Dynamic x (Identity (Reflex.Spider.Internal.Dynamic x (Identity a))) -> Reflex.Spider.Internal.Dyn x (Identity a)
+newJoinDyn :: HasSpiderTimeline x => DynamicS x (Identity (DynamicS x (Identity a))) -> Reflex.Spider.Internal.Dyn x (Identity a)
 newJoinDyn d =
   let readV0 = readBehaviorTracked . dynamicCurrent =<< readBehaviorTracked (dynamicCurrent d)
       eOuter = Reflex.Spider.Internal.push (fmap (Just . Identity) . readBehaviorUntracked . dynamicCurrent . runIdentity) $ dynamicUpdated d
@@ -2333,7 +2363,7 @@ holdDynSpiderEventM :: HasSpiderTimeline x => a -> Reflex.Class.Event (SpiderTim
 holdDynSpiderEventM v0 e = fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
 
 holdIncrementalSpiderEventM :: (HasSpiderTimeline x, Patch p) => PatchTarget p -> Reflex.Class.Event (SpiderTimeline x) p -> EventM x (Reflex.Class.Incremental (SpiderTimeline x) p)
-holdIncrementalSpiderEventM v0 e = fmap (SpiderIncremental . dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
+holdIncrementalSpiderEventM v0 e = fmap ((R.Incr . SpiderIncremental) #. dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
 
 buildDynamicSpiderEventM :: HasSpiderTimeline x => SpiderPushM x a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Dynamic (SpiderTimeline x) a)
 buildDynamicSpiderEventM getV0 e = fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
@@ -2359,7 +2389,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE holdDyn #-}
   holdDyn v0 e = SpiderHostFrame $ fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
   {-# INLINABLE holdIncremental #-}
-  holdIncremental v0 e = SpiderHostFrame $ fmap (SpiderIncremental . dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
+  holdIncremental v0 e = SpiderHostFrame $ fmap (R.Incr . SpiderIncremental . dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 e = SpiderHostFrame $ fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
   {-# INLINABLE headE #-}
@@ -2490,8 +2520,8 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# SPECIALIZE instance R.Reflex (SpiderTimeline Global) #-}
   newtype Behavior (SpiderTimeline x) a = SpiderBehavior { unSpiderBehavior :: Behavior x a }
   newtype Event (SpiderTimeline x) a = SpiderEvent { unSpiderEvent :: Event x a }
-  newtype Dynamic (SpiderTimeline x) a = SpiderDynamic { unSpiderDynamic :: Dynamic x (Identity a) } -- deriving (Functor, Applicative, Monad)
-  newtype Incremental (SpiderTimeline x) p = SpiderIncremental { unSpiderIncremental :: Dynamic x p }
+  newtype Dynamic (SpiderTimeline x) a = SpiderDynamic { unSpiderDynamic :: Dynamic x (PatchTarget (Identity a)) (Identity a) } -- deriving (Functor, Applicative, Monad)
+  newtype Incremental' (SpiderTimeline x) target p = SpiderIncremental { unSpiderIncremental :: Dynamic x target p }
   type PullM (SpiderTimeline x) = SpiderPullM x
   type PushM (SpiderTimeline x) = SpiderPushM x
   {-# INLINABLE never #-}
@@ -2513,30 +2543,34 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# INLINABLE coincidence #-}
   coincidence = SpiderEvent . coincidence . (coerce :: Event x (R.Event (SpiderTimeline x) a) -> Event x (Event x a)) . unSpiderEvent
   {-# INLINABLE current #-}
-  current = SpiderBehavior . dynamicCurrent . unSpiderDynamic
+  current = SpiderBehavior . dynamicCurrent . (coerce :: forall a. Dynamic x a (Identity a) -> Dynamic x a a) . unSpiderDynamic
   {-# INLINABLE updated #-}
-  updated = coerce $ SpiderEvent . dynamicUpdated . unSpiderDynamic
+  updated = coerce . SpiderEvent . dynamicUpdated . unSpiderDynamic
   {-# INLINABLE unsafeBuildDynamic #-}
   unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ unsafeBuildDynamic (coerce readV0) $ coerce $ unSpiderEvent v'
   {-# INLINABLE unsafeBuildIncremental #-}
-  unsafeBuildIncremental readV0 dv = SpiderIncremental $ dynamicDyn $ unsafeBuildDynamic (coerce readV0) $ unSpiderEvent dv
+  unsafeBuildIncremental readV0 dv = R.Incr $ SpiderIncremental $ dynamicDyn $ unsafeBuildDynamic (coerce readV0) $ unSpiderEvent dv
   {-# INLINABLE mergeIncremental #-}
-  mergeIncremental = SpiderEvent . merge . (unsafeCoerce :: Dynamic x (PatchDMap k (R.Event (SpiderTimeline x))) -> Dynamic x (PatchDMap k (Event x))) . unSpiderIncremental
+  mergeIncremental = SpiderEvent . merge . coerce . unSpiderIncremental . R.getIncr
   {-# INLINABLE mergeIncrementalWithMove #-}
-  mergeIncrementalWithMove = SpiderEvent . mergeWithMove . (unsafeCoerce :: Dynamic x (PatchDMapWithMove k (R.Event (SpiderTimeline x))) -> Dynamic x (PatchDMapWithMove k (Event x))) . unSpiderIncremental
+  mergeIncrementalWithMove = SpiderEvent . mergeWithMove . coerce . unSpiderIncremental . R.getIncr
   {-# INLINABLE currentIncremental #-}
-  currentIncremental = SpiderBehavior . dynamicCurrent . unSpiderIncremental
+  currentIncremental = SpiderBehavior . dynamicCurrent . unSpiderIncremental . R.getIncr
   {-# INLINABLE updatedIncremental #-}
-  updatedIncremental = SpiderEvent . dynamicUpdated . unSpiderIncremental
+  updatedIncremental = SpiderEvent . dynamicUpdated . unSpiderIncremental . R.getIncr
   {-# INLINABLE incrementalToDynamic #-}
-  incrementalToDynamic (SpiderIncremental i) = SpiderDynamic $ dynamicDynIdentity $ unsafeBuildDynamic (readBehaviorUntracked $ dynamicCurrent i) $ flip push (dynamicUpdated i) $ \p -> do
+  incrementalToDynamic (R.Incr (SpiderIncremental i)) = SpiderDynamic $ dynamicDynIdentity $ unsafeBuildDynamic (readBehaviorUntracked $ dynamicCurrent i) $ flip push (dynamicUpdated i) $ \p -> do
     c <- readBehaviorUntracked $ dynamicCurrent i
     return $ Identity <$> apply p c --TODO: Avoid the redundant 'apply'
   eventCoercion Coercion = Coercion
   behaviorCoercion Coercion = Coercion
-  dynamicCoercion = unsafeCoerce --TODO: How can we avoid this unsafeCoerce?  This is safe only because we know how Identity works as a Patch instance
+  dynamicCoercion Coercion = foo `trans` Coercion `trans` sym foo
+    where
+      foo :: forall q. Coercion (R.Dynamic (SpiderTimeline x) q) (DynamicS x (Identity q))
+      foo = Coercion
+  incrementalCoercion Coercion Coercion = Coercion
   {-# INLINABLE mergeIntIncremental #-}
-  mergeIntIncremental = SpiderEvent . mergeInt . (unsafeCoerce :: Dynamic x (PatchIntMap (R.Event (SpiderTimeline x) a)) -> Dynamic x (PatchIntMap (Event x a))) . unSpiderIncremental
+  mergeIntIncremental = SpiderEvent #. mergeInt .# coerce . unSpiderIncremental . R.getIncr
   {-# INLINABLE fanInt #-}
   fanInt e = R.EventSelectorInt $ SpiderEvent . selectInt (fanInt (unSpiderEvent e))
 

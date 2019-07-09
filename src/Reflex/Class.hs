@@ -32,6 +32,7 @@ module Reflex.Class
   ( module Reflex.Patch
     -- * Primitives
   , Reflex (..)
+  , Incremental (..)
   , mergeInt
   , coerceBehavior
   , coerceEvent
@@ -235,7 +236,7 @@ class ( MonadHold t (PushM t)
   -- Instead of always fully replacing the value, only parts of it can be patched.
   -- This is only needed for performance critical code via `mergeIncremental` to make small
   -- changes to large values.
-  data Incremental t :: * -> *
+  data Incremental' t :: * -> * -> *
   -- | A monad for doing complex push-based calculations efficiently
   type PushM t :: * -> *
   -- | A monad for doing complex pull-based calculations efficiently
@@ -296,8 +297,13 @@ class ( MonadHold t (PushM t)
   -- | Construct a 'Coercion' for a 'Dynamic' given an 'Coercion' for its
   -- occurrence type
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
+  -- | Construct a 'Coercion' for an 'Incremental'' given an 'Coercion' for its
+  -- occurrence type
+  incrementalCoercion :: Coercion t1 t2 -> Coercion p1 p2 -> Coercion (Incremental' t t1 p1) (Incremental' t t2 p2)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
+
+newtype Incremental t p = Incr { getIncr :: Incremental' t (PatchTarget p) p }
 
 --TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
 -- | Constructs a single 'Event' out of a map of events. The output event may fire with multiple

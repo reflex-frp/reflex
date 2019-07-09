@@ -56,7 +56,7 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   newtype Behavior (Pure t) a = Behavior { unBehavior :: t -> a }
   newtype Event (Pure t) a = Event { unEvent :: t -> Maybe a }
   newtype Dynamic (Pure t) a = Dynamic { unDynamic :: t -> (a, Maybe a) }
-  newtype Incremental (Pure t) p = Incremental { unIncremental :: t -> (PatchTarget p, Maybe p) }
+  newtype Incremental' (Pure t) target p = Incremental { unIncremental :: t -> (target, Maybe p) }
 
   type PushM (Pure t) = (->) t
   type PullM (Pure t) = (->) t
@@ -110,17 +110,17 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
 
   --unsafeBuildIncremental :: Patch p => PullM (Pure t) a -> Event (Pure t) (p
   --a) -> Incremental (Pure t) p a
-  unsafeBuildIncremental readV0 p = Incremental $ \t -> (readV0 t, unEvent p t)
+  unsafeBuildIncremental readV0 p = Incr $ Incremental $ \t -> (readV0 t, unEvent p t)
 
   mergeIncremental = mergeIncrementalImpl
   mergeIncrementalWithMove = mergeIncrementalImpl
 
-  currentIncremental i = Behavior $ \t -> fst $ unIncremental i t
+  currentIncremental i = Behavior $ \t -> fst $ (unIncremental $ getIncr i) t
 
-  updatedIncremental i = Event $ \t -> snd $ unIncremental i t
+  updatedIncremental i = Event $ \t -> snd $ unIncremental (getIncr i) t
 
   incrementalToDynamic i = Dynamic $ \t ->
-    let (old, mPatch) = unIncremental i t
+    let (old, mPatch) = unIncremental (getIncr i) t
         e = case mPatch of
           Nothing -> Nothing
           Just patch -> apply patch old
@@ -128,6 +128,7 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   behaviorCoercion Coercion = Coercion
   eventCoercion Coercion = Coercion
   dynamicCoercion Coercion = Coercion
+  incrementalCoercion Coercion Coercion = Coercion
 
   fanInt e = EventSelectorInt $ \k -> Event $ \t -> unEvent e t >>= IntMap.lookup k
 
@@ -135,14 +136,14 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
 
 mergeIncrementalImpl :: (PatchTarget p ~ DMap k (Event (Pure t)), GCompare k) => Incremental (Pure t) p -> Event (Pure t) (DMap k Identity)
 mergeIncrementalImpl i = Event $ \t ->
-  let results = DMap.mapMaybeWithKey (\_ (Event e) -> Identity <$> e t) $ fst $ unIncremental i t
+  let results = DMap.mapMaybeWithKey (\_ (Event e) -> Identity <$> e t) $ fst $ unIncremental (getIncr i) t
   in if DMap.null results
      then Nothing
      else Just results
 
 mergeIntIncrementalImpl :: (PatchTarget p ~ IntMap (Event (Pure t) a)) => Incremental (Pure t) p -> Event (Pure t) (IntMap a)
 mergeIntIncrementalImpl i = Event $ \t ->
-  let results = IntMap.mapMaybeWithKey (\_ (Event e) -> e t) $ fst $ unIncremental i t
+  let results = IntMap.mapMaybeWithKey (\_ (Event e) -> e t) $ fst $ unIncremental (getIncr i) t
   in if IntMap.null results
      then Nothing
      else Just results
@@ -192,7 +193,7 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
     in Dynamic $ \t -> (f t, unEvent e t)
 
   holdIncremental :: Patch p => PatchTarget p -> Event (Pure t) p -> t -> Incremental (Pure t) p
-  holdIncremental initialValue e initialTime = Incremental $ \t -> (f t, unEvent e t)
+  holdIncremental initialValue e initialTime = Incr . Incremental $ \t -> (f t, unEvent e t)
     where f = memo $ \sampleTime ->
             -- Really, the sampleTime should never be prior to the initialTime,
             -- because that would mean the Behavior is being sampled before

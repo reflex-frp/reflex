@@ -45,6 +45,7 @@ import Reflex.PerformEvent.Class
 
 import System.IO.Unsafe
 import Unsafe.Coerce
+import Data.IntMap (IntMap)
 
 data ProfiledTimeline t
 
@@ -125,7 +126,7 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   newtype Behavior (ProfiledTimeline t) a = Behavior_Profiled { unBehavior_Profiled :: Behavior t a }
   newtype Event (ProfiledTimeline t) a = Event_Profiled { unEvent_Profiled :: Event t a }
   newtype Dynamic (ProfiledTimeline t) a = Dynamic_Profiled { unDynamic_Profiled :: Dynamic t a }
-  newtype Incremental (ProfiledTimeline t) p = Incremental_Profiled { unIncremental_Profiled :: Incremental t p }
+  newtype Incremental' (ProfiledTimeline t) target p = Incremental_Profiled { unIncremental_Profiled :: Incremental' t target p }
   type PushM (ProfiledTimeline t) = ProfiledM (PushM t)
   type PullM (ProfiledTimeline t) = ProfiledM (PullM t)
   never = Event_Profiled never
@@ -144,16 +145,32 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   unsafeBuildIncremental (ProfiledM a0) (Event_Profiled a') = coerce $ unsafeBuildIncremental a0 a'
   mergeIncremental = Event_Profiled . mergeIncremental . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchDMap k (Event (ProfiledTimeline t))) -> Incremental t (PatchDMap k (Event t)))
   mergeIncrementalWithMove = Event_Profiled . mergeIncrementalWithMove . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchDMapWithMove k (Event (ProfiledTimeline t))) -> Incremental t (PatchDMapWithMove k (Event t)))
-  currentIncremental (Incremental_Profiled i) = coerce $ currentIncremental i
-  updatedIncremental (Incremental_Profiled i) = coerce $ profileEvent $ updatedIncremental i
-  incrementalToDynamic (Incremental_Profiled i) = coerce $ incrementalToDynamic i
-  behaviorCoercion (c :: Coercion a b) = case behaviorCoercion c :: Coercion (Behavior t a) (Behavior t b) of
-    Coercion -> unsafeCoerce (Coercion :: Coercion (Behavior (ProfiledTimeline t) a) (Behavior (ProfiledTimeline t) a)) --TODO: Figure out how to make this typecheck without the unsafeCoerce
-  eventCoercion (c :: Coercion a b) = case eventCoercion c :: Coercion (Event t a) (Event t b) of
-    Coercion -> unsafeCoerce (Coercion :: Coercion (Event (ProfiledTimeline t) a) (Event (ProfiledTimeline t) a)) --TODO: Figure out how to make this typecheck without the unsafeCoerce
-  dynamicCoercion (c :: Coercion a b) = case dynamicCoercion c :: Coercion (Dynamic t a) (Dynamic t b) of
-    Coercion -> unsafeCoerce (Coercion :: Coercion (Dynamic (ProfiledTimeline t) a) (Dynamic (ProfiledTimeline t) a)) --TODO: Figure out how to make this typecheck without the unsafeCoerce
-  mergeIntIncremental = Event_Profiled . mergeIntIncremental . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchIntMap (Event (ProfiledTimeline t) a)) -> Incremental t (PatchIntMap (Event t a)))
+  currentIncremental (Incr (Incremental_Profiled i)) = coerce $ currentIncremental (Incr i)
+  updatedIncremental (Incr (Incremental_Profiled i)) = coerce $ profileEvent $ updatedIncremental (Incr i)
+  incrementalToDynamic (Incr (Incremental_Profiled i)) = coerce $ incrementalToDynamic (Incr i)
+  behaviorCoercion (c :: Coercion a b) =
+    Coercion `trans` (behaviorCoercion c :: Coercion (Behavior t a) (Behavior t b)) `trans` Coercion
+  eventCoercion (c :: Coercion a b) =
+    Coercion `trans` (eventCoercion c :: Coercion (Event t a) (Event t b)) `trans` Coercion
+  dynamicCoercion (c :: Coercion a b) =
+    Coercion `trans` (dynamicCoercion c :: Coercion (Dynamic t a) (Dynamic t b)) `trans` Coercion
+  incrementalCoercion (c :: Coercion t1 t2) (d :: Coercion p1 p2)  =
+    Coercion `trans` (incrementalCoercion c d :: Coercion (Incremental' t t1 p1) (Incremental' t t2 p2)) `trans` Coercion
+  mergeIntIncremental (e :: Incremental
+               (ProfiledTimeline t) (PatchIntMap (Event (ProfiledTimeline t) a)))
+    = Event_Profiled . mergeIntIncremental . coerceWith co $ e
+    where
+      co :: Coercion
+               (Incremental (ProfiledTimeline t) (PatchIntMap (Event (ProfiledTimeline t) a)))
+               (Incremental t (PatchIntMap (Event t a)))
+      co = (Coercion :: Coercion (Incremental (ProfiledTimeline t) (PatchIntMap (Event (ProfiledTimeline t) a)))
+                                 (Incremental' (ProfiledTimeline t) (IntMap (Event (ProfiledTimeline t) a))
+                                    (PatchIntMap (Event (ProfiledTimeline t) a))))
+         `trans` incrementalCoercion Coercion Coercion
+         `trans` Coercion
+         `trans` (Coercion :: Coercion (Incremental' t (IntMap (Event t a)) (PatchIntMap (Event t a)))
+                                  (Incremental t (PatchIntMap (Event t a))))
+
   fanInt (Event_Profiled e) = coerce $ fanInt $ profileEvent e
 
 deriving instance Functor (Dynamic t) => Functor (Dynamic (ProfiledTimeline t))
@@ -163,7 +180,7 @@ deriving instance Monad (Dynamic t) => Monad (Dynamic (ProfiledTimeline t))
 instance MonadHold t m => MonadHold (ProfiledTimeline t) (ProfiledM m) where
   hold v0 (Event_Profiled v') = ProfiledM $ Behavior_Profiled <$> hold v0 v'
   holdDyn v0 (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> holdDyn v0 v'
-  holdIncremental v0 (Event_Profiled v') = ProfiledM $ Incremental_Profiled <$> holdIncremental v0 v'
+  holdIncremental v0 (Event_Profiled v') = ProfiledM $ Incr . Incremental_Profiled . getIncr <$> holdIncremental v0 v'
   buildDynamic (ProfiledM v0) (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> buildDynamic v0 v'
   headE (Event_Profiled e) = ProfiledM $ Event_Profiled <$> headE e
 
