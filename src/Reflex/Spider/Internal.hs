@@ -18,6 +18,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE InstanceSigs #-}
 
 #ifdef USE_REFLEX_OPTIMIZER
@@ -37,7 +38,10 @@ import Control.Monad hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Exception
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Primitive
-import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_)
+--import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_)
+import Control.Monad.Reader.Class
+import Control.Monad.IO.Class
+import Control.Monad.ReaderIO
 import Control.Monad.Ref
 import Data.Align
 import Data.Coerce
@@ -67,6 +71,7 @@ import Reflex.FastWeak
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
+import Data.Profunctor.Unsafe
 
 #ifdef DEBUG_CYCLES
 import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
@@ -545,6 +550,11 @@ propagateFast a subscribers = withIncreasedDepth $ do
 toAny :: a -> Any
 toAny = unsafeCoerce
 
+-- Why do we use Any here, instead of just giving eventSubscribedRetained an
+-- existential type? Sadly, GHC does not currently know how to unbox types
+-- with existentially quantified fields. So instead we just coerce values
+-- to type Any on the way in. Since we never coerce them back, this is
+-- perfectly safe.
 data EventSubscribed x = EventSubscribed
   { eventSubscribedHeightRef :: {-# UNPACK #-} !(IORef Height)
   , eventSubscribedRetained :: {-# NOUNPACK #-} !Any
@@ -668,7 +678,7 @@ behaviorPull !p = Behavior $ do
         wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorPull"
         parentsRef <- liftIO $ newIORef []
         holdInits <- askBehaviorHoldInits
-        a <- liftIO $ runReaderT (unBehaviorM $ pullCompute p) (Just (wi, parentsRef), holdInits)
+        a <- liftIO $ runReaderIO (unBehaviorM $ pullCompute p) (Just (wi, parentsRef), holdInits)
         invsRef <- liftIO . newIORef . maybeToList =<< askInvalidator
         parents <- liftIO $ readIORef parentsRef
         let subscribed = PullSubscribed
@@ -703,41 +713,41 @@ readBehaviorUntracked b = do
 -- Dynamic
 --------------------------------------------------------------------------------
 
-data Dynamic x p = Dynamic
-  { dynamicCurrent :: !(Behavior x (PatchTarget p))
+type DynamicS x p = Dynamic x (PatchTarget p) p
+
+data Dynamic x target p = Dynamic
+  { dynamicCurrent :: !(Behavior x target)
   , dynamicUpdated :: Event x p -- This must be lazy; see the comment on holdEvent --TODO: Would this let us eliminate `Dyn`?
   }
+  deriving (Functor)
 
-dynamicHold :: Hold x p -> Dynamic x p
+dynamicHold :: Hold x p -> DynamicS x p
 dynamicHold !h = Dynamic
   { dynamicCurrent = behaviorHold h
   , dynamicUpdated = eventHold h
   }
 
-dynamicHoldIdentity :: Hold x (Identity a) -> Dynamic x (Identity a)
+dynamicHoldIdentity :: Hold x (Identity a) -> DynamicS x (Identity a)
 dynamicHoldIdentity = dynamicHold
 
-dynamicConst :: PatchTarget p -> Dynamic x p
+dynamicConst :: PatchTarget p -> DynamicS x p
 dynamicConst !a = Dynamic
   { dynamicCurrent = behaviorConst a
   , dynamicUpdated = eventNever
   }
 
-dynamicDyn :: (HasSpiderTimeline x, Patch p) => Dyn x p -> Dynamic x p
+dynamicDyn :: (HasSpiderTimeline x, Patch p) => Dyn x p -> DynamicS x p
 dynamicDyn !d = Dynamic
   { dynamicCurrent = behaviorDyn d
   , dynamicUpdated = eventDyn d
   }
 
-dynamicDynIdentity :: HasSpiderTimeline x => Dyn x (Identity a) -> Dynamic x (Identity a)
+dynamicDynIdentity :: HasSpiderTimeline x => Dyn x (Identity a) -> DynamicS x (Identity a)
 dynamicDynIdentity = dynamicDyn
 
 --------------------------------------------------------------------------------
 -- Combinators
 --------------------------------------------------------------------------------
-
---TODO: Figure out why certain things are not 'representational', then make them
---representational so we can use coerce
 
 --type role Hold representational
 data Hold x p
@@ -759,20 +769,25 @@ globalSpiderTimelineEnv = unsafePerformIO unsafeNewSpiderTimelineEnv
 
 -- | Stores all global data relevant to a particular Spider timeline; only one
 -- value should exist for each type @x@
-data SpiderTimelineEnv x = SpiderTimelineEnv
+newtype SpiderTimelineEnv x = STE {unSTE :: SpiderTimelineEnv' x}
+-- We implement SpiderTimelineEnv with a newtype wrapper so
+-- we can get the coercions we want safely.
+type role SpiderTimelineEnv nominal
+
+data SpiderTimelineEnv' x = SpiderTimelineEnv
   { _spiderTimeline_lock :: {-# UNPACK #-} !(MVar ())
   , _spiderTimeline_eventEnv :: {-# UNPACK #-} !(EventEnv x)
 #ifdef DEBUG
   , _spiderTimeline_depth :: {-# UNPACK #-} !(IORef Int)
 #endif
   }
-type role SpiderTimelineEnv nominal
+type role SpiderTimelineEnv' phantom
 
 instance Eq (SpiderTimelineEnv x) where
   _ == _ = True -- Since only one exists of each type
 
 instance GEq SpiderTimelineEnv where
-  a `geq` b = if _spiderTimeline_lock a == _spiderTimeline_lock b
+  a `geq` b = if _spiderTimeline_lock (unSTE a) == _spiderTimeline_lock (unSTE b)
               then Just $ unsafeCoerce Refl -- This unsafeCoerce is safe because the same SpiderTimelineEnv can't have two different 'x' arguments
               else Nothing
 
@@ -795,7 +810,7 @@ runEventM :: EventM x a -> IO a
 runEventM = unEventM
 
 asksEventEnv :: forall x a. HasSpiderTimeline x => (EventEnv x -> a) -> EventM x a
-asksEventEnv f = return $ f $ _spiderTimeline_eventEnv (spiderTimeline :: SpiderTimelineEnv x)
+asksEventEnv f = return $ f $ _spiderTimeline_eventEnv (unSTE (spiderTimeline :: SpiderTimelineEnv x))
 
 class MonadIO m => Defer a m where
   getDeferralQueue :: m (IORef [a])
@@ -933,9 +948,9 @@ getHoldEventSubscription h = do
 
 type BehaviorEnv x = (Maybe (Weak (Invalidator x), IORef [SomeBehaviorSubscribed x]), IORef [SomeHoldInit x])
 
---type role BehaviorM representational
 -- BehaviorM can sample behaviors
-newtype BehaviorM x a = BehaviorM { unBehaviorM :: ReaderT (BehaviorEnv x) IO a } deriving (Functor, Applicative, MonadIO, MonadFix)
+newtype BehaviorM x a = BehaviorM { unBehaviorM :: ReaderIO (BehaviorEnv x) a }
+  deriving (Functor, Applicative, MonadIO, MonadFix, MonadReader (BehaviorEnv x))
 
 instance Monad (BehaviorM x) where
   {-# INLINE (>>=) #-}
@@ -1145,11 +1160,11 @@ data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
 
 newtype Dyn (x :: Type) p = Dyn { unDyn :: IORef (DynType x p) }
 
-newMapDyn :: HasSpiderTimeline x => (a -> b) -> Dynamic x (Identity a) -> Dynamic x (Identity b)
+newMapDyn :: HasSpiderTimeline x => (a -> b) -> DynamicS x (Identity a) -> DynamicS x (Identity b)
 newMapDyn f d = dynamicDynIdentity $ unsafeBuildDynamic (fmap f $ readBehaviorTracked $ dynamicCurrent d) (Identity . f . runIdentity <$> dynamicUpdated d)
 
 --TODO: Avoid the duplication between this and R.zipDynWith
-zipDynWith :: HasSpiderTimeline x => (a -> b -> c) -> Dynamic x (Identity a) -> Dynamic x (Identity b) -> Dynamic x (Identity c)
+zipDynWith :: HasSpiderTimeline x => (a -> b -> c) -> DynamicS x (Identity a) -> DynamicS x (Identity b) -> DynamicS x (Identity c)
 zipDynWith f da db =
   let eab = align (dynamicUpdated da) (dynamicUpdated db)
       ec = flip push eab $ \o -> do
@@ -1225,7 +1240,7 @@ run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> Res
 run roots after = do
   tracePropagate (Proxy :: Proxy x) $ "Running an event frame with " <> show (length roots) <> " events"
   let t = spiderTimeline :: SpiderTimelineEnv x
-  result <- SpiderHost $ withMVar (_spiderTimeline_lock t) $ \_ -> unSpiderHost $ runFrame $ do
+  result <- SpiderHost $ withMVar (_spiderTimeline_lock (unSTE t)) $ \_ -> unSpiderHost $ runFrame $ do
     rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readIORef occRef
@@ -1289,9 +1304,9 @@ type WeakList a = [Weak a]
 withIncreasedDepth :: CanTrace x m => m a -> m a
 withIncreasedDepth a = do
   spiderTimeline <- askSpiderTimelineEnv
-  liftIO $ modifyIORef' (_spiderTimeline_depth spiderTimeline) succ
+  liftIO $ modifyIORef' (_spiderTimeline_depth (unSTE spiderTimeline)) succ
   result <- a
-  liftIO $ modifyIORef' (_spiderTimeline_depth spiderTimeline) pred
+  liftIO $ modifyIORef' (_spiderTimeline_depth (unSTE spiderTimeline)) pred
   return result
 #else
 withIncreasedDepth :: m a -> m a
@@ -1318,7 +1333,7 @@ traceMWhen _ b getMessage = when b $ do
   message <- getMessage
 #ifdef DEBUG
   spiderTimeline <- askSpiderTimelineEnv
-  d <- liftIO $ readIORef $ _spiderTimeline_depth spiderTimeline
+  d <- liftIO $ readIORef $ _spiderTimeline_depth $ unSTE spiderTimeline
 #else
   let d = 0
 #endif
@@ -1359,25 +1374,25 @@ propagateSubscriberHold h a = do
 data SomeResetCoincidence x = forall a. SomeResetCoincidence !(EventSubscription x) !(Maybe (CoincidenceSubscribed x a)) -- The CoincidenceSubscriber will be present only if heights need to be reset
 
 runBehaviorM :: BehaviorM x a -> Maybe (Weak (Invalidator x), IORef [SomeBehaviorSubscribed x]) -> IORef [SomeHoldInit x] -> IO a
-runBehaviorM a mwi holdInits = runReaderT (unBehaviorM a) (mwi, holdInits)
+runBehaviorM a mwi holdInits = runReaderIO (unBehaviorM a) (mwi, holdInits)
 
 askInvalidator :: BehaviorM x (Maybe (Weak (Invalidator x)))
 askInvalidator = do
-  (!m, _) <- BehaviorM ask
+  (!m, _) <- ask
   case m of
     Nothing -> return Nothing
     Just (!wi, _) -> return $ Just wi
 
 askParentsRef :: BehaviorM x (Maybe (IORef [SomeBehaviorSubscribed x]))
 askParentsRef = do
-  (!m, _) <- BehaviorM ask
+  (!m, _) <- ask
   case m of
     Nothing -> return Nothing
     Just (_, !p) -> return $ Just p
 
 askBehaviorHoldInits :: BehaviorM x (IORef [SomeHoldInit x])
 askBehaviorHoldInits = do
-  (_, !his) <- BehaviorM ask
+  (_, !his) <- ask
   return his
 
 {-# INLINE getDynHold #-}
@@ -1951,11 +1966,11 @@ mergeGCheap' getInitialSubscribers updateFunc destroy d = Event $ \sub -> do
          , occ
          )
 
-mergeInt :: forall x a. (HasSpiderTimeline x) => Dynamic x (PatchIntMap (Event x a)) -> Event x (IntMap a)
+mergeInt :: forall x a. (HasSpiderTimeline x) => DynamicS x (PatchIntMap (Event x a)) -> Event x (IntMap a)
 mergeInt = cacheEvent . mergeIntCheap
 
 {-# INLINABLE mergeIntCheap #-}
-mergeIntCheap :: forall x a. (HasSpiderTimeline x) => Dynamic x (PatchIntMap (Event x a)) -> Event x (IntMap a)
+mergeIntCheap :: forall x a. (HasSpiderTimeline x) => DynamicS x (PatchIntMap (Event x a)) -> Event x (IntMap a)
 mergeIntCheap d = Event $ \sub -> do
   initialParents <- readBehaviorUntracked $ dynamicCurrent d
   accum <- liftIO $ FastMutableIntMap.newEmpty
@@ -2115,7 +2130,7 @@ clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeI
 -- | Run an event action outside of a frame
 runFrame :: forall x a. HasSpiderTimeline x => EventM x a -> SpiderHost x a --TODO: This function also needs to hold the mutex
 runFrame a = SpiderHost $ do
-  let env = _spiderTimeline_eventEnv (spiderTimeline :: SpiderTimelineEnv x)
+  let env = _spiderTimeline_eventEnv $ unSTE (spiderTimeline :: SpiderTimelineEnv x)
   let go = do
         result <- a
         runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) -- This must happen before doing the assignments, in case subscribing a Hold causes existing Holds to be read by the newly-propagated events
@@ -2326,7 +2341,7 @@ instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) 
   fail _ = error "Dynamic does not support 'fail'"
 
 {-# INLINABLE newJoinDyn #-}
-newJoinDyn :: HasSpiderTimeline x => Reflex.Spider.Internal.Dynamic x (Identity (Reflex.Spider.Internal.Dynamic x (Identity a))) -> Reflex.Spider.Internal.Dyn x (Identity a)
+newJoinDyn :: HasSpiderTimeline x => DynamicS x (Identity (DynamicS x (Identity a))) -> Reflex.Spider.Internal.Dyn x (Identity a)
 newJoinDyn d =
   let readV0 = readBehaviorTracked . dynamicCurrent =<< readBehaviorTracked (dynamicCurrent d)
       eOuter = Reflex.Spider.Internal.push (fmap (Just . Identity) . readBehaviorUntracked . dynamicCurrent . runIdentity) $ dynamicUpdated d
@@ -2476,7 +2491,7 @@ unsafeNewSpiderTimelineEnv = do
 #ifdef DEBUG
   depthRef <- newIORef 0
 #endif
-  return $ SpiderTimelineEnv
+  return $ STE $ SpiderTimelineEnv
     { _spiderTimeline_lock = lock
     , _spiderTimeline_eventEnv = env
 #ifdef DEBUG
@@ -2492,13 +2507,13 @@ data LocalSpiderTimeline (x :: Type) s
 
 instance Reifies s (SpiderTimelineEnv x) =>
          HasSpiderTimeline (LocalSpiderTimeline x s) where
-  spiderTimeline = localSpiderTimeline (Proxy :: Proxy s) $ reflect (Proxy :: Proxy s)
+  spiderTimeline = localSpiderTimeline Proxy $ reflect (Proxy :: Proxy s)
 
 localSpiderTimeline
-  :: Proxy s
+  :: proxy s
   -> SpiderTimelineEnv x
   -> SpiderTimelineEnv (LocalSpiderTimeline x s)
-localSpiderTimeline _ = unsafeCoerce
+localSpiderTimeline _ = coerce
 
 -- | Pass a new timeline to the given function.
 withSpiderTimeline :: (forall x. HasSpiderTimeline x => SpiderTimelineEnv x -> IO r) -> IO r
@@ -2516,8 +2531,8 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# SPECIALIZE instance R.Reflex (SpiderTimeline Global) #-}
   newtype Behavior (SpiderTimeline x) a = SpiderBehavior { unSpiderBehavior :: Behavior x a }
   newtype Event (SpiderTimeline x) a = SpiderEvent { unSpiderEvent :: Event x a }
-  newtype Dynamic (SpiderTimeline x) a = SpiderDynamic { unSpiderDynamic :: Dynamic x (Identity a) } -- deriving (Functor, Applicative, Monad)
-  newtype Incremental (SpiderTimeline x) p = SpiderIncremental { unSpiderIncremental :: Dynamic x p }
+  newtype Dynamic (SpiderTimeline x) a = SpiderDynamic { unSpiderDynamic :: DynamicS x (Identity a) } -- deriving (Functor, Applicative, Monad)
+  newtype Incremental (SpiderTimeline x) p = SpiderIncremental { unSpiderIncremental :: DynamicS x p }
   type PullM (SpiderTimeline x) = SpiderPullM x
   type PushM (SpiderTimeline x) = SpiderPushM x
   {-# INLINABLE never #-}
@@ -2546,7 +2561,7 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# INLINABLE current #-}
   current = SpiderBehavior . dynamicCurrent . unSpiderDynamic
   {-# INLINABLE updated #-}
-  updated = coerce $ SpiderEvent . dynamicUpdated . unSpiderDynamic
+  updated = SpiderEvent #. dynamicUpdated .# fmap coerce . unSpiderDynamic
   {-# INLINABLE unsafeBuildDynamic #-}
   unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ unsafeBuildDynamic (coerce readV0) $ coerce $ unSpiderEvent v'
   {-# INLINABLE unsafeBuildIncremental #-}
@@ -2565,9 +2580,10 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
     return $ Identity <$> apply p c --TODO: Avoid the redundant 'apply'
   eventCoercion Coercion = Coercion
   behaviorCoercion Coercion = Coercion
-  dynamicCoercion = unsafeCoerce --TODO: How can we avoid this unsafeCoerce?  This is safe only because we know how Identity works as a Patch instance
+  dynamicCoercion Coercion = Coercion
+  incrementalCoercion Coercion Coercion = Coercion
   {-# INLINABLE mergeIntIncremental #-}
-  mergeIntIncremental = SpiderEvent . mergeInt . (unsafeCoerce :: Dynamic x (PatchIntMap (R.Event (SpiderTimeline x) a)) -> Dynamic x (PatchIntMap (Event x a))) . unSpiderIncremental
+  mergeIntIncremental = SpiderEvent . mergeInt . coerce
   {-# INLINABLE fanInt #-}
   fanInt e = R.EventSelectorInt $ SpiderEvent . selectInt (fanInt (unSpiderEvent e))
 
