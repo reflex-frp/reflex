@@ -196,8 +196,8 @@ newNodeId = atomicModifyIORef' nextNodeIdRef $ \n -> (succ n, n)
 {-# NOINLINE unsafeNodeId #-}
 unsafeNodeId :: a -> Int
 unsafeNodeId a = unsafePerformIO $ do
-  touch a
   newNodeId
+  touch a
 #endif
 
 --------------------------------------------------------------------------------
@@ -1179,8 +1179,8 @@ type ResultM = EventM
 {-# NOINLINE unsafeNewIORef #-}
 unsafeNewIORef :: a -> b -> IORef b
 unsafeNewIORef a b = unsafePerformIO $ do
-  touch a
   newIORef b
+  touch a
 
 instance HasSpiderTimeline x => Functor (Event x) where
   fmap f = push $ return . Just . f
@@ -1477,8 +1477,8 @@ newFanInt = do
 {-# NOINLINE unsafeNewFanInt #-}
 unsafeNewFanInt :: b -> FanInt x a
 unsafeNewFanInt b = unsafePerformIO $ do
-  touch b
   newFanInt
+  touch b
 
 fanInt :: HasSpiderTimeline x => Event x (IntMap a) -> EventSelectorInt x a
 fanInt p =
