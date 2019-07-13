@@ -22,6 +22,7 @@ import Control.Monad.Fix (MonadFix)
 
 import Reflex.Class
 import Reflex.Adjustable.Class
+import Reflex.PostBuild.Class
 
 -- | A widget in a workflow
 -- When the 'Event' returned by a 'Workflow' fires, the current 'Workflow' is replaced by the one inside the firing 'Event'. A series of 'Workflow's must share the same return type.
@@ -38,9 +39,12 @@ runWorkflow w0 = mdo
 workflow :: (Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (Dynamic t a)
 workflow = uncurry holdDyn <=< runWorkflow
 
--- | Similar to 'runWorkflow', but only returns the 'Event'.
-workflowView :: (Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (Event t a)
-workflowView = fmap snd . runWorkflow
+-- | Similar to 'workflow', but outputs an 'Event' that fires at post-build time and whenever the current 'Workflow' is replaced by the next 'Workflow'.
+workflowView :: (Adjustable t m, MonadFix m, MonadHold t m, PostBuild t m) => Workflow t m a -> m (Event t a)
+workflowView w = do
+  postBuildEv <- getPostBuild
+  (initialValue, replaceEv) <- runWorkflow w
+  pure $ leftmost [initialValue <$ postBuildEv, replaceEv]
 
 -- | Map a function over a 'Workflow', possibly changing the return type.
 mapWorkflow :: (Reflex t, Functor m) => (a -> b) -> Workflow t m a -> Workflow t m b
