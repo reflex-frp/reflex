@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DeriveTraversable #-}
 -- | 'Patch'es on 'Map' that consist only of insertions (including overwrites)
 -- and deletions
 module Reflex.Patch.Map where
@@ -25,19 +26,33 @@ instance Ord k => Patch (PatchMap k v) where
   type PatchTarget (PatchMap k v) = Map k v
   {-# INLINABLE apply #-}
   apply (PatchMap p) old
-    | Map.null p = Nothing
-    | otherwise
-    -- TODO: Can we return Nothing sometimes? This requires checking whether
-    -- the old and new values are the same. If those are Events or similar,
-    -- we're not likely to do so reliably. For other purposes, we can try
-    -- pointer equality, but that will only be semi-reliable if both values
-    -- have been forced.
-    = Just $! --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
-        merge
-          (mapMaybeMissing $ \_k mv -> mv)
+    = changedToMaybe $
+        mergeA
+          (traverseMaybeMissing $ \_k mv ->
+             case mv of
+               Nothing -> Unchanged Nothing
+               Just _ -> Changed mv)
           preserveMissing
-          (zipWithMaybeMatched (\_k mv v -> mv <|> Just v)) p old
+          -- We could try to detect an update here that does nothing, but that
+          -- will be quite unreliable for a map of Events or similar; it may
+          -- not be worth the trouble.
+          (zipWithMaybeAMatched (\_k mv v -> Changed $! mv <|> Just v)) p old
 
+changedToMaybe :: Changed a -> Maybe a
+changedToMaybe (Unchanged _) = Nothing
+changedToMaybe (Changed a) = Just a
+
+data Changed a
+  = Unchanged a
+  | Changed a
+  deriving (Functor)
+
+instance Applicative Changed where
+  pure = Unchanged
+  liftA2 f (Changed x) (Changed y) = Changed (f x y)
+  liftA2 f (Unchanged x) (Changed y) = Changed (f x y)
+  liftA2 f (Changed x) (Unchanged y) = Changed (f x y)
+  liftA2 f (Unchanged x) (Unchanged y) = Unchanged (f x y)
 
 -- | @a <> b@ will apply the changes of @b@ and then apply the changes of @a@.
 -- If the same key is modified by both patches, the one on the left will take
