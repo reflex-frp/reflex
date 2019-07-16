@@ -8,11 +8,13 @@
 -- insert/update or delete of associations.
 module Reflex.Patch.IntMap where
 
-import Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IntMap
+import Data.IntMap.Lazy (IntMap)
+import qualified Data.IntMap.Lazy as IntMap
 import Data.Maybe
 import Data.Semigroup
 import Reflex.Patch.Class
+import Data.IntMap.Merge.Lazy
+import Control.Applicative
 
 -- | 'Patch' for 'IntMap' which represents insertion or deletion of keys in the mapping.
 -- Internally represented by 'IntMap (Maybe a)', where @Just@ means insert/update
@@ -22,10 +24,14 @@ newtype PatchIntMap a = PatchIntMap (IntMap (Maybe a)) deriving (Functor, Foldab
 -- | Apply the insertions or deletions to a given 'IntMap'.
 instance Patch (PatchIntMap a) where
   type PatchTarget (PatchIntMap a) = IntMap a
-  apply (PatchIntMap p) v = if IntMap.null p then Nothing else Just $
-    let removes = IntMap.filter isNothing p
-        adds = IntMap.mapMaybe id p
-    in IntMap.union adds $ v `IntMap.difference` removes
+  apply (PatchIntMap p) old
+    | IntMap.null p
+    = Nothing
+    | otherwise
+    = Just $! merge
+        (mapMaybeMissing $ \_k mv -> mv)
+        preserveMissing
+        (zipWithMaybeMatched (\_k mv v -> mv <|> Just v)) p old
 
 -- | @a <> b@ will apply the changes of @b@ and then apply the changes of @a@.
 -- If the same key is modified by both patches, the one on the left will take

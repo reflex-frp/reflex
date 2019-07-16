@@ -11,6 +11,8 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup
+import Data.Map.Merge.Lazy
+import Control.Applicative
 
 -- | A set of changes to a 'Map'.  Any element may be inserted/updated or
 -- deleted.  Insertions are represented as values wrapped in 'Just', while
@@ -22,12 +24,20 @@ newtype PatchMap k v = PatchMap { unPatchMap :: Map k (Maybe v) }
 instance Ord k => Patch (PatchMap k v) where
   type PatchTarget (PatchMap k v) = Map k v
   {-# INLINABLE apply #-}
-  apply (PatchMap p) old = Just $! insertions `Map.union` (old `Map.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
-    where insertions = Map.mapMaybeWithKey (const id) p
-          deletions = Map.mapMaybeWithKey (const nothingToJust) p
-          nothingToJust = \case
-            Nothing -> Just ()
-            Just _ -> Nothing
+  apply (PatchMap p) old
+    | Map.null p = Nothing
+    | otherwise
+    -- TODO: Can we return Nothing sometimes? This requires checking whether
+    -- the old and new values are the same. If those are Events or similar,
+    -- we're not likely to do so reliably. For other purposes, we can try
+    -- pointer equality, but that will only be semi-reliable if both values
+    -- have been forced.
+    = Just $! --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
+        merge
+          (mapMaybeMissing $ \_k mv -> mv)
+          preserveMissing
+          (zipWithMaybeMatched (\_k mv v -> mv <|> Just v)) p old
+
 
 -- | @a <> b@ will apply the changes of @b@ and then apply the changes of @a@.
 -- If the same key is modified by both patches, the one on the left will take
