@@ -37,6 +37,12 @@ flag fast-weak
   default: False
   manual: True
 
+flag debug
+  description: Enable ebugging of spider internals
+  default: False
+  manual: True
+
+
 library
   hs-source-dirs: src
   build-depends:
@@ -131,6 +137,9 @@ library
     build-depends: ghc
     exposed-modules: Reflex.Optimizer
 
+  if flag(debug)
+    cpp-options: -DDEBUG
+
   if flag(use-template-haskell)
     cpp-options: -DUSE_TEMPLATE_HASKELL
     build-depends:
@@ -150,6 +159,8 @@ library
 
   if impl(ghcjs)
     build-depends: ghcjs-base
+
+  
 
 test-suite semantics
   type: exitcode-stdio-1.0
