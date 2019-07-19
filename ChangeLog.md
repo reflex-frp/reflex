@@ -2,11 +2,18 @@
 
 ## Unreleased
 
-* Fix `holdDyn` so that it is lazy in its event argument
-* Generalize `merge` to `mergeG`, `mergeIncremental` to
-  `mergeIncrementalG`, and `mergeIncrementalWithMove`
-  to `mergeIncrementalWithMoveG`. These produce `DMap`s
-  whose values needn't be `Identity`.
+* Generalize merging functions:
+  `merge` to `mergeG`, 
+  `mergeIncremental` to `mergeIncrementalG`, 
+  `distributeDMapOverDynPure` to `distributeDMapOverDynPureG`,
+  `mergeIncrementalWithMove` to `mergeIncrementalWithMoveG`.  
+
+## 0.6.2.0
+
+* Fix `holdDyn` so that it is lazy in its event argument  
+  These produce `DMap`s  whose values needn't be `Identity`.
+* Stop using the now-deprecated `*Tag` classes (e.g., `ShowTag`).
+* Fix `holdDyn` so that it is lazy in its event argument.
 
 ## 0.6.1.0
 

@@ -198,8 +198,7 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Semigroup (Semigroup, sconcat, stimes, (<>))
-import Data.Some (Some)
-import qualified Data.Some as Some
+import Data.Some (Some(Some))
 import Data.String
 import Data.These
 import Data.Type.Coercion
@@ -1176,9 +1175,9 @@ factorEvent
   -> Event t (DSum k v)
   -> m (Event t (v a), Event t (DSum k (Product v (Compose (Event t) v))))
 factorEvent k0 kv' = do
-  key :: Behavior t (Some k) <- hold (Some.This k0) $ fmapCheap (\(k :=> _) -> Some.This k) kv'
+  key :: Behavior t (Some k) <- hold (Some k0) $ fmapCheap (\(k :=> _) -> Some k) kv'
   let update = flip push kv' $ \(newKey :=> newVal) -> sample key >>= \case
-        Some.This oldKey -> case newKey `geq` oldKey of
+        Some oldKey -> case newKey `geq` oldKey of
           Just Refl -> return Nothing
           Nothing -> do
             newInner <- filterEventKey newKey kv'

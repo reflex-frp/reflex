@@ -78,8 +78,7 @@ import Data.Tree (Forest, Tree (..), drawForest)
 import Data.FastWeakBag (FastWeakBag)
 import qualified Data.FastWeakBag as FastWeakBag
 import Data.Reflection
-import Data.Some (Some)
-import qualified Data.Some as Some
+import Data.Some (Some(Some))
 import Data.Type.Coercion
 import Data.Profunctor.Unsafe ((#.), (.#))
 import Data.WeakBag (WeakBag, WeakBagTicket, _weakBag_children)
@@ -587,7 +586,7 @@ eventSubscribedFan !subscribed = EventSubscribed
   { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ fanSubscribedParent subscribed
   , eventSubscribedRetained = toAny subscribed
 #ifdef DEBUG_CYCLES
-  , eventSubscribedGetParents = return [Some.This $ _eventSubscription_subscribed $ fanSubscribedParent subscribed]
+  , eventSubscribedGetParents = return [Some $ _eventSubscription_subscribed $ fanSubscribedParent subscribed]
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = whoCreatedIORef $ fanSubscribedCachedSubscribed subscribed
 #endif
@@ -600,7 +599,7 @@ eventSubscribedSwitch !subscribed = EventSubscribed
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = do
       s <- readIORef $ switchSubscribedCurrentParent subscribed
-      return [Some.This $ _eventSubscription_subscribed s]
+      return [Some $ _eventSubscription_subscribed s]
   , eventSubscribedHasOwnHeightRef = True
   , eventSubscribedWhoCreated = whoCreatedIORef $ switchSubscribedCachedSubscribed subscribed
 #endif
@@ -613,8 +612,8 @@ eventSubscribedCoincidence !subscribed = EventSubscribed
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = do
       innerSubscription <- readIORef $ coincidenceSubscribedInnerParent subscribed
-      let outerParent = Some.This $ _eventSubscription_subscribed $ coincidenceSubscribedOuterParent subscribed
-          innerParents = maybeToList $ fmap Some.This innerSubscription
+      let outerParent = Some $ _eventSubscription_subscribed $ coincidenceSubscribedOuterParent subscribed
+          innerParents = maybeToList $ fmap Some innerSubscription
       return $ outerParent : innerParents
   , eventSubscribedHasOwnHeightRef = True
   , eventSubscribedWhoCreated = whoCreatedIORef $ coincidenceSubscribedCachedSubscribed subscribed
@@ -630,13 +629,13 @@ whoCreatedEventSubscribed = eventSubscribedWhoCreated
 
 walkInvalidHeightParents :: EventSubscribed x -> IO [Some (EventSubscribed x)]
 walkInvalidHeightParents s0 = do
-  subscribers <- flip execStateT mempty $ ($ Some.This s0) $ fix $ \loop (Some.This s) -> do
+  subscribers <- flip execStateT mempty $ ($ Some s0) $ fix $ \loop (Some s) -> do
     h <- liftIO $ readIORef $ eventSubscribedHeightRef s
     when (h == invalidHeight) $ do
       when (eventSubscribedHasOwnHeightRef s) $ liftIO $ writeIORef (eventSubscribedHeightRef s) $! invalidHeightBeingTraversed
-      modify (Some.This s :)
+      modify (Some s :)
       mapM_ loop =<< liftIO (eventSubscribedGetParents s)
-  forM_ subscribers $ \(Some.This s) -> writeIORef (eventSubscribedHeightRef s) $! invalidHeight
+  forM_ subscribers $ \(Some s) -> writeIORef (eventSubscribedHeightRef s) $! invalidHeight
   return subscribers
 #endif
 
@@ -664,7 +663,7 @@ behaviorPull !p = Behavior $ do
     val <- liftIO $ readIORef $ pullValue p
     case val of
       Just subscribed -> do
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some.This (BehaviorSubscribedPull subscribed)) :))
+        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some (BehaviorSubscribedPull subscribed)) :))
         askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (pullSubscribedInvalidators subscribed) (wi:))
         liftIO $ touch $ pullSubscribedOwnInvalidator subscribed
         return $ pullSubscribedValue subscribed
@@ -683,7 +682,7 @@ behaviorPull !p = Behavior $ do
               , pullSubscribedParents = parents
               }
         liftIO $ writeIORef (pullValue p) $ Just subscribed
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some.This (BehaviorSubscribedPull subscribed)) :))
+        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some (BehaviorSubscribedPull subscribed)) :))
         return a
 
 behaviorDyn :: Patch p => Dyn x p -> Behavior x (PatchTarget p)
@@ -694,7 +693,7 @@ readHoldTracked :: Hold x p -> BehaviorM x (PatchTarget p)
 readHoldTracked h = do
   result <- liftIO $ readIORef $ holdValue h
   askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (holdInvalidators h) (wi:))
-  askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some.This (BehaviorSubscribedHold h)) :))
+  askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some (BehaviorSubscribedHold h)) :))
   liftIO $ touch h -- Otherwise, if this gets inlined enough, the hold's parent reference may get collected
   return result
 
@@ -867,7 +866,7 @@ instance HasSpiderTimeline x => Defer (Some Clear) (EventM x) where
 
 {-# INLINE scheduleClear #-}
 scheduleClear :: Defer (Some Clear) m => IORef (Maybe a) -> m ()
-scheduleClear r = defer $ Some.This $ Clear r
+scheduleClear r = defer $ Some $ Clear r
 
 instance HasSpiderTimeline x => Defer (Some IntClear) (EventM x) where
   {-# INLINE getDeferralQueue #-}
@@ -875,7 +874,7 @@ instance HasSpiderTimeline x => Defer (Some IntClear) (EventM x) where
 
 {-# INLINE scheduleIntClear #-}
 scheduleIntClear :: Defer (Some IntClear) m => IORef (IntMap a) -> m ()
-scheduleIntClear r = defer $ Some.This $ IntClear r
+scheduleIntClear r = defer $ Some $ IntClear r
 
 instance HasSpiderTimeline x => Defer (Some RootClear) (EventM x) where
   {-# INLINE getDeferralQueue #-}
@@ -883,7 +882,7 @@ instance HasSpiderTimeline x => Defer (Some RootClear) (EventM x) where
 
 {-# INLINE scheduleRootClear #-}
 scheduleRootClear :: Defer (Some RootClear) m => IORef (DMap k Identity) -> m ()
-scheduleRootClear r = defer $ Some.This $ RootClear r
+scheduleRootClear r = defer $ Some $ RootClear r
 
 instance HasSpiderTimeline x => Defer (SomeResetCoincidence x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
@@ -1872,7 +1871,7 @@ mergeSubscriber m getKey = Subscriber
             else liftIO $ do
 #ifdef DEBUG_CYCLES
             nodesInvolvedInCycle <- walkInvalidHeightParents $ eventSubscribedMerge subscribed
-            stacks <- forM nodesInvolvedInCycle $ \(Some.This es) -> whoCreatedEventSubscribed es
+            stacks <- forM nodesInvolvedInCycle $ \(Some es) -> whoCreatedEventSubscribed es
             let cycleInfo = ":\n" <> drawForest (listsToForest stacks)
 #else
             let cycleInfo = ""
@@ -2116,11 +2115,11 @@ runFrame a = SpiderHost $ do
         return result
   result <- runEventM go
   toClear <- readIORef $ eventEnvClears env
-  forM_ toClear $ \(Some.This (Clear ref)) -> {-# SCC "clear" #-} writeIORef ref Nothing
+  forM_ toClear $ \(Some (Clear ref)) -> {-# SCC "clear" #-} writeIORef ref Nothing
   toClearInt <- readIORef $ eventEnvIntClears env
-  forM_ toClearInt $ \(Some.This (IntClear ref)) -> {-# SCC "intClear" #-} writeIORef ref $! IntMap.empty
+  forM_ toClearInt $ \(Some (IntClear ref)) -> {-# SCC "intClear" #-} writeIORef ref $! IntMap.empty
   toClearRoot <- readIORef $ eventEnvRootClears env
-  forM_ toClearRoot $ \(Some.This (RootClear ref)) -> {-# SCC "rootClear" #-} writeIORef ref $! DMap.empty
+  forM_ toClearRoot $ \(Some (RootClear ref)) -> {-# SCC "rootClear" #-} writeIORef ref $! DMap.empty
   toAssign <- readIORef $ eventEnvAssignments env
   toReconnectRef <- newIORef []
   coincidenceInfos <- readIORef $ eventEnvResetCoincidences env
@@ -2480,7 +2479,7 @@ unsafeNewSpiderTimelineEnv = do
 
 -- | Create a new SpiderTimelineEnv
 newSpiderTimeline :: IO (Some SpiderTimelineEnv)
-newSpiderTimeline = withSpiderTimeline (pure . Some.This)
+newSpiderTimeline = withSpiderTimeline (pure . Some)
 
 data LocalSpiderTimeline (x :: Type) s
 
