@@ -38,7 +38,7 @@ flag fast-weak
   manual: True
 
 flag debug
-  description: Enable ebugging of spider internals
+  description: Enable debugging of spider internals
   default: False
   manual: True
 
