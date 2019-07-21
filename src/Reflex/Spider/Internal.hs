@@ -2535,8 +2535,6 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
     -> DMap k q
     -> R.Event (SpiderTimeline x) (DMap k v)
   mergeG nt = SpiderEvent . mergeG (unSpiderEvent #. nt) . dynamicConst
-  {-# INLINABLE fan #-}
-  fan e = R.EventSelector $ SpiderEvent . select (fan (unSpiderEvent e))
   {-# INLINABLE switch #-}
   switch = SpiderEvent . switch . (coerce :: Behavior x (R.Event (SpiderTimeline x) a) -> Behavior x (Event x a)) . unSpiderBehavior
   {-# INLINABLE coincidence #-}
