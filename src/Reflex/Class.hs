@@ -41,6 +41,7 @@ module Reflex.Class
   , MonadHold (..)
     -- ** 'fan' related types
   , EventSelector (..)
+  , EventSelectorG (..)
   , EventSelectorInt (..)
     -- * Convenience functions
   , constDyn
@@ -64,6 +65,7 @@ module Reflex.Class
   , alignEventWithMaybe
     -- ** Breaking up 'Event's
   , splitE
+  , fan
   , fanEither
   , fanThese
   , fanMap
@@ -260,13 +262,16 @@ class ( MonadHold t (PushM t)
   -- | Merge a collection of events; the resulting 'Event' will only occur if at
   -- least one input event is occurring, and will contain all of the input keys
   -- that are occurring simultaneously
+
+   --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
   mergeG :: GCompare k => (forall a. q a -> Event t (v a))
          -> DMap k q -> Event t (DMap k v)
-   --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
+
   -- | Efficiently fan-out an event to many destinations.  You should save the
-  -- result in a @let@-binding, and then repeatedly 'select' on the result to
+  -- result in a @let@-binding, and then repeatedly 'selectG' on the result to
   -- create child events
-  fan :: GCompare k => Event t (DMap k Identity) -> EventSelector t k
+  fanG :: GCompare k => Event t (DMap k v) -> EventSelectorG t k v
+
   -- | Create an 'Event' that will occur whenever the currently-selected input
   -- 'Event' occurs
   switch :: Behavior t (Event t a) -> Event t a
@@ -309,6 +314,18 @@ class ( MonadHold t (PushM t)
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
+
+-- | Efficiently fan-out an event to many destinations. You should save the
+-- result in a @let@-binding, and then repeatedly 'select' on the result to
+-- create child events
+fan :: forall t k. (Reflex t, GCompare k)
+    => Event t (DMap k Identity) -> EventSelector t k
+    --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
+fan e = EventSelector (fixup (selectG (fanG e) :: k a -> Event t (Identity a)) :: forall a. k a -> Event t a)
+  where
+    fixup :: forall a. (k a -> Event t (Identity a)) -> k a -> Event t a
+    fixup = case eventCoercion Coercion :: Coercion (Event t (Identity a)) (Event t a) of
+              Coercion -> coerce
 
 --TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
 -- | Constructs a single 'Event' out of a map of events. The output event may fire with multiple
@@ -495,6 +512,17 @@ newtype EventSelector t k = EventSelector
     -- (but equivalent to) using 'mapMaybe' to select only the relevant
     -- occurrences of an 'Event'.
     select :: forall a. k a -> Event t a
+  }
+
+newtype EventSelectorG t k v = EventSelectorG
+  { -- | Retrieve the 'Event' for the given key.  The type of the 'Event' is
+    -- determined by the type of the key, so this can be used to fan-out
+    -- 'Event's whose sub-'Event's have different types.
+    --
+    -- Using 'EventSelector's and the 'fan' primitive is far more efficient than
+    -- (but equivalent to) using 'mapMaybe' to select only the relevant
+    -- occurrences of an 'Event'.
+    selectG :: forall a. k a -> Event t (v a)
   }
 
 -- | Efficiently select an 'Event' keyed on 'Int'. This is more efficient than manually

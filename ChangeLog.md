@@ -2,11 +2,15 @@
 
 ## Unreleased
 
+* Generalize `fan` to `fanG` to take a `DMap` with non-`Identity`
+  values.
+
 * Generalize merging functions:
   `merge` to `mergeG`, 
   `mergeIncremental` to `mergeIncrementalG`, 
   `distributeDMapOverDynPure` to `distributeDMapOverDynPureG`,
   `mergeIncrementalWithMove` to `mergeIncrementalWithMoveG`.  
+
 
 ## 0.6.2.0
 
