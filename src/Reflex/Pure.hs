@@ -5,6 +5,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE PolyKinds #-}
+
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
@@ -43,10 +46,11 @@ import Data.MemoTrie
 import Data.Monoid
 import Data.Type.Coercion
 import Reflex.Class
+import Data.Kind (Type)
 
 -- | A completely pure-functional 'Reflex' timeline, identifying moments in time
 -- with the type @/t/@.
-data Pure t
+data Pure (t :: Type)
 
 -- | The 'Enum' instance of @/t/@ must be dense: for all @/x :: t/@, there must not exist
 -- any @/y :: t/@ such that @/'pred' x < y < x/@. The 'HasTrie' instance will be used
@@ -79,17 +83,18 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   -- [UNUSED_CONSTRAINT]: The following type signature for merge will produce a
   -- warning because the GCompare instance is not used; however, removing the
   -- GCompare instance produces a different warning, due to that constraint
-  -- being present in the original class definition
+  -- being present in the original class definition.
 
-  --merge :: GCompare k => DMap k (Event (Pure t)) -> Event (Pure t) (DMap k Identity)
-  merge events = Event $ memo $ \t ->
-    let currentOccurrences = DMap.mapMaybeWithKey (\_ (Event a) -> Identity <$> a t) events
+  --mergeG :: GCompare k => (forall a. q a -> Event (Pure t) (v a))
+  --   -> DMap k q -> Event (Pure t) (DMap k v)
+  mergeG nt events = Event $ memo $ \t ->
+    let currentOccurrences = DMap.mapMaybeWithKey (\_ q -> case nt q of Event a -> a t) events
     in if DMap.null currentOccurrences
        then Nothing
        else Just currentOccurrences
 
-  fan :: GCompare k => Event (Pure t) (DMap k Identity) -> EventSelector (Pure t) k
-  fan e = EventSelector $ \k -> Event $ \t -> unEvent e t >>= fmap runIdentity . DMap.lookup k
+  -- fanG :: GCompare k => Event (Pure t) (DMap k v) -> EventSelectorG (Pure t) k v
+  fanG e = EventSelectorG $ \k -> Event $ \t -> unEvent e t >>= DMap.lookup k
 
   switch :: Behavior (Pure t) (Event (Pure t) a) -> Event (Pure t) a
   switch b = Event $ memo $ \t -> unEvent (unBehavior b t) t
@@ -112,8 +117,8 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   --a) -> Incremental (Pure t) p a
   unsafeBuildIncremental readV0 p = Incremental $ \t -> (readV0 t, unEvent p t)
 
-  mergeIncremental = mergeIncrementalImpl
-  mergeIncrementalWithMove = mergeIncrementalImpl
+  mergeIncrementalG = mergeIncrementalImpl
+  mergeIncrementalWithMoveG = mergeIncrementalImpl
 
   currentIncremental i = Behavior $ \t -> fst $ unIncremental i t
 
@@ -133,9 +138,11 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
 
   mergeIntIncremental = mergeIntIncrementalImpl
 
-mergeIncrementalImpl :: (PatchTarget p ~ DMap k (Event (Pure t)), GCompare k) => Incremental (Pure t) p -> Event (Pure t) (DMap k Identity)
-mergeIncrementalImpl i = Event $ \t ->
-  let results = DMap.mapMaybeWithKey (\_ (Event e) -> Identity <$> e t) $ fst $ unIncremental i t
+mergeIncrementalImpl :: (PatchTarget p ~ DMap k q, GCompare k)
+  => (forall a. q a -> Event (Pure t) (v a))
+  -> Incremental (Pure t) p -> Event (Pure t) (DMap k v)
+mergeIncrementalImpl nt i = Event $ \t ->
+  let results = DMap.mapMaybeWithKey (\_ q -> case nt q of Event e -> e t) $ fst $ unIncremental i t
   in if DMap.null results
      then Nothing
      else Just results
