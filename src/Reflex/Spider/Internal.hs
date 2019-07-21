@@ -198,12 +198,6 @@ nextNodeIdRef = unsafePerformIO $ newIORef 1
 
 newNodeId :: IO Int
 newNodeId = atomicModifyIORef' nextNodeIdRef $ \n -> (succ n, n)
-
-{-# NOINLINE unsafeNodeId #-}
-unsafeNodeId :: a -> Int
-unsafeNodeId a = unsafePerformIO $ do
-  touch a
-  newNodeId
 #endif
 
 --------------------------------------------------------------------------------
@@ -307,9 +301,10 @@ cacheEvent e =
 #else
   Event $
 #endif
-    let mSubscribedRef :: IORef (FastWeak (CacheSubscribed x a))
-        !mSubscribedRef = unsafeNewIORef e emptyFastWeak
-    in \sub -> {-# SCC "cacheEvent" #-} do
+  unsafePerformIO $ do
+    mSubscribedRef :: IORef (FastWeak (CacheSubscribed x a))
+        <- newIORef emptyFastWeak
+    pure $ \sub -> {-# SCC "cacheEvent" #-} do
 #ifdef DEBUG_TRACE_EVENTS
           unless (BS8.null callSite) $ liftIO $ BS8.hPutStrLn stderr callSite
 #endif
@@ -1177,17 +1172,11 @@ buildDynamic readV0 v' = do
   return d
 
 unsafeBuildDynamic :: BehaviorM x (PatchTarget p) -> Event x p -> Dyn x p
-unsafeBuildDynamic readV0 v' = Dyn $ unsafeNewIORef x $ UnsafeDyn x
-  where x = (readV0, v')
+unsafeBuildDynamic readV0 v' =
+  Dyn $ unsafePerformIO $ newIORef $ UnsafeDyn (readV0, v')
 
 -- ResultM can read behaviors and events
 type ResultM = EventM
-
-{-# NOINLINE unsafeNewIORef #-}
-unsafeNewIORef :: a -> b -> IORef b
-unsafeNewIORef a b = unsafePerformIO $ do
-  touch a
-  newIORef b
 
 instance HasSpiderTimeline x => Functor (Event x) where
   fmap f = push $ return . Just . f
@@ -1201,26 +1190,35 @@ push f e = cacheEvent (pushCheap f e)
 
 {-# INLINABLE pull #-}
 pull :: BehaviorM x a -> Behavior x a
-pull a = behaviorPull $ Pull
-  { pullCompute = a
-  , pullValue = unsafeNewIORef a Nothing
+pull a = unsafePerformIO $ do
+  ref <- newIORef Nothing
 #ifdef DEBUG_NODEIDS
-  , pullNodeId = unsafeNodeId a
+  nid <- newNodeId
 #endif
-  }
+  pure $ behaviorPull $ Pull
+    { pullCompute = a
+    , pullValue = ref
+#ifdef DEBUG_NODEIDS
+    , pullNodeId = nid
+#endif
+    }
 
 {-# INLINABLE switch #-}
 switch :: HasSpiderTimeline x => Behavior x (Event x a) -> Event x a
-switch a = eventSwitch $ Switch
-  { switchParent = a
-  , switchSubscribed = unsafeNewIORef a Nothing
-  }
+switch a = unsafePerformIO $ do
+  ref <- newIORef Nothing
+  pure $ eventSwitch $ Switch
+    { switchParent = a
+    , switchSubscribed = ref
+    }
 
 coincidence :: HasSpiderTimeline x => Event x (Event x a) -> Event x a
-coincidence a = eventCoincidence $ Coincidence
-  { coincidenceParent = a
-  , coincidenceSubscribed = unsafeNewIORef a Nothing
-  }
+coincidence a = unsafePerformIO $ do
+  ref <- newIORef Nothing
+  pure $ eventCoincidence $ Coincidence
+    { coincidenceParent = a
+    , coincidenceSubscribed = ref
+    }
 
 -- Propagate the given event occurrence; before cleaning up, run the given action, which may read the state of events and behaviors
 run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> SpiderHost x b
@@ -1424,6 +1422,9 @@ getRootSubscribed k r sub = do
       when debugPropagate $ putStrLn $ "getRootSubscribed: calling rootInit"
       uninit <- rootInit r k $ RootTrigger (subs, rootOccurrence r, k)
       writeIORef uninitRef $! uninit
+#ifdef DEBUG_NODEIDS
+      nid <- newNodeId
+#endif
       let !subscribed = RootSubscribed
             { rootSubscribedKey = k
             , rootSubscribedCachedSubscribed = cached
@@ -1432,7 +1433,7 @@ getRootSubscribed k r sub = do
             , rootSubscribedUninit = uninit
             , rootSubscribedWeakSelf = weakSelf
 #ifdef DEBUG_NODEIDS
-            , rootSubscribedNodeId = unsafeNodeId (k, r, subs)
+            , rootSubscribedNodeId = nid
 #endif
             }
           -- If we die at the same moment that all our children die, they will
@@ -1481,16 +1482,10 @@ newFanInt = do
     , _fanInt_occRef = occRef
     }
 
-{-# NOINLINE unsafeNewFanInt #-}
-unsafeNewFanInt :: b -> FanInt x a
-unsafeNewFanInt b = unsafePerformIO $ do
-  touch b
-  newFanInt
-
 fanInt :: HasSpiderTimeline x => Event x (IntMap a) -> EventSelectorInt x a
-fanInt p =
-  let self = unsafeNewFanInt p
-  in EventSelectorInt $ \k -> Event $ \sub -> do
+fanInt p = unsafePerformIO $ do
+  self <- newFanInt
+  pure $ EventSelectorInt $ \k -> Event $ \sub -> do
     isEmpty <- liftIO $ FastMutableIntMap.isEmpty (_fanInt_subscribers self)
     when isEmpty $ do -- This is the first subscriber, so we need to subscribe to our input
       (subscription, parentOcc) <- subscribeAndRead p $ Subscriber
@@ -1544,13 +1539,16 @@ getFanSubscribed k f sub = do
       subscribersRef <- liftIO $ newIORef $ error "getFanSubscribed: subscribersRef not yet initialized"
       occRef <- liftIO $ newIORef parentOcc
       when (isJust parentOcc) $ scheduleClear occRef
+#ifdef DEBUG_NODEIDS
+      nid <- liftIO newNodeId
+#endif
       let subscribed = FanSubscribed
             { fanSubscribedCachedSubscribed = fanSubscribed f
             , fanSubscribedOccurrence = occRef
             , fanSubscribedParent = subscription
             , fanSubscribedSubscribers = subscribersRef
 #ifdef DEBUG_NODEIDS
-            , fanSubscribedNodeId = unsafeNodeId f
+            , fanSubscribedNodeId = nid
 #endif
             }
       let !self = (k, subscribed)
@@ -1610,6 +1608,9 @@ getSwitchSubscribed s sub = do
       when (isJust parentOcc) $ scheduleClear occRef
       weakSelf <- liftIO $ newIORef $ error "getSwitchSubscribed: weakSelf not yet initialized"
       (subs, slnForSub) <- liftIO $ WeakBag.singleton sub weakSelf cleanupSwitchSubscribed
+#ifdef DEBUG_NODEIDS
+      nid <- liftIO newNodeId
+#endif
       let !subscribed = SwitchSubscribed
             { switchSubscribedCachedSubscribed = switchSubscribed s
             , switchSubscribedOccurrence = occRef
@@ -1622,7 +1623,7 @@ getSwitchSubscribed s sub = do
             , switchSubscribedCurrentParent = subscriptionRef
             , switchSubscribedWeakSelf = weakSelf
 #ifdef DEBUG_NODEIDS
-            , switchSubscribedNodeId = unsafeNodeId s
+            , switchSubscribedNodeId = nid
 #endif
             }
       liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "switchSubscribedWeakSelf"
@@ -1667,6 +1668,9 @@ getCoincidenceSubscribed c sub = do
       scheduleClear innerSubdRef
       weakSelf <- liftIO $ newIORef $ error "getCoincidenceSubscribed: weakSelf not yet implemented"
       (subs, slnForSub) <- liftIO $ WeakBag.singleton sub weakSelf cleanupCoincidenceSubscribed
+#ifdef DEBUG_NODEIDS
+      nid <- liftIO newNodeId
+#endif
       let subscribed = CoincidenceSubscribed
             { coincidenceSubscribedCachedSubscribed = coincidenceSubscribed c
             , coincidenceSubscribedOccurrence = occRef
@@ -1677,7 +1681,7 @@ getCoincidenceSubscribed c sub = do
             , coincidenceSubscribedInnerParent = innerSubdRef
             , coincidenceSubscribedWeakSelf = weakSelf
 #ifdef DEBUG_NODEIDS
-            , coincidenceSubscribedNodeId = unsafeNodeId c
+            , coincidenceSubscribedNodeId = nid
 #endif
             }
       liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "CoincidenceSubscribed"
@@ -2051,12 +2055,13 @@ newtype EventSelector x k = EventSelector { select :: forall a. k a -> Event x a
 newtype EventSelectorG x k v = EventSelectorG { selectG :: forall a. k a -> Event x (v a) }
 
 fanG :: (HasSpiderTimeline x, GCompare k) => Event x (DMap k v) -> EventSelectorG x k v
-fanG e =
+fanG e = unsafePerformIO $ do
+  ref <- newIORef Nothing
   let f = Fan
         { fanParent = e
-        , fanSubscribed = unsafeNewIORef e Nothing
+        , fanSubscribed = ref
         }
-  in EventSelectorG $ \k -> eventFan k f
+  pure $ EventSelectorG $ \k -> eventFan k f
 
 runHoldInits :: HasSpiderTimeline x => IORef [SomeHoldInit x] -> IORef [SomeDynInit x] -> IORef [SomeMergeInit x] -> EventM x ()
 runHoldInits holdInitRef dynInitRef mergeInitRef = do
