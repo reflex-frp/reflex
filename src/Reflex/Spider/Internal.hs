@@ -95,7 +95,6 @@ import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
 import qualified Data.ByteString.Char8 as BS8
 import System.IO (stderr)
 #endif
-import Data.Kind (Type)
 
 #ifdef DEBUG_TRACE_EVENTS
 
