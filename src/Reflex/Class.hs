@@ -17,6 +17,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE Trustworthy #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
@@ -47,6 +48,9 @@ module Reflex.Class
   , pushAlways
     -- ** Combining 'Event's
   , leftmost
+  , merge
+  , mergeIncremental
+  , mergeIncrementalWithMove
   , mergeMap
   , mergeIntMap
   , mergeMapIncremental
@@ -86,6 +90,7 @@ module Reflex.Class
   , gate
     -- ** Combining 'Dynamic's
   , distributeDMapOverDynPure
+  , distributeDMapOverDynPureG
   , distributeListOverDyn
   , distributeListOverDynWith
   , zipDyn
@@ -257,7 +262,10 @@ class ( MonadHold t (PushM t)
   -- | Merge a collection of events; the resulting 'Event' will only occur if at
   -- least one input event is occurring, and will contain all of the input keys
   -- that are occurring simultaneously
-  merge :: GCompare k => DMap k (Event t) -> Event t (DMap k Identity) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
+
+   --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
+  mergeG :: GCompare k => (forall a. q a -> Event t (v a))
+         -> DMap k q -> Event t (DMap k v)
 
   -- | Efficiently fan-out an event to many destinations.  You should save the
   -- result in a @let@-binding, and then repeatedly 'selectG' on the result to
@@ -281,9 +289,14 @@ class ( MonadHold t (PushM t)
   -- that value.
   unsafeBuildIncremental :: Patch p => PullM t (PatchTarget p) -> Event t p -> Incremental t p
   -- | Create a merge whose parents can change over time
-  mergeIncremental :: GCompare k => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
+  mergeIncrementalG :: GCompare k
+    => (forall a. q a -> Event t (v a))
+    -> Incremental t (PatchDMap k q)
+    -> Event t (DMap k v)
   -- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental
-  mergeIncrementalWithMove :: GCompare k => Incremental t (PatchDMapWithMove k (Event t)) -> Event t (DMap k Identity)
+  mergeIncrementalWithMoveG :: GCompare k
+    => (forall a. q a -> Event t (v a))
+    -> Incremental t (PatchDMapWithMove k q) -> Event t (DMap k v)
   -- | Extract the 'Behavior' component of an 'Incremental'
   currentIncremental :: Patch p => Incremental t p -> Behavior t (PatchTarget p)
   -- | Extract the 'Event' component of an 'Incremental'
@@ -1106,12 +1119,21 @@ instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
 -- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same
 -- through the use of multiple uses of 'zipDynWith' or 'Applicative' operators.
 distributeDMapOverDynPure :: forall t k. (Reflex t, GCompare k) => DMap k (Dynamic t) -> Dynamic t (DMap k Identity)
-distributeDMapOverDynPure dm = case DMap.toList dm of
+distributeDMapOverDynPure = distributeDMapOverDynPureG coerceDynamic
+
+-- | This function converts a 'DMap' whose elements are 'Dynamic's into a
+-- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same
+-- through the use of multiple uses of 'zipDynWith' or 'Applicative' operators.
+distributeDMapOverDynPureG
+  :: forall t k q v. (Reflex t, GCompare k)
+  => (forall a. q a -> Dynamic t (v a))
+  -> DMap k q -> Dynamic t (DMap k v)
+distributeDMapOverDynPureG nt dm = case DMap.toList dm of
   [] -> constDyn DMap.empty
-  [k :=> v] -> fmap (DMap.singleton k . Identity) v
+  [k :=> v] -> DMap.singleton k <$> nt v
   _ ->
-    let getInitial = DMap.traverseWithKey (\_ -> fmap Identity . sample . current) dm
-        edmPre = merge $ DMap.map updated dm
+    let getInitial = DMap.traverseWithKey (\_ -> sample . current . nt) dm
+        edmPre = mergeG getCompose $ DMap.map (Compose . updated . nt) dm
         result = unsafeBuildDynamic getInitial $ flip pushAlways edmPre $ \news -> do
           olds <- sample $ current result
           return $ DMap.unionWithKey (\_ _ new -> new) olds news
@@ -1583,6 +1605,23 @@ fmapCheap f = pushCheap $ return . Just . f
 {-# INLINE tagCheap #-}
 tagCheap :: Reflex t => Behavior t b -> Event t a -> Event t b
 tagCheap b = pushAlwaysCheap $ \_ -> sample b
+
+-- | Merge a collection of events; the resulting 'Event' will only occur if at
+-- least one input event is occurring, and will contain all of the input keys
+-- that are occurring simultaneously
+merge :: (Reflex t, GCompare k) => DMap k (Event t) -> Event t (DMap k Identity)
+merge = mergeG coerceEvent
+{-# INLINE merge #-}
+
+-- | Create a merge whose parents can change over time
+mergeIncremental :: (Reflex t, GCompare k)
+  => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
+mergeIncremental = mergeIncrementalG coerceEvent
+
+-- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental
+mergeIncrementalWithMove :: (Reflex t, GCompare k)
+  => Incremental t (PatchDMapWithMove k (Event t)) -> Event t (DMap k Identity)
+mergeIncrementalWithMove = mergeIncrementalWithMoveG coerceEvent
 
 -- | A "cheap" version of 'mergeWithCheap'. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithCheap #-}
