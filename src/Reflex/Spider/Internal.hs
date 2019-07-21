@@ -108,9 +108,6 @@ class HasNodeId a where
 instance HasNodeId (Hold x p) where
   getNodeId = holdNodeId
 
--- instance HasNodeId (PushSubscribed x a b) where
---   getNodeId = pushSubscribedNodeId
-
 instance HasNodeId (SwitchSubscribed x a) where
   getNodeId = switchSubscribedNodeId
 
