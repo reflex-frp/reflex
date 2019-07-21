@@ -8,6 +8,8 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
 -- |
 -- Module:
 --   Reflex.Profiled
@@ -16,7 +18,6 @@
 --   profiling/cost-center information.
 module Reflex.Profiled where
 
-import Control.Lens hiding (children)
 import Control.Monad
 import Control.Monad.Exception
 import Control.Monad.Fix
@@ -33,6 +34,7 @@ import Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import Data.Monoid ((<>))
 import Data.Ord
+import Data.Profunctor.Unsafe ((#.))
 import qualified Data.Semigroup as S
 import Data.Type.Coercion
 import Foreign.Ptr
@@ -133,8 +135,10 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   push f (Event_Profiled e) = coerce $ push (coerce f) $ profileEvent e -- Profile before rather than after; this way fanout won't count against us
   pushCheap f (Event_Profiled e) = coerce $ pushCheap (coerce f) $ profileEvent e
   pull = Behavior_Profiled . pull . coerce
-  merge :: forall k. GCompare k => DMap k (Event (ProfiledTimeline t)) -> Event (ProfiledTimeline t) (DMap k Identity)
-  merge = Event_Profiled . merge . (unsafeCoerce :: DMap k (Event (ProfiledTimeline t)) -> DMap k (Event t))
+  mergeG :: forall (k :: z -> *) q v. GCompare k
+    => (forall a. q a -> Event (ProfiledTimeline t) (v a))
+    -> DMap k q -> Event (ProfiledTimeline t) (DMap k v)
+  mergeG nt = Event_Profiled #. mergeG (coerce nt)
   fan (Event_Profiled e) = EventSelector $ coerce $ select (fan $ profileEvent e)
   switch (Behavior_Profiled b) = coerce $ profileEvent $ switch (coerceBehavior b)
   coincidence (Event_Profiled e) = coerce $ profileEvent $ coincidence (coerceEvent e)
@@ -142,8 +146,8 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   updated (Dynamic_Profiled d) = coerce $ profileEvent $ updated d
   unsafeBuildDynamic (ProfiledM a0) (Event_Profiled a') = coerce $ unsafeBuildDynamic a0 a'
   unsafeBuildIncremental (ProfiledM a0) (Event_Profiled a') = coerce $ unsafeBuildIncremental a0 a'
-  mergeIncremental = Event_Profiled . mergeIncremental . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchDMap k (Event (ProfiledTimeline t))) -> Incremental t (PatchDMap k (Event t)))
-  mergeIncrementalWithMove = Event_Profiled . mergeIncrementalWithMove . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchDMapWithMove k (Event (ProfiledTimeline t))) -> Incremental t (PatchDMapWithMove k (Event t)))
+  mergeIncrementalG nt = (Event_Profiled . coerce) #. mergeIncrementalG nt
+  mergeIncrementalWithMoveG nt = (Event_Profiled . coerce) #. mergeIncrementalWithMoveG nt
   currentIncremental (Incremental_Profiled i) = coerce $ currentIncremental i
   updatedIncremental (Incremental_Profiled i) = coerce $ profileEvent $ updatedIncremental i
   incrementalToDynamic (Incremental_Profiled i) = coerce $ incrementalToDynamic i
