@@ -5,6 +5,7 @@ Contributions and issue reports are encouraged and appreciated!
 - [Opening Issues](#opening-issues)
 - [Submitting Changes](#submitting-changes)
   - [Guidelines for Commit Messages](#guidelines-for-commit-messages)
+  - [Guidelines for Pull Requests](#guidelines-for-pull-requests)
   - [Code Quality](#code-quality)
   - [Documentation](#documentation)
 
