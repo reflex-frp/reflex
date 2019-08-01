@@ -17,6 +17,7 @@ import Control.Monad.Reader (ReaderT, lift)
 import Reflex.Class (Dynamic)
 
 {-# DEPRECATED MonadDynamicWriter "Use 'DynamicWriter' instead" #-}
+-- | Type synonym for 'DynamicWriter'
 type MonadDynamicWriter = DynamicWriter
 
 -- | 'MonadDynamicWriter' efficiently collects 'Dynamic' values using 'tellDyn'
