@@ -1,6 +1,6 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.6.2.1
 
 * Generalize `fan` to `fanG` to take a `DMap` with non-`Identity`
   values.
