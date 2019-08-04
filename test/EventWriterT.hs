@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -12,6 +13,10 @@ import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc
 import qualified Data.Map as M
 import Data.These
+
+#if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
+import Data.These.Lens
+#endif
 
 import Reflex
 import Reflex.EventWriter.Base
