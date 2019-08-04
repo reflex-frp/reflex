@@ -677,11 +677,7 @@ instance (Num a, Reflex t) => Num (Dynamic t a) where
 instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
   a <> b = pull $ liftM2 (<>) (sample a) (sample b)
   sconcat = pull . fmap sconcat . mapM sample
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 -- | Alias for 'mapMaybe'
 fmapMaybe :: Filterable f => (a -> Maybe b) -> f a -> f b
@@ -879,11 +875,7 @@ traceEventWith f = push $ \x -> trace (f x) $ return $ Just x
 instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
   (<>) = alignWith (mergeThese (<>))
   sconcat = fmap sconcat . mergeList . toList
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 instance (Semigroup a, Reflex t) => Monoid (Event t a) where
   mempty = never
@@ -1116,11 +1108,7 @@ zipDynWith f da db =
 
 instance (Reflex t, Semigroup a) => Semigroup (Dynamic t a) where
   (<>) = zipDynWith (<>)
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
   mconcat = distributeListOverDynWith mconcat
