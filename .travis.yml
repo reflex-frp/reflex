@@ -7,7 +7,7 @@
 # version: 0.3.20190804.2
 #
 language: c
-dist: xenial
+dist: bionic
 sudo: required
 git:
   # whether to recursively clone submodules
@@ -27,6 +27,8 @@ before_cache:
   - rm -rfv $CABALHOME/packages/head.hackage
 matrix:
   include:
+    - compiler: ghcjs-8.4
+      addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghcjs-8.4","cabal-install-3.0"]}}
     - compiler: ghc-8.6.5
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.6.5","cabal-install-2.4"]}}
     - compiler: ghc-8.4.4
@@ -36,8 +38,25 @@ matrix:
     - compiler: ghc-8.0.2
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.0.2","cabal-install-2.4"]}}
 before_install:
+  - |
+    if [ "$TRAVIS_OS_NAME" = "linux" ]; then
+    sudo add-apt-repository -y ppa:hvr/ghc;
+    sudo add-apt-repository -y ppa:hvr/ghcjs;
+    sudo apt-get update;
+    sudo apt-get install $CC cabal-install-3.0;
+    fi
   - HC=$(echo "/opt/$CC/bin/ghc" | sed 's/-/\//')
   - WITHCOMPILER="-w $HC"
+  - |
+    if echo $CC | grep -q ghcjs; then
+        GHCJS=true
+        HC=${HC}js
+        WITHCOMPILER="--ghcjs ${WITHCOMPILER}js"
+    else
+        GHCJS=false;
+    fi
+  - if $GHCJS ; then sudo apt-get install -y ghc-8.6.5 ; fi
+  - if $GHCJS ; then PATH="/opt/ghc/8.6.5/bin:$PATH" ; fi
   - HCPKG="$HC-pkg"
   - unset CC
   - CABAL=/opt/ghc/bin/cabal
@@ -69,6 +88,8 @@ before_install:
 install:
   - ${CABAL} --version
   - echo "$(${HC} --version) [$(${HC} --print-project-git-commit-id 2> /dev/null || echo '?')]"
+  - node --version
+  - echo $GHCJS
   - TEST=--enable-tests
   - BENCH=--enable-benchmarks
   - HEADHACKAGE=false
@@ -92,18 +113,13 @@ install:
   - cat $CABALHOME/config
   - rm -fv cabal.project cabal.project.local cabal.project.freeze
   - travis_retry ${CABAL} v2-update -v
+  - if $GHCJS ; then ${CABAL} v2-install -w ghc-8.6.5 happy ; fi
   # Generate cabal.project
   - rm -rf cabal.project cabal.project.local cabal.project.freeze
   - touch cabal.project
   - |
     echo "packages: ." >> cabal.project
   - |
-    echo "source-repository-package"                                        >> cabal.project
-    echo "  type:     git"                                                  >> cabal.project
-    echo "  location: https://github.com/mokus0/dependent-sum.git"          >> cabal.project
-    echo "  tag:      fe726cfd50997792c691d3009a3ee1ba38c435a5"             >> cabal.project
-    echo "  subdir:   dependent-sum"                                        >> cabal.project
-    echo ""                                                                 >> cabal.project
     echo "source-repository-package"                                        >> cabal.project
     echo "  type:     git"                                                  >> cabal.project
     echo "  location: https://github.com/obsidiansystems/dependent-map.git" >> cabal.project
@@ -138,12 +154,6 @@ script:
   - |
     echo "source-repository-package"                                        >> cabal.project
     echo "  type:     git"                                                  >> cabal.project
-    echo "  location: https://github.com/mokus0/dependent-sum.git"          >> cabal.project
-    echo "  tag:      fe726cfd50997792c691d3009a3ee1ba38c435a5"             >> cabal.project
-    echo "  subdir:   dependent-sum"                                        >> cabal.project
-    echo ""                                                                 >> cabal.project
-    echo "source-repository-package"                                        >> cabal.project
-    echo "  type:     git"                                                  >> cabal.project
     echo "  location: https://github.com/obsidiansystems/dependent-map.git" >> cabal.project
     echo "  tag:      a9a438b1fd974891e4ed57cbd43e305cf7c759a9"             >> cabal.project
     echo ""                                                                 >> cabal.project
@@ -161,11 +171,11 @@ script:
   # build & run tests, build benchmarks
   - ${CABAL} v2-build $WITHCOMPILER ${TEST} ${BENCH} all | color_cabal_output
   # Testing...
-  - ${CABAL} v2-test $WITHCOMPILER ${TEST} ${BENCH} all | color_cabal_output
+  - if ! $GHCJS && [ $HCNUMVER -ge 80000 ] && [ $HCNUMVER -lt 80606 ] ; then ${CABAL} v2-test $WITHCOMPILER ${TEST} ${BENCH} all | color_cabal_output ; fi
   # cabal check...
   - (cd ${PKGDIR_reflex} && ${CABAL} -vnormal check)
   # haddock...
-  - ${CABAL} v2-haddock $WITHCOMPILER ${TEST} ${BENCH} all | color_cabal_output
+  - if ! $GHCJS && [ $HCNUMVER -ge 80000 ] && [ $HCNUMVER -lt 80606 ] ; then ${CABAL} v2-haddock $WITHCOMPILER ${TEST} ${BENCH} all | color_cabal_output ; fi
   # Building without installed constraints for packages in global-db...
   - rm -f cabal.project.local
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks all | color_cabal_output
