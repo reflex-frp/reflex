@@ -108,6 +108,11 @@ install:
     echo "  type:     git"                                                  >> cabal.project
     echo "  location: https://github.com/obsidiansystems/dependent-map.git" >> cabal.project
     echo "  tag:      a9a438b1fd974891e4ed57cbd43e305cf7c759a9"             >> cabal.project
+    echo ""                                                                 >> cabal.project
+    echo "source-repository-package"                                        >> cabal.project
+    echo "  type:     git"                                                  >> cabal.project
+    echo "  location: https://github.com/phadej/monoidal-containers.git"    >> cabal.project
+    echo "  tag:      f8860ba08385f77128efb45fb9193e6d287e893f"             >> cabal.project
   - "for pkg in $($HCPKG list --simple-output); do echo $pkg | sed 's/-[^-]*$//' | (grep -vE -- '^(reflex)$' || true) | sed 's/^/constraints: /' | sed 's/$/ installed/' >> cabal.project.local; done"
   - cat cabal.project || true
   - cat cabal.project.local || true
@@ -141,6 +146,11 @@ script:
     echo "  type:     git"                                                  >> cabal.project
     echo "  location: https://github.com/obsidiansystems/dependent-map.git" >> cabal.project
     echo "  tag:      a9a438b1fd974891e4ed57cbd43e305cf7c759a9"             >> cabal.project
+    echo ""                                                                 >> cabal.project
+    echo "source-repository-package"                                        >> cabal.project
+    echo "  type:     git"                                                  >> cabal.project
+    echo "  location: https://github.com/phadej/monoidal-containers.git"    >> cabal.project
+    echo "  tag:      f8860ba08385f77128efb45fb9193e6d287e893f"             >> cabal.project
   - "for pkg in $($HCPKG list --simple-output); do echo $pkg | sed 's/-[^-]*$//' | (grep -vE -- '^(reflex)$' || true) | sed 's/^/constraints: /' | sed 's/$/ installed/' >> cabal.project.local; done"
   - cat cabal.project || true
   - cat cabal.project.local || true

@@ -173,6 +173,14 @@ module Reflex.Class
   , slowHeadE
   ) where
 
+#if defined(MIN_VERSION_semialign)
+import Prelude hiding (zip, zipWith)
+
+#if MIN_VERSION_these(0,8,0)
+import Data.These.Combinators (justThese)
+#endif
+#endif
+
 import Control.Applicative
 import Control.Monad.Identity
 import Control.Monad.Reader
@@ -1063,6 +1071,10 @@ instance Reflex t => Align (Event t) where
 instance Reflex t => Semialign (Event t) where
 #endif
   align = alignEventWithMaybe Just
+  
+#if defined(MIN_VERSION_semialign)
+  zip x y = mapMaybe justThese $ align x y
+#endif
 
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and

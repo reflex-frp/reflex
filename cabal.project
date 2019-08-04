@@ -12,3 +12,8 @@ source-repository-package
   type:     git
   location: https://github.com/obsidiansystems/dependent-map.git
   tag:      a9a438b1fd974891e4ed57cbd43e305cf7c759a9
+
+source-repository-package
+  type:     git
+  location: https://github.com/phadej/monoidal-containers.git
+  tag:      f8860ba08385f77128efb45fb9193e6d287e893f

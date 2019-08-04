@@ -68,6 +68,12 @@ import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
 
+#if defined(MIN_VERSION_semialign)
+#if MIN_VERSION_these(0,8,0)
+import Data.These.Combinators (justThese)
+#endif
+#endif
+
 #ifdef DEBUG_CYCLES
 import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
@@ -1138,6 +1144,10 @@ instance HasSpiderTimeline x => Semialign (Event x) where
 #endif
   align ea eb = mapMaybe dmapToThese $ mergeG coerce $ dynamicConst $
      DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
+
+#if defined(MIN_VERSION_semialign)
+  zip x y = mapMaybe justThese $ align x y
+#endif
 
 data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
                  | BuildDyn  !(EventM x (PatchTarget p), Event x p)
