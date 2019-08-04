@@ -1,0 +1,14 @@
+packages: .
+
+source-repository-package
+  type:     git
+  location: https://github.com/mokus0/dependent-sum.git
+  tag:      fe726cfd50997792c691d3009a3ee1ba38c435a5
+  subdir:   dependent-sum
+
+-- why 0.3 is not in mokus0 tree?
+-- this is no-tag-classes branch from obsidiansystems fork
+source-repository-package
+  type:     git
+  location: https://github.com/obsidiansystems/dependent-map.git
+  tag:      a9a438b1fd974891e4ed57cbd43e305cf7c759a9

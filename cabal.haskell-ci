@@ -1,0 +1,2 @@
+constraint-set no-th
+  constraints: reflex -use-template-haskell

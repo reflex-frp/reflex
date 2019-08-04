@@ -17,6 +17,9 @@ extra-source-files:
   Quickref.md
   ChangeLog.md
 
+tested-with:
+  GHC  ==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5
+
 flag use-reflex-optimizer
   description: Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.
   default: False
