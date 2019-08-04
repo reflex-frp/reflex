@@ -113,7 +113,7 @@ install:
   - cat $CABALHOME/config
   - rm -fv cabal.project cabal.project.local cabal.project.freeze
   - travis_retry ${CABAL} v2-update -v
-  - if $GHCJS ; then ${CABAL} v2-install -w ghc-8.6.5 happy ; fi
+  - if $GHCJS ; then (cd /tmp && ${CABAL} v2-install -w ghc-8.6.5 happy) ; fi
   # Generate cabal.project
   - rm -rf cabal.project cabal.project.local cabal.project.freeze
   - touch cabal.project
