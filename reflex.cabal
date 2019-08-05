@@ -64,6 +64,7 @@ library
     mtl >= 2.1 && < 2.3,
     prim-uniq >= 0.1.0.1 && < 0.2,
     primitive >= 0.5 && < 0.8,
+    profunctors,
     random == 1.1.*,
     ref-tf == 0.4.*,
     reflection == 2.1.*,
@@ -84,6 +85,7 @@ library
                        monoidal-containers == 0.5.0.0
 
   exposed-modules:
+    Control.Monad.ReaderIO
     Data.AppendMap,
     Data.FastMutableIntMap,
     Data.FastWeakBag,

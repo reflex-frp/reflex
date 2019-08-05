@@ -36,6 +36,7 @@ module Reflex.Class
   , coerceBehavior
   , coerceEvent
   , coerceDynamic
+  , coerceIncremental
   , MonadSample (..)
   , MonadHold (..)
     -- ** 'fan' related types
@@ -319,6 +320,10 @@ class ( MonadHold t (PushM t)
   -- | Construct a 'Coercion' for a 'Dynamic' given an 'Coercion' for its
   -- occurrence type
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
+  -- | Construct a 'Coercion' for an 'Incremental' given 'Coercion's for its
+  -- patch target and patch types.
+  incrementalCoercion
+    :: Coercion (PatchTarget a) (PatchTarget b) -> Coercion a b -> Coercion (Incremental t a) (Incremental t b)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
 
@@ -351,6 +356,12 @@ coerceEvent = coerceWith $ eventCoercion Coercion
 -- | Coerce a 'Dynamic' between representationally-equivalent value types
 coerceDynamic :: (Reflex t, Coercible a b) => Dynamic t a -> Dynamic t b
 coerceDynamic = coerceWith $ dynamicCoercion Coercion
+
+-- | Coerce an 'Incremental' between representationally-equivalent value types
+coerceIncremental
+  :: (Reflex t, Coercible a b, Coercible (PatchTarget a) (PatchTarget b))
+  => Incremental t a -> Incremental t b
+coerceIncremental = coerceWith $ incrementalCoercion Coercion Coercion
 
 -- | Construct a 'Dynamic' from a 'Behavior' and an 'Event'.  The 'Behavior'
 -- __must__ change when and only when the 'Event' fires, such that the
