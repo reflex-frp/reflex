@@ -2,6 +2,7 @@ distribution: bionic
 
 -- https://github.com/haskell/cabal/issues/6106
 install-dependencies: False
+benchmarks: False
 
 constraint-set no-th
   constraints: reflex -use-template-haskell
