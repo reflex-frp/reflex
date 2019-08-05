@@ -219,7 +219,7 @@ test-suite hlint
                , directory
                , filepath
                , filemanip
-               , hlint >= 2.2.2 && < 2.3
+               , hlint < 2.1 || >= 2.2.2
   if impl(ghcjs)
     buildable: False
 
