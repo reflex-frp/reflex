@@ -49,7 +49,7 @@ library
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.3 && < 0.4,
     exception-transformers == 0.4.*,
-    profunctors,
+    profunctors >= 5.0 && < 6.0,
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
     monoidal-containers >= 0.4 && < 0.6,
