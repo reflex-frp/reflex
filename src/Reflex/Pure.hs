@@ -133,6 +133,7 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   behaviorCoercion Coercion = Coercion
   eventCoercion Coercion = Coercion
   dynamicCoercion Coercion = Coercion
+  incrementalCoercion Coercion Coercion = Coercion
 
   fanInt e = EventSelectorInt $ \k -> Event $ \t -> unEvent e t >>= IntMap.lookup k
 
