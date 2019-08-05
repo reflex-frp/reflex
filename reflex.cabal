@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.6.2.1
+Version: 0.6.2.2
 Synopsis: Higher-order Functional Reactive Programming
 Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system
 License: BSD3
@@ -218,8 +218,7 @@ test-suite hlint
                , directory
                , filepath
                , filemanip
-               -- newer versions need ghc-lib-parser, and have failing hints
-               , hlint <2.1
+               , hlint >= 2.2.2 && < 2.3
   if impl(ghcjs)
     buildable: False
 
