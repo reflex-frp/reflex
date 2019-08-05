@@ -7,7 +7,7 @@
 , transformers-compat, unbounded-delays, prim-uniq
 , data-default, filepath, directory, filemanip, ghcjs-base
 , monoidal-containers, witherable
-, semialign ? null, splitThese ? true
+, semialign ? null, splitThese ? (semialign != null)
 , useTemplateHaskell ? true
 }:
 mkDerivation {
