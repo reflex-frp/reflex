@@ -9,7 +9,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RoleAnnotations #-}
@@ -1752,7 +1751,7 @@ mergeCheap nt = mergeGCheap' getInitialSubscribers updateMe destroy
           let s = subscriber $ return k
           (subscription@(EventSubscription _ parentSubd), parentOcc) <- subscribeAndRead (nt e) s
           height <- liftIO $ getEventSubscribedHeight parentSubd
-          return (fmap (\x -> k :=> x) parentOcc, height, k :=> MergeSubscribedParent subscription)
+          return (fmap (k :=>) parentOcc, height, k :=> MergeSubscribedParent subscription)
         return ( DMap.fromDistinctAscList $ mapMaybe (\(x, _, _) -> x) subscribers
                , fmap (\(_, h, _) -> h) subscribers --TODO: Assert that there's no invalidHeight in here
                , DMap.fromDistinctAscList $ map (\(_, _, x) -> x) subscribers
@@ -1800,7 +1799,7 @@ mergeCheapWithMove nt = mergeGCheap' getInitialSubscribers updateMe destroy
           let s = subscriber $ liftIO $ readIORef keyRef
           (subscription@(EventSubscription _ parentSubd), parentOcc) <- subscribeAndRead (nt e) s
           height <- liftIO $ getEventSubscribedHeight parentSubd
-          return (fmap (\x -> k :=> x) parentOcc, height, k :=> MergeSubscribedParentWithMove subscription keyRef)
+          return (fmap (k :=>) parentOcc, height, k :=> MergeSubscribedParentWithMove subscription keyRef)
         return ( DMap.fromDistinctAscList $ mapMaybe (\(x, _, _) -> x) subscribers
                , fmap (\(_, h, _) -> h) subscribers --TODO: Assert that there's no invalidHeight in here
                , DMap.fromDistinctAscList $ map (\(_, _, x) -> x) subscribers
