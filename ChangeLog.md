@@ -1,5 +1,11 @@
 # Revision history for reflex
 
+## 0.6.2.2
+
+* Support these >= 1. Add `split-these` flag to control whether to use new these/semialign combination or not.
+* Update version bounds to fix some CI failures
+* Add travis CI configuration
+
 ## 0.6.2.1
 
 * Generalize `fan` to `fanG` to take a `DMap` with non-`Identity`
