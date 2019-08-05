@@ -19,6 +19,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
 
 #ifdef USE_REFLEX_OPTIMIZER
@@ -71,7 +72,6 @@ import Reflex.FastWeak
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
-import Data.Profunctor.Unsafe
 
 #ifdef DEBUG_CYCLES
 import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
@@ -719,7 +719,11 @@ data Dynamic x target p = Dynamic
   { dynamicCurrent :: !(Behavior x target)
   , dynamicUpdated :: Event x p -- This must be lazy; see the comment on holdEvent --TODO: Would this let us eliminate `Dyn`?
   }
-  deriving (Functor)
+
+deriving instance (HasSpiderTimeline x) => Functor (Dynamic x target)
+
+
+
 
 dynamicHold :: Hold x p -> DynamicS x p
 dynamicHold !h = Dynamic
@@ -1716,20 +1720,20 @@ subscribeCoincidenceSubscribed subscribed sub = WeakBag.insert sub (coincidenceS
 {-# INLINE mergeG #-}
 mergeG :: forall k q x v. (HasSpiderTimeline x, GCompare k)
   => (forall a. q a -> Event x (v a))
-  -> Dynamic x (PatchDMap k q) -> Event x (DMap k v)
+  -> DynamicS x (PatchDMap k q) -> Event x (DMap k v)
 mergeG nt d = cacheEvent (mergeCheap nt d)
 
 {-# INLINE mergeWithMove #-}
 mergeWithMove :: forall k v q x. (HasSpiderTimeline x, GCompare k)
   => (forall a. q a -> Event x (v a))
-  -> Dynamic x (PatchDMapWithMove k q) -> Event x (DMap k v)
+  -> DynamicS x (PatchDMapWithMove k q) -> Event x (DMap k v)
 mergeWithMove nt d = cacheEvent (mergeCheapWithMove nt d)
 
 {-# INLINE [1] mergeCheap #-}
 mergeCheap
   :: forall k x q v. (HasSpiderTimeline x, GCompare k)
   => (forall a. q a -> Event x (v a))
-  -> Dynamic x (PatchDMap k q)
+  -> DynamicS x (PatchDMap k q)
   -> Event x (DMap k v)
 mergeCheap nt = mergeGCheap' getInitialSubscribers updateMe destroy
   where
@@ -1769,7 +1773,7 @@ mergeCheap nt = mergeGCheap' getInitialSubscribers updateMe destroy
 {-# INLINE [1] mergeCheapWithMove #-}
 mergeCheapWithMove :: forall k x v q. (HasSpiderTimeline x, GCompare k)
   => (forall a. q a -> Event x (v a))
-  -> Dynamic x (PatchDMapWithMove k q)
+  -> DynamicS x (PatchDMapWithMove k q)
   -> Event x (DMap k v)
 mergeCheapWithMove nt = mergeGCheap' getInitialSubscribers updateMe destroy
   where
@@ -1917,7 +1921,7 @@ updateMerge m updateFunc p = SomeMergeUpdate updateMe (invalidateMergeHeight m) 
 
 {-# INLINE mergeGCheap' #-}
 mergeGCheap' :: forall k v x p s q. (HasSpiderTimeline x, GCompare k, PatchTarget p ~ DMap k q)
-  => MergeInitFunc k v q x s -> MergeUpdateFunc k v x p s -> MergeDestroyFunc k s -> Dynamic x p -> Event x (DMap k v)
+  => MergeInitFunc k v q x s -> MergeUpdateFunc k v x p s -> MergeDestroyFunc k s -> DynamicS x p -> Event x (DMap k v)
 mergeGCheap' getInitialSubscribers updateFunc destroy d = Event $ \sub -> do
   initialParents <- readBehaviorUntracked $ dynamicCurrent d
   accumRef <- liftIO $ newIORef $ error "merge: accumRef not yet initialized"
