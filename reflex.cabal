@@ -174,7 +174,7 @@ test-suite semantics
     base,
     bifunctors,
     containers,
-    deepseq >= 1.3 && < 1.5,
+    deepseq,
     dependent-map,
     dependent-sum,
     mtl,
@@ -200,7 +200,7 @@ test-suite CrossImpl
     containers,
     dependent-map,
     dependent-sum,
-    deepseq >= 1.3 && < 1.5,
+    deepseq,
     mtl,
     transformers,
     ref-tf,
@@ -229,7 +229,7 @@ test-suite EventWriterT
   hs-source-dirs: test
   build-depends: base
                , containers
-               , deepseq >= 1.3 && < 1.5
+               , deepseq
                , dependent-map
                , dependent-sum
                , lens
@@ -256,7 +256,7 @@ test-suite RequesterT
   hs-source-dirs: test
   build-depends: base
                , containers
-               , deepseq >= 1.3 && < 1.5
+               , deepseq
                , dependent-sum
                , dependent-map
                , lens
@@ -282,7 +282,7 @@ test-suite QueryT
                , containers
                , dependent-map
                , dependent-sum
-               , deepseq >= 1.3 && < 1.5
+               , deepseq
                , lens
                , monoidal-containers
                , mtl
@@ -308,7 +308,7 @@ test-suite GC-Semantics
                , containers
                , dependent-sum
                , dependent-map
-               , deepseq >= 1.3 && < 1.5
+               , deepseq
                , mtl
                , these
                , transformers
@@ -330,7 +330,7 @@ test-suite rootCleanup
   hs-source-dirs: test
   build-depends: base
                , containers
-               , deepseq >= 1.3 && < 1.5
+               , deepseq
                , dependent-sum
                , mtl
                , reflex
@@ -349,8 +349,8 @@ benchmark spider-bench
   build-depends:
     base,
     containers,
-    criterion >= 1.1 && < 1.6,
-    deepseq >= 1.3 && < 1.5,
+    criterion,
+    deepseq,
     dependent-map,
     dependent-sum,
     ref-tf,
@@ -359,7 +359,7 @@ benchmark spider-bench
     reflex,
     split,
     stm,
-    transformers >= 0.3
+    transformers
   other-modules:
     Reflex.TestPlan
     Reflex.Plan.Reflex
@@ -374,8 +374,8 @@ benchmark saulzar-bench
   build-depends:
     base,
     containers,
-    criterion >= 1.1 && < 1.6,
-    deepseq >= 1.3 && < 1.5,
+    criterion,
+    deepseq,
     dependent-map,
     dependent-sum,
     loch-th,
