@@ -93,7 +93,8 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
        then Nothing
        else Just currentOccurrences
 
-  -- fanG :: GCompare k => Event (Pure t) (DMap k v) -> EventSelectorG (Pure t) k v
+--  The instance signature doeesn't compile, leave commented for documentation
+--  fanG :: GCompare k => Event (Pure t) (DMap k v) -> EventSelectorG (Pure t) k v
   fanG e = EventSelectorG $ \k -> Event $ \t -> unEvent e t >>= DMap.lookup k
 
   switch :: Behavior (Pure t) (Event (Pure t) a) -> Event (Pure t) a
