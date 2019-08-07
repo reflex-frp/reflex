@@ -23,6 +23,7 @@ mkDerivation {
     base bifunctors containers deepseq dependent-map dependent-sum
     mtl ref-tf split transformers data-default
     random time unbounded-delays monoidal-containers witherable
+    profunctors
   ] ++ (if ghc.isGhcjs or false then [
     ghcjs-base
   ] else []) ++ (if !useTemplateHaskell then [] else [
