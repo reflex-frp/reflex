@@ -7,7 +7,7 @@
 # version: 0.3.20190804.2
 #
 language: c
-dist: bionic
+dist: xenial
 sudo: required
 git:
   # whether to recursively clone submodules
@@ -25,9 +25,11 @@ before_cache:
   - rm -fv $CABALHOME/packages/hackage.haskell.org/01-index.tar
   - rm -fv $CABALHOME/packages/hackage.haskell.org/01-index.tar.idx
   - rm -rfv $CABALHOME/packages/head.hackage
+
 matrix:
   include:
     - compiler: ghcjs-8.4
+      node_js: "8"
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghcjs-8.4","cabal-install-3.0"]}}
     - compiler: ghc-8.6.5
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.6.5","cabal-install-2.4"]}}
