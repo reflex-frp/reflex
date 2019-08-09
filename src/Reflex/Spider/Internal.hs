@@ -9,7 +9,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RoleAnnotations #-}
@@ -72,6 +71,12 @@ import Reflex.FastWeak
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
+
+#if defined(MIN_VERSION_semialign)
+#if MIN_VERSION_these(0,8,0)
+import Data.These.Combinators (justThese)
+#endif
+#endif
 
 #ifdef DEBUG_CYCLES
 import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
@@ -1089,6 +1094,10 @@ instance HasSpiderTimeline x => Semialign (Event x) where
   align ea eb = mapMaybe dmapToThese $ mergeG coerce $ dynamicConst $
      DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 
+#if defined(MIN_VERSION_semialign)
+  zip x y = mapMaybe justThese $ align x y
+#endif
+
 data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
                  | BuildDyn  !(EventM x (PatchTarget p), Event x p)
                  | HoldDyn   !(Hold x p)
@@ -1738,7 +1747,7 @@ mergeCheap nt = mergeGCheap' getInitialSubscribers updateMe destroy
           let s = subscriber $ return k
           (subscription@(EventSubscription _ parentSubd), parentOcc) <- subscribeAndRead (nt e) s
           height <- liftIO $ getEventSubscribedHeight parentSubd
-          return (fmap (\x -> k :=> x) parentOcc, height, k :=> MergeSubscribedParent subscription)
+          return (fmap (k :=>) parentOcc, height, k :=> MergeSubscribedParent subscription)
         return ( DMap.fromDistinctAscList $ mapMaybe (\(x, _, _) -> x) subscribers
                , fmap (\(_, h, _) -> h) subscribers --TODO: Assert that there's no invalidHeight in here
                , DMap.fromDistinctAscList $ map (\(_, _, x) -> x) subscribers
@@ -1786,7 +1795,7 @@ mergeCheapWithMove nt = mergeGCheap' getInitialSubscribers updateMe destroy
           let s = subscriber $ liftIO $ readIORef keyRef
           (subscription@(EventSubscription _ parentSubd), parentOcc) <- subscribeAndRead (nt e) s
           height <- liftIO $ getEventSubscribedHeight parentSubd
-          return (fmap (\x -> k :=> x) parentOcc, height, k :=> MergeSubscribedParentWithMove subscription keyRef)
+          return (fmap (k :=>) parentOcc, height, k :=> MergeSubscribedParentWithMove subscription keyRef)
         return ( DMap.fromDistinctAscList $ mapMaybe (\(x, _, _) -> x) subscribers
                , fmap (\(_, h, _) -> h) subscribers --TODO: Assert that there's no invalidHeight in here
                , DMap.fromDistinctAscList $ map (\(_, _, x) -> x) subscribers
