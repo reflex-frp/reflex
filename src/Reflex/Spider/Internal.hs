@@ -127,7 +127,7 @@ instance HasNodeId (Hold x p) where
 instance HasNodeId (SwitchSubscribed x a) where
   getNodeId = switchSubscribedNodeId
 
-instance HasNodeId (FanSubscribed x a) where
+instance HasNodeId (FanSubscribed x v a) where
   getNodeId = fanSubscribedNodeId
 
 instance HasNodeId (CoincidenceSubscribed x a) where

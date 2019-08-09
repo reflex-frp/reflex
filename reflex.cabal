@@ -49,7 +49,7 @@ flag debug
 flag split-these
   description: Use split these/semialign packages
   manual:      False
-  default:     True
+  default:     False
 
 library
   hs-source-dirs: src
