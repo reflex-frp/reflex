@@ -7,7 +7,7 @@
 # version: 0.3.20190804.2
 #
 language: c
-dist: bionic
+dist: xenial
 sudo: required
 git:
   # whether to recursively clone submodules
@@ -25,10 +25,12 @@ before_cache:
   - rm -fv $CABALHOME/packages/hackage.haskell.org/01-index.tar
   - rm -fv $CABALHOME/packages/hackage.haskell.org/01-index.tar.idx
   - rm -rfv $CABALHOME/packages/head.hackage
+
 matrix:
   include:
     - compiler: ghcjs-8.4
-      addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghcjs-8.4","cabal-install-3.0"]}}
+      addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.4.4","cabal-install-3.0"]}}
+      env: GHCJS_PACKAGE="ghcjs-8.4"
     - compiler: ghc-8.6.5
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.6.5","cabal-install-2.4"]}}
     - compiler: ghc-8.4.4
@@ -42,11 +44,13 @@ matrix:
 
 before_install:
   - |
-    if [ "$TRAVIS_OS_NAME" = "linux" ]; then
-    sudo add-apt-repository -y ppa:hvr/ghc;
-    sudo add-apt-repository -y ppa:hvr/ghcjs;
-    sudo apt-get update;
-    sudo apt-get install $CC cabal-install-3.0;
+    if [ "$TRAVIS_OS_NAME" = "linux" ] && [ ! -z "$GHCJS_PACKAGE" ]; then
+      curl -s https://deb.nodesource.com/gpgkey/nodesource.gpg.key | sudo apt-key add -;
+      sudo sh -c "echo deb https://deb.nodesource.com/node_8.x xenial main > /etc/apt/sources.list.d/nodesource.list";
+      sudo add-apt-repository -y ppa:hvr/ghcjs;
+      sudo apt-get update;
+      sudo apt-get install nodejs;
+      sudo apt-get install "$GHCJS_PACKAGE";
     fi
   - HC=$(echo "/opt/$CC/bin/ghc" | sed 's/-/\//')
   - WITHCOMPILER="-w $HC"
@@ -175,3 +179,4 @@ script:
 
 # REGENDATA ["--config=cabal.haskell-ci","cabal.project"]
 # EOF
+

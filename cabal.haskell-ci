@@ -1,4 +1,4 @@
-distribution: bionic
+distribution: xenial
 
 -- https://github.com/haskell/cabal/issues/6106
 install-dependencies: False
