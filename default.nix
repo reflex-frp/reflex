@@ -6,7 +6,7 @@
 , template-haskell , these, time, transformers
 , transformers-compat, unbounded-delays, prim-uniq
 , data-default, filepath, directory, filemanip, ghcjs-base
-, monoidal-containers, witherable
+, monoidal-containers, witherable, profunctors
 , semialign ? null, splitThese ? (semialign != null)
 , useTemplateHaskell ? true
 }:
