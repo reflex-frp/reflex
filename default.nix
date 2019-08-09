@@ -11,7 +11,7 @@
 }:
 mkDerivation {
   pname = "reflex";
-  version = "0.6.2.0";
+  version = "0.6.2.1";
   src = builtins.filterSource (path: type: !(builtins.elem (baseNameOf path) [ ".git" "dist" ])) ./.;
   libraryHaskellDepends = [
     base bifunctors containers dependent-map dependent-sum

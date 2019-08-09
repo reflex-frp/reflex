@@ -17,6 +17,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE Trustworthy #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
@@ -36,16 +37,21 @@ module Reflex.Class
   , coerceBehavior
   , coerceEvent
   , coerceDynamic
+  , coerceIncremental
   , MonadSample (..)
   , MonadHold (..)
     -- ** 'fan' related types
   , EventSelector (..)
+  , EventSelectorG (..)
   , EventSelectorInt (..)
     -- * Convenience functions
   , constDyn
   , pushAlways
     -- ** Combining 'Event's
   , leftmost
+  , merge
+  , mergeIncremental
+  , mergeIncrementalWithMove
   , mergeMap
   , mergeIntMap
   , mergeMapIncremental
@@ -60,6 +66,7 @@ module Reflex.Class
   , alignEventWithMaybe
     -- ** Breaking up 'Event's
   , splitE
+  , fan
   , fanEither
   , fanThese
   , fanMap
@@ -84,6 +91,7 @@ module Reflex.Class
   , gate
     -- ** Combining 'Dynamic's
   , distributeDMapOverDynPure
+  , distributeDMapOverDynPureG
   , distributeListOverDyn
   , distributeListOverDynWith
   , zipDyn
@@ -255,11 +263,16 @@ class ( MonadHold t (PushM t)
   -- | Merge a collection of events; the resulting 'Event' will only occur if at
   -- least one input event is occurring, and will contain all of the input keys
   -- that are occurring simultaneously
-  merge :: GCompare k => DMap k (Event t) -> Event t (DMap k Identity) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
+
+   --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
+  mergeG :: GCompare k => (forall a. q a -> Event t (v a))
+         -> DMap k q -> Event t (DMap k v)
+
   -- | Efficiently fan-out an event to many destinations.  You should save the
-  -- result in a @let@-binding, and then repeatedly 'select' on the result to
+  -- result in a @let@-binding, and then repeatedly 'selectG' on the result to
   -- create child events
-  fan :: GCompare k => Event t (DMap k Identity) -> EventSelector t k
+  fanG :: GCompare k => Event t (DMap k v) -> EventSelectorG t k v
+
   -- | Create an 'Event' that will occur whenever the currently-selected input
   -- 'Event' occurs
   switch :: Behavior t (Event t a) -> Event t a
@@ -277,9 +290,14 @@ class ( MonadHold t (PushM t)
   -- that value.
   unsafeBuildIncremental :: Patch p => PullM t (PatchTarget p) -> Event t p -> Incremental t p
   -- | Create a merge whose parents can change over time
-  mergeIncremental :: GCompare k => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
+  mergeIncrementalG :: GCompare k
+    => (forall a. q a -> Event t (v a))
+    -> Incremental t (PatchDMap k q)
+    -> Event t (DMap k v)
   -- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental
-  mergeIncrementalWithMove :: GCompare k => Incremental t (PatchDMapWithMove k (Event t)) -> Event t (DMap k Identity)
+  mergeIncrementalWithMoveG :: GCompare k
+    => (forall a. q a -> Event t (v a))
+    -> Incremental t (PatchDMapWithMove k q) -> Event t (DMap k v)
   -- | Extract the 'Behavior' component of an 'Incremental'
   currentIncremental :: Patch p => Incremental t p -> Behavior t (PatchTarget p)
   -- | Extract the 'Event' component of an 'Incremental'
@@ -295,8 +313,24 @@ class ( MonadHold t (PushM t)
   -- | Construct a 'Coercion' for a 'Dynamic' given an 'Coercion' for its
   -- occurrence type
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
+  -- | Construct a 'Coercion' for an 'Incremental' given 'Coercion's for its
+  -- patch target and patch types.
+  incrementalCoercion
+    :: Coercion (PatchTarget a) (PatchTarget b) -> Coercion a b -> Coercion (Incremental t a) (Incremental t b)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
+
+-- | Efficiently fan-out an event to many destinations. You should save the
+-- result in a @let@-binding, and then repeatedly 'select' on the result to
+-- create child events
+fan :: forall t k. (Reflex t, GCompare k)
+    => Event t (DMap k Identity) -> EventSelector t k
+    --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
+fan e = EventSelector (fixup (selectG (fanG e) :: k a -> Event t (Identity a)) :: forall a. k a -> Event t a)
+  where
+    fixup :: forall a. (k a -> Event t (Identity a)) -> k a -> Event t a
+    fixup = case eventCoercion Coercion :: Coercion (Event t (Identity a)) (Event t a) of
+              Coercion -> coerce
 
 --TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
 -- | Constructs a single 'Event' out of a map of events. The output event may fire with multiple
@@ -315,6 +349,12 @@ coerceEvent = coerceWith $ eventCoercion Coercion
 -- | Coerce a 'Dynamic' between representationally-equivalent value types
 coerceDynamic :: (Reflex t, Coercible a b) => Dynamic t a -> Dynamic t b
 coerceDynamic = coerceWith $ dynamicCoercion Coercion
+
+-- | Coerce an 'Incremental' between representationally-equivalent value types
+coerceIncremental
+  :: (Reflex t, Coercible a b, Coercible (PatchTarget a) (PatchTarget b))
+  => Incremental t a -> Incremental t b
+coerceIncremental = coerceWith $ incrementalCoercion Coercion Coercion
 
 -- | Construct a 'Dynamic' from a 'Behavior' and an 'Event'.  The 'Behavior'
 -- __must__ change when and only when the 'Event' fires, such that the
@@ -483,6 +523,17 @@ newtype EventSelector t k = EventSelector
     -- (but equivalent to) using 'mapMaybe' to select only the relevant
     -- occurrences of an 'Event'.
     select :: forall a. k a -> Event t a
+  }
+
+newtype EventSelectorG t k v = EventSelectorG
+  { -- | Retrieve the 'Event' for the given key.  The type of the 'Event' is
+    -- determined by the type of the key, so this can be used to fan-out
+    -- 'Event's whose sub-'Event's have different types.
+    --
+    -- Using 'EventSelector's and the 'fan' primitive is far more efficient than
+    -- (but equivalent to) using 'mapMaybe' to select only the relevant
+    -- occurrences of an 'Event'.
+    selectG :: forall a. k a -> Event t (v a)
   }
 
 -- | Efficiently select an 'Event' keyed on 'Int'. This is more efficient than manually
@@ -1079,12 +1130,21 @@ instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
 -- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same
 -- through the use of multiple uses of 'zipDynWith' or 'Applicative' operators.
 distributeDMapOverDynPure :: forall t k. (Reflex t, GCompare k) => DMap k (Dynamic t) -> Dynamic t (DMap k Identity)
-distributeDMapOverDynPure dm = case DMap.toList dm of
+distributeDMapOverDynPure = distributeDMapOverDynPureG coerceDynamic
+
+-- | This function converts a 'DMap' whose elements are 'Dynamic's into a
+-- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same
+-- through the use of multiple uses of 'zipDynWith' or 'Applicative' operators.
+distributeDMapOverDynPureG
+  :: forall t k q v. (Reflex t, GCompare k)
+  => (forall a. q a -> Dynamic t (v a))
+  -> DMap k q -> Dynamic t (DMap k v)
+distributeDMapOverDynPureG nt dm = case DMap.toList dm of
   [] -> constDyn DMap.empty
-  [k :=> v] -> fmap (DMap.singleton k . Identity) v
+  [k :=> v] -> DMap.singleton k <$> nt v
   _ ->
-    let getInitial = DMap.traverseWithKey (\_ -> fmap Identity . sample . current) dm
-        edmPre = merge $ DMap.map updated dm
+    let getInitial = DMap.traverseWithKey (\_ -> sample . current . nt) dm
+        edmPre = mergeG getCompose $ DMap.map (Compose . updated . nt) dm
         result = unsafeBuildDynamic getInitial $ flip pushAlways edmPre $ \news -> do
           olds <- sample $ current result
           return $ DMap.unionWithKey (\_ _ new -> new) olds news
@@ -1556,6 +1616,23 @@ fmapCheap f = pushCheap $ return . Just . f
 {-# INLINE tagCheap #-}
 tagCheap :: Reflex t => Behavior t b -> Event t a -> Event t b
 tagCheap b = pushAlwaysCheap $ \_ -> sample b
+
+-- | Merge a collection of events; the resulting 'Event' will only occur if at
+-- least one input event is occurring, and will contain all of the input keys
+-- that are occurring simultaneously
+merge :: (Reflex t, GCompare k) => DMap k (Event t) -> Event t (DMap k Identity)
+merge = mergeG coerceEvent
+{-# INLINE merge #-}
+
+-- | Create a merge whose parents can change over time
+mergeIncremental :: (Reflex t, GCompare k)
+  => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
+mergeIncremental = mergeIncrementalG coerceEvent
+
+-- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental
+mergeIncrementalWithMove :: (Reflex t, GCompare k)
+  => Incremental t (PatchDMapWithMove k (Event t)) -> Event t (DMap k Identity)
+mergeIncrementalWithMove = mergeIncrementalWithMoveG coerceEvent
 
 -- | A "cheap" version of 'mergeWithCheap'. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithCheap #-}

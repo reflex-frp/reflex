@@ -8,6 +8,9 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE RankNTypes #-}
 -- |
 -- Module:
 --   Reflex.Profiled
@@ -16,7 +19,6 @@
 --   profiling/cost-center information.
 module Reflex.Profiled where
 
-import Control.Lens hiding (children)
 import Control.Monad
 import Control.Monad.Exception
 import Control.Monad.Fix
@@ -33,6 +35,7 @@ import Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import Data.Monoid ((<>))
 import Data.Ord
+import Data.Profunctor.Unsafe ((#.))
 import qualified Data.Semigroup as S
 import Data.Type.Coercion
 import Foreign.Ptr
@@ -133,27 +136,32 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   push f (Event_Profiled e) = coerce $ push (coerce f) $ profileEvent e -- Profile before rather than after; this way fanout won't count against us
   pushCheap f (Event_Profiled e) = coerce $ pushCheap (coerce f) $ profileEvent e
   pull = Behavior_Profiled . pull . coerce
-  merge :: forall k. GCompare k => DMap k (Event (ProfiledTimeline t)) -> Event (ProfiledTimeline t) (DMap k Identity)
-  merge = Event_Profiled . merge . (unsafeCoerce :: DMap k (Event (ProfiledTimeline t)) -> DMap k (Event t))
-  fan (Event_Profiled e) = EventSelector $ coerce $ select (fan $ profileEvent e)
+  fanG (Event_Profiled e) = EventSelectorG $ coerce $ selectG (fanG $ profileEvent e)
+  mergeG :: forall (k :: z -> *) q v. GCompare k
+    => (forall a. q a -> Event (ProfiledTimeline t) (v a))
+    -> DMap k q -> Event (ProfiledTimeline t) (DMap k v)
+  mergeG nt = Event_Profiled #. mergeG (coerce nt)
   switch (Behavior_Profiled b) = coerce $ profileEvent $ switch (coerceBehavior b)
   coincidence (Event_Profiled e) = coerce $ profileEvent $ coincidence (coerceEvent e)
   current (Dynamic_Profiled d) = coerce $ current d
   updated (Dynamic_Profiled d) = coerce $ profileEvent $ updated d
   unsafeBuildDynamic (ProfiledM a0) (Event_Profiled a') = coerce $ unsafeBuildDynamic a0 a'
   unsafeBuildIncremental (ProfiledM a0) (Event_Profiled a') = coerce $ unsafeBuildIncremental a0 a'
-  mergeIncremental = Event_Profiled . mergeIncremental . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchDMap k (Event (ProfiledTimeline t))) -> Incremental t (PatchDMap k (Event t)))
-  mergeIncrementalWithMove = Event_Profiled . mergeIncrementalWithMove . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchDMapWithMove k (Event (ProfiledTimeline t))) -> Incremental t (PatchDMapWithMove k (Event t)))
+  mergeIncrementalG nt = (Event_Profiled . coerce) #. mergeIncrementalG nt
+  mergeIncrementalWithMoveG nt = (Event_Profiled . coerce) #. mergeIncrementalWithMoveG nt
   currentIncremental (Incremental_Profiled i) = coerce $ currentIncremental i
   updatedIncremental (Incremental_Profiled i) = coerce $ profileEvent $ updatedIncremental i
   incrementalToDynamic (Incremental_Profiled i) = coerce $ incrementalToDynamic i
-  behaviorCoercion (c :: Coercion a b) = case behaviorCoercion c :: Coercion (Behavior t a) (Behavior t b) of
-    Coercion -> unsafeCoerce (Coercion :: Coercion (Behavior (ProfiledTimeline t) a) (Behavior (ProfiledTimeline t) a)) --TODO: Figure out how to make this typecheck without the unsafeCoerce
-  eventCoercion (c :: Coercion a b) = case eventCoercion c :: Coercion (Event t a) (Event t b) of
-    Coercion -> unsafeCoerce (Coercion :: Coercion (Event (ProfiledTimeline t) a) (Event (ProfiledTimeline t) a)) --TODO: Figure out how to make this typecheck without the unsafeCoerce
-  dynamicCoercion (c :: Coercion a b) = case dynamicCoercion c :: Coercion (Dynamic t a) (Dynamic t b) of
-    Coercion -> unsafeCoerce (Coercion :: Coercion (Dynamic (ProfiledTimeline t) a) (Dynamic (ProfiledTimeline t) a)) --TODO: Figure out how to make this typecheck without the unsafeCoerce
-  mergeIntIncremental = Event_Profiled . mergeIntIncremental . (unsafeCoerce :: Incremental (ProfiledTimeline t) (PatchIntMap (Event (ProfiledTimeline t) a)) -> Incremental t (PatchIntMap (Event t a)))
+  behaviorCoercion c =
+    Coercion `trans` behaviorCoercion @t c `trans` Coercion
+  eventCoercion c =
+    Coercion `trans` eventCoercion @t c `trans` Coercion
+  dynamicCoercion c =
+    Coercion `trans` dynamicCoercion @t c `trans` Coercion
+  incrementalCoercion c d =
+    Coercion `trans` incrementalCoercion @t c d `trans` Coercion
+  mergeIntIncremental = Event_Profiled . mergeIntIncremental .
+    coerceWith (Coercion `trans` incrementalCoercion Coercion Coercion `trans` Coercion)
   fanInt (Event_Profiled e) = coerce $ fanInt $ profileEvent e
 
 deriving instance Functor (Dynamic t) => Functor (Dynamic (ProfiledTimeline t))
