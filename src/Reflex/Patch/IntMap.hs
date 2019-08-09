@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -33,14 +32,7 @@ instance Patch (PatchIntMap a) where
 instance Semigroup (PatchIntMap v) where
   PatchIntMap a <> PatchIntMap b = PatchIntMap $ a `mappend` b --TODO: Add a semigroup instance for Map
   -- PatchMap is idempotent, so stimes n is id for every n
-#if MIN_VERSION_semigroups(0,17,0)
   stimes = stimesIdempotentMonoid
-#else
-  times1p n x = case compare n 0 of
-    LT -> error "stimesIdempotentMonoid: negative multiplier"
-    EQ -> mempty
-    GT -> x
-#endif
 
 -- | Map a function @Int -> a -> b@ over all @a@s in the given @'PatchIntMap' a@
 -- (that is, all inserts/updates), producing a @PatchIntMap b@.

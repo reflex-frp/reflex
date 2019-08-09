@@ -80,9 +80,9 @@ getCostCentreStack = go []
           go (cc : l) parent
 
 toCostCentreTree :: Ptr CostCentreStack -> Int -> IO CostCentreTree
-toCostCentreTree ccs n = do
-  ccList <- getCostCentreStack ccs
-  return $ foldr (\cc child -> CostCentreTree 0 n $ Map.singleton cc child) (CostCentreTree n n mempty) ccList
+toCostCentreTree ccs n =
+  foldr (\cc child -> CostCentreTree 0 n $ Map.singleton cc child) (CostCentreTree n n mempty)
+    <$> getCostCentreStack ccs
 
 getCostCentreTree :: IO CostCentreTree
 getCostCentreTree = do

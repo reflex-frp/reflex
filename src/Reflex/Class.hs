@@ -7,7 +7,6 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -173,6 +172,14 @@ module Reflex.Class
     -- * Slow, but general, implementations
   , slowHeadE
   ) where
+
+#if defined(MIN_VERSION_semialign)
+import Prelude hiding (zip, zipWith)
+
+#if MIN_VERSION_these(0,8,0)
+import Data.These.Combinators (justThese)
+#endif
+#endif
 
 import Control.Applicative
 import Control.Monad.Identity
@@ -680,11 +687,7 @@ instance (Num a, Reflex t) => Num (Dynamic t a) where
 instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
   a <> b = pull $ liftM2 (<>) (sample a) (sample b)
   sconcat = pull . fmap sconcat . mapM sample
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 -- | Alias for 'mapMaybe'
 fmapMaybe :: Filterable f => (a -> Maybe b) -> f a -> f b
@@ -882,11 +885,7 @@ traceEventWith f = push $ \x -> trace (f x) $ return $ Just x
 instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
   (<>) = alignWith (mergeThese (<>))
   sconcat = fmap sconcat . mergeList . toList
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 instance (Semigroup a, Reflex t) => Monoid (Event t a) where
   mempty = never
@@ -1074,6 +1073,10 @@ instance Reflex t => Align (Event t) where
 instance Reflex t => Semialign (Event t) where
 #endif
   align = alignEventWithMaybe Just
+  
+#if defined(MIN_VERSION_semialign)
+  zip x y = mapMaybe justThese $ align x y
+#endif
 
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and
@@ -1115,11 +1118,7 @@ zipDynWith f da db =
 
 instance (Reflex t, Semigroup a) => Semigroup (Dynamic t a) where
   (<>) = zipDynWith (<>)
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
   mconcat = distributeListOverDynWith mconcat

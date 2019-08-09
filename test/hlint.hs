@@ -22,6 +22,7 @@ main = do
         , "--ignore=Use unless"
         , "--ignore=Reduce duplication"
         , "--cpp-define=USE_TEMPLATE_HASKELL"
+        , "--ignore=Use tuple-section"
         ]
       recurseInto = and <$> sequence
         [ fileType ==? Directory

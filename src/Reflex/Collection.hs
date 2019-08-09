@@ -27,6 +27,10 @@ module Reflex.Collection
   , simpleList
   ) where
 
+#if defined(MIN_VERSION_semialign)
+import Prelude hiding (zip, zipWith)
+#endif
+
 import Control.Monad.Identity
 import Data.Align
 import Data.Functor.Misc
