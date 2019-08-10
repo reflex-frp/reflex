@@ -716,7 +716,10 @@ instance Reflex t => Alt (Event t) where
 
 -- | 'Event' intersection. Only occurs when both events are co-incident.
 instance Reflex t => Apply (Event t) where
-  (<.>) = zipWith ($)
+  evf <.> evx = mapMaybe f (align evf evx) where
+    f (These g a) = Just (g a)
+    f _           = Nothing
+
 
 -- | 'Event' intersection (convenient interface to 'coincidence').
 instance Reflex t => Bind (Event t) where
