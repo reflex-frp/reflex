@@ -43,8 +43,8 @@ flag fast-weak
 
 flag split-these
   description: Use split these/semialign packages
-  manual:      True
-  default:     False
+  manual:      False
+  default:     True
 
 library
   hs-source-dirs: src
