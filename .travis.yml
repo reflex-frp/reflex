@@ -30,15 +30,21 @@ matrix:
   include:
     - compiler: ghcjs-8.4
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.4.4","cabal-install-3.0"]}}
-      env: GHCJS_PACKAGE="ghcjs-8.4"
+      env: 
+        - GHCJS_PACKAGE="ghcjs-8.4"
+        - CACHE_NAME=shared
     - compiler: ghc-8.6.5
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.6.5","cabal-install-2.4"]}}
+      env: CACHE_NAME=shared
     - compiler: ghc-8.4.4
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.4.4","cabal-install-2.4"]}}
+      env: CACHE_NAME=shared
     - compiler: ghc-8.2.2
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.2.2","cabal-install-2.4"]}}
+      env: CACHE_NAME=shared
     - compiler: ghc-8.0.2
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.0.2","cabal-install-2.4"]}}
+      env: CACHE_NAME=shared
   allow_failures:
     - compiler: "ghcjs-8.4" # This hits the travis 50min time limit and fails
 
