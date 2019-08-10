@@ -7,7 +7,7 @@
 , transformers-compat, unbounded-delays, prim-uniq
 , data-default, filepath, directory, filemanip, ghcjs-base
 , monoidal-containers, witherable, profunctors
-, semialign ? null, splitThese ? (semialign != null)
+, semialign ? null,
 , useTemplateHaskell ? true
 }:
 mkDerivation {
@@ -28,15 +28,13 @@ mkDerivation {
     ghcjs-base
   ] else []) ++ (if !useTemplateHaskell then [] else [
     haskell-src-exts haskell-src-meta
-  ]) ++ (if splitThese then [
-    semialign
-  ] else []);
+  ]) ++ stdenv.lib.optional (semialign == null) [semialign];
   testHaskellDepends = if ghc.isGhcjs or false then [] else [
     hlint filepath directory filemanip
   ];
   configureFlags =
     stdenv.lib.optional (!useTemplateHaskell) [ "-f-use-template-haskell" ] ++
-    stdenv.lib.optional (!splitThese) [ "-f-split-these" ];
+    stdenv.lib.optional (semialign == null) [ "-f-split-these" ];
   homepage = "https://github.com/reflex-frp/reflex";
   description = "Higher-order Functional Reactive Programming";
   license = stdenv.lib.licenses.bsd3;
