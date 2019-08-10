@@ -139,6 +139,7 @@ script:
   - ${CABAL} v2-sdist all | color_cabal_output
   # Unpacking...
   - mv dist-newstyle/sdist/*.tar.gz ${DISTDIR}/
+  - cp cabal.project.freeze ${DISTDIR}/ || true
   - cd ${DISTDIR} || false
   - find . -maxdepth 1 -type f -name '*.tar.gz' -exec tar -xvf '{}' \;
   - find . -maxdepth 1 -type f -name '*.tar.gz' -exec rm       '{}' \;
@@ -152,7 +153,7 @@ script:
   - cat cabal.project || true
   - cat cabal.project.local || true
   - rm cabal.project.local || true
-  - cat cabal.project.freeze
+  - cat cabal.project.freeze || true
   # Building...
   # this builds all libraries and executables (without tests/benchmarks)
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks all | color_cabal_output
