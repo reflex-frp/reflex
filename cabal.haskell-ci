@@ -11,3 +11,6 @@ constraint-set no-th
 
 constraint-set old-these
   constraints: these <1
+
+constraint-set old-witherable
+  constraints: witherable <0.3.2

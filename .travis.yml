@@ -164,6 +164,8 @@ script:
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='reflex -use-template-haskell' all | color_cabal_output
   # Constraint set old-these
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='these <1' all | color_cabal_output
+  # Constraint set old-witherable
+  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='witherable <0.3.2' all | color_cabal_output
 
 # REGENDATA ["--config=cabal.haskell-ci","cabal.project"]
 # EOF
