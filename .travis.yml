@@ -4,7 +4,7 @@
 #
 # For more information, see https://github.com/haskell-CI/haskell-ci
 #
-# version: 0.3.20190804.2
+# version: 0.3.20190814
 #
 language: c
 dist: xenial
@@ -25,12 +25,10 @@ before_cache:
   - rm -fv $CABALHOME/packages/hackage.haskell.org/01-index.tar
   - rm -fv $CABALHOME/packages/hackage.haskell.org/01-index.tar.idx
   - rm -rfv $CABALHOME/packages/head.hackage
-
 matrix:
   include:
     - compiler: ghcjs-8.4
-      addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.4.4","cabal-install-3.0"]}}
-      env: GHCJS_PACKAGE="ghcjs-8.4"
+      addons: {"apt":{"sources":["hvr-ghc"],"packages":["cabal-install-3.0"]}}
     - compiler: ghc-8.6.5
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.6.5","cabal-install-2.4"]}}
     - compiler: ghc-8.4.4
@@ -39,16 +37,14 @@ matrix:
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.2.2","cabal-install-2.4"]}}
     - compiler: ghc-8.0.2
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.0.2","cabal-install-2.4"]}}
-  
 before_install:
   - |
-    if [ "$TRAVIS_OS_NAME" = "linux" ] && [ ! -z "$GHCJS_PACKAGE" ]; then
-      curl -s https://deb.nodesource.com/gpgkey/nodesource.gpg.key | sudo apt-key add -;
-      sudo sh -c "echo deb https://deb.nodesource.com/node_8.x xenial main > /etc/apt/sources.list.d/nodesource.list";
+    if [ "$TRAVIS_OS_NAME" = "linux" ]; then
       sudo add-apt-repository -y ppa:hvr/ghcjs;
+      curl -s https://deb.nodesource.com/gpgkey/nodesource.gpg.key | sudo apt-key add -
+      sudo apt-add-repository 'https://deb.nodesource.com/node_8.x xenial main'
       sudo apt-get update;
-      sudo apt-get install nodejs;
-      sudo apt-get install "$GHCJS_PACKAGE";
+      sudo apt-get install $CC cabal-install-3.0 nodejs;
     fi
   - HC=$(echo "/opt/$CC/bin/ghc" | sed 's/-/\//')
   - WITHCOMPILER="-w $HC"
@@ -60,8 +56,8 @@ before_install:
     else
         GHCJS=false;
     fi
-  - if $GHCJS ; then sudo apt-get install -y ghc-8.6.5 ; fi
-  - if $GHCJS ; then PATH="/opt/ghc/8.6.5/bin:$PATH" ; fi
+  - if $GHCJS ; then sudo apt-get install -y ghc-8.4.4 ; fi
+  - if $GHCJS ; then PATH="/opt/ghc/8.4.4/bin:$PATH" ; fi
   - HCPKG="$HC-pkg"
   - unset CC
   - CABAL=/opt/ghc/bin/cabal
@@ -97,6 +93,7 @@ install:
   - echo $GHCJS
   - TEST=--enable-tests
   - BENCH=--enable-benchmarks
+  - BENCH=--disable-benchmarks
   - HEADHACKAGE=false
   - rm -f $CABALHOME/config
   - |
@@ -116,42 +113,39 @@ install:
     echo "repository hackage.haskell.org"               >> $CABALHOME/config
     echo "  url: http://hackage.haskell.org/"           >> $CABALHOME/config
   - cat $CABALHOME/config
-  - rm -fv cabal.project cabal.project.local
+  - rm -fv cabal.project cabal.project.local cabal.project.freeze
   - travis_retry ${CABAL} v2-update -v
-  - if $GHCJS ; then (cd /tmp && ${CABAL} v2-install -w ghc-8.6.5 happy) ; fi
+  - if $GHCJS ; then (cd /tmp && ${CABAL} v2-install -w ghc-8.4.4 happy) ; fi
   # Generate cabal.project
-  - rm -rf cabal.project cabal.project.local
+  - rm -rf cabal.project cabal.project.local cabal.project.freeze
   - touch cabal.project
   - |
     echo "packages: ." >> cabal.project
+  - |
   - cat cabal.project || true
   - cat cabal.project.local || true
   - if [ -f "./configure.ac" ]; then (cd "." && autoreconf -i); fi
-    #  - ${CABAL} v2-freeze $WITHCOMPILER ${TEST} ${BENCH} | color_cabal_output
-  - ${CABAL} v2-configure $WITHCOMPILER ${TEST} ${BENCH} | color_cabal_output
+  - ${CABAL} v2-freeze $WITHCOMPILER ${TEST} ${BENCH} | color_cabal_output
   - "cat cabal.project.freeze | sed -E 's/^(constraints: *| *)//' | sed 's/any.//'"
-  - rm cabal.project.local || true
+  - rm  cabal.project.freeze
 script:
   - DISTDIR=$(mktemp -d /tmp/dist-test.XXXX)
   # Packaging...
   - ${CABAL} v2-sdist all | color_cabal_output
   # Unpacking...
   - mv dist-newstyle/sdist/*.tar.gz ${DISTDIR}/
-  - cp cabal.project.freeze ${DISTDIR}/ || true
   - cd ${DISTDIR} || false
   - find . -maxdepth 1 -type f -name '*.tar.gz' -exec tar -xvf '{}' \;
   - find . -maxdepth 1 -type f -name '*.tar.gz' -exec rm       '{}' \;
   - PKGDIR_reflex="$(find . -maxdepth 1 -type d -regex '.*/reflex-[0-9.]*')"
   # Generate cabal.project
-  - rm -rf cabal.project cabal.project.local 
+  - rm -rf cabal.project cabal.project.local cabal.project.freeze
   - touch cabal.project
   - |
     echo "packages: ${PKGDIR_reflex}" >> cabal.project
   - |
   - cat cabal.project || true
   - cat cabal.project.local || true
-  - rm cabal.project.local || true
-  - cat cabal.project.freeze || true
   # Building...
   # this builds all libraries and executables (without tests/benchmarks)
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks all | color_cabal_output
@@ -159,23 +153,19 @@ script:
   # build & run tests, build benchmarks
   - ${CABAL} v2-build $WITHCOMPILER ${TEST} ${BENCH} all | color_cabal_output
   # Testing...
-  - if ! $GHCJS && [ $HCNUMVER -ge 80000 ] && [ $HCNUMVER -lt 80606 ] ; then ${CABAL} v2-test $WITHCOMPILER ${TEST} ${BENCH} all | color_cabal_output ; fi
+  - if ! $GHCJS ; then ${CABAL} v2-test $WITHCOMPILER ${TEST} ${BENCH} all | color_cabal_output ; fi
   # cabal check...
   - (cd ${PKGDIR_reflex} && ${CABAL} -vnormal check)
   # haddock...
-  - if ! $GHCJS && [ $HCNUMVER -ge 80000 ] && [ $HCNUMVER -lt 80606 ] ; then ${CABAL} v2-haddock $WITHCOMPILER ${TEST} ${BENCH} all | color_cabal_output ; fi
-  # Building without installed constraints for packages in global-db...
-  - rm -f cabal.project.local || true
-  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks all | color_cabal_output
+  - if ! $GHCJS ; then ${CABAL} v2-haddock $WITHCOMPILER ${TEST} ${BENCH} all | color_cabal_output ; fi
   # Constraint sets
-  - rm -rf cabal.project.local || true
+  - rm -rf cabal.project.local
   # Constraint set no-th
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='reflex -use-template-haskell' all | color_cabal_output
-  # Constraint sets
-  - rm -rf cabal.project.local || true
-  # Constraint set don't use split these/semialign
-  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='reflex -split-these' all | color_cabal_output
+  # Constraint set old-these
+  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='these <1' all | color_cabal_output
+  # Constraint set old-witherable
+  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='witherable <0.3.2' all | color_cabal_output
 
 # REGENDATA ["--config=cabal.haskell-ci","cabal.project"]
 # EOF
-

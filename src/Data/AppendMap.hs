@@ -46,8 +46,10 @@ _unAppendMap = getMonoidalMap
 pattern AppendMap :: Map k v -> MonoidalMap k v
 pattern AppendMap m = MonoidalMap m
 
+#if !MIN_VERSION_witherable(0,3,2)
 instance W.Filterable (MonoidalMap k) where
   mapMaybe = mapMaybe
+#endif
 
 -- | Deletes a key, returning 'Nothing' if the result is empty.
 nonEmptyDelete :: Ord k => k -> MonoidalMap k a -> Maybe (MonoidalMap k a)
