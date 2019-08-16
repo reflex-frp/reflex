@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.5
+Version: 0.6.2.2
 Synopsis: Higher-order Functional Reactive Programming
 Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system
 License: BSD3
@@ -15,6 +15,11 @@ bug-reports: https://github.com/reflex-frp/reflex/issues
 extra-source-files:
   README.md
   Quickref.md
+  ChangeLog.md
+
+tested-with:
+  GHC  ==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5,
+  GHCJS ==8.4
 
 flag use-reflex-optimizer
   description: Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.
@@ -36,37 +41,51 @@ flag fast-weak
   default: False
   manual: True
 
+flag split-these
+  description: Use split these/semialign packages
+  manual:      False
+  default:     True
+
 library
   hs-source-dirs: src
   build-depends:
     MemoTrie == 0.6.*,
     base >= 4.9 && < 4.13,
     bifunctors >= 5.2 && < 5.6,
-    comonad,
-    containers >= 0.5 && < 0.7,
+    comonad >= 5.0.4 && < 5.1,
+    constraints-extras >= 0.3 && < 0.4,
+    containers >= 0.6 && < 0.7,
     data-default >= 0.5 && < 0.8,
-    dependent-map >= 0.2.4 && < 0.3,
+    dependent-map >= 0.3 && < 0.4,
     exception-transformers == 0.4.*,
+    profunctors >= 5.3 && < 5.5,
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
-    monoidal-containers == 0.4.*,
     mtl >= 2.1 && < 2.3,
     prim-uniq >= 0.1.0.1 && < 0.2,
-    primitive >= 0.5 && < 0.7,
+    primitive >= 0.5 && < 0.8,
+    profunctors,
     random == 1.1.*,
     ref-tf == 0.4.*,
     reflection == 2.1.*,
     semigroupoids >= 4.0 && < 6,
-    semigroups >= 0.16 && < 0.19,
     stm >= 2.4 && < 2.6,
     syb >= 0.5 && < 0.8,
-    these >= 0.4 && < 0.8,
     time >= 1.4 && < 1.9,
-    transformers >= 0.2,
-    transformers-compat >= 0.3,
-    unbounded-delays >= 0.1.0.0 && < 0.2
+    transformers >= 0.5.6.0 && < 0.6,
+    unbounded-delays >= 0.1.0.0 && < 0.2,
+    witherable >= 0.2 && < 0.4
+
+  if flag(split-these)
+    build-depends:     these >= 1 && <1.1,
+                       semialign >=1 && <1.1,
+                       monoidal-containers >= 0.5.0.1 && < 0.6
+  else
+    build-depends:     these >= 0.4 && <0.9,
+                       monoidal-containers == 0.5.0.0
 
   exposed-modules:
+    Control.Monad.ReaderIO
     Data.AppendMap,
     Data.FastMutableIntMap,
     Data.FastWeakBag,
@@ -131,8 +150,8 @@ library
   if flag(use-template-haskell)
     cpp-options: -DUSE_TEMPLATE_HASKELL
     build-depends:
-      dependent-sum >= 0.3 && < 0.5,
-      haskell-src-exts >= 1.16 && < 1.21,
+      dependent-sum >= 0.6 && < 0.7,
+      haskell-src-exts >= 1.16 && < 1.22,
       haskell-src-meta >= 0.6 && < 0.9,
       template-haskell >= 2.9 && < 2.15
     exposed-modules:
@@ -140,7 +159,7 @@ library
     other-extensions: TemplateHaskell
   else
     build-depends:
-      dependent-sum == 0.4.*
+      dependent-sum >= 0.6 && < 0.7
 
   if flag(fast-weak) && impl(ghcjs)
     cpp-options: -DGHCJS_FAST_WEAK
@@ -157,14 +176,14 @@ test-suite semantics
     base,
     bifunctors,
     containers,
-    deepseq >= 1.3 && < 1.5,
+    deepseq,
     dependent-map,
     dependent-sum,
     mtl,
     ref-tf,
     reflex,
     split,
-    transformers >= 0.3
+    transformers
   other-modules:
     Reflex.Bench.Focused
     Reflex.Plan.Pure
@@ -183,7 +202,7 @@ test-suite CrossImpl
     containers,
     dependent-map,
     dependent-sum,
-    deepseq >= 1.3 && < 1.5,
+    deepseq,
     mtl,
     transformers,
     ref-tf,
@@ -202,7 +221,7 @@ test-suite hlint
                , directory
                , filepath
                , filemanip
-               , hlint
+               , hlint < 2.1 || >= 2.2.2
   if impl(ghcjs)
     buildable: False
 
@@ -212,7 +231,7 @@ test-suite EventWriterT
   hs-source-dirs: test
   build-depends: base
                , containers
-               , deepseq >= 1.3 && < 1.5
+               , deepseq
                , dependent-map
                , dependent-sum
                , lens
@@ -221,6 +240,10 @@ test-suite EventWriterT
                , transformers
                , reflex
                , ref-tf
+
+  if flag(split-these)
+    build-depends: these-lens
+
   other-modules:
     Reflex.Test
     Reflex.TestPlan
@@ -228,22 +251,30 @@ test-suite EventWriterT
     Reflex.Plan.Pure
     Test.Run
 
+
 test-suite RequesterT
   type: exitcode-stdio-1.0
   main-is: RequesterT.hs
   hs-source-dirs: test
   build-depends: base
+               , containers
+               , deepseq
                , dependent-sum
                , dependent-map
                , lens
+               , mtl
                , these
                , transformers
                , reflex
                , ref-tf
-  buildable: False
+
+  if flag(split-these)
+    build-depends: these-lens
+
   other-modules:
     Reflex.TestPlan
     Reflex.Plan.Pure
+    Test.Run
 
 test-suite QueryT
   type: exitcode-stdio-1.0
@@ -253,15 +284,18 @@ test-suite QueryT
                , containers
                , dependent-map
                , dependent-sum
-               , deepseq >= 1.3 && < 1.5
+               , deepseq
                , lens
                , monoidal-containers
                , mtl
                , ref-tf
                , reflex
-               , semigroups
                , these
                , transformers
+
+  if flag(split-these)
+    build-depends: semialign, these-lens
+
   other-modules:
     Test.Run
     Reflex.TestPlan
@@ -276,14 +310,16 @@ test-suite GC-Semantics
                , containers
                , dependent-sum
                , dependent-map
-               , deepseq >= 1.3 && < 1.5
+               , deepseq
                , mtl
                , these
                , transformers
                , reflex
                , ref-tf
-  if impl(ghc < 8)
-    build-depends: semigroups
+
+  if flag(split-these)
+    build-depends: semialign
+
   other-modules:
     Reflex.Plan.Pure
     Reflex.Plan.Reflex
@@ -296,7 +332,7 @@ test-suite rootCleanup
   hs-source-dirs: test
   build-depends: base
                , containers
-               , deepseq >= 1.3 && < 1.5
+               , deepseq
                , dependent-sum
                , mtl
                , reflex
@@ -315,8 +351,8 @@ benchmark spider-bench
   build-depends:
     base,
     containers,
-    criterion >= 1.1 && < 1.6,
-    deepseq >= 1.3 && < 1.5,
+    criterion,
+    deepseq,
     dependent-map,
     dependent-sum,
     ref-tf,
@@ -325,7 +361,7 @@ benchmark spider-bench
     reflex,
     split,
     stm,
-    transformers >= 0.3
+    transformers
   other-modules:
     Reflex.TestPlan
     Reflex.Plan.Reflex
@@ -339,9 +375,9 @@ benchmark saulzar-bench
   ghc-options: -Wall -O2 -rtsopts -threaded
   build-depends:
     base,
-    containers >= 0.5 && < 0.7,
-    criterion >= 1.1 && < 1.6,
-    deepseq >= 1.3 && < 1.5,
+    containers,
+    criterion,
+    deepseq,
     dependent-map,
     dependent-sum,
     loch-th,
@@ -353,7 +389,7 @@ benchmark saulzar-bench
     split,
     stm,
     time,
-    transformers >= 0.3
+    transformers
   other-modules:
     Reflex.TestPlan
     Reflex.Plan.Reflex

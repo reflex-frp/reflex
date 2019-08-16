@@ -3,7 +3,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -11,6 +10,13 @@
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
+-- |
+-- Module:
+--   Reflex.Adjustable.Class
+-- Description:
+--   A class for actions that can be "adjusted" over time based on some 'Event'
+--   such that, when observed after the firing of any such 'Event', the result
+--   is as though the action was originally run with the 'Event's value.
 module Reflex.Adjustable.Class
   (
   -- * The Adjustable typeclass
@@ -94,13 +100,32 @@ instance Adjustable t m => Adjustable t (ReaderT r m) where
     r <- ask
     lift $ traverseDMapWithKeyWithAdjustWithMove (\k v -> runReaderT (f k v) r) dm0 dm'
 
-sequenceDMapWithAdjust :: (GCompare k, Adjustable t m) => DMap k m -> Event t (PatchDMap k m) -> m (DMap k Identity, Event t (PatchDMap k Identity))
+-- | Traverse a 'DMap' of 'Adjustable' actions, running each of them. The provided 'Event' of patches
+-- to the 'DMap' can add, remove, or update values.
+sequenceDMapWithAdjust
+  :: (GCompare k, Adjustable t m)
+  => DMap k m
+  -> Event t (PatchDMap k m)
+  -> m (DMap k Identity, Event t (PatchDMap k Identity))
 sequenceDMapWithAdjust = traverseDMapWithKeyWithAdjust $ \_ -> fmap Identity
 
-sequenceDMapWithAdjustWithMove :: (GCompare k, Adjustable t m) => DMap k m -> Event t (PatchDMapWithMove k m) -> m (DMap k Identity, Event t (PatchDMapWithMove k Identity))
+-- | Traverses a 'DMap' of 'Adjustable' actions, running each of them. The provided 'Event' of patches
+-- to the 'DMap' can add, remove, update, move, or swap values.
+sequenceDMapWithAdjustWithMove
+  :: (GCompare k, Adjustable t m)
+  => DMap k m
+  -> Event t (PatchDMapWithMove k m)
+  -> m (DMap k Identity, Event t (PatchDMapWithMove k Identity))
 sequenceDMapWithAdjustWithMove = traverseDMapWithKeyWithAdjustWithMove $ \_ -> fmap Identity
 
-mapMapWithAdjustWithMove :: forall t m k v v'. (Adjustable t m, Ord k) => (k -> v -> m v') -> Map k v -> Event t (PatchMapWithMove k v) -> m (Map k v', Event t (PatchMapWithMove k v'))
+-- | Traverses a 'Map', running the provided 'Adjustable' action. The provided 'Event' of patches to the 'Map'
+-- can add, remove, update, move, or swap values.
+mapMapWithAdjustWithMove
+  :: forall t m k v v'. (Adjustable t m, Ord k)
+  => (k -> v -> m v')
+  -> Map k v
+  -> Event t (PatchMapWithMove k v)
+  -> m (Map k v', Event t (PatchMapWithMove k v'))
 mapMapWithAdjustWithMove f m0 m' = do
   (out0 :: DMap (Const2 k v) (Constant v'), out') <- traverseDMapWithKeyWithAdjustWithMove (\(Const2 k) (Identity v) -> Constant <$> f k v) (mapToDMap m0) (const2PatchDMapWithMoveWith Identity <$> m')
   return (dmapToMapWith (\(Constant v') -> v') out0, patchDMapWithMoveToPatchMapWithMoveWith (\(Constant v') -> v') <$> out')
@@ -110,4 +135,5 @@ mapMapWithAdjustWithMove f m0 m' = do
 --------------------------------------------------------------------------------
 
 {-# DEPRECATED MonadAdjust "Use Adjustable instead" #-}
+-- | Synonym for 'Adjustable'
 type MonadAdjust = Adjustable

@@ -19,6 +19,7 @@ import Reflex.Dynamic.TH as X
 import Reflex.Dynamic.Uniq as X
 import Reflex.DynamicWriter.Base as X
 import Reflex.DynamicWriter.Class as X
+import Reflex.NotReady.Class as X
 import Reflex.PerformEvent.Base as X
 import Reflex.PerformEvent.Class as X
 import Reflex.PostBuild.Base as X

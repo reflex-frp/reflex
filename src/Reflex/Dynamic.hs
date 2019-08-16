@@ -17,8 +17,12 @@
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
--- | This module contains various functions for working with 'Dynamic' values.
--- 'Dynamic' and its primitives have been moved to the 'Reflex' class.
+-- |
+-- Module:
+--   Reflex.Dynamic
+-- Description:
+--   This module contains various functions for working with 'Dynamic' values.
+--   'Dynamic' and its primitives have been moved to the 'Reflex' class.
 module Reflex.Dynamic
   ( -- * Basics
     Dynamic -- Abstract so we can preserve the law that the current value is always equal to the most recent update
@@ -70,32 +74,12 @@ module Reflex.Dynamic
   , distributeFHListOverDynPure
     -- * Unsafe
   , unsafeDynamic
-    -- * Deprecated functions
-  , apDyn
-  , attachDyn
-  , attachDynWith
-  , attachDynWithMaybe
-  , collectDyn
-  , combineDyn
-  , distributeDMapOverDyn
-  , distributeFHListOverDyn
-  , forDyn
-  , getDemuxed
-  , joinDyn
-  , mapDyn
-  , mconcatDyn
-  , nubDyn
-  , splitDyn
-  , tagDyn
-  , uniqDyn
-  , uniqDynBy
   ) where
 
 import Data.Functor.Compose
 import Data.Functor.Misc
 import Reflex.Class
 
-import Control.Applicative ((<*>))
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity
@@ -103,11 +87,10 @@ import Data.Align
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
-import Data.Functor.Product
 import Data.GADT.Compare ((:~:) (..), GCompare (..), GEq (..), GOrdering (..))
 import Data.Map (Map)
 import Data.Maybe
-import Data.Monoid hiding (Product)
+import Data.Monoid ((<>))
 import Data.These
 
 import Debug.Trace
@@ -220,23 +203,15 @@ distributeMapOverDynPure = fmap dmapToMap . distributeDMapOverDynPure . mapWithF
 
 -- | Convert a list with 'Dynamic' elements into a 'Dynamic' of a list with
 -- non-'Dynamic' elements, preserving the order of the elements.
+{-# DEPRECATED distributeListOverDynPure "Use 'distributeListOverDyn' instead" #-}
 distributeListOverDynPure :: Reflex t => [Dynamic t v] -> Dynamic t [v]
-distributeListOverDynPure =
-  fmap (map fromDSum . DMap.toAscList) .
-  distributeDMapOverDynPure .
-  DMap.fromDistinctAscList .
-  zipWith toDSum [0..]
-  where
-    toDSum :: Int -> Dynamic t a -> DSum (Const2 Int a) (Dynamic t)
-    toDSum k v = Const2 k :=> v
-    fromDSum :: DSum (Const2 Int a) Identity -> a
-    fromDSum (Const2 _ :=> Identity v) = v
+distributeListOverDynPure = distributeListOverDyn
 
 --TODO: Generalize this to functors other than Maps
 -- | Combine a 'Dynamic' of a 'Map' of 'Dynamic's into a 'Dynamic'
 -- with the current values of the 'Dynamic's in a map.
 joinDynThroughMap :: forall t k a. (Reflex t, Ord k) => Dynamic t (Map k (Dynamic t a)) -> Dynamic t (Map k a)
-joinDynThroughMap = joinDyn . fmap distributeMapOverDynPure
+joinDynThroughMap = (distributeMapOverDynPure =<<)
 
 -- | Print the value of the 'Dynamic' when it is first read and on each
 -- subsequent change that is observed (as 'traceEvent'), prefixed with the
@@ -318,6 +293,8 @@ maybeDyn = fmap (fmap unpack) . eitherDyn . fmap pack
           Left _ -> Nothing
           Right a -> Just a
 
+-- | Turns a 'Dynamic t (Either a b)' into a 'Dynamic t (Either (Dynamic t a) (Dynamic t b))' such that
+-- the outer 'Dynamic' is updated only when the 'Either' constructor changes (e.g., from 'Left' to 'Right').
 eitherDyn :: forall t a b m. (Reflex t, MonadFix m, MonadHold t m) => Dynamic t (Either a b) -> m (Dynamic t (Either (Dynamic t a) (Dynamic t b)))
 eitherDyn = fmap (fmap unpack) . factorDyn . fmap eitherToDSum
   where unpack :: DSum (EitherTag a b) (Compose (Dynamic t) Identity) -> Either (Dynamic t a) (Dynamic t b)
@@ -325,6 +302,9 @@ eitherDyn = fmap (fmap unpack) . factorDyn . fmap eitherToDSum
           LeftTag :=> Compose a -> Left $ coerceDynamic a
           RightTag :=> Compose b -> Right $ coerceDynamic b
 
+-- | Factor a 'Dynamic t DSum' into a 'Dynamic' 'DSum' containing nested 'Dynamic' values.
+-- The outer 'Dynamic' updates only when the key of the 'DSum' changes, while the update of the inner
+-- 'Dynamic' represents updates within the current key.
 factorDyn :: forall t m k v. (Reflex t, MonadHold t m, GEq k)
           => Dynamic t (DSum k v) -> m (Dynamic t (DSum k (Compose (Dynamic t) v)))
 factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
@@ -339,6 +319,7 @@ factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
     inner' <- filterEventKey k (updated d)
     inner <- holdDyn v inner'
     return $ k :=> Compose inner
+
 --------------------------------------------------------------------------------
 -- Demux
 --------------------------------------------------------------------------------
@@ -352,7 +333,7 @@ factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
 --
 -- > demuxed (demux d) k === fmap (== k) d
 --
--- However, the when getDemuxed is used multiple times, the complexity is only
+-- However, when getDemuxed is used multiple times, the complexity is only
 -- /O(log(n))/, rather than /O(n)/ for fmap.
 data Demux t k = Demux { demuxValue :: Behavior t k
                        , demuxSelector :: EventSelector t (Const2 k Bool)
@@ -506,7 +487,7 @@ instance AllAreFunctors f t => AllAreFunctors f (h ': t) where
 
 -- | Convert a datastructure whose constituent parts are all 'Dynamic's into a
 -- single 'Dynamic' whose value represents all the current values of the input's
--- consitutent 'Dynamic's.
+-- constituent 'Dynamic's.
 collectDynPure :: ( RebuildSortedHList (HListElems b)
                   , IsHList a, IsHList b
                   , AllAreFunctors (Dynamic t) (HListElems b)
@@ -547,134 +528,3 @@ instance IsHList (a, b, c, d, e, f) where
 #if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
     _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
 #endif
-
---------------------------------------------------------------------------------
--- Deprecated functions
---------------------------------------------------------------------------------
-
--- | Map a function over a 'Dynamic'.
-{-# DEPRECATED mapDyn "Use 'return . fmap f' instead of 'mapDyn f'; consider eliminating monadic style" #-}
-mapDyn :: (Reflex t, Monad m) => (a -> b) -> Dynamic t a -> m (Dynamic t b)
-mapDyn f = return . fmap f
-
--- | Flipped version of 'mapDyn'.
-{-# DEPRECATED forDyn "Use 'return . ffor a' instead of 'forDyn a'; consider eliminating monadic style" #-}
-forDyn :: (Reflex t, Monad m) => Dynamic t a -> (a -> b) -> m (Dynamic t b)
-forDyn a = return . ffor a
-
--- | Split the 'Dynamic' into two 'Dynamic's, each taking the respective value
--- of the tuple.
-{-# DEPRECATED splitDyn "Use 'return . splitDynPure' instead; consider eliminating monadic style" #-}
-splitDyn :: (Reflex t, Monad m) => Dynamic t (a, b) -> m (Dynamic t a, Dynamic t b)
-splitDyn = return . splitDynPure
-
--- | Merge the 'Dynamic' values using their 'Monoid' instance.
-{-# DEPRECATED mconcatDyn "Use 'return . mconcat' instead; consider eliminating monadic style" #-}
-mconcatDyn :: forall t m a. (Reflex t, Monad m, Monoid a) => [Dynamic t a] -> m (Dynamic t a)
-mconcatDyn = return . mconcat
-
--- | This function no longer needs to be monadic; see 'distributeMapOverDynPure'.
-{-# DEPRECATED distributeDMapOverDyn "Use 'return . distributeDMapOverDynPure' instead; consider eliminating monadic style" #-}
-distributeDMapOverDyn :: (Reflex t, Monad m, GCompare k) => DMap k (Dynamic t) -> m (Dynamic t (DMap k Identity))
-distributeDMapOverDyn = return . distributeDMapOverDynPure
-
--- | Merge two 'Dynamic's into a new one using the provided function. The new
--- 'Dynamic' changes its value each time one of the original 'Dynamic's changes
--- its value.
-{-# DEPRECATED combineDyn "Use 'return (zipDynWith f a b)' instead of 'combineDyn f a b'; consider eliminating monadic style" #-}
-combineDyn :: forall t m a b c. (Reflex t, Monad m) => (a -> b -> c) -> Dynamic t a -> Dynamic t b -> m (Dynamic t c)
-combineDyn f a b = return $ zipDynWith f a b
-
--- | A psuedo applicative version of ap for 'Dynamic'. Example useage:
---
--- > do
--- >    person <- Person `mapDyn` dynFirstName
--- >                     `apDyn` dynListName
--- >                     `apDyn` dynAge
--- >                     `apDyn` dynAddress
-{-# DEPRECATED apDyn "Use 'ffor m (<*> a)' instead of 'apDyn m a'; consider eliminating monadic style, since Dynamics are now Applicative and can be used with applicative style directly" #-}
-#ifdef USE_TEMPLATE_HASKELL
-{-# ANN apDyn "HLint: ignore Use fmap" #-}
-#endif
-apDyn :: forall t m a b. (Reflex t, Monad m)
-      => m (Dynamic t (a -> b))
-      -> Dynamic t a
-      -> m (Dynamic t b)
-apDyn m a = fmap (<*> a) m
-
---TODO: The pattern of using hold (sample b0) can be reused in various places as a safe way of building certain kinds of Dynamics; see if we can factor this out
--- | This function no longer needs to be monadic, so it has been replaced by
--- 'demuxed', which is pure.
-{-# DEPRECATED getDemuxed "Use 'return . demuxed d' instead of 'getDemuxed d'; consider eliminating monadic style" #-}
-getDemuxed :: (Reflex t, Monad m, Eq k) => Demux t k -> k -> m (Dynamic t Bool)
-getDemuxed d = return . demuxed d
-
--- | This function no longer needs to be monadic, so it has been replaced by
--- 'distributeFHListOverDynPure', which is pure.
-{-# DEPRECATED distributeFHListOverDyn "Use 'return . distributeFHListOverDynPure' instead; consider eliminating monadic style" #-}
-distributeFHListOverDyn :: forall t m l. (Reflex t, Monad m, RebuildSortedHList l) => FHList (Dynamic t) l -> m (Dynamic t (HList l))
-distributeFHListOverDyn = return . distributeFHListOverDynPure
-
--- | This function no longer needs to be monadic, so it has been replaced by
--- 'collectDynPure', which is pure.
-{-# DEPRECATED collectDyn "Use 'return . collectDynPure' instead; consider eliminating monadic style" #-}
-collectDyn :: ( RebuildSortedHList (HListElems b)
-              , IsHList a, IsHList b
-              , AllAreFunctors (Dynamic t) (HListElems b)
-              , Reflex t, Monad m
-              , HListElems a ~ FunctorList (Dynamic t) (HListElems b)
-              ) => a -> m (Dynamic t b)
-collectDyn = return . collectDynPure
-
--- | This function has been renamed to 'tagPromptlyDyn' to clarify its
--- semantics.
-{-# DEPRECATED tagDyn "Use 'tagPromptlyDyn' instead" #-}
-tagDyn :: Reflex t => Dynamic t a -> Event t b -> Event t a
-tagDyn = tagPromptlyDyn
-
--- | This function has been renamed to 'attachPromptlyDyn' to clarify its
--- semantics.
-{-# DEPRECATED attachDyn "Use 'attachPromptlyDyn' instead" #-}
-attachDyn :: Reflex t => Dynamic t a -> Event t b -> Event t (a, b)
-attachDyn = attachPromptlyDyn
-
--- | This function has been renamed to 'attachPromptlyDynWith' to clarify its
--- semantics.
-{-# DEPRECATED attachDynWith "Use 'attachPromptlyDynWith' instead" #-}
-attachDynWith :: Reflex t => (a -> b -> c) -> Dynamic t a -> Event t b -> Event t c
-attachDynWith = attachPromptlyDynWith
-
--- | This function has been renamed to 'attachPromptlyDynWithMaybe' to clarify
--- its semantics.
-{-# DEPRECATED attachDynWithMaybe "Use 'attachPromptlyDynWithMaybe' instead" #-}
-attachDynWithMaybe :: Reflex t => (a -> b -> Maybe c) -> Dynamic t a -> Event t b -> Event t c
-attachDynWithMaybe = attachPromptlyDynWithMaybe
-
--- | Combine an inner and outer 'Dynamic' such that the resulting 'Dynamic''s
--- current value will always be equal to the current value's current value, and
--- will change whenever either the inner or the outer (or both) values change.
-{-# DEPRECATED joinDyn "Use 'join' instead" #-}
-joinDyn :: Reflex t => Dynamic t (Dynamic t a) -> Dynamic t a
-joinDyn = join
-
--- | WARNING: This function is only pure if @a@'s 'Eq' instance tests
--- representational equality.  Use 'holdUniqDyn' instead, which is pure in all
--- circumstances.  Also, note that, unlike 'nub', this function does not prevent
--- all recurrences of a value, only consecutive recurrences.
-{-# DEPRECATED nubDyn "Use 'holdUniqDyn' instead; note that it returns a MonadHold action rather than a pure Dynamic" #-}
-nubDyn :: (Reflex t, Eq a) => Dynamic t a -> Dynamic t a
-nubDyn = uniqDyn
-
--- | WARNING: This function is only pure if @a@'s 'Eq' instance tests
--- representational equality.  Use 'holdUniqDyn' instead, which is pure in all
--- circumstances.
-{-# DEPRECATED uniqDyn "Use 'holdUniqDyn' instead; note that it returns a MonadHold action rather than a pure Dynamic" #-}
-uniqDyn :: (Reflex t, Eq a) => Dynamic t a -> Dynamic t a
-uniqDyn = uniqDynBy (==)
-
--- | WARNING: This function is impure.  Use 'holdUniqDynBy' instead.
-{-# DEPRECATED uniqDynBy "Use 'holdUniqDynBy' instead; note that it returns a MonadHold action rather than a pure Dynamic" #-}
-uniqDynBy :: Reflex t => (a -> a -> Bool) -> Dynamic t a -> Dynamic t a
-uniqDynBy eq d =
-  let e' = attachWithMaybe (\x x' -> if x' `eq` x then Nothing else Just x') (current d) (updated d)
-  in unsafeDynamic (current d) e'
