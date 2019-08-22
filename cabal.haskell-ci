@@ -15,5 +15,8 @@ constraint-set old-these
 constraint-set old-witherable
   constraints: witherable <0.3.2
 
-constraint-set debug
-  constraints: +debug
+constraint-set debug-propagation
+  constraints: +debug-propagation
+
+constraint-set debug-cycles
+  constraints: +debug-cycles

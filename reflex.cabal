@@ -46,6 +46,12 @@ flag debug-propagation
   default: False
   manual: True
 
+flag debug-cycles
+  description: Enable debugging of event cycles
+  default: False
+  manual: True
+
+
 flag split-these
   description: Use split these/semialign packages
   manual:      False
@@ -152,8 +158,11 @@ library
     build-depends: ghc
     exposed-modules: Reflex.Optimizer
 
-  if flag(debug)
+  if flag(debug-propagation)
     cpp-options: -DDEBUG
+
+  if flag(debug-cycles)
+    cpp-options: -DDEBUG_CYCLES
 
   if flag(use-template-haskell)
     cpp-options: -DUSE_TEMPLATE_HASKELL
