@@ -41,7 +41,7 @@ flag fast-weak
   default: False
   manual: True
 
-flag debug
+flag debug-propagation
   description: Enable debugging of spider internals
   default: False
   manual: True
@@ -63,7 +63,7 @@ library
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.3 && < 0.4,
     exception-transformers == 0.4.*,
-    profunctors >= 5.3 && < 5.5,
+    profunctors >= 5.0 && < 5.5,
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
