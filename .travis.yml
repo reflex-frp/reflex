@@ -87,6 +87,7 @@ before_install:
     }
   - echo text | color_cabal_output
 install:
+  - set -x
   - ${CABAL} --version
   - echo "$(${HC} --version) [$(${HC} --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - node --version
