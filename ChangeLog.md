@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## 0.6.2.3
+
+* Add an upper-bound to witherable
+
 ## 0.6.2.2
 
 * Support these >= 1. Add `split-these` flag to control whether to use new these/semialign combination or not.
