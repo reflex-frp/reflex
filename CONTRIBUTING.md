@@ -45,6 +45,10 @@ Your pull request should add no new warnings to the project. It should also gene
 
 Make sure the project builds and that the tests pass! This will generally also be checked by CI before merge, but trying it yourself first means you'll catch problems earlier and your contribution can be merged that much sooner!
 
+#### Dependencies
+
+Include version bounds whenever adding a dependency to the library stanza of the cabal file. Note that libraries added to reflex.cabal also need to be added to default.nix.
+
 ### Documentation
 
 #### In the code
