@@ -87,7 +87,6 @@ before_install:
     }
   - echo text | color_cabal_output
 install:
-  - set -x
   - ${CABAL} --version
   - echo "$(${HC} --version) [$(${HC} --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - node --version
@@ -126,6 +125,7 @@ install:
   - cat cabal.project || true
   - cat cabal.project.local || true
   - if [ -f "./configure.ac" ]; then (cd "." && autoreconf -i); fi
+  - echo "${CABAL} v2-freeze $WITHCOMPILER ${TEST} ${BENCH}"
   - ${CABAL} v2-freeze $WITHCOMPILER ${TEST} ${BENCH} | color_cabal_output
   - "cat cabal.project.freeze | sed -E 's/^(constraints: *| *)//' | sed 's/any.//'"
   - rm  cabal.project.freeze
