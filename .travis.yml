@@ -167,9 +167,9 @@ script:
   # Constraint set old-witherable
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='witherable <0.3.2' all | color_cabal_output
   # Constraint set debug-propagation
-  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='+debug-propagation' all | color_cabal_output
+  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='reflex +debug-propagation' all | color_cabal_output
   # Constraint set debug-cycles
-  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='+debug-cycles' all | color_cabal_output
+  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='reflex +debug-cycles' all | color_cabal_output
 
 # REGENDATA ["reflex.cabal","--config","cabal.haskell-ci"]
 # EOF
