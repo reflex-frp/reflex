@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## 0.6.2.4
+
+* Update to monoidal-containers 0.6
+
 ## 0.6.2.3
 
 * Add an upper-bound to witherable
