@@ -714,9 +714,12 @@ filterRight = mapMaybe (either (const Nothing) Just)
 instance Reflex t => Alt (Event t) where
   ev1 <!> ev2 = leftmost [ev1, ev2]
 
--- | 'Event' intersection (convenient interface to 'coincidence').
+-- | 'Event' intersection. Only occurs when both events are co-incident.
 instance Reflex t => Apply (Event t) where
-  evf <.> evx = coincidence (fmap (<$> evx) evf)
+  evf <.> evx = mapMaybe f (align evf evx) where
+    f (These g a) = Just (g a)
+    f _           = Nothing
+
 
 -- | 'Event' intersection (convenient interface to 'coincidence').
 instance Reflex t => Bind (Event t) where
@@ -1073,7 +1076,7 @@ instance Reflex t => Align (Event t) where
 instance Reflex t => Semialign (Event t) where
 #endif
   align = alignEventWithMaybe Just
-  
+
 #if defined(MIN_VERSION_semialign)
   zip x y = mapMaybe justThese $ align x y
 #endif
