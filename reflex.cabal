@@ -285,7 +285,7 @@ test-suite DebugCycles
                , witherable
 
   if flag(split-these)
-    build-depends: these-lens
+    build-depends: these-lens, semialign
 
   other-modules:
     Test.Run    
