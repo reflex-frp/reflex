@@ -32,6 +32,8 @@ import qualified Data.Map as Map (showTree, showTreeWith)
 #endif
 import qualified Data.Witherable as W
 import Data.Map.Monoidal
+import qualified Data.Map.Monoidal as MonoidalMap
+
 
 {-# DEPRECATED AppendMap "Use 'MonoidalMap' instead" #-}
 -- | AppendMap is a synonym for 'Data.Map.Monoidal.MonoidalMap'
@@ -48,7 +50,7 @@ pattern AppendMap m = MonoidalMap m
 
 #if !MIN_VERSION_witherable(0,3,2)
 instance W.Filterable (MonoidalMap k) where
-  mapMaybe = W.mapMaybe
+  mapMaybe = MonoidalMap.mapMaybe
 #endif
 
 -- | Deletes a key, returning 'Nothing' if the result is empty.
