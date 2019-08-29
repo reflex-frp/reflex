@@ -264,11 +264,31 @@ test-suite EventWriterT
     build-depends: these-lens
 
   other-modules:
-    Reflex.Test
-    Reflex.TestPlan
-    Reflex.Plan.Reflex
-    Reflex.Plan.Pure
     Test.Run
+
+
+test-suite DebugCycles
+  type: exitcode-stdio-1.0
+  main-is: DebugCycles.hs
+  hs-source-dirs: test
+  build-depends: base
+               , containers
+               , deepseq
+               , dependent-map
+               , dependent-sum
+               , lens
+               , mtl
+               , these
+               , transformers
+               , reflex
+               , ref-tf
+               , witherable
+
+  if flag(split-these)
+    build-depends: these-lens
+
+  other-modules:
+    Test.Run    
 
 
 test-suite RequesterT
