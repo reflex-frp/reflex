@@ -48,7 +48,7 @@ pattern AppendMap m = MonoidalMap m
 
 #if !MIN_VERSION_witherable(0,3,2)
 instance W.Filterable (MonoidalMap k) where
-  mapMaybe = mapMaybe
+  mapMaybe = W.mapMaybe
 #endif
 
 -- | Deletes a key, returning 'Nothing' if the result is empty.
