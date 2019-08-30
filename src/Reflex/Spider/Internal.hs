@@ -101,17 +101,18 @@ import Reflex.NotReady.Class
 import Reflex.Patch
 import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
 
+
+
 #ifdef DEBUG_TRACE_EVENTS
 import qualified Data.ByteString.Char8 as BS8
 import System.IO (stderr)
-#endif
-
-#ifdef DEBUG_TRACE_EVENTS
+import Data.List (isPrefixOf)
 
 withStackOneLine :: (BS8.ByteString -> a) -> a
 withStackOneLine expr = unsafePerformIO $ do
   stack <- currentCallStack
-  return (expr (BS8.pack (unwords (reverse stack))))
+  return (expr . BS8.pack  . unwords . dropInternal . reverse $ stack)
+    where dropInternal = filter (not . isPrefixOf "Reflex.Spider.Internal")
 
 #endif
 
@@ -277,13 +278,11 @@ cacheEvent e =
               occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
               (parentSub, occ) <- subscribeAndRead e $ Subscriber
                 { subscriberPropagate = \a -> do
-                    liftIO $ writeIORef occRef $ Just a
+                    liftIO $ writeIORef occRef (Just a)
                     scheduleClear occRef
                     propagateFast a subscribers
-                , subscriberInvalidateHeight = \old -> do
-                    FastWeakBag.traverse subscribers $ invalidateSubscriberHeight old
-                , subscriberRecalculateHeight = \new -> do
-                    FastWeakBag.traverse subscribers $ recalculateSubscriberHeight new
+                , subscriberInvalidateHeight = FastWeakBag.traverse subscribers . invalidateSubscriberHeight 
+                , subscriberRecalculateHeight = FastWeakBag.traverse subscribers . recalculateSubscriberHeight 
                 }
               when (isJust occ) $ do
                 liftIO $ writeIORef occRef occ -- Set the initial value of occRef; we don't need to do this if occ is Nothing
@@ -466,14 +465,14 @@ recalculateSubscriberHeight :: Height -> Subscriber x a -> IO ()
 recalculateSubscriberHeight = flip subscriberRecalculateHeight
 
 -- | Propagate everything at the current height
-propagate :: forall a x. HasSpiderTimeline x => a -> WeakBag (Subscriber x a) -> EventM x ()
+propagate :: a -> WeakBag (Subscriber x a) -> EventM x ()
 propagate a subscribers = withIncreasedDepth (Proxy::Proxy x) $ do
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
   WeakBag.traverse subscribers $ \s -> subscriberPropagate s a
 
 -- | Propagate everything at the current height
-propagateFast :: forall a x. HasSpiderTimeline x => a -> FastWeakBag (Subscriber x a) -> EventM x ()
+propagateFast :: a -> FastWeakBag (Subscriber x a) -> EventM x ()
 propagateFast a subscribers = withIncreasedDepth (Proxy::Proxy x) $ do
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
@@ -1297,7 +1296,7 @@ traceM _ getMessage = do
 #else
 
 {-# INLINE withIncreasedDepth #-}
-withIncreasedDepth :: forall x m proxy a. HasSpiderTimeline x => proxy x -> m a -> m a
+withIncreasedDepth ::  proxy x -> m a -> m a
 withIncreasedDepth _ = id
 
 {-# INLINE tracePropagate #-}
@@ -1309,7 +1308,7 @@ traceInvalidate :: String -> IO ()
 traceInvalidate _ = return ()
 
 {-# INLINE debugSubscriber #-}
-debugSubscriber :: HasSpiderTimeline x => String -> Subscriber x a -> IO (Subscriber x a)
+debugSubscriber :: String -> Subscriber x a -> IO (Subscriber x a)
 debugSubscriber _ = return
 
 {-# INLINE trace #-}
@@ -1861,6 +1860,23 @@ scheduleMergeSelf m height = scheduleMerge' height (_merge_heightRef m) $ do
   --TODO: Assert that m is not empty
   subscriberPropagate (_merge_sub m) vals
 
+checkCycle :: HasSpiderTimeline x =>  Height -> EventM x ()
+checkCycle height = do
+  currentHeight <- getCurrentHeight
+  when (height <= currentHeight) $ if height /= invalidHeight
+      then do
+        myStack <- liftIO $ whoCreatedIORef undefined --TODO
+        error $ "Height (" ++ show height ++ ") is not greater than current height (" ++ show currentHeight ++ ")\n" ++ unlines (reverse myStack)
+      else liftIO $ do
+#ifdef DEBUG_CYCLES
+        nodesInvolvedInCycle <- walkInvalidHeightParents $ eventSubscribedMerge subscribed
+        stacks <- forM nodesInvolvedInCycle $ \(Some es) -> whoCreatedEventSubscribed es
+        let cycleInfo = ":\n" <> drawForest (listsToForest stacks)
+#else
+        let cycleInfo = ""
+#endif
+        error $ "Causality loop found" <> cycleInfo
+
 mergeSubscriber :: forall x k v s a. (HasSpiderTimeline x, GCompare k) => Merge x k v s -> EventM x (k a) -> Subscriber x (v a)
 mergeSubscriber m getKey = Subscriber
   { subscriberPropagate = \a -> do
@@ -1871,22 +1887,8 @@ mergeSubscriber m getKey = Subscriber
       liftIO $ writeIORef (_merge_accumRef m) $! newM
       when (DMap.null oldM) $ do -- Only schedule the firing once
         height <- liftIO $ readIORef $ _merge_heightRef m
-        --TODO: assertions about height
-        currentHeight <- getCurrentHeight
-        when (height <= currentHeight) $ do
-          if height /= invalidHeight
-            then do
-            myStack <- liftIO $ whoCreatedIORef undefined --TODO
-            error $ "Height (" ++ show height ++ ") is not greater than current height (" ++ show currentHeight ++ ")\n" ++ unlines (reverse myStack)
-            else liftIO $ do
-#ifdef DEBUG_CYCLES
-            nodesInvolvedInCycle <- walkInvalidHeightParents $ eventSubscribedMerge subscribed
-            stacks <- forM nodesInvolvedInCycle $ \(Some es) -> whoCreatedEventSubscribed es
-            let cycleInfo = ":\n" <> drawForest (listsToForest stacks)
-#else
-            let cycleInfo = ""
-#endif
-            error $ "Causality loop found" <> cycleInfo
+        checkCycle height  --TODO: assertions about height
+
         scheduleMergeSelf m height
   , subscriberInvalidateHeight = \old -> do --TODO: When removing a parent doesn't actually change the height, maybe we can avoid invalidating
       modifyIORef' (_merge_heightBagRef m) $ heightBagRemove old
@@ -1989,6 +1991,8 @@ mergeIntCheap d = Event $ \sub -> do
             GT -> error $ "revalidateMergeHeight: more heights (" <> show (heightBagSize heights) <> ") than parents (" <> show numParents <> ") for Merge"
       mySubscriber k = Subscriber
         { subscriberPropagate = \a -> do
+            liftIO (readIORef heightRef) >>= checkCycle
+            
             wasEmpty <- liftIO $ FastMutableIntMap.isEmpty accum
             liftIO $ FastMutableIntMap.insert accum k a
             when wasEmpty scheduleSelf

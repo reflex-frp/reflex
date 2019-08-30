@@ -271,6 +271,7 @@ test-suite DebugCycles
   type: exitcode-stdio-1.0
   main-is: DebugCycles.hs
   hs-source-dirs: test
+  ghc-options: -threaded
   build-depends: base
                , containers
                , deepseq
@@ -283,6 +284,8 @@ test-suite DebugCycles
                , reflex
                , ref-tf
                , witherable
+               , proctest
+
 
   if flag(split-these)
     build-depends: these-lens, semialign
