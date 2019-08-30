@@ -101,8 +101,6 @@ import Reflex.NotReady.Class
 import Reflex.Patch
 import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
 
-
-
 #ifdef DEBUG_TRACE_EVENTS
 import qualified Data.ByteString.Char8 as BS8
 import System.IO (stderr)
@@ -1322,12 +1320,17 @@ traceM _ _ = return ()
 #endif
 
 
-
-
 whoCreatedIORef :: IORef a -> IO [String]
 whoCreatedIORef (IORef a) = whoCreated $! a
 
 #ifdef DEBUG_CYCLES
+
+data EventLoopException = EventLoopException (Forest String) 
+instance Exception EventLoopException
+
+instance Show EventLoopException where
+  show (EventLoopException stacks) = "Causality loop detected:\n" <> drawForest stacks
+
 groupByHead :: Eq a => [NonEmpty a] -> [(a, NonEmpty [a])]
 groupByHead = \case
   [] -> []
@@ -1339,7 +1342,18 @@ groupByHead = \case
 
 listsToForest :: Eq a => [[a]] -> Forest a
 listsToForest l = fmap (\(a, l') -> Node a $ listsToForest $ toList l') $ groupByHead $ catMaybes $ fmap nonEmpty l
+
+#else
+
+data EventLoopException = EventLoopException
+instance Exception EventLoopException
+
+instance Show EventLoopException where
+  show EventLoopException = "Causality loop detected: \n" <>
+    "no location information, compile with --enable-profiling and reflex with flag 'debug-cycles'"
+
 #endif
+
 
 {-# INLINE propagateSubscriberHold #-}
 propagateSubscriberHold :: forall x p. (HasSpiderTimeline x, Patch p) => Hold x p -> p -> EventM x ()
@@ -1871,11 +1885,11 @@ checkCycle height = do
 #ifdef DEBUG_CYCLES
         nodesInvolvedInCycle <- walkInvalidHeightParents $ eventSubscribedMerge subscribed
         stacks <- forM nodesInvolvedInCycle $ \(Some es) -> whoCreatedEventSubscribed es
-        let cycleInfo = ":\n" <> drawForest (listsToForest stacks)
+        throwIO (EventLoopException stacks)
 #else
-        let cycleInfo = ""
+        throwIO EventLoopException
 #endif
-        error $ "Causality loop found" <> cycleInfo
+        
 
 mergeSubscriber :: forall x k v s a. (HasSpiderTimeline x, GCompare k) => Merge x k v s -> EventM x (k a) -> Subscriber x (v a)
 mergeSubscriber m getKey = Subscriber

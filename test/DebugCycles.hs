@@ -18,6 +18,7 @@ import Control.Exception
 
 import System.Timeout
 
+import Data.Maybe (isJust)
 import Data.Functor.Misc
 import qualified Data.Map as Map
 import Data.Map (Map)
@@ -28,6 +29,8 @@ import Data.Align
 import Reflex
 import Reflex.EventWriter.Base
 import Test.Run
+
+import Reflex.Spider.Internal (EventLoopException)
 
 
 import Data.Witherable (Filterable)
@@ -103,16 +106,16 @@ pattern RunTestCaseFlag = "--run-test"
 runTest :: (String, TestCase) -> IO ()
 runTest (name, TestCase test) = do
   mError <- timeout (milliseconds 5) $
-    run `catch` \(ErrorCall e) -> pure e
+    run `catch` \(e :: EventLoopException) -> pure (show e)
  
-  case mError of 
-    Nothing   -> error $ name <> ": timed out (loop not detected)"
-    Just msg  -> unless (msg == "Causality loop found") $ 
-      error $ "loop not detected: " <> msg
-
+  unless (isJust mError) $
+    error $ name <> ": timed out (loop not detected)"
+    
   where 
 
-      run = runApp' (test . splitThese) (Just <$> occs) >> pure "unexpected success"
+      run = runApp' (test . splitThese) (Just <$> occs) 
+        >> error (name <> ": unexpected success")
+        
       occs = [ This 1, This 2, That (), This 3 ]
   
       milliseconds = (*1000)
