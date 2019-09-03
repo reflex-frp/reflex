@@ -147,7 +147,8 @@ library
     Reflex.Widget.Basic,
     Reflex.Workflow
 
-  ghc-options: -Wall -fwarn-redundant-constraints -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively
+  -- ghc-options: -Wall -fwarn-redundant-constraints -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively
+  ghc-options: -O0
 
   if flag(debug-trace-events)
     cpp-options: -DDEBUG_TRACE_EVENTS

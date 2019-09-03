@@ -55,6 +55,34 @@ dynLoop (e1, e2) = do
     d' <- connectDyn e2 (d, liftA2 (+) d d')
   return $ updated d'
 
+connectOnCoincidence :: Widget t m => Event t () -> Event t a -> m (Event t a)
+connectOnCoincidence click e = do
+  d <- holdDyn never (e <$ click)
+  return $ coincidence (updated d)
+  
+coincidenceLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
+coincidenceLoop (e1, e2) = do
+-- "heightBagRemove: Height 1 not present in bag HeightBag {_heightBag_size = 1, _heightBag_contents = fromList [(0,0)]}"
+-- (simpler version of dynLoop)
+  rec
+    e' <- connectOnCoincidence e2 (updated d)
+    d <- count (align e' e1)
+  return $ updated d
+
+
+addHeight :: Reflex t =>  Event t a -> Event t a
+addHeight e = leftmost [e4, e4] where
+  e1 = leftmost [e, e]
+  e2 = leftmost [e1, e1]
+  e3 = leftmost [e2, e2]
+  e4 = leftmost [e3, e3]
+
+
+-- Take an existing test and build it inside a push
+buildLoop :: Widget t m => (forall t m. Widget t m => (Event t Int, Event t ()) -> m (Event t Int)) -> (Event t Int, Event t ()) -> m (Event t Int)
+buildLoop test (e1, e2) = switchHold never buildLoop
+  where buildLoop = pushAlways (const $ test (e1, e2)) e2 
+  
 
 connectButtonPromptly :: Widget t m => Event t () -> Event t a -> m (Event t a)
 connectButtonPromptly click e = do
@@ -71,7 +99,7 @@ switchLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 switchLoop (e1, e2) = do
   rec
     e' <- connectButton e2 (updated d)
-    d <- count (align e' e1)
+    d <- count (align e' (addHeight e1))
   return $ updated d
 
 switchLoop' :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
@@ -80,6 +108,15 @@ switchLoop' (e1, e2) = do
     e' <- connectButton e2 (updated d)
     d <- count (leftmost [e', e1])
   return $ updated d  
+
+
+switchLoop2 :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
+switchLoop2 (e1, e2) = do
+  rec
+    e' <- connectButton e2 (addHeight $ updated d)
+    d <- count (align e' e1)
+  return $ updated d
+  
 
 staticLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 staticLoop (e1, e2) = do
@@ -105,18 +142,20 @@ pattern RunTestCaseFlag = "--run-test"
 
 runTest :: (String, TestCase) -> IO ()
 runTest (name, TestCase test) = do
+  putStrLn ("Test: " <> name)
   mError <- timeout (milliseconds 5) $
     run `catch` \(e :: EventLoopException) -> pure (show e)
  
-  unless (isJust mError) $
-    error $ name <> ": timed out (loop not detected)"
+  case mError of 
+    Just err -> putStrLn err
+    Nothing  -> error "timed out (loop not detected)"
     
   where 
 
       run = runApp' (test . splitThese) (Just <$> occs) 
         >> error (name <> ": unexpected success")
-        
-      occs = [ This 1, This 2, That (), This 3 ]
+
+      occs = [ That (), This 3, That (), This 4 ]
   
       milliseconds = (*1000)
   
@@ -125,13 +164,18 @@ newtype TestCase = TestCase { unTest :: forall t m. Widget t m => (Event t Int, 
 
 tests :: [(String, TestCase)]
 tests = 
-  [
-  --   ("switchLoop'", TestCase switchLoop')
-  -- , ("switchLoop",  TestCase switchLoop)
-  --  ("staticLoop'",  TestCase staticLoop')
-  --  ("staticLoop",  TestCase staticLoop)
-  ("buildStaticLoop", TestCase buildStaticLoop)
+  [ -- ("switchLoop'", TestCase switchLoop')
+  --, ("switchLoop",  TestCase switchLoop)
+  -- , ("switchLoop2",  TestCase switchLoop2)
+
+  --  , ("staticLoop'",  TestCase staticLoop')
+  --  , ("staticLoop",  TestCase staticLoop)
+  -- ("buildStaticLoop", TestCase buildStaticLoop)
+  -- , ("buildSwitchLoop", TestCase $ buildLoop switchLoop)
+
+   ("coincidenceLoop", TestCase coincidenceLoop)
   -- , ("dynLoop",     TestCase dynLoop)
+  -- , ("buildCoincidenceLoop", TestCase $ buildLoop coincidenceLoop)
   ]
 
 main :: IO ()

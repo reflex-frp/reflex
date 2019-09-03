@@ -83,7 +83,6 @@ hostPerf ref = S.runSpiderHost $ do
               Nothing -> []
         Host.fireEventsAndRead followupEventTriggers $ return ()
         return ()
-  return ()
 
 data Tell a where
   Action :: Tell ()
