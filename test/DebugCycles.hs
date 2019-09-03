@@ -164,7 +164,7 @@ newtype TestCase = TestCase { unTest :: forall t m. Widget t m => (Event t Int, 
 
 tests :: [(String, TestCase)]
 tests = 
-  [ -- ("switchLoop'", TestCase switchLoop')
+  [ ("switchLoop'", TestCase switchLoop')
   --, ("switchLoop",  TestCase switchLoop)
   -- , ("switchLoop2",  TestCase switchLoop2)
 
@@ -173,7 +173,7 @@ tests =
   -- ("buildStaticLoop", TestCase buildStaticLoop)
   -- , ("buildSwitchLoop", TestCase $ buildLoop switchLoop)
 
-   ("coincidenceLoop", TestCase coincidenceLoop)
+  --  ("coincidenceLoop", TestCase coincidenceLoop)
   -- , ("dynLoop",     TestCase dynLoop)
   -- , ("buildCoincidenceLoop", TestCase $ buildLoop coincidenceLoop)
   ]
