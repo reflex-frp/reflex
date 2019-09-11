@@ -1,5 +1,38 @@
 # Revision history for reflex
 
+## 0.6.2.4
+
+* Update to monoidal-containers 0.6
+
+## 0.6.2.3
+
+* Add an upper-bound to witherable
+
+## 0.6.2.2
+
+* Support these >= 1. Add `split-these` flag to control whether to use new these/semialign combination or not.
+* Update version bounds to fix some CI failures
+* Add travis CI configuration
+
+## 0.6.2.1
+
+* Generalize `fan` to `fanG` to take a `DMap` with non-`Identity`
+  functor:
+    * `fan` to `fanG`
+    * `EventSelectorG` for `fanG` result selector.
+
+* Reduce the amount of unsafeCoerce in coercing newtypes under Event/Dynamic/Behavior.
+    * Add fused ReaderIO for the purpose of coercion (ReaderT's third argument has nominal role preventing automated coerce)
+    * Add incrementalCoercion/coerceIncremental to go with dynamicCoercion/coerceDynamic
+
+* Generalize merging functions:
+  `merge` to `mergeG`, 
+  `mergeIncremental` to `mergeIncrementalG`, 
+  `mergeIncrementalWithMove` to `mergeIncrementalWithMoveG`.  
+
+* Generalize distribute function:
+    `distributeDMapOverDynPure` to `distributeDMapOverDynPureG`,
+
 ## 0.6.2.0
 
 * Add `Reflex.Query.Base.mapQueryT`. See that module for documentation
