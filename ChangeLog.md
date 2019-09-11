@@ -1,9 +1,10 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.6.2.0
 
-* Fix `holdDyn` so that it is lazy in its event argument
 * Add `Reflex.Query.Base.mapQueryT`. See that module for documentation
+* Stop using the now-deprecated `*Tag` classes (e.g., `ShowTag`).
+* Fix `holdDyn` so that it is lazy in its event argument.
 
 ## 0.6.1.0
 

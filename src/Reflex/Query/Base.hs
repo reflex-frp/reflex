@@ -39,8 +39,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import qualified Data.Semigroup as S
-import Data.Some (Some)
-import qualified Data.Some as Some
+import Data.Some (Some(Some))
 import Data.These
 
 import Reflex.Class
@@ -146,10 +145,10 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, Eq q, MonadHold t 
         liftedResult' = fforCheap result' $ \(PatchDMap p) -> PatchDMap $
           mapKeyValuePairsMonotonic (\(k :=> ComposeMaybe mr) -> k :=> ComposeMaybe (fmap (getQueryTLoweredResultValue . getCompose) mr)) p
         liftedBs0 :: Map (Some k) [Behavior t q]
-        liftedBs0 = Map.fromDistinctAscList $ (\(k :=> Compose r) -> (Some.This k, getQueryTLoweredResultWritten r)) <$> DMap.toList result0
+        liftedBs0 = Map.fromDistinctAscList $ (\(k :=> Compose r) -> (Some k, getQueryTLoweredResultWritten r)) <$> DMap.toList result0
         liftedBs' :: Event t (PatchMap (Some k) [Behavior t q])
         liftedBs' = fforCheap result' $ \(PatchDMap p) -> PatchMap $
-          Map.fromDistinctAscList $ (\(k :=> ComposeMaybe mr) -> (Some.This k, fmap (getQueryTLoweredResultWritten . getCompose) mr)) <$> DMap.toList p
+          Map.fromDistinctAscList $ (\(k :=> ComposeMaybe mr) -> (Some k, fmap (getQueryTLoweredResultWritten . getCompose) mr)) <$> DMap.toList p
         sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
         sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
         accumBehaviors :: forall m'. MonadHold t m'
@@ -190,10 +189,10 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, Eq q, MonadHold t 
     let liftedResult0 = mapKeyValuePairsMonotonic (\(k :=> Compose r) -> k :=> getQueryTLoweredResultValue r) result0
         liftedResult' = fforCheap result' $ mapPatchDMapWithMove (getQueryTLoweredResultValue . getCompose)
         liftedBs0 :: Map (Some k) [Behavior t q]
-        liftedBs0 = Map.fromDistinctAscList $ (\(k :=> Compose r) -> (Some.This k, getQueryTLoweredResultWritten r)) <$> DMap.toList result0
+        liftedBs0 = Map.fromDistinctAscList $ (\(k :=> Compose r) -> (Some k, getQueryTLoweredResultWritten r)) <$> DMap.toList result0
         liftedBs' :: Event t (PatchMapWithMove (Some k) [Behavior t q])
         liftedBs' = fforCheap result' $ weakenPatchDMapWithMoveWith (getQueryTLoweredResultWritten . getCompose) {- \(PatchDMap p) -> PatchMapWithMove $
-          Map.fromDistinctAscList $ (\(k :=> mr) -> (Some.This k, fmap (fmap (getQueryTLoweredResultWritten . getCompose)) mr)) <$> DMap.toList p -}
+          Map.fromDistinctAscList $ (\(k :=> mr) -> (Some k, fmap (fmap (getQueryTLoweredResultWritten . getCompose)) mr)) <$> DMap.toList p -}
         sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
         sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
         accumBehaviors' :: forall m'. MonadHold t m'

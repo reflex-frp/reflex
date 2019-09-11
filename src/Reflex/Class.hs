@@ -193,8 +193,7 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Semigroup (Semigroup, sconcat, stimes, (<>))
-import Data.Some (Some)
-import qualified Data.Some as Some
+import Data.Some (Some(Some))
 import Data.String
 import Data.These
 import Data.Type.Coercion
@@ -257,10 +256,10 @@ class ( MonadHold t (PushM t)
   -- least one input event is occurring, and will contain all of the input keys
   -- that are occurring simultaneously
   merge :: GCompare k => DMap k (Event t) -> Event t (DMap k Identity) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
-  -- | Efficiently fan-out an event to many destinations.  This function should
-  -- be partially applied, and then the result applied repeatedly to create
-  -- child events
-  fan :: GCompare k => Event t (DMap k Identity) -> EventSelector t k --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
+  -- | Efficiently fan-out an event to many destinations.  You should save the
+  -- result in a @let@-binding, and then repeatedly 'select' on the result to
+  -- create child events
+  fan :: GCompare k => Event t (DMap k Identity) -> EventSelector t k
   -- | Create an 'Event' that will occur whenever the currently-selected input
   -- 'Event' occurs
   switch :: Behavior t (Event t a) -> Event t a
@@ -1155,9 +1154,9 @@ factorEvent
   -> Event t (DSum k v)
   -> m (Event t (v a), Event t (DSum k (Product v (Compose (Event t) v))))
 factorEvent k0 kv' = do
-  key :: Behavior t (Some k) <- hold (Some.This k0) $ fmapCheap (\(k :=> _) -> Some.This k) kv'
+  key :: Behavior t (Some k) <- hold (Some k0) $ fmapCheap (\(k :=> _) -> Some k) kv'
   let update = flip push kv' $ \(newKey :=> newVal) -> sample key >>= \case
-        Some.This oldKey -> case newKey `geq` oldKey of
+        Some oldKey -> case newKey `geq` oldKey of
           Just Refl -> return Nothing
           Nothing -> do
             newInner <- filterEventKey newKey kv'
@@ -1367,7 +1366,7 @@ mapAccumMaybeB
   -> m (Behavior t a, Event t c)
 mapAccumMaybeB f = mapAccumMaybeMB $ \v o -> return $ f v o
 
--- | LIke 'mapAccumMaybeB' except that the combining function is a 'PushM' action.
+-- | Like 'mapAccumMaybeB' except that the combining function is a 'PushM' action.
 {-# INLINE mapAccumMaybeMB #-}
 mapAccumMaybeMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Behavior t a, Event t c)
 mapAccumMaybeMB f z e = do

@@ -41,7 +41,7 @@ workflowView w0 = do
       eReplace <- fmap switch $ hold never $ fmap snd eResult
   return $ fmap fst eResult
 
--- | Map a function over a 'Workflow', possibly changing the resturn type.
+-- | Map a function over a 'Workflow', possibly changing the return type.
 mapWorkflow :: (Reflex t, Functor m) => (a -> b) -> Workflow t m a -> Workflow t m b
 mapWorkflow f (Workflow x) = Workflow (fmap (f *** fmap (mapWorkflow f)) x)
 
