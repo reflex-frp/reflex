@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 -- | 'Patch'es on 'Map' that can insert, delete, and move values from one key to
 -- another
 module Reflex.Patch.MapWithMove2 where
