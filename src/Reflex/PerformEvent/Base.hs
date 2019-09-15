@@ -68,12 +68,36 @@ instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m
   type PrimState (PerformEventT t m) = PrimState (HostFrame t)
   primitive = PerformEventT . lift . primitive
 
-instance (ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
+instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent t (PerformEventT t m) where
   type Performable (PerformEventT t m) = HostFrame t
   {-# INLINABLE performEvent_ #-}
   performEvent_ = PerformEventT . requesting_
   {-# INLINABLE performEvent #-}
   performEvent = PerformEventT . requestingIdentity
+
+-- | An Adjustable instance where "adjusting" just runs the new thing - nothing is done with the old thing
+newtype NullAdjustable t m a = NullAdjustable { unNullAdjustable :: m a }
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException)
+
+instance PrimMonad m => PrimMonad (NullAdjustable t m) where
+  type PrimState (NullAdjustable t m) = PrimState m
+
+instance Adjustable t (PerformEvent t m) where
+  runWithReplace a0 a' = PerformEventT $ do
+    runWithReplace (unPerformEventT a0) a'
+
+{-
+instance Adjustable t (NullAdjustable t m) where
+  runWithReplace a0 a' = NullAdjustable $ do
+    result0 <- lift a0
+    result' <- requestingIdentity a'
+    return (result0, result')
+  traverseDMapWithKeyWithAdjust = defaultAdjustBase traversePatchDMapWithKey
+  traverseDMapWithKeyWithAdjustWithMove = defaultAdjustBase traversePatchDMapWithMoveWithKey
+-}
+{-
+  traverseIntMapWithKeyWithAdjust = defaultAdjustIntBase traverseIntMapPatchWithKey
+-}
 
 instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT t m) where
   runWithReplace outerA0 outerA' = PerformEventT $ runWithReplaceRequesterTWith f (coerce outerA0) (coerceEvent outerA')
@@ -82,9 +106,11 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
             result0 <- lift a0
             result' <- requestingIdentity a'
             return (result0, result')
+            {-
   traverseIntMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseIntMapWithKeyWithAdjustRequesterTWith (defaultAdjustIntBase traverseIntMapPatchWithKey) patchIntMapNewElementsMap mergeIntIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
   traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
   traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
+-}
 
 defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
   => ((forall a. k' a -> v a -> HostFrame t (v2 a)) -> p k' v -> HostFrame t (p k' v2))

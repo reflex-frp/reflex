@@ -40,7 +40,7 @@ class (Reflex t, Monad m) => Requester t m | m -> t where
   requesting :: Event t (Request m a) -> m (Event t (Response m a))
   -- | Emit a request whenever the given 'Event' fires, and ignore all responses.
   requesting_ :: Event t (Request m a) -> m ()
-
+--TODO: Make Requester polykinded, where Request m and Response m both take an argument of the same kind
 
 instance Requester t m => Requester t (ReaderT r m) where
   type Request (ReaderT r m) = Request m
