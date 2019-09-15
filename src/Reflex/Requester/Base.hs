@@ -15,26 +15,24 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE InstanceSigs #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
 module Reflex.Requester.Base
   ( RequesterT (..)
   , runRequesterT
-  , withRequesterT
-  , runWithReplaceRequesterTWith
-  , traverseIntMapWithKeyWithAdjustRequesterTWith
-  , traverseDMapWithKeyWithAdjustRequesterTWith
-  , RequesterData
-  , RequesterDataKey
-  , traverseRequesterData
-  , forRequesterData
-  , requesterDataToList
-  , singletonRequesterData
-  , matchResponsesWithRequests
-  , multiEntry
-  , unMultiEntry
-  , requesting'
+--  , withRequesterT
+--  , RequesterData
+--  , RequesterDataKey
+--  , traverseRequesterData
+--  , forRequesterData
+--  , requesterDataToList
+--  , singletonRequesterData
+--  , matchResponsesWithRequests
+--  , multiEntry
+--  , unMultiEntry
+--  , requesting'
   ) where
 
 import Reflex.Class
@@ -45,6 +43,8 @@ import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
+import Reflex.EventWriter.Base
+import Reflex.EventWriter.Class
 
 import Control.Applicative (liftA2)
 import Control.Monad.Exception
@@ -68,8 +68,144 @@ import Data.Proxy
 import qualified Data.Semigroup as S
 import Data.Some (Some(Some))
 import Data.Type.Equality
-import Data.Unique.Tag
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
+import Data.TagMap
+import Reflex.FanTag
+import Data.Unique.Tag.Local
+import qualified Data.Unique.Tag as Global
+import Data.GADT.Compare
 
+data RequestData m request = forall s. RequestData !(Global.Tag (PrimState m) s) !(Seq (RequestEnvelope s request))
+data ResponseData m response = forall s. ResponseData !(Global.Tag (PrimState m) s) !(TagMap s response)
+
+runRequesterT :: forall t request response m a
+  .  ( Reflex t
+     , PrimMonad m
+     , MonadFix m
+     )
+  => RequesterT t request response m a
+  -> Event t (ResponseData m response)
+  -> m (a, Event t (RequestData m request))
+runRequesterT (RequesterT a) wrappedResponses = withRequesterInternalT $ \(requests :: Event t (Seq (RequestEnvelope s request))) -> do
+  t :: Global.Tag (PrimState m) s <- lift Global.newTag
+  result <- a
+  let responses = fforMaybe wrappedResponses $ \(ResponseData s m) -> case s `geq` t of
+        Nothing -> Nothing --TODO: Warn somehow
+        Just Refl -> Just m
+  pure (responses, (result, fmap (RequestData t) requests))
+
+instance MonadTrans (RequesterInternalT s t request response) where
+  lift = RequesterInternalT . lift . lift . lift
+
+instance MonadTrans (RequesterT t request response) where
+  lift a = RequesterT $ RequesterInternalT $ lift $ lift $ lift a
+
+-- | Run a 'RequesterT' action.  The resulting 'Event' will fire whenever
+-- requests are made, and responses should be provided in the input 'Event'.
+-- The 'Tag' keys will be used to return the responses to the same place the
+-- requests were issued.
+withRequesterInternalT :: (Reflex t, PrimMonad m, MonadFix m)
+              => (forall s. Event t (Seq (RequestEnvelope s request)) -> RequesterInternalT s t request response m (Event t (TagMap s response), a))
+              -> m a
+withRequesterInternalT f = runTagGenT $ do
+  rec let RequesterInternalT a = f requests
+      ((responses, result), requests) <- runEventWriterT $ runReaderT a (fanTag responses)
+  pure result
+
+data RequestEnvelope s request = forall a. RequestEnvelope {-# UNPACK #-} !(Maybe (Tag s a)) !(request a)
+
+newtype RequesterT t (request :: * -> *) (response :: * -> *) m a = RequesterT { unRequesterT :: forall s. RequesterInternalT s t request response m a }
+
+instance Functor m => Functor (RequesterT t request response m) where
+  fmap f (RequesterT x) = RequesterT $ fmap f x
+
+instance Monad m => Applicative (RequesterT t request response m) where
+  pure x = RequesterT $ pure x
+  RequesterT f <*> RequesterT x = RequesterT $ f <*> x
+  liftA2 f (RequesterT a) (RequesterT b) = RequesterT $ liftA2 f a b
+  RequesterT f <* RequesterT x = RequesterT $ f <* x
+  RequesterT f *> RequesterT x = RequesterT $ f *> x
+
+instance Monad m => Monad (RequesterT t request response m) where
+  return = pure
+  RequesterT mx >>= f = RequesterT $ mx >>= \x -> case f x of
+    RequesterT y -> y
+
+instance MonadFix m => MonadFix (RequesterT t request response m) where
+  mfix f = RequesterT $ mfix $ \x -> case f x of
+    RequesterT a -> a
+
+instance MonadIO m => MonadIO (RequesterT t request respnose m) where
+  liftIO a = RequesterT $ liftIO a
+
+instance MonadException m => MonadException (RequesterT t request respnose m) where
+  throw e = RequesterT $ throw e
+
+newtype RequesterInternalT s t request response m a = RequesterInternalT { unRequesterInternalT :: ReaderT (EventSelectorTag t s response) (EventWriterT t (Seq (RequestEnvelope s request)) (TagGenT s m)) a }
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException)
+
+instance MonadSample t m => MonadSample t (RequesterT t request response m)
+instance MonadHold t m => MonadHold t (RequesterT t request response m)
+instance PostBuild t m => PostBuild t (RequesterT t request response m)
+instance TriggerEvent t m => TriggerEvent t (RequesterT t request response m)
+
+instance PrimMonad m => PrimMonad (RequesterT t request response m) where
+  type PrimState (RequesterT t request response m) = PrimState m
+  primitive = lift . primitive
+
+-- TODO: Monoid and Semigroup can likely be derived once StateT has them.
+instance (Monoid a, Monad m) => Monoid (RequesterT t request response m a) where
+  mempty = pure mempty
+  mappend = liftA2 mappend
+
+instance (S.Semigroup a, Monad m) => S.Semigroup (RequesterT t request response m a) where
+  (<>) = liftA2 (S.<>)
+
+instance PerformEvent t m => PerformEvent t (RequesterT t request response m) where
+  type Performable (RequesterT t request response m) = Performable m
+  performEvent_ = lift . performEvent_
+  performEvent = lift . performEvent
+
+instance MonadRef m => MonadRef (RequesterT t request response m) where
+  type Ref (RequesterT t request response m) = Ref m
+  newRef = lift . newRef
+  readRef = lift . readRef
+  writeRef r = lift . writeRef r
+
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (RequesterT t request response m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
+
+instance MonadReader r m => MonadReader r (RequesterT t request response m) where
+  ask = lift ask
+  local f (RequesterT a) = RequesterT $ RequesterInternalT $ mapReaderT (mapEventWriterT $ mapTagGenT $ local f) $ unRequesterInternalT a
+  reader = lift . reader
+
+instance (Reflex t, PrimMonad m) => Requester t (RequesterT t request response m) where
+  type Request (RequesterT t request response m) = request
+  type Response (RequesterT t request response m) = response
+  requesting e = RequesterT $ RequesterInternalT $ do
+    t <- lift $ lift mkTag
+    tellEvent $ fmapCheap (Seq.singleton . RequestEnvelope (Just t)) e
+    s <- ask
+    pure $ selectTag s t
+  requesting_ e = RequesterT $ RequesterInternalT $ do
+    tellEvent $ fmapCheap (Seq.singleton . RequestEnvelope Nothing) e
+
+
+{-# INLINABLE runWithReplaceRequesterTWith #-}
+runWithReplaceRequesterTWith :: forall m t request response a b. (Reflex t, MonadHold t m
+                                                                 , MonadFix m
+                                                                 )
+                             => (forall a' b'. m a' -> Event t (m b') -> RequesterT t request response m (a', Event t b'))
+                             -> RequesterT t request response m a
+                             -> Event t (RequesterT t request response m b)
+                             -> RequesterT t request response m (a, Event t b)
+runWithReplaceRequesterTWith f (RequesterT a0) a' = RequesterT $ do
+  pure undefined
+
+{-
 import GHC.Exts (Any)
 import Unsafe.Coerce
 
@@ -243,23 +379,6 @@ newtype RequesterT t request (response :: * -> *) m a = RequesterT { unRequester
            , MonadAsyncException
 #endif
            )
-
-deriving instance MonadSample t m => MonadSample t (RequesterT t request response m)
-deriving instance MonadHold t m => MonadHold t (RequesterT t request response m)
-deriving instance PostBuild t m => PostBuild t (RequesterT t request response m)
-deriving instance TriggerEvent t m => TriggerEvent t (RequesterT t request response m)
-
-instance PrimMonad m => PrimMonad (RequesterT t request response m) where
-  type PrimState (RequesterT t request response m) = PrimState m
-  primitive = lift . primitive
-
--- TODO: Monoid and Semigroup can likely be derived once StateT has them.
-instance (Monoid a, Monad m) => Monoid (RequesterT t request response m a) where
-  mempty = pure mempty
-  mappend = liftA2 mappend
-
-instance (S.Semigroup a, Monad m) => S.Semigroup (RequesterT t request response m a) where
-  (<>) = liftA2 (S.<>)
 
 
 -- | Run a 'RequesterT' action.  The resulting 'Event' will fire whenever
@@ -535,3 +654,4 @@ matchResponsesWithRequests f send recv = do
             ( singletonRequesterData k rsp
             , PatchMap $ Map.singleton n Nothing
             )
+-}
