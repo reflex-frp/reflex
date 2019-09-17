@@ -5,6 +5,7 @@ module Data.TagMap
   , unTagMap
   , fromDMap
   , toDMap
+  , fromList
   , insert
   ) where
 
@@ -29,3 +30,6 @@ toDMap = DMap.fromDistinctAscList . fmap (\(k, v) -> (unsafeTagFromId k :=> (uns
 
 insert :: forall x a v. Tag x a -> v a -> TagMap x v -> TagMap x v
 insert k v = TagMap . IntMap.insert (tagId k) ((unsafeCoerce :: v a -> Any) v) . unTagMap
+
+fromList :: [DSum (Tag x) v] -> TagMap x v
+fromList = TagMap . IntMap.fromList . fmap (\(t :=> v) -> (tagId t, (unsafeCoerce :: v a -> Any) v))
