@@ -1,3 +1,7 @@
+-- | The type-safety of this module depends on two assumptions:
+-- 1. If the `s` parameters on two `TagGen`s can unify, then they contain the same MutVar
+-- 2. Two Tag values made from the same TagGen never contain the same Int
+
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -11,6 +15,9 @@ import Control.Monad.Exception
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Data.Primitive.MutVar
+import Data.GADT.Compare
+import Data.Some
+import Unsafe.Coerce
 
 newtype Tag x a = Tag Int
 
@@ -23,29 +30,24 @@ tagId (Tag n) = n
 unsafeTagFromId :: Int -> Tag x a
 unsafeTagFromId n = Tag n
 
-class TagGen m where
-  type TagScope m :: *
-  -- | Note: this will throw an exception if its internal counter would wrap around
-  mkTag :: m (Tag (TagScope m) a)
+-- We use Int because it is supported by e.g. IntMap
+newtype TagGen ps s = TagGen { unTagGen :: MutVar ps Int }
 
-newtype TagGenT (s :: *) m a = TagGenT { unTagGenT :: ReaderT (MutVar (PrimState m) Int) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException)
+instance GEq (TagGen ps) where
+  TagGen a `geq` TagGen b =
+    if a == b
+    then Nothing
+    else Just $ unsafeCoerce Refl
 
-instance MonadTrans (TagGenT s) where
-  lift = TagGenT . lift
+newTag :: PrimMonad m => TagGen (PrimState m) s -> m (Tag s a)
+newTag (TagGen r) = do
+  n <- atomicModifyMutVar' r $ \x -> (succ x, x)
+  pure $ Tag n
 
-data TagGenTScope (ps :: *) (s :: *)
+newTagGen :: PrimMonad m => m (Some (TagGen (PrimState m)))
+newTagGen = Some . TagGen <$> newMutVar minBound
 
-instance PrimMonad m => TagGen (TagGenT s m) where
-  type TagScope (TagGenT s m) = s
-  mkTag = TagGenT $ ReaderT $ \r -> do
-    n <- atomicModifyMutVar' r $ \x -> (succ x, x)
-    pure $ Tag n
-
-runTagGenT :: forall m a. PrimMonad m => (forall s. TagGenT s m a) -> m a
-runTagGenT (TagGenT a :: TagGenT (TagGenTScope (PrimState m) ()) m a) = do
-  r <- newMutVar minBound
-  runReaderT a r
-
-mapTagGenT :: PrimState m ~ PrimState n => (m a -> n b) -> TagGenT s m a -> TagGenT s n b
-mapTagGenT f (TagGenT a) = TagGenT $ mapReaderT f a
+withTagGen :: PrimMonad m => (forall s. TagGen (PrimState m) s -> m a) -> m a
+withTagGen f = do
+  g <- newTagGen
+  withSome g f

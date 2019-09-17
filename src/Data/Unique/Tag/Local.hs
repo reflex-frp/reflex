@@ -1,11 +1,11 @@
 module Data.Unique.Tag.Local
   ( Tag
   , TagGen (..)
-  , TagGenT
   , tagId
   , unsafeTagFromId
-  , runTagGenT
-  , mapTagGenT
+  , newTag
+  , newTagGen
+  , withTagGen
   ) where
 
 import Data.Unique.Tag.Local.Internal
