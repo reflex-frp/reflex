@@ -113,6 +113,7 @@ import Reflex.PerformEvent.Base (PerformEventT)
 import qualified Data.ByteString.Char8 as BS8
 import System.IO (stderr)
 import Data.List (isPrefixOf)
+import Debug.Trace
 #endif
 
 -- TODO stdout might not be the best channel for debug output
@@ -1638,7 +1639,7 @@ newFanInt = do
 fanInt :: HasSpiderTimeline x => Event x (IntMap a) -> EventSelectorInt x a
 fanInt p = unsafePerformIO $ do
   self <- newFanInt
-  pure $ EventSelectorInt $ \k -> Event $ \sub -> do
+  pure $ EventSelectorInt $ \k -> trace ("select " <> show k) $ Event $ \sub -> do
     isEmpty <- liftIO $ FastMutableIntMap.isEmpty (_fanInt_subscribers self)
     when isEmpty $ do -- This is the first subscriber, so we need to subscribe to our input
       let desc = "fanInt" <> showNodeId self <> ", k = "  <> show k
@@ -1646,8 +1647,9 @@ fanInt p = unsafePerformIO $ do
         { subscriberPropagate = \m -> do
             liftIO $ writeIORef (_fanInt_occRef self) m
             scheduleIntClear $ _fanInt_occRef self
-            FastMutableIntMap.forIntersectionWithImmutable_ (_fanInt_subscribers self) m $ \b v ->  --TODO: Do we need to know that no subscribers are being added as we traverse?
-              FastWeakBag.traverse_ b $ \s ->
+            liftIO $ putStrLn $ "Pushing " <> show (IntMap.size m) <> " occurrences"
+            FastMutableIntMap.forIntersectionWithImmutable_ (_fanInt_subscribers self) m $ \b v -> do --TODO: Do we need to know that no subscribers are being added as we traverse?
+              FastWeakBag.traverse b $ \s -> do
                 subscriberPropagate s v
         , subscriberInvalidateHeight = \old ->
             FastMutableIntMap.for_ (_fanInt_subscribers self) $ \b ->

@@ -2,11 +2,14 @@
 -- 'Requester'.
 module Reflex.Requester.Base
   ( RequesterT (..)
+  , RequestData (..)
+  , ResponseData (..)
+  , RequestEnvelope (..)
   , runRequesterT
 --  , withRequesterT
 --  , RequesterData
 --  , RequesterDataKey
---  , traverseRequesterData
+  , traverseRequesterData
 --  , forRequesterData
 --  , requesterDataToList
 --  , singletonRequesterData

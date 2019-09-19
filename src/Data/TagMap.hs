@@ -7,6 +7,7 @@ module Data.TagMap
   , toDMap
   , fromList
   , insert
+  , size
   ) where
 
 import Data.IntMap (IntMap)
@@ -33,3 +34,6 @@ insert k v = TagMap . IntMap.insert (tagId k) ((unsafeCoerce :: v a -> Any) v) .
 
 fromList :: [DSum (Tag x) v] -> TagMap x v
 fromList = TagMap . IntMap.fromList . fmap (\(t :=> v) -> (tagId t, (unsafeCoerce :: v a -> Any) v))
+
+size :: TagMap x v -> Int
+size = IntMap.size . unTagMap

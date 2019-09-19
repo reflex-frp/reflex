@@ -200,6 +200,9 @@ sequenceIntMapWithAdjustEventWriterTWith base mergePatchIncremental coincidenceP
       h : t -> Just $ sconcat $ h :| t
   return (result0, result')
 
+switchHoldPromptOnlyIntMapIncremental :: (Reflex t, MonadHold t m) => IntMap (Event t a) -> Event t (PatchIntMap (Event t a)) -> m (Event t (IntMap a))
+switchHoldPromptOnlyIntMapIncremental = switchHoldPromptOnlyIncremental mergeIntIncremental coincidencePatchIntMap
+
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceDMapWithAdjust'.
 sequenceDMapWithAdjustEventWriterTWith
   :: forall t m p p' w k v v'

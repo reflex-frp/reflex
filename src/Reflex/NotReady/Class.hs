@@ -25,6 +25,7 @@ import Reflex.PerformEvent.Base (PerformEventT (..))
 import Reflex.PostBuild.Base (PostBuildT)
 import Reflex.Query.Base (QueryT)
 import Reflex.Requester.Base (RequesterT)
+import Reflex.Requester.Base.Internal (RequesterInternalT)
 import Reflex.TriggerEvent.Base (TriggerEventT)
 
 class Monad m => NotReady t m | m -> t where
@@ -69,6 +70,10 @@ instance (ReflexHost t, NotReady t (HostFrame t)) => NotReady t (PerformEventT t
   notReady = PerformEventT notReady
 
 instance NotReady t m => NotReady t (RequesterT t request response m) where
+  notReadyUntil = lift . notReadyUntil
+  notReady = lift notReady
+
+instance NotReady t m => NotReady t (RequesterInternalT s t request response m) where
   notReadyUntil = lift . notReadyUntil
   notReady = lift notReady
 
