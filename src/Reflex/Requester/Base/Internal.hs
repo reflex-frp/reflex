@@ -63,13 +63,21 @@ import Data.GADT.Compare
 import Data.Witherable
 import Data.Foldable
 
+import Debug.Trace
+
+--TODO: The use of Seq in this module could probably be replaced with something
+--even cheaper.  We do need O(1) append, but we don't need associativity until
+--the very end, when we're smashing everything together.  This could be
+--implemented as a binary tree whose representation isn't associative, but which
+--doesn't allow any external party to observe the lack of associativity.
+
 data RequestData ps request = forall s. RequestData !(TagGen ps s) !(Seq (RequestEnvelope s request))
 data ResponseData ps response = forall s. ResponseData !(TagGen ps s) !(TagMap s response)
 
 traverseRequesterData :: forall m request response. Applicative m => (forall a. request a -> m (response a)) -> RequestData (PrimState m) request -> m (ResponseData (PrimState m) response)
 traverseRequesterData f (RequestData tg es) = ResponseData tg . TagMap.fromList <$> wither g (toList es)
   where g (RequestEnvelope mt req) = case mt of
-          Just t -> (\rsp -> Just $ t :=> rsp) <$> f req
+          Just t -> Just . (t :=>) <$> f req
           Nothing -> Nothing <$ f req
 
 runRequesterT :: forall t request response m a
@@ -84,8 +92,8 @@ runRequesterT (RequesterT a) wrappedResponses = withRequesterInternalT $ \(reque
   (_, tg) <- RequesterInternalT ask
   result <- a
   let responses = fforMaybe wrappedResponses $ \(ResponseData tg' m) -> case tg `geq` tg' of
-        Nothing -> Nothing --TODO: Warn somehow
-        Just Refl -> Just m
+        Nothing -> trace ("runRequesterT: bad TagGen: expected " <> show tg <> " but got " <> show tg') Nothing --TODO: Warn somehow
+        Just Refl -> trace "runRequesterT: good TagGen" $ Just m
   pure (responses, (result, fmapCheap (RequestData tg) requests))
 
 instance MonadTrans (RequesterInternalT s t request response) where
@@ -140,12 +148,28 @@ instance MonadException m => MonadException (RequesterT t request respnose m) wh
   throw e = RequesterT $ throw e
 
 newtype RequesterInternalT s t request response m a = RequesterInternalT { unRequesterInternalT :: ReaderT (EventSelectorTag t s response, TagGen (PrimState m) s) (EventWriterT t (Seq (RequestEnvelope s request)) m) a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException)
+  deriving
+    ( Functor, Applicative, Monad, MonadFix, MonadIO, MonadException
+#if MIN_VERSION_base(4,9,1)
+    , MonadAsyncException
+#endif
+    )
+
+-- I don't think this can actually be supported without an unsafeCoerce
+-- #if MIN_VERSION_base(4,9,1)
+-- instance MonadAsyncException m => MonadAsyncException (RequesterT t request response m) where
+--   mask f = RequesterT $ mask $ \unmask -> unRequesterT $ f $ \x -> RequesterT $ unmask $ unRequesterT x
+-- #endif
 
 instance MonadSample t m => MonadSample t (RequesterT t request response m)
 instance MonadHold t m => MonadHold t (RequesterT t request response m)
 instance PostBuild t m => PostBuild t (RequesterT t request response m)
 instance TriggerEvent t m => TriggerEvent t (RequesterT t request response m)
+
+instance MonadSample t m => MonadSample t (RequesterInternalT s t request response m)
+instance MonadHold t m => MonadHold t (RequesterInternalT s t request response m)
+instance PostBuild t m => PostBuild t (RequesterInternalT s t request response m)
+instance TriggerEvent t m => TriggerEvent t (RequesterInternalT s t request response m)
 
 instance PrimMonad m => PrimMonad (RequesterT t request response m) where
   type PrimState (RequesterT t request response m) = PrimState m
@@ -196,7 +220,25 @@ instance (Reflex t, PrimMonad m) => Requester t (RequesterInternalT s t request 
   requesting_ e = RequesterInternalT $ do
     tellEvent $ fmapCheap (Seq.singleton . RequestEnvelope Nothing) e
 
-instance Adjustable t m => Adjustable t (RequesterInternalT s t request response m)
+instance (Adjustable t m, MonadHold t m) => Adjustable t (RequesterInternalT s t request response m) where
+  {-# INLINABLE runWithReplace #-}
+  runWithReplace (RequesterInternalT a0) a' = RequesterInternalT $ runWithReplace a0 (coerceEvent a')
+  {-# INLINABLE traverseIntMapWithKeyWithAdjust #-}
+  traverseIntMapWithKeyWithAdjust f dm0 dm' = RequesterInternalT $ traverseIntMapWithKeyWithAdjust (coerce . f) dm0 dm'
+  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
+  traverseDMapWithKeyWithAdjust f dm0 dm' = RequesterInternalT $ traverseDMapWithKeyWithAdjust (coerce . f) dm0 dm'
+  {-# INLINABLE traverseDMapWithKeyWithAdjustWithMove #-}
+  traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = RequesterInternalT $ traverseDMapWithKeyWithAdjustWithMove (coerce . f) dm0 dm'
+
+instance (Adjustable t m, MonadHold t m) => Adjustable t (RequesterT t request response m) where
+  {-# INLINABLE runWithReplace #-}
+  runWithReplace (RequesterT a0) a' = RequesterT $ runWithReplace a0 (fmapCheap unRequesterT a')
+  {-# INLINABLE traverseIntMapWithKeyWithAdjust #-}
+  traverseIntMapWithKeyWithAdjust f dm0 dm' = RequesterT $ traverseIntMapWithKeyWithAdjust (\k v -> unRequesterT $ f k v) dm0 dm'
+  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
+  traverseDMapWithKeyWithAdjust f dm0 dm' = RequesterT $ traverseDMapWithKeyWithAdjust (\k v -> unRequesterT $ f k v) dm0 dm'
+  {-# INLINABLE traverseDMapWithKeyWithAdjustWithMove #-}
+  traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = RequesterT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> unRequesterT $ f k v) dm0 dm'
 
 {-# INLINABLE runWithReplaceRequesterTWith #-}
 runWithReplaceRequesterTWith :: forall m t request response a b. (Reflex t, MonadHold t m

@@ -92,12 +92,15 @@ library
     Data.FastWeakBag,
     Data.Functor.Misc,
     Data.Map.Misc,
+    Data.TagMap,
+    Data.Unique.Tag.Local,
+    Data.Unique.Tag.Local.Internal,
     Data.WeakBag,
     Reflex,
-    Reflex.Class,
     Reflex.Adjustable.Class,
     Reflex.BehaviorWriter.Base,
     Reflex.BehaviorWriter.Class,
+    Reflex.Class,
     Reflex.Collection,
     Reflex.Dynamic,
     Reflex.Dynamic.Uniq,
@@ -107,6 +110,7 @@ library
     Reflex.EventWriter,
     Reflex.EventWriter.Base,
     Reflex.EventWriter.Class,
+    Reflex.FanTag,
     Reflex.FastWeak,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,
@@ -128,6 +132,7 @@ library
     Reflex.Query.Base,
     Reflex.Query.Class,
     Reflex.Requester.Base,
+    Reflex.Requester.Base.Internal,
     Reflex.Requester.Class,
     Reflex.Spider,
     Reflex.Spider.Internal,
@@ -260,14 +265,15 @@ test-suite RequesterT
   build-depends: base
                , containers
                , deepseq
-               , dependent-sum
                , dependent-map
+               , dependent-sum
                , lens
                , mtl
+               , primitive
+               , ref-tf
+               , reflex
                , these
                , transformers
-               , reflex
-               , ref-tf
 
   if flag(split-these)
     build-depends: these-lens

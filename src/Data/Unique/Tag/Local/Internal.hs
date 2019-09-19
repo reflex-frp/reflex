@@ -9,6 +9,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MagicHash #-}
 module Data.Unique.Tag.Local.Internal where
 
 import Control.Monad.Exception
@@ -17,6 +18,8 @@ import Control.Monad.Reader
 import Data.Primitive.MutVar
 import Data.GADT.Compare
 import Data.Some
+import GHC.Exts (Int (..), Int#, MutVar#, unsafeCoerce#)
+
 import Unsafe.Coerce
 
 newtype Tag x a = Tag Int
@@ -33,11 +36,14 @@ unsafeTagFromId n = Tag n
 -- We use Int because it is supported by e.g. IntMap
 newtype TagGen ps s = TagGen { unTagGen :: MutVar ps Int }
 
+instance Show (TagGen ps s) where
+  show (TagGen (MutVar m)) = show $ I# ((unsafeCoerce# :: MutVar# ps Int -> Int#) m)
+
 instance GEq (TagGen ps) where
   TagGen a `geq` TagGen b =
     if a == b
-    then Nothing
-    else Just $ unsafeCoerce Refl
+    then Just $ unsafeCoerce Refl
+    else Nothing
 
 newTag :: PrimMonad m => TagGen (PrimState m) s -> m (Tag s a)
 newTag (TagGen r) = do

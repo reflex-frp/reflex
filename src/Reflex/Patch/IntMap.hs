@@ -1,12 +1,16 @@
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 -- | Module containing 'PatchIntMap', a 'Patch' for 'IntMap' which allows for
 -- insert/update or delete of associations.
 module Reflex.Patch.IntMap where
 
+import Control.Lens
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Maybe
@@ -18,14 +22,6 @@ import Reflex.Patch.Class
 -- and @Nothing@ means delete.
 newtype PatchIntMap a = PatchIntMap (IntMap (Maybe a)) deriving (Functor, Foldable, Traversable, Monoid)
 
--- | Apply the insertions or deletions to a given 'IntMap'.
-instance Patch (PatchIntMap a) where
-  type PatchTarget (PatchIntMap a) = IntMap a
-  apply (PatchIntMap p) v = if IntMap.null p then Nothing else Just $
-    let removes = IntMap.filter isNothing p
-        adds = IntMap.mapMaybe id p
-    in IntMap.union adds $ v `IntMap.difference` removes
-
 -- | @a <> b@ will apply the changes of @b@ and then apply the changes of @a@.
 -- If the same key is modified by both patches, the one on the left will take
 -- precedence.
@@ -34,10 +30,25 @@ instance Semigroup (PatchIntMap v) where
   -- PatchMap is idempotent, so stimes n is id for every n
   stimes = stimesIdempotentMonoid
 
+makeWrapped ''PatchIntMap
+
+-- | Apply the insertions or deletions to a given 'IntMap'.
+instance Patch (PatchIntMap a) where
+  type PatchTarget (PatchIntMap a) = IntMap a
+  apply (PatchIntMap p) v = if IntMap.null p then Nothing else Just $
+    let removes = IntMap.filter isNothing p
+        adds = IntMap.mapMaybe id p
+    in IntMap.union adds $ v `IntMap.difference` removes
+
 -- | Map a function @Int -> a -> b@ over all @a@s in the given @'PatchIntMap' a@
 -- (that is, all inserts/updates), producing a @PatchIntMap b@.
 mapIntMapPatchWithKey :: (Int -> a -> b) -> PatchIntMap a -> PatchIntMap b
 mapIntMapPatchWithKey f (PatchIntMap m) = PatchIntMap $ IntMap.mapWithKey (\ k mv -> f k <$> mv) m
+
+instance FunctorWithIndex Int PatchIntMap
+instance FoldableWithIndex Int PatchIntMap
+instance TraversableWithIndex Int PatchIntMap where
+  itraversed = _Wrapped . itraversed . traversed
 
 -- | Map an effectful function @Int -> a -> f b@ over all @a@s in the given @'PatchIntMap' a@
 -- (that is, all inserts/updates), producing a @f (PatchIntMap b)@.
