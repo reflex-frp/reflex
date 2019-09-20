@@ -47,6 +47,8 @@ import Data.GADT.Compare (GCompare (..), GEq (..), GOrdering (..))
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty.Deferred (NonEmptyDeferred)
+import qualified Data.List.NonEmpty.Deferred as NonEmptyDeferred
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Semigroup
@@ -54,45 +56,7 @@ import Data.Some (Some)
 import Data.Tuple
 import Data.Type.Equality
 
-import Unsafe.Coerce
-
-{-# DEPRECATED TellId "Do not construct this directly; use tellId instead" #-}
-newtype TellId w x
-  = TellId Int -- ^ WARNING: Do not construct this directly; use 'tellId' instead
-  deriving (Show, Eq, Ord, Enum)
-
-tellId :: Int -> TellId w w
-tellId = TellId
-{-# INLINE tellId #-}
-
-tellIdRefl :: TellId w x -> w :~: x
-tellIdRefl _ = unsafeCoerce Refl
-
-withTellIdRefl :: TellId w x -> (w ~ x => r) -> r
-withTellIdRefl tid r = case tellIdRefl tid of
-  Refl -> r
-
-instance GEq (TellId w) where
-  a `geq` b =
-    withTellIdRefl a $
-    withTellIdRefl b $
-    if a == b
-    then Just Refl
-    else Nothing
-
-instance GCompare (TellId w) where
-  a `gcompare` b =
-    withTellIdRefl a $
-    withTellIdRefl b $
-    case a `compare` b of
-      LT -> GLT
-      EQ -> GEQ
-      GT -> GGT
-
-data EventWriterState t w = EventWriterState
-  { _eventWriterState_nextId :: {-# UNPACK #-} !Int -- Always negative (and decreasing over time)
-  , _eventWriterState_told :: ![DSum (TellId w) (Event t)] -- In increasing order
-  }
+type EventWriterState t w = Maybe (NonEmptyDeferred (Event t w))
 
 -- | A basic implementation of 'EventWriter'.
 newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT (EventWriterState t w) m a }
@@ -101,20 +65,11 @@ newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT (EventWri
 -- | Run a 'EventWriterT' action.
 runEventWriterT :: forall t m w a. (Reflex t, Monad m, Semigroup w) => EventWriterT t w m a -> m (a, Event t w)
 runEventWriterT (EventWriterT a) = do
-  (result, requests) <- runStateT a $ EventWriterState (-1) []
-  let combineResults :: DMap (TellId w) Identity -> w
-      combineResults = sconcat
-        . (\(h : t) -> h :| t) -- Unconditional; 'merge' guarantees that it will only fire with non-empty DMaps
-        . DMap.foldlWithKey (\vs tid (Identity v) -> withTellIdRefl tid $ v : vs) [] -- This is where we finally reverse the DMap to get things in the correct order
-  return (result, fmap combineResults $ merge $ DMap.fromDistinctAscList $ _eventWriterState_told requests) --TODO: We can probably make this fromDistinctAscList more efficient by knowing the length in advance, but this will require exposing internals of DMap; also converting it to use a strict list might help
+  (result, requests) <- runStateT a Nothing
+  return (result, maybe never (sconcat . NonEmptyDeferred.toNonEmpty) requests)
 
 instance (Reflex t, Monad m, Semigroup w) => EventWriter t w (EventWriterT t w m) where
-  tellEvent w = EventWriterT $ modify $ \old ->
-    let myId = _eventWriterState_nextId old
-    in EventWriterState
-       { _eventWriterState_nextId = pred myId
-       , _eventWriterState_told = (tellId myId :=> w) : _eventWriterState_told old
-       }
+  tellEvent w = EventWriterT $ modify (<> Just (NonEmptyDeferred.singleton w))
 
 instance MonadTrans (EventWriterT t w) where
   lift = EventWriterT . lift
