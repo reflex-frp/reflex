@@ -169,6 +169,7 @@ module Reflex.Class
   , tagCheap
   , mergeWithCheap
   , mergeWithCheap'
+  , sconcatCheap
     -- * Slow, but general, implementations
   , slowHeadE
   ) where
@@ -897,6 +898,9 @@ instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
   sconcat = fmap sconcat . mergeList . toList
   stimes n = fmap $ stimes n
 
+sconcatCheap :: (Semigroup a, Reflex t) => NonEmpty (Event t a) -> Event t a
+sconcatCheap = fmapCheap sconcat . mergeList . toList
+
 instance (Semigroup a, Reflex t) => Monoid (Event t a) where
   mempty = never
   mappend = (<>)
@@ -911,6 +915,8 @@ mergeWith = mergeWith' id
 
 {-# INLINE mergeWith' #-}
 mergeWith' :: Reflex t => (a -> b) -> (b -> b -> b) -> [Event t a] -> Event t b
+mergeWith' _ _ [] = never
+mergeWith' f _ [e] = fmap f e
 mergeWith' f g es = fmap (Prelude.foldl1 g . fmap f)
                   . mergeInt
                   . IntMap.fromDistinctAscList
@@ -928,6 +934,7 @@ leftmost = mergeWith const
 -- time.
 mergeList :: Reflex t => [Event t a] -> Event t (NonEmpty a)
 mergeList [] = never
+mergeList [e] = fmapCheap (:|[]) e
 mergeList es = mergeWithFoldCheap' id es
 
 unsafeMapIncremental
@@ -1024,7 +1031,11 @@ switchHoldPromptly ea0 eea = do
 switchHoldPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchHoldPromptOnly e0 e' = do
   eLag <- switch <$> hold e0 e'
-  return $ coincidence $ leftmost [e', eLag <$ eLag]
+  return $ fmapMaybeCheap id $ leftmost
+    [ fmapCheap Just $ coincidence e'
+    , fmapCheap (const Nothing) e'
+    , fmapCheap Just eLag
+    ]
 
 -- | When the given outer event fires, condense the inner events into the contained patch.  Non-firing inner events will be replaced with deletions.
 coincidencePatchMap :: (Reflex t, Ord k) => Event t (PatchMap k (Event t v)) -> Event t (PatchMap k v)
@@ -1659,6 +1670,8 @@ mergeWithCheap' f g = mergeWithFoldCheap' $ foldl1 g . fmap f
 -- | A "cheap" version of 'mergeWithFoldCheap''. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithFoldCheap' #-}
 mergeWithFoldCheap' :: Reflex t => (NonEmpty a -> b) -> [Event t a] -> Event t b
+mergeWithFoldCheap' f [] = never
+mergeWithFoldCheap' f [e] = fmapCheap (f . (:|[])) e
 mergeWithFoldCheap' f es =
   fmapCheap (f . (\(h : t) -> h :| t) . IntMap.elems)
   . mergeInt
