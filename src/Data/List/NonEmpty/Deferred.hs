@@ -3,7 +3,11 @@
 -- allows O(1) '(<>)'.
 
 {-# LANGUAGE LambdaCase #-}
-module Data.List.NonEmpty.Deferred where
+module Data.List.NonEmpty.Deferred
+  ( NonEmptyDeferred
+  , singleton
+  , toNonEmpty
+  ) where
 
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.List.NonEmpty as NonEmpty
