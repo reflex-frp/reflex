@@ -951,10 +951,6 @@ unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIn
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
 
--- | Like 'mergeMap' but for 'IntMap'.
-mergeIntMap :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
-mergeIntMap = fmap dmapToIntMap . merge . intMapWithFunctorToDMap
-
 -- | Create a merge whose parents can change over time
 mergeMapIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Event t a)) -> Event t (Map k a)
 mergeMapIncremental = fmap dmapToMap . mergeIncremental . unsafeMapIncremental mapWithFunctorToDMap (const2PatchDMapWith id)
@@ -1039,19 +1035,19 @@ switchHoldPromptOnly e0 e' = do
 
 -- | When the given outer event fires, condense the inner events into the contained patch.  Non-firing inner events will be replaced with deletions.
 coincidencePatchMap :: (Reflex t, Ord k) => Event t (PatchMap k (Event t v)) -> Event t (PatchMap k v)
-coincidencePatchMap e = fmapCheap PatchMap $ coincidence $ ffor e $ \(PatchMap m) -> mergeMap $ ffor m $ \case
+coincidencePatchMap e = fmapCheap PatchMap $ coincidence $ fforCheap e $ \(PatchMap m) -> mergeMap $ ffor m $ \case
   Nothing -> fmapCheap (const Nothing) e
   Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
 
 -- | See 'coincidencePatchMap'
 coincidencePatchIntMap :: Reflex t => Event t (PatchIntMap (Event t v)) -> Event t (PatchIntMap v)
-coincidencePatchIntMap e = fmapCheap PatchIntMap $ coincidence $ ffor e $ \(PatchIntMap m) -> mergeIntMap $ ffor m $ \case
+coincidencePatchIntMap e = fmapCheap PatchIntMap $ coincidence $ fforCheap e $ \(PatchIntMap m) -> mergeIntMap $ ffor m $ \case
   Nothing -> fmapCheap (const Nothing) e
   Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
 
 -- | See 'coincidencePatchMap'
 coincidencePatchMapWithMove :: (Reflex t, Ord k) => Event t (PatchMapWithMove k (Event t v)) -> Event t (PatchMapWithMove k v)
-coincidencePatchMapWithMove e = fmapCheap unsafePatchMapWithMove $ coincidence $ ffor e $ \p -> mergeMap $ ffor (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
+coincidencePatchMapWithMove e = fmapCheap unsafePatchMapWithMove $ coincidence $ fforCheap e $ \p -> mergeMap $ ffor (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
   PatchMapWithMove.From_Delete -> fforCheap e $ \_ ->
     ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
   PatchMapWithMove.From_Move k -> fforCheap e $ \_ ->
@@ -1314,7 +1310,7 @@ accumMaybeMDyn
   -> Event t b
   -> m (Dynamic t a)
 accumMaybeMDyn f z e = do
-  rec let e' = flip push e $ \o -> do
+  rec let e' = flip pushCheap e $ \o -> do
             v <- sample $ current d'
             f v o
       d' <- holdDyn z e'
@@ -1370,8 +1366,8 @@ mapAccumMaybeMDyn f z e = do
             return $ case result of
               (Nothing, Nothing) -> Nothing
               _ -> Just result
-      d' <- holdDyn z $ mapMaybe fst e'
-  return (d', mapMaybe snd e')
+      d' <- holdDyn z $ fmapMaybeCheap fst e'
+  return (d', fmapMaybeCheap snd e')
 
 -- | Accumulate a 'Behavior' by folding occurrences of an 'Event'
 -- with the provided function.
@@ -1409,7 +1405,7 @@ accumMaybeB f = accumMaybeMB $ \v o -> return $ f v o
 {-# INLINE accumMaybeMB #-}
 accumMaybeMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a)) -> a -> Event t b -> m (Behavior t a)
 accumMaybeMB f z e = do
-  rec let e' = flip push e $ \o -> do
+  rec let e' = flip pushCheap e $ \o -> do
             v <- sample d'
             f v o
       d' <- hold z e'
@@ -1459,8 +1455,8 @@ mapAccumMaybeMB f z e = do
             return $ case result of
               (Nothing, Nothing) -> Nothing
               _ -> Just result
-      d' <- hold z $ mapMaybe fst e'
-  return (d', mapMaybe snd e')
+      d' <- hold z $ fmapMaybeCheap fst e'
+  return (d', fmapMaybeCheap snd e')
 
 -- | Accumulate occurrences of an 'Event', producing an output occurrence each
 -- time.  Discard the underlying 'Accumulator'.
@@ -1686,7 +1682,14 @@ mergeWithFoldCheap' f es =
 -- | See 'switchHoldPromptly'
 switchPromptly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptly = switchHoldPromptly
+
 {-# DEPRECATED switchPromptOnly "Use 'switchHoldPromptOnly' instead. The 'switchHold*' naming convention was chosen because those functions are more closely related to each other than they are to 'switch'. " #-}
 -- | See 'switchHoldPromptOnly'
 switchPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptOnly = switchHoldPromptOnly
+
+{-# DEPRECATED mergeIntMap "Use 'mergeInt' instead" #-}
+-- | Like 'mergeMap' but for 'IntMap'.
+mergeIntMap :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
+mergeIntMap = mergeInt
+
