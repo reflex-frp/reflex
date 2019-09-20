@@ -45,6 +45,9 @@ import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty.Deferred (NonEmptyDeferred)
+import qualified Data.List.NonEmpty.Deferred as NonEmptyDeferred
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid ((<>))
@@ -71,11 +74,11 @@ import Debug.Trace
 --implemented as a binary tree whose representation isn't associative, but which
 --doesn't allow any external party to observe the lack of associativity.
 
-data RequestData ps request = forall s. RequestData !(TagGen ps s) !(Seq (RequestEnvelope s request))
+data RequestData ps request = forall s. RequestData !(TagGen ps s) !(NonEmptyDeferred (RequestEnvelope s request))
 data ResponseData ps response = forall s. ResponseData !(TagGen ps s) !(TagMap s response)
 
 traverseRequesterData :: forall m request response. Applicative m => (forall a. request a -> m (response a)) -> RequestData (PrimState m) request -> m (ResponseData (PrimState m) response)
-traverseRequesterData f (RequestData tg es) = ResponseData tg . TagMap.fromList <$> wither g (toList es)
+traverseRequesterData f (RequestData tg es) = ResponseData tg . TagMap.fromList <$> wither g (NonEmpty.toList $ NonEmptyDeferred.toNonEmpty es)
   where g (RequestEnvelope mt req) = case mt of
           Just t -> Just . (t :=>) <$> f req
           Nothing -> Nothing <$ f req
@@ -88,7 +91,7 @@ runRequesterT :: forall t request response m a
   => RequesterT t request response m a
   -> Event t (ResponseData (PrimState m) response)
   -> m (a, Event t (RequestData (PrimState m) request))
-runRequesterT (RequesterT a) wrappedResponses = withRequesterInternalT $ \(requests :: Event t (Seq (RequestEnvelope s request))) -> do
+runRequesterT (RequesterT a) wrappedResponses = withRequesterInternalT $ \(requests :: Event t (NonEmptyDeferred (RequestEnvelope s request))) -> do
   (_, tg) <- RequesterInternalT ask
   result <- a
   let responses = fforMaybe wrappedResponses $ \(ResponseData tg' m) -> case tg `geq` tg' of
@@ -111,7 +114,7 @@ withRequesterInternalT
      , PrimMonad m
      , MonadFix m
      )
-  => (forall s. Event t (Seq (RequestEnvelope s request)) -> RequesterInternalT s t request response m (Event t (TagMap s response), a))
+  => (forall s. Event t (NonEmptyDeferred (RequestEnvelope s request)) -> RequesterInternalT s t request response m (Event t (TagMap s response), a))
   -> m a
 withRequesterInternalT f = withTagGen $ \tg -> do
   rec let RequesterInternalT a = f requests
@@ -147,7 +150,7 @@ instance MonadIO m => MonadIO (RequesterT t request respnose m) where
 instance MonadException m => MonadException (RequesterT t request respnose m) where
   throw e = RequesterT $ throw e
 
-newtype RequesterInternalT s t request response m a = RequesterInternalT { unRequesterInternalT :: ReaderT (EventSelectorTag t s response, TagGen (PrimState m) s) (EventWriterT t (Seq (RequestEnvelope s request)) m) a }
+newtype RequesterInternalT s t request response m a = RequesterInternalT { unRequesterInternalT :: ReaderT (EventSelectorTag t s response, TagGen (PrimState m) s) (EventWriterT t (NonEmptyDeferred (RequestEnvelope s request)) m) a }
   deriving
     ( Functor, Applicative, Monad, MonadFix, MonadIO, MonadException
 #if MIN_VERSION_base(4,9,1)
@@ -215,10 +218,10 @@ instance (Reflex t, PrimMonad m) => Requester t (RequesterInternalT s t request 
   requesting e = RequesterInternalT $ do
     (s, tg) <- ask
     t <- lift $ lift $ newTag tg
-    tellEvent $ fmapCheap (Seq.singleton . RequestEnvelope (Just t)) e
+    tellEvent $ fmapCheap (NonEmptyDeferred.singleton . RequestEnvelope (Just t)) e
     pure $ selectTag s t
   requesting_ e = RequesterInternalT $ do
-    tellEvent $ fmapCheap (Seq.singleton . RequestEnvelope Nothing) e
+    tellEvent $ fmapCheap (NonEmptyDeferred.singleton . RequestEnvelope Nothing) e
 
 instance (Adjustable t m, MonadHold t m) => Adjustable t (RequesterInternalT s t request response m) where
   {-# INLINABLE runWithReplace #-}
