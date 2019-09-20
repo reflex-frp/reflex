@@ -23,6 +23,10 @@ import Data.Functor.Misc
 import qualified Data.Map as Map
 import Data.Map (Map)
 
+import qualified Data.IntMap as IntMap
+import Data.IntMap (IntMap)
+
+
 import Data.These
 import Data.Align
 
@@ -40,6 +44,7 @@ import Data.These.Lens
 #endif
 
 type Widget t m = (MonadHold t m, Reflex t, MonadFix m) 
+
 
 connectDyn ::Widget t m => Event t () -> (Dynamic t a, Dynamic t a) -> m (Dynamic t a)
 connectDyn e (d, d') = do 
@@ -78,7 +83,7 @@ addHeight e = leftmost [e4, e4] where
   e4 = leftmost [e3, e3]
 
 
--- Take an existing test and build it inside a push
+-- Take an existing test and build it inside a 
 buildLoop :: Widget t m => (forall t m. Widget t m => (Event t Int, Event t ()) -> m (Event t Int)) -> (Event t Int, Event t ()) -> m (Event t Int)
 buildLoop test (e1, e2) = switchHold never buildLoop
   where buildLoop = pushAlways (const $ test (e1, e2)) e2 
@@ -99,8 +104,24 @@ switchLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 switchLoop (e1, e2) = do
   rec
     e' <- connectButton e2 (updated d)
-    d <- count (align e' (addHeight e1))
+    d <- count (align e' e1)
   return $ updated d
+
+mergeLoop :: forall t m. (Adjustable t m, Widget t m) => (Event t Int, Event t ()) -> m (Event t Int)
+mergeLoop (e1, e2) = do
+  rec
+    (_, e) <- runEventWriterT $ 
+      runWithReplace w (leftmost [w <$ e1])
+
+  return (sum <$> e)
+  
+  where
+    w = do    
+      c <- count e1
+      tellEvent (updated ((pure <$> c) :: Dynamic t [Int]))
+
+
+
 
 switchLoop' :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 switchLoop' (e1, e2) = do
@@ -152,20 +173,25 @@ runTest (name, TestCase test) = do
     
   where 
 
-      run = runApp' (test . splitThese) (Just <$> occs) 
-        >> error (name <> ": unexpected success")
+      run = do 
+        r <- runApp' (test . splitThese) (Just <$> occs) 
+        error (name <> ": unexpected success " <> show r)
 
-      occs = [ That (), This 3, That (), This 4 ]
+      occs = [  This 1, This 2, That (), This 3, That (), This 1 ]
   
       milliseconds = (*1000)
   
 
-newtype TestCase = TestCase { unTest :: forall t m. Widget t m => (Event t Int, Event t ()) -> m (Event t Int)  }
+newtype TestCase = TestCase { unTest :: forall t m. (Widget t m, Adjustable t m) => (Event t Int, Event t ()) -> m (Event t Int)  }
 
 tests :: [(String, TestCase)]
 tests = 
   [ ("switchLoop'", TestCase switchLoop')
-  --, ("switchLoop",  TestCase switchLoop)
+  , ("switchLoop",  TestCase switchLoop)
+  
+  , ("mergeLoop",  TestCase mergeLoop)
+ 
+
   -- , ("switchLoop2",  TestCase switchLoop2)
 
   --  , ("staticLoop'",  TestCase staticLoop')

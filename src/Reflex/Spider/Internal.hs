@@ -1298,7 +1298,6 @@ type CanTrace x m = (HasSpiderTimeline x, MonadIO m)
 debugSubscriber :: forall x a. HasSpiderTimeline x => String -> Subscriber x a -> IO (Subscriber x a)
 debugSubscriber description = return . debugSubscriber' description
 
-
 debugSubscriber' :: forall x a. HasSpiderTimeline x => String -> Subscriber x a -> Subscriber x a
 debugSubscriber' description subscribed = Subscriber 
   {
@@ -1360,6 +1359,12 @@ traceInvalidate _ = return ()
 {-# INLINE debugSubscriber #-}
 debugSubscriber :: String -> Subscriber x a -> IO (Subscriber x a)
 debugSubscriber _ = return
+
+{-# INLINE debugSubscriber' #-}
+debugSubscriber' :: String -> Subscriber x a -> Subscriber x a
+debugSubscriber' _ = id
+
+
 
 {-# INLINE trace #-}
 trace :: (CanTrace x m) => proxy x ->  String -> m ()
