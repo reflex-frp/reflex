@@ -91,18 +91,18 @@ instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent
 
 instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT t m) where
   runWithReplace a0 a' = PerformEventT $ RequesterT $ do
-    env@(_, _ :: TagGen (PrimState (HostFrame t)) s) <- RequesterInternalT ask
-    let runA :: forall a. PerformEventT t m a -> HostFrame t (a, Event t (NonEmptyDeferred (RequestEnvelope s (HostFrame t))))
+    env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
+    let runA :: forall a. PerformEventT t m a -> HostFrame t (a, Event t (Seq (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))
         runA (PerformEventT (RequesterT a)) = runEventWriterT $ runReaderT (unRequesterInternalT a) env
     (result0, requests0) <- lift $ runA a0
-    newA <- requestingIdentity $ traceEventWith (const "running new widget") $ runA <$> a'
-    requests <- switchHoldPromptOnly requests0 $ traceEventWith (const "updating runWithReplace") $ fmapCheap snd newA
+    newA <- requestingIdentity $ runA <$> a'
+    requests <- switchHoldPromptOnly requests0 $ fmapCheap snd newA
     --TODO: promptly *prevent* events, then sign up the new ones; this is a serious breaking change to PerformEvent
     RequesterInternalT $ tellEvent requests
     pure (result0, fmapCheap fst newA)
   traverseIntMapWithKeyWithAdjust f a0 a' = PerformEventT $ RequesterT $ do
-    env@(_, _ :: TagGen (PrimState (HostFrame t)) s) <- RequesterInternalT ask
-    let runA :: forall a. PerformEventT t m a -> HostFrame t (a, Event t (NonEmptyDeferred (RequestEnvelope s (HostFrame t))))
+    env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
+    let runA :: forall a. PerformEventT t m a -> HostFrame t (a, Event t (Seq (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))
         runA (PerformEventT (RequesterT a)) = runEventWriterT $ runReaderT (unRequesterInternalT a) env
     children' <- requestingIdentity $ itraverse (\k -> runA . f k) <$> a'
     children0 <- lift $ itraverse (\k -> runA . f k) a0
@@ -115,8 +115,8 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
     RequesterInternalT $ tellEvent $ fforMaybeCheap requests concatIntMapMaybe
     pure (results0, results')
   traverseDMapWithKeyWithAdjust (f :: forall a. k a -> v a -> PerformEventT t m (v' a)) (a0 :: DMap k v) a' = PerformEventT $ RequesterT $ do
-    env@(_, _ :: TagGen (PrimState (HostFrame t)) s) <- RequesterInternalT ask
-    let runA :: forall a. k a -> v a -> HostFrame t (Compose ((,) (Event t (NonEmptyDeferred (RequestEnvelope s (HostFrame t))))) v' a)
+    env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
+    let runA :: forall a. k a -> v a -> HostFrame t (Compose ((,) (Event t (Seq (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))) v' a)
         runA k v = fmap (Compose . swap) $ runEventWriterT $ runReaderT (unRequesterInternalT a) env
           where (PerformEventT (RequesterT a)) = f k v
     children' <- requestingIdentity $ traversePatchDMapWithKey runA <$> a'
@@ -130,8 +130,8 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
     RequesterInternalT $ tellEvent $ fforMaybeCheap requests concatMapMaybe
     pure (results0, results')
   traverseDMapWithKeyWithAdjustWithMove (f :: forall a. k a -> v a -> PerformEventT t m (v' a)) (a0 :: DMap k v) a' = PerformEventT $ RequesterT $ do
-    env@(_, _ :: TagGen (PrimState (HostFrame t)) s) <- RequesterInternalT ask
-    let runA :: forall a. k a -> v a -> HostFrame t (Compose ((,) (Event t (NonEmptyDeferred (RequestEnvelope s (HostFrame t))))) v' a)
+    env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
+    let runA :: forall a. k a -> v a -> HostFrame t (Compose ((,) (Event t (Seq (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))) v' a)
         runA k v = fmap (Compose . swap) $ runEventWriterT $ runReaderT (unRequesterInternalT a) env
           where (PerformEventT (RequesterT a)) = f k v
     children' <- requestingIdentity $ traversePatchDMapWithMoveWithKey runA <$> a'
