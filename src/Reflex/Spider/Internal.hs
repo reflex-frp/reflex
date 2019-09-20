@@ -106,8 +106,6 @@ import qualified Data.ByteString.Char8 as BS8
 import System.IO (stderr)
 #endif
 
-import Debug.Trace
-
 #ifdef DEBUG_TRACE_EVENTS
 
 withStackOneLine :: (BS8.ByteString -> a) -> a
@@ -1515,14 +1513,13 @@ newFanInt = do
 fanInt :: HasSpiderTimeline x => Event x (IntMap a) -> EventSelectorInt x a
 fanInt p = unsafePerformIO $ do
   self <- newFanInt
-  pure $ EventSelectorInt $ \k -> trace ("select " <> show k) $ Event $ \sub -> do
+  pure $ EventSelectorInt $ \k -> Event $ \sub -> do
     isEmpty <- liftIO $ FastMutableIntMap.isEmpty (_fanInt_subscribers self)
     when isEmpty $ do -- This is the first subscriber, so we need to subscribe to our input
       (subscription, parentOcc) <- subscribeAndRead p $ Subscriber
         { subscriberPropagate = \m -> do
             liftIO $ writeIORef (_fanInt_occRef self) m
             scheduleIntClear $ _fanInt_occRef self
-            liftIO $ putStrLn $ "Pushing " <> show (IntMap.size m) <> " occurrences"
             FastMutableIntMap.forIntersectionWithImmutable_ (_fanInt_subscribers self) m $ \b v -> do --TODO: Do we need to know that no subscribers are being added as we traverse?
               FastWeakBag.traverse b $ \s -> do
                 subscriberPropagate s v
