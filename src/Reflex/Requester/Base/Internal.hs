@@ -63,6 +63,8 @@ import Data.GADT.Compare
 import Data.Witherable
 import Data.Foldable
 
+import Unsafe.Coerce
+
 import Debug.Trace
 
 --TODO: The use of Seq in this module could probably be replaced with something
@@ -90,7 +92,7 @@ runRequesterT :: forall t request response m a
   -> m (a, Event t (RequestData (PrimState m) request))
 runRequesterT (RequesterT a) wrappedResponses = withRequesterInternalT $ \(requests :: Event t (Seq (RequestEnvelope s request))) -> do
   (_, tg) <- RequesterInternalT ask
-  result <- a
+  result <- (unsafeCoerce :: RequesterInternalT FakeRequesterStatePhantom t request response m a -> RequesterInternalT s t request response m a) a
   let responses = fforMaybe wrappedResponses $ \(ResponseData tg' m) -> case tg `geq` tg' of
         Nothing -> trace ("runRequesterT: bad TagGen: expected " <> show tg <> " but got " <> show tg') Nothing --TODO: Warn somehow
         Just Refl -> Just m
@@ -120,32 +122,11 @@ withRequesterInternalT f = withTagGen $ \tg -> do
 
 data RequestEnvelope s request = forall a. RequestEnvelope {-# UNPACK #-} !(Maybe (Tag s a)) !(request a)
 
-newtype RequesterT t (request :: * -> *) (response :: * -> *) m a = RequesterT { unRequesterT :: forall s. RequesterInternalT s t request response m a }
+-- This is because using forall ruins inlining
+data FakeRequesterStatePhantom
 
-instance Functor m => Functor (RequesterT t request response m) where
-  fmap f (RequesterT x) = RequesterT $ fmap f x
-
-instance Monad m => Applicative (RequesterT t request response m) where
-  pure x = RequesterT $ pure x
-  RequesterT f <*> RequesterT x = RequesterT $ f <*> x
-  liftA2 f (RequesterT a) (RequesterT b) = RequesterT $ liftA2 f a b
-  RequesterT f <* RequesterT x = RequesterT $ f <* x
-  RequesterT f *> RequesterT x = RequesterT $ f *> x
-
-instance Monad m => Monad (RequesterT t request response m) where
-  return = pure
-  RequesterT mx >>= f = RequesterT $ mx >>= \x -> case f x of
-    RequesterT y -> y
-
-instance MonadFix m => MonadFix (RequesterT t request response m) where
-  mfix f = RequesterT $ mfix $ \x -> case f x of
-    RequesterT a -> a
-
-instance MonadIO m => MonadIO (RequesterT t request respnose m) where
-  liftIO a = RequesterT $ liftIO a
-
-instance MonadException m => MonadException (RequesterT t request respnose m) where
-  throw e = RequesterT $ throw e
+newtype RequesterT t (request :: * -> *) (response :: * -> *) m a = RequesterT { unRequesterT :: RequesterInternalT FakeRequesterStatePhantom t request response m a }
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException)
 
 newtype RequesterInternalT s t request response m a = RequesterInternalT { unRequesterInternalT :: ReaderT (EventSelectorTag t s response, TagGen (PrimState m) s) (EventWriterT t (Seq (RequestEnvelope s request)) m) a }
   deriving
