@@ -53,8 +53,6 @@ import Data.Sequence (Seq)
 import Data.Tuple
 import qualified Data.TagMap as TagMap
 
-import Debug.Trace
-
 -- | A function that fires events for the given 'EventTrigger's and then runs
 -- any followup actions provided via 'PerformEvent'.  The given 'ReadPhase'
 -- action will be run once for the initial trigger execution as well as once for
@@ -185,8 +183,8 @@ hostPerformEventT :: forall t m a.
                   -> m (a, FireCommand t m)
 hostPerformEventT a = do
   (response, responseTrigger) <- newEventWithTriggerRef
-  (result, eventToPerform) <- runHostFrame $ runRequesterT (unPerformEventT a) $ traceEventWith (const "response") response
-  eventToPerformHandle <- subscribeEvent $ traceEventWith (const "eventToPerform") eventToPerform
+  (result, eventToPerform) <- runHostFrame $ runRequesterT (unPerformEventT a) response
+  eventToPerformHandle <- subscribeEvent eventToPerform
   return $ (,) result $ FireCommand $ \triggers (readPhase :: ReadPhase m a') -> do
     let go :: [DSum (EventTrigger t) Identity] -> m [a']
         go ts = do
@@ -197,21 +195,13 @@ hostPerformEventT a = do
           case mToPerform of
             Nothing -> return [result']
             Just toPerform -> do
-              responses <- runHostFrame $ traverseRequesterData (fmap Identity) toPerform
-              traceM $ "toPerform: " <> case toPerform of
-                RequestData _ reqs -> show (length reqs)
               responses <- runHostFrame $ traverseRequesterData (Identity <$>) toPerform
               let responseLength = case responses of
                     ResponseData _ m -> TagMap.size m
-              traceM $ "responses: " <> show responseLength
               mrt <- readRef responseTrigger
               let followupEventTriggers = case mrt of
-                    Just rt -> do
-                      traceM "a"
-                      [rt :=> Identity responses]
-                    Nothing -> do
-                      traceM "b"
-                      []
+                    Just rt -> [rt :=> Identity responses]
+                    Nothing -> []
               (result':) <$> go followupEventTriggers
     go triggers
 

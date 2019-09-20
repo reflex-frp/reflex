@@ -93,7 +93,7 @@ runRequesterT (RequesterT a) wrappedResponses = withRequesterInternalT $ \(reque
   result <- a
   let responses = fforMaybe wrappedResponses $ \(ResponseData tg' m) -> case tg `geq` tg' of
         Nothing -> trace ("runRequesterT: bad TagGen: expected " <> show tg <> " but got " <> show tg') Nothing --TODO: Warn somehow
-        Just Refl -> trace "runRequesterT: good TagGen" $ Just m
+        Just Refl -> Just m
   pure (responses, (result, fmapCheap (RequestData tg) requests))
 
 instance MonadTrans (RequesterInternalT s t request response) where
