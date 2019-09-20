@@ -144,6 +144,7 @@ library
     Reflex.Workflow
 
   ghc-options: -Wall -fwarn-redundant-constraints -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively
+  ghc-prof-options: -fprof-auto-calls
 
   if flag(debug-trace-events)
     cpp-options: -DDEBUG_TRACE_EVENTS
@@ -179,6 +180,7 @@ test-suite semantics
   main-is: semantics.hs
   hs-source-dirs: test
   ghc-options: -O2 -Wall -rtsopts
+  ghc-prof-options: -fprof-auto-calls
   build-depends:
     base,
     bifunctors,
@@ -204,6 +206,7 @@ test-suite CrossImpl
   main-is: Reflex/Test/CrossImpl.hs
   hs-source-dirs: test
   ghc-options: -O2 -Wall -rtsopts
+  ghc-prof-options: -fprof-auto-calls
   build-depends:
     base,
     containers,
@@ -356,6 +359,7 @@ benchmark spider-bench
   hs-source-dirs: bench test
   main-is: Main.hs
   ghc-options: -Wall -O2 -rtsopts
+  ghc-prof-options: -fprof-auto-calls
   build-depends:
     base,
     containers,
@@ -381,6 +385,7 @@ benchmark saulzar-bench
   c-sources: bench-cbits/checkCapability.c
   main-is: RunAll.hs
   ghc-options: -Wall -O2 -rtsopts -threaded
+  ghc-prof-options: -fprof-auto-calls
   build-depends:
     base,
     containers,

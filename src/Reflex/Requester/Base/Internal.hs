@@ -68,12 +68,6 @@ import Data.Foldable
 
 import Debug.Trace
 
---TODO: The use of Seq in this module could probably be replaced with something
---even cheaper.  We do need O(1) append, but we don't need associativity until
---the very end, when we're smashing everything together.  This could be
---implemented as a binary tree whose representation isn't associative, but which
---doesn't allow any external party to observe the lack of associativity.
-
 data RequestData ps request = forall s. RequestData !(TagGen ps s) !(NonEmptyDeferred (RequestEnvelope s request))
 data ResponseData ps response = forall s. ResponseData !(TagGen ps s) !(TagMap s response)
 
