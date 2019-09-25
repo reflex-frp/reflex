@@ -4,7 +4,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 
--- The derived instances are undecidable in the case of a pathlogical instance like
+-- The derived instances are undecidable in the case of a pathological instance like
 -- instance Patch x where
 --   type PatchTarget x = Patchable x
 {-# LANGUAGE UndecidableInstances #-}
