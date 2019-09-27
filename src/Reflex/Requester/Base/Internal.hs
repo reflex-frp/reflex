@@ -87,9 +87,9 @@ runRequesterT :: forall t request response m a
   => RequesterT t request response m a
   -> Event t (ResponseData (PrimState m) response)
   -> m (a, Event t (RequestData (PrimState m) request))
-runRequesterT (RequesterT a) wrappedResponses = withRequesterInternalT $ \(requests :: Event t (NonEmptyDeferred (RequestEnvelope s request))) -> do
+runRequesterT (RequesterT a) wrappedResponses = withRequesterInternalT $ \requests -> do
   (_, tg) <- RequesterInternalT ask
-  result <- (unsafeCoerce :: RequesterInternalT FakeRequesterStatePhantom t request response m a -> RequesterInternalT s t request response m a) a
+  result <- a
   let responses = fforMaybe wrappedResponses $ \(ResponseData tg' m) -> case tg `geq` tg' of
         Nothing -> trace ("runRequesterT: bad TagGen: expected " <> show tg <> " but got " <> show tg') Nothing --TODO: Warn somehow
         Just Refl -> Just m
@@ -106,14 +106,18 @@ instance MonadTrans (RequesterT t request response) where
 -- The 'Tag' keys will be used to return the responses to the same place the
 -- requests were issued.
 withRequesterInternalT
-  :: ( Reflex t
+  :: forall t m request response a.
+     ( Reflex t
      , PrimMonad m
      , MonadFix m
      )
-  => (forall s. Event t (NonEmptyDeferred (RequestEnvelope s request)) -> RequesterInternalT s t request response m (Event t (TagMap s response), a))
+  => (Event t (NonEmptyDeferred (RequestEnvelope FakeRequesterStatePhantom request)) -> RequesterInternalT FakeRequesterStatePhantom  t request response m (Event t (TagMap FakeRequesterStatePhantom response), a))
   -> m a
-withRequesterInternalT f = withTagGen $ \tg -> do
-  rec let RequesterInternalT a = f requests
+withRequesterInternalT f = do
+  stg <- newTagGen
+  let tg = case stg of
+        Some tg' -> (unsafeCoerce :: TagGen (PrimState m) s -> TagGen (PrimState m) FakeRequesterStatePhantom) tg'
+  rec let RequesterInternalT a = (unsafeCoerce :: RequesterInternalT s t request response m (Event t (TagMap FakeRequesterStatePhantom response), a) -> RequesterInternalT FakeRequesterStatePhantom t request response m (Event t (TagMap FakeRequesterStatePhantom response), a)) $ f requests
       ((responses, result), requests) <- runEventWriterT $ runReaderT a (fanTag responses, tg)
   pure result
 
@@ -199,35 +203,24 @@ instance (Reflex t, PrimMonad m) => Requester t (RequesterInternalT s t request 
     tellEvent $ fmapCheap (NonEmptyDeferred.singleton . RequestEnvelope Nothing) e
 
 instance (Adjustable t m, MonadHold t m) => Adjustable t (RequesterInternalT s t request response m) where
-  {-# INLINABLE runWithReplace #-}
+  {-# INLINE runWithReplace #-}
   runWithReplace (RequesterInternalT a0) a' = RequesterInternalT $ runWithReplace a0 (coerceEvent a')
-  {-# INLINABLE traverseIntMapWithKeyWithAdjust #-}
+  {-# INLINE traverseIntMapWithKeyWithAdjust #-}
   traverseIntMapWithKeyWithAdjust f dm0 dm' = RequesterInternalT $ traverseIntMapWithKeyWithAdjust (coerce . f) dm0 dm'
-  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
+  {-# INLINE traverseDMapWithKeyWithAdjust #-}
   traverseDMapWithKeyWithAdjust f dm0 dm' = RequesterInternalT $ traverseDMapWithKeyWithAdjust (coerce . f) dm0 dm'
-  {-# INLINABLE traverseDMapWithKeyWithAdjustWithMove #-}
+  {-# INLINE traverseDMapWithKeyWithAdjustWithMove #-}
   traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = RequesterInternalT $ traverseDMapWithKeyWithAdjustWithMove (coerce . f) dm0 dm'
 
 instance (Adjustable t m, MonadHold t m) => Adjustable t (RequesterT t request response m) where
-  {-# INLINABLE runWithReplace #-}
+  {-# INLINE runWithReplace #-}
   runWithReplace (RequesterT a0) a' = RequesterT $ runWithReplace a0 (fmapCheap unRequesterT a')
-  {-# INLINABLE traverseIntMapWithKeyWithAdjust #-}
+  {-# INLINE traverseIntMapWithKeyWithAdjust #-}
   traverseIntMapWithKeyWithAdjust f dm0 dm' = RequesterT $ traverseIntMapWithKeyWithAdjust (\k v -> unRequesterT $ f k v) dm0 dm'
-  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
+  {-# INLINE traverseDMapWithKeyWithAdjust #-}
   traverseDMapWithKeyWithAdjust f dm0 dm' = RequesterT $ traverseDMapWithKeyWithAdjust (\k v -> unRequesterT $ f k v) dm0 dm'
-  {-# INLINABLE traverseDMapWithKeyWithAdjustWithMove #-}
+  {-# INLINE traverseDMapWithKeyWithAdjustWithMove #-}
   traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = RequesterT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> unRequesterT $ f k v) dm0 dm'
-
-{-# INLINABLE runWithReplaceRequesterTWith #-}
-runWithReplaceRequesterTWith :: forall m t request response a b. (Reflex t, MonadHold t m
-                                                                 , MonadFix m
-                                                                 )
-                             => (forall a' b'. m a' -> Event t (m b') -> RequesterT t request response m (a', Event t b'))
-                             -> RequesterT t request response m a
-                             -> Event t (RequesterT t request response m b)
-                             -> RequesterT t request response m (a, Event t b)
-runWithReplaceRequesterTWith f (RequesterT a0) a' = RequesterT $ do
-  pure undefined
 
 {-
 import GHC.Exts (Any)
