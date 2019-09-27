@@ -90,6 +90,7 @@ instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent
   performEvent = PerformEventT . requestingIdentity
 
 instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT t m) where
+  {-# INLINE runWithReplace #-}
   runWithReplace a0 a' = PerformEventT $ RequesterT $ do
     env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
     let runA :: forall a. PerformEventT t m a -> HostFrame t (a, Event t (NonEmptyDeferred (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))
@@ -100,6 +101,7 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
     --TODO: promptly *prevent* events, then sign up the new ones; this is a serious breaking change to PerformEvent
     RequesterInternalT $ tellEvent requests
     pure (result0, fmapCheap fst newA)
+  {-# INLINE traverseIntMapWithKeyWithAdjust #-}
   traverseIntMapWithKeyWithAdjust f a0 a' = PerformEventT $ RequesterT $ do
     env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
     let runA :: forall a. PerformEventT t m a -> HostFrame t (a, Event t (NonEmptyDeferred (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))
@@ -114,6 +116,7 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
     --TODO: promptly *prevent* events, then sign up the new ones; this is a serious breaking change to PerformEvent
     RequesterInternalT $ tellEvent $ fforMaybeCheap requests concatIntMapMaybe
     pure (results0, results')
+  {-# INLINE traverseDMapWithKeyWithAdjust #-}
   traverseDMapWithKeyWithAdjust (f :: forall a. k a -> v a -> PerformEventT t m (v' a)) (a0 :: DMap k v) a' = PerformEventT $ RequesterT $ do
     env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
     let runA :: forall a. k a -> v a -> HostFrame t (Compose ((,) (Event t (NonEmptyDeferred (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))) v' a)
@@ -129,6 +132,7 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
     --TODO: promptly *prevent* events, then sign up the new ones; this is a serious breaking change to PerformEvent
     RequesterInternalT $ tellEvent $ fforMaybeCheap requests concatMapMaybe
     pure (results0, results')
+  {-# INLINE traverseDMapWithKeyWithAdjustWithMove #-}
   traverseDMapWithKeyWithAdjustWithMove (f :: forall a. k a -> v a -> PerformEventT t m (v' a)) (a0 :: DMap k v) a' = PerformEventT $ RequesterT $ do
     env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
     let runA :: forall a. k a -> v a -> HostFrame t (Compose ((,) (Event t (NonEmptyDeferred (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))) v' a)
