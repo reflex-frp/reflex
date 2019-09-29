@@ -42,22 +42,18 @@ import Control.Monad.Ref
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
-import Data.Foldable
 import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty.Deferred (NonEmptyDeferred)
-import qualified Data.List.NonEmpty.Deferred as NonEmptyDeferred
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Semigroup (Semigroup (sconcat))
 import qualified Data.Semigroup as S
 import Data.Unique.Tag.Local
-import Data.Sequence (Seq)
 import Data.Tuple
-import qualified Data.TagMap as TagMap
 
 -- | A function that fires events for the given 'EventTrigger's and then runs
 -- any followup actions provided via 'PerformEvent'.  The given 'ReadPhase'
@@ -159,28 +155,6 @@ concatMapMaybe m = case Map.elems m of
   [] -> Nothing
   h : t -> Just $ sconcat $ h :| t
 
-defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
-  => ((forall a. k' a -> v a -> HostFrame t (v2 a)) -> p k' v -> HostFrame t (p k' v2))
-  -> (forall a. k' a -> v a -> HostFrame t (v2 a))
-  -> DMap k' v
-  -> Event t (p k' v)
-  -> RequesterT t (HostFrame t) Identity (HostFrame t) (DMap k' v2, Event t (p k' v2))
-defaultAdjustBase traversePatchWithKey f' dm0 dm' = do
-  result0 <- lift $ DMap.traverseWithKey f' dm0
-  result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
-  return (result0, result')
-
-defaultAdjustIntBase :: forall t v v2 p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
-  => ((IntMap.Key -> v -> HostFrame t v2) -> p v -> HostFrame t (p v2))
-  -> (IntMap.Key -> v -> HostFrame t v2)
-  -> IntMap v
-  -> Event t (p v)
-  -> RequesterT t (HostFrame t) Identity (HostFrame t) (IntMap v2, Event t (p v2))
-defaultAdjustIntBase traversePatchWithKey f' dm0 dm' = do
-  result0 <- lift $ IntMap.traverseWithKey f' dm0
-  result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
-  return (result0, result')
-
 instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
   {-# INLINABLE newEventWithTrigger #-}
   newEventWithTrigger = PerformEventT . lift . newEventWithTrigger
@@ -216,8 +190,6 @@ hostPerformEventT a = do
             Nothing -> return [result']
             Just toPerform -> do
               responses <- runHostFrame $ traverseRequesterData (Identity <$>) toPerform
-              let responseLength = case responses of
-                    ResponseData _ m -> TagMap.size m
               mrt <- readRef responseTrigger
               let followupEventTriggers = case mrt of
                     Just rt -> [rt :=> Identity responses]

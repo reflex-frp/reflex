@@ -39,37 +39,34 @@ import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Compose
 import Data.Functor.Misc
-import Data.GADT.Compare (GCompare (..), GEq (..), GOrdering (..))
+import Data.GADT.Compare (GCompare (..))
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
-import Data.List.NonEmpty.Deferred (NonEmptyDeferred)
-import qualified Data.List.NonEmpty.Deferred as NonEmptyDeferred
+import Data.List.Deferred (Deferred)
+import qualified Data.List.Deferred as Deferred
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Semigroup
 import Data.Some (Some)
 import Data.Tuple
-import Data.Type.Equality
-
-type EventWriterState t w = Maybe (NonEmptyDeferred (Event t w))
 
 -- | A basic implementation of 'EventWriter'.
-newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT (EventWriterState t w) m a }
+newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT (Deferred (Event t w)) m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 -- | Run a 'EventWriterT' action.
 runEventWriterT :: forall t m w a. (Reflex t, Monad m, Semigroup w) => EventWriterT t w m a -> m (a, Event t w)
 runEventWriterT (EventWriterT a) = do
-  (result, requests) <- runStateT a Nothing
-  return (result, maybe never (sconcatCheap . NonEmptyDeferred.toNonEmpty) requests)
+  (result, requests) <- runStateT a mempty
+  return (result, mconcatCheap $ Deferred.toList requests)
 
 instance (Reflex t, Monad m, Semigroup w) => EventWriter t w (EventWriterT t w m) where
-  tellEvent w = EventWriterT $ modify (<> Just (NonEmptyDeferred.singleton w))
+  tellEvent w = EventWriterT $ modify (<> Deferred.singleton w)
 
 instance MonadTrans (EventWriterT t w) where
   lift = EventWriterT . lift
@@ -154,9 +151,6 @@ sequenceIntMapWithAdjustEventWriterTWith base mergePatchIncremental coincidenceP
       [] -> Nothing
       h : t -> Just $ sconcat $ h :| t
   return (result0, result')
-
-switchHoldPromptOnlyIntMapIncremental :: (Reflex t, MonadHold t m) => IntMap (Event t a) -> Event t (PatchIntMap (Event t a)) -> m (Event t (IntMap a))
-switchHoldPromptOnlyIntMapIncremental = switchHoldPromptOnlyIncremental mergeIntIncremental coincidencePatchIntMap
 
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceDMapWithAdjust'.
 sequenceDMapWithAdjustEventWriterTWith

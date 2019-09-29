@@ -80,7 +80,6 @@ import Data.Functor.Compose
 import Data.Functor.Misc
 import Reflex.Class
 
-import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity
 import Data.Align
