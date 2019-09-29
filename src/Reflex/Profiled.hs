@@ -47,7 +47,6 @@ import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 
 import System.IO.Unsafe
-import Unsafe.Coerce
 
 data ProfiledTimeline t
 

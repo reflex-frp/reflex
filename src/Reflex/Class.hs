@@ -170,6 +170,7 @@ module Reflex.Class
   , mergeWithCheap
   , mergeWithCheap'
   , sconcatCheap
+  , mconcatCheap
     -- * Slow, but general, implementations
   , slowHeadE
   ) where
@@ -208,6 +209,7 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Semigroup (Semigroup, sconcat, stimes, (<>))
 import Data.Some (Some(Some))
 import Data.String
@@ -733,11 +735,6 @@ instance Reflex t => Functor (Event t) where
   {-# INLINE (<$) #-}
   x <$ e = fmapCheap (const x) e
 
--- TODO Remove this instance
-instance Reflex t => FunctorMaybe (Event t) where
-  {-# INLINE fmapMaybe #-}
-  fmapMaybe = mapMaybe
-
 instance Reflex t => Filterable (Event t) where
   {-# INLINE mapMaybe #-}
   mapMaybe f = push $ return . f
@@ -893,6 +890,9 @@ instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
 
 sconcatCheap :: (Semigroup a, Reflex t) => NonEmpty (Event t a) -> Event t a
 sconcatCheap = fmapCheap sconcat . mergeList . toList
+
+mconcatCheap :: (Semigroup a, Reflex t) => [Event t a] -> Event t a
+mconcatCheap = fmapCheap sconcat . mergeList
 
 instance (Semigroup a, Reflex t) => Monoid (Event t a) where
   mempty = never
@@ -1664,7 +1664,7 @@ mergeWithCheap' f g = mergeWithFoldCheap' $ foldl1 g . fmap f
 -- | A "cheap" version of 'mergeWithFoldCheap''. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithFoldCheap' #-}
 mergeWithFoldCheap' :: Reflex t => (NonEmpty a -> b) -> [Event t a] -> Event t b
-mergeWithFoldCheap' f [] = never
+mergeWithFoldCheap' _ [] = never
 mergeWithFoldCheap' f [e] = fmapCheap (f . (:|[])) e
 mergeWithFoldCheap' f es =
   fmapCheap (f . (\(h : t) -> h :| t) . IntMap.elems)
@@ -1691,3 +1691,7 @@ switchPromptOnly = switchHoldPromptOnly
 mergeIntMap :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
 mergeIntMap = mergeInt
 
+-- NOTE: A deprecation warning is expected on this instance
+instance Reflex t => FunctorMaybe (Event t) where
+  {-# INLINE fmapMaybe #-}
+  fmapMaybe = mapMaybe

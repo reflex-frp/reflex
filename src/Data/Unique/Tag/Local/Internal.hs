@@ -12,9 +12,7 @@
 {-# LANGUAGE MagicHash #-}
 module Data.Unique.Tag.Local.Internal where
 
-import Control.Monad.Exception
 import Control.Monad.Primitive
-import Control.Monad.Reader
 import Data.Primitive.MutVar
 import Data.GADT.Compare
 import Data.Some
