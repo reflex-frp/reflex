@@ -1035,29 +1035,37 @@ switchHoldPromptOnly e0 e' = do
 
 -- | When the given outer event fires, condense the inner events into the contained patch.  Non-firing inner events will be replaced with deletions.
 coincidencePatchMap :: (Reflex t, Ord k) => Event t (PatchMap k (Event t v)) -> Event t (PatchMap k v)
-coincidencePatchMap e = fmapCheap PatchMap $ coincidence $ fforCheap e $ \(PatchMap m) -> mergeMap $ ffor m $ \case
-  Nothing -> fmapCheap (const Nothing) e
-  Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
+coincidencePatchMap e = fmapCheap PatchMap $ coincidence $ fforCheap e $ \(PatchMap m) -> if Map.null m then never else
+  let firingNewItems = mergeMap $ fforMaybe m $ \case
+        Nothing -> Nothing
+        Just ev -> Just $ fmapCheap Just ev
+      oldItemMask = (Nothing <$ m) <$ e
+  in alignWith (mergeThese Map.union) firingNewItems oldItemMask -- Must be left-biased
 
 -- | See 'coincidencePatchMap'
 coincidencePatchIntMap :: Reflex t => Event t (PatchIntMap (Event t v)) -> Event t (PatchIntMap v)
-coincidencePatchIntMap e = fmapCheap PatchIntMap $ coincidence $ fforCheap e $ \(PatchIntMap m) -> mergeIntMap $ ffor m $ \case
-  Nothing -> fmapCheap (const Nothing) e
-  Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
+coincidencePatchIntMap e = fmapCheap PatchIntMap $ coincidence $ fforCheap e $ \(PatchIntMap m) -> if IntMap.null m then never else
+  let firingNewItems = mergeIntMap $ fforMaybe m $ \case
+        Nothing -> Nothing
+        Just ev -> Just $ fmapCheap Just ev
+      oldItemMask = (Nothing <$ m) <$ e
+  in alignWith (mergeThese IntMap.union) firingNewItems oldItemMask -- Must be left-biased
 
 -- | See 'coincidencePatchMap'
 coincidencePatchMapWithMove :: (Reflex t, Ord k) => Event t (PatchMapWithMove k (Event t v)) -> Event t (PatchMapWithMove k v)
-coincidencePatchMapWithMove e = fmapCheap unsafePatchMapWithMove $ coincidence $ fforCheap e $ \p -> mergeMap $ ffor (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
-  PatchMapWithMove.From_Delete -> fforCheap e $ \_ ->
-    ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
-  PatchMapWithMove.From_Move k -> fforCheap e $ \_ ->
-    ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Move k }
-  PatchMapWithMove.From_Insert ev -> leftmost
-    [ fforCheap ev $ \v ->
-        ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Insert v }
-    , fforCheap e $ \_ ->
-        ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
-    ]
+coincidencePatchMapWithMove e = fmapCheap unsafePatchMapWithMove $ coincidence $ fforCheap e $ \p -> if Map.null (unPatchMapWithMove p) then never else
+  let firingNewItems = mergeMap $ fforMaybe (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
+        PatchMapWithMove.From_Insert ev -> Just $ fforCheap ev $ \v ->
+          ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Insert v }
+        _ -> Nothing
+      oldItemMask = fforCheap e $ \_ -> ffor (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
+        PatchMapWithMove.From_Delete ->
+          ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
+        PatchMapWithMove.From_Move k ->
+          ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Move k }
+        PatchMapWithMove.From_Insert _ ->
+          ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
+  in alignWith (mergeThese Map.union) firingNewItems oldItemMask -- Must be left-biased
 
 -- | Given a 'PatchTarget' of events (e.g., a 'Map' with 'Event' values) and an event of 'Patch'es
 -- (e.g., a 'PatchMap' with 'Event' values), produce an 'Event' of the 'PatchTarget' type that
