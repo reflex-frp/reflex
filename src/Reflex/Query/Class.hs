@@ -21,6 +21,7 @@ module Reflex.Query.Class
   , MonadQuery (..)
   , tellQueryDyn
   , queryDyn
+  , subQuery
   , mapQuery
   , mapQueryResult
   ) where
@@ -35,6 +36,9 @@ import Data.Map.Monoidal (MonoidalMap)
 import qualified Data.Map.Monoidal as MonoidalMap
 import Data.Semigroup (Semigroup(..))
 import Foreign.Storable
+import Data.Void
+import Data.Monoid
+import Control.Applicative
 
 import Reflex.Class
 
@@ -50,6 +54,25 @@ instance (Ord k, Query v) => Query (MonoidalMap k v) where
   type QueryResult (MonoidalMap k v) = MonoidalMap k (QueryResult v)
   crop q r = MonoidalMap.intersectionWith (flip crop) r q
 
+-- asking two questions is the same as asking both questions.
+instance (Query a, Query b) => Query (a, b) where
+  type QueryResult (a, b) = (QueryResult a, QueryResult b)
+  crop (x, x') (y, y') = (crop x y, crop x' y')
+
+--   ¯\_(ﾟヮﾟ)_/¯  ¯\_(ツ)_/¯
+instance Query () where
+  type QueryResult () = ()
+  crop _ _ = ()
+
+instance Query Void where
+  type QueryResult Void = ()
+  crop = absurd
+
+-- | We can lift queries into monoidal containers.
+-- But beware of Applicatives who's monoid is different from (pure mempty, liftA2 mappend)
+instance (Query q, Applicative f) => Query (Ap f q) where
+  type QueryResult (Ap f q) = Ap f (QueryResult q)
+  crop = liftA2 crop
 -- | QueryMorphism's must be group homomorphisms when acting on the query type
 -- and compatible with the query relationship when acting on the query result.
 data QueryMorphism q q' = QueryMorphism
@@ -116,3 +139,8 @@ queryDyn :: (Reflex t, Monad m, MonadQuery t q m) => Dynamic t q -> m (Dynamic t
 queryDyn q = do
   tellQueryDyn q
   zipDynWith crop q <$> askQueryResult
+
+-- | We can already say this in reflex
+subQuery :: (Reflex t, MonadQuery t q2 m, Monad m) => QueryMorphism q1 q2 -> Dynamic t q1 -> m (Dynamic t (QueryResult q1))
+subQuery (QueryMorphism f g) x = fmap g <$> queryDyn (fmap f x)
+

@@ -1,4 +1,7 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 -- |
 -- Module:
 --   Reflex.Patch
@@ -23,6 +26,11 @@ import Reflex.Patch.MapWithMove as X (PatchMapWithMove, patchMapWithMoveNewEleme
                                       unsafePatchMapWithMove)
 import Data.Map.Monoidal (MonoidalMap)
 import Data.Semigroup (Semigroup (..), (<>))
+import GHC.Generics
+import Data.Functor.Identity
+import Data.Functor.Const
+import Data.Proxy
+import Control.Applicative
 
 -- | A 'Group' is a 'Monoid' where every element has an inverse.
 class (Semigroup q, Monoid q) => Group q where
@@ -44,3 +52,39 @@ instance (Ord k, Group q) => Group (MonoidalMap k q) where
   negateG = fmap negateG
 
 instance (Ord k, Additive q) => Additive (MonoidalMap k q)
+
+instance Group () where
+  negateG _ = ()
+  _ ~~ _ = ()
+instance Additive ()
+
+instance (Group a, Group b) => Group (a, b) where
+  negateG (a, b) = (negateG a, negateG b)
+  (a, b) ~~ (c, d) = (a ~~ c, b ~~ d)
+instance (Additive a, Additive b) => Additive (a, b) where
+
+-- See https://gitlab.haskell.org/ghc/ghc/issues/11135#note_111802 for the reason Compose is not also provided.
+-- Base does not define Monoid (Compose f g a) so this has no "home"
+instance Group (f (g a)) => Group ((f :.: g) a) where
+  negateG (Comp1 xs) = Comp1 (negateG xs)
+  Comp1 xs ~~ Comp1 ys = Comp1 (xs ~~ ys)
+
+instance Additive (f (g a)) => Additive ((f :.: g) a) where
+
+instance (Group (f a), Group (g a)) => Group ((f :*: g) a) where
+  negateG (a :*: b) = negateG a :*: negateG b
+  (a :*: b) ~~ (c :*: d) = (a ~~ c :*: b ~~ d)
+instance (Additive (f a), Additive (g a)) => Additive ((f :*: g) a) where
+
+instance Group (Proxy x) where
+  negateG _ = Proxy
+  _ ~~ _ = Proxy
+instance Additive (Proxy x)
+
+deriving instance Group a => Group (Const a x)
+deriving instance Group a => Group (Identity a)
+
+instance Group b => Group (a -> b) where
+  negateG f = negateG . f
+  (~~) = liftA2 (~~)
+instance Additive b => Additive (a -> b)
