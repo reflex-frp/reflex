@@ -55,12 +55,10 @@ instance (Ord k, Query v) => Query (MonoidalMap k v) where
   type QueryResult (MonoidalMap k v) = MonoidalMap k (QueryResult v)
   crop q r = MonoidalMap.intersectionWith (flip crop) r q
 
--- asking two questions is the same as asking both questions.
 instance (Query a, Query b) => Query (a, b) where
   type QueryResult (a, b) = (QueryResult a, QueryResult b)
   crop (x, x') (y, y') = (crop x y, crop x' y')
 
---   ¯\_(ﾟヮﾟ)_/¯  ¯\_(ツ)_/¯
 instance Query () where
   type QueryResult () = ()
   crop _ _ = ()
@@ -143,7 +141,7 @@ queryDyn q = do
   tellQueryDyn q
   zipDynWith crop q <$> askQueryResult
 
--- | We can already say this in reflex
+-- | use a query morphism to operate on a smaller version of a query.
 subQuery :: (Reflex t, MonadQuery t q2 m, Monad m) => QueryMorphism q1 q2 -> Dynamic t q1 -> m (Dynamic t (QueryResult q1))
 subQuery (QueryMorphism f g) x = fmap g <$> queryDyn (fmap f x)
 

@@ -64,7 +64,8 @@ instance (Group a, Group b) => Group (a, b) where
 instance (Additive a, Additive b) => Additive (a, b)
 
 -- See https://gitlab.haskell.org/ghc/ghc/issues/11135#note_111802 for the reason Compose is not also provided.
--- Base does not define Monoid (Compose f g a) so this has no "home"
+-- Base does not define Monoid (Compose f g a) so this is the best we can
+-- really do for functor composition.
 instance Group (f (g a)) => Group ((f :.: g) a) where
   negateG (Comp1 xs) = Comp1 (negateG xs)
   Comp1 xs ~~ Comp1 ys = Comp1 (xs ~~ ys)
