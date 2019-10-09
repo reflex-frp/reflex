@@ -61,20 +61,19 @@ instance Additive ()
 instance (Group a, Group b) => Group (a, b) where
   negateG (a, b) = (negateG a, negateG b)
   (a, b) ~~ (c, d) = (a ~~ c, b ~~ d)
-instance (Additive a, Additive b) => Additive (a, b) where
+instance (Additive a, Additive b) => Additive (a, b)
 
 -- See https://gitlab.haskell.org/ghc/ghc/issues/11135#note_111802 for the reason Compose is not also provided.
 -- Base does not define Monoid (Compose f g a) so this has no "home"
 instance Group (f (g a)) => Group ((f :.: g) a) where
   negateG (Comp1 xs) = Comp1 (negateG xs)
   Comp1 xs ~~ Comp1 ys = Comp1 (xs ~~ ys)
-
-instance Additive (f (g a)) => Additive ((f :.: g) a) where
+instance Additive (f (g a)) => Additive ((f :.: g) a)
 
 instance (Group (f a), Group (g a)) => Group ((f :*: g) a) where
   negateG (a :*: b) = negateG a :*: negateG b
   (a :*: b) ~~ (c :*: d) = (a ~~ c :*: b ~~ d)
-instance (Additive (f a), Additive (g a)) => Additive ((f :*: g) a) where
+instance (Additive (f a), Additive (g a)) => Additive ((f :*: g) a)
 
 instance Group (Proxy x) where
   negateG _ = Proxy
@@ -82,7 +81,9 @@ instance Group (Proxy x) where
 instance Additive (Proxy x)
 
 deriving instance Group a => Group (Const a x)
+instance Additive a => Additive (Const a x)
 deriving instance Group a => Group (Identity a)
+instance Additive a => Additive (Identity a)
 
 instance Group b => Group (a -> b) where
   negateG f = negateG . f

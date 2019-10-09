@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -68,11 +69,13 @@ instance Query Void where
   type QueryResult Void = ()
   crop = absurd
 
+#if MIN_VERSION_base(4,12,0)
 -- | We can lift queries into monoidal containers.
 -- But beware of Applicatives who's monoid is different from (pure mempty, liftA2 mappend)
 instance (Query q, Applicative f) => Query (Ap f q) where
   type QueryResult (Ap f q) = Ap f (QueryResult q)
   crop = liftA2 crop
+#endif
 -- | QueryMorphism's must be group homomorphisms when acting on the query type
 -- and compatible with the query relationship when acting on the query result.
 data QueryMorphism q q' = QueryMorphism
