@@ -1,4 +1,4 @@
-{ rp ? import ./reflex-platform.nix {}
+{ rp ? import ./dep/reflex-platform {}
 }:
 let
   inherit (rp.nixpkgs) lib;
