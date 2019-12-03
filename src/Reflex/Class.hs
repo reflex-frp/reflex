@@ -173,11 +173,14 @@ module Reflex.Class
   , slowHeadE
   ) where
 
-#if defined(MIN_VERSION_semialign)
+#ifdef MIN_VERSION_semialign
 import Prelude hiding (zip, zipWith)
 
 #if MIN_VERSION_these(0,8,0)
 import Data.These.Combinators (justThese)
+#endif
+#if MIN_VERSION_semialign(1,1,0)
+import Data.Zip (Zip (..))
 #endif
 #endif
 
@@ -1077,7 +1080,10 @@ instance Reflex t => Semialign (Event t) where
 #endif
   align = alignEventWithMaybe Just
 
-#if defined(MIN_VERSION_semialign)
+#ifdef MIN_VERSION_semialign
+#if MIN_VERSION_semialign(1,1,0)
+instance Reflex t => Zip (Event t) where
+#endif
   zip x y = mapMaybe justThese $ align x y
 #endif
 

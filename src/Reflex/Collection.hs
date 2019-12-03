@@ -27,8 +27,11 @@ module Reflex.Collection
   , simpleList
   ) where
 
-#if defined(MIN_VERSION_semialign)
+#ifdef MIN_VERSION_semialign
 import Prelude hiding (zip, zipWith)
+#if MIN_VERSION_semialign(1,1,0)
+import Data.Zip (Zip (..))
+#endif
 #endif
 
 import Control.Monad.Identity
