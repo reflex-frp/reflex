@@ -20,8 +20,8 @@ let
     hsPkgs = lib.genAttrs compilers (ghc: let
       ghc' = reflex-platform.${ghc}.override {
         overrides = self: super: {
-          reflex-useTemplateHaskell = self.callPackage ./. { useTemplateHaskell = true; splitThese = false; };
-          reflex = self.callPackage ./. { useTemplateHaskell = false; splitThese = false; };
+          reflex-useTemplateHaskell = self.callPackage ./. { useTemplateHaskell = true; };
+          reflex = self.callPackage ./. { useTemplateHaskell = false; };
         };
       };
     in {

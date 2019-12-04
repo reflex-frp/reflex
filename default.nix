@@ -7,7 +7,7 @@
 , transformers-compat, unbounded-delays, prim-uniq
 , data-default, filepath, directory, filemanip, ghcjs-base
 , monoidal-containers, witherable, profunctors
-, semialign ? null, splitThese ? (semialign != null)
+, splitThese ? (semialign != null), semialign ? null, these-lens ? null
 , useTemplateHaskell ? true
 }:
 mkDerivation {
@@ -30,6 +30,7 @@ mkDerivation {
     haskell-src-exts haskell-src-meta
   ]) ++ (if splitThese then [
     semialign
+    these-lens
   ] else []);
   testHaskellDepends = if ghc.isGhcjs or false then [] else [
     hlint filepath directory filemanip
