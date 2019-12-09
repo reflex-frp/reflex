@@ -20,12 +20,12 @@ let
     hsPkgs = lib.genAttrs compilers (ghc: let
       ghc' = reflex-platform.${ghc}.override {
         overrides = self: super: {
-          reflex-useTemplateHaskell = self.callPackage ./. { useTemplateHaskell = true; };
-          reflex = self.callPackage ./. { useTemplateHaskell = false; };
+          reflex-dontUseTemplateHaskell = self.callPackage ./. { useTemplateHaskell = false; };
+          reflex = self.callPackage ./. { useTemplateHaskell = true; };
         };
       };
     in {
-      inherit (ghc') reflex reflex-useTemplateHaskell;
+      inherit (ghc') reflex reflex-dontUseTemplateHaskell;
     });
   in hsPkgs // {
     cache = reflex-platform.pinBuildInputs "reflex-${system}"
