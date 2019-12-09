@@ -19,9 +19,16 @@ let
     ];
     hsPkgs = lib.genAttrs compilers (ghc: let
       ghc' = reflex-platform.${ghc}.override {
-        overrides = self: super: {
-          reflex-dontUseTemplateHaskell = self.callCabal2nixWithOptions "reflex" ./. "-f -use-template-haskell" {};
-          reflex = self.callCabal2nixWithOptions "reflex" ./. "-f +use-template-haskell" {};
+        overrides = self: super: let
+          reflexSrc = builtins.filterSource (path: type: !(builtins.elem (baseNameOf path) [
+            "default.nix"
+            "release.nix"
+            ".git"
+            "dist"
+          ])) ./.;
+        in {
+          reflex-dontUseTemplateHaskell = self.callCabal2nixWithOptions "reflex" reflexSrc "-f -use-template-haskell" {};
+          reflex = self.callCabal2nixWithOptions "reflex" reflexSrc "-f +use-template-haskell" {};
         };
       };
     in {
