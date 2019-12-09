@@ -21,14 +21,20 @@
 module Reflex.Requester.Base
   ( RequesterT (..)
   , runRequesterT
+  , withRequesterT
   , runWithReplaceRequesterTWith
   , traverseIntMapWithKeyWithAdjustRequesterTWith
   , traverseDMapWithKeyWithAdjustRequesterTWith
   , RequesterData
   , RequesterDataKey
   , traverseRequesterData
+  , forRequesterData
   , requesterDataToList
   , singletonRequesterData
+  , matchResponsesWithRequests
+  , multiEntry
+  , unMultiEntry
+  , requesting'
   ) where
 
 import Reflex.Class
@@ -43,6 +49,7 @@ import Reflex.TriggerEvent.Class
 import Control.Applicative (liftA2)
 import Control.Monad.Exception
 import Control.Monad.Identity
+import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
@@ -59,8 +66,7 @@ import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Proxy
 import qualified Data.Semigroup as S
-import Data.Some (Some)
-import qualified Data.Some as Some
+import Data.Some (Some(Some))
 import Data.Type.Equality
 import Data.Unique.Tag
 
@@ -129,6 +135,10 @@ traverseRequesterData f (RequesterData m) = RequesterData <$> traverseTagMapWith
           MyTagType_Multi -> traverse (traverseRequesterData f) request
           MyTagType_Multi2 -> traverse (traverse (traverseRequesterData f)) request
           MyTagType_Multi3 -> traverse (traverse (traverseRequesterData f)) request
+
+-- | 'traverseRequesterData' with its arguments flipped
+forRequesterData :: forall request response m. Applicative m => RequesterData request -> (forall a. request a -> m (response a)) -> m (RequesterData response)
+forRequesterData r f = traverseRequesterData f r
 
 data MyTagType :: * -> * where
   MyTagType_Single :: MyTagType (Single a)
@@ -239,6 +249,10 @@ deriving instance MonadHold t m => MonadHold t (RequesterT t request response m)
 deriving instance PostBuild t m => PostBuild t (RequesterT t request response m)
 deriving instance TriggerEvent t m => TriggerEvent t (RequesterT t request response m)
 
+instance PrimMonad m => PrimMonad (RequesterT t request response m) where
+  type PrimState (RequesterT t request response m) = PrimState m
+  primitive = lift . primitive
+
 -- TODO: Monoid and Semigroup can likely be derived once StateT has them.
 instance (Monoid a, Monad m) => Monoid (RequesterT t request response m a) where
   mempty = pure mempty
@@ -252,7 +266,6 @@ instance (S.Semigroup a, Monad m) => S.Semigroup (RequesterT t request response 
 -- requests are made, and responses should be provided in the input 'Event'.
 -- The 'Tag' keys will be used to return the responses to the same place the
 -- requests were issued.
-
 runRequesterT :: (Reflex t, Monad m)
               => RequesterT t request response m a
               -> Event t (RequesterData response) --TODO: This DMap will be in reverse order, so we need to make sure the caller traverses it in reverse
@@ -261,6 +274,20 @@ runRequesterT (RequesterT a) responses = do
   (result, s) <- runReaderT (runStateT a $ RequesterState (-4) []) $ fanInt $
     coerceEvent responses
   return (result, fmapCheap (RequesterData . TagMap) $ mergeInt $ IntMap.fromDistinctAscList $ _requesterState_requests s)
+
+-- | Map a function over the request and response of a 'RequesterT'
+withRequesterT
+  :: (Reflex t, MonadFix m)
+  => (forall x. req x -> req' x) -- ^ The function to map over the request
+  -> (forall x. rsp' x -> rsp x) -- ^ The function to map over the response
+  -> RequesterT t req rsp m a -- ^ The internal 'RequesterT' whose input and output will be transformed
+  -> RequesterT t req' rsp' m a -- ^ The resulting 'RequesterT'
+withRequesterT freq frsp child = do
+  rec let rsp = fmap (runIdentity . traverseRequesterData (Identity . frsp)) rsp'
+      (a, req) <- lift $ runRequesterT child rsp
+      rsp' <- fmap (flip selectInt 0 . fanInt . fmapCheap unMultiEntry) $ requesting' $
+        fmapCheap (multiEntry . IntMap.singleton 0) $ fmap (runIdentity . traverseRequesterData (Identity . freq)) req
+  return a
 
 instance (Reflex t, Monad m) => Requester t (RequesterT t request response m) where
   type Request (RequesterT t request response m) = request
@@ -365,7 +392,7 @@ traverseIntMapWithKeyWithAdjustRequesterTWith base patchNewElements mergePatchIn
           pack = Entry
           f' :: IntMap.Key -> (Int, v) -> m (Event t (IntMap (RequesterData request)), v')
           f' k (n, v) = do
-            (result, myRequests) <- runRequesterT (f k v) $ fmapMaybeCheap (IntMap.lookup n) $ selectInt responses k --TODO: Instead of doing fmapMaybeCheap, can we share a fanInt across all instances of a given key, or at least the ones that are adjacent in time?
+            (result, myRequests) <- runRequesterT (f k v) $ mapMaybeCheap (IntMap.lookup n) $ selectInt responses k --TODO: Instead of doing mapMaybeCheap, can we share a fanInt across all instances of a given key, or at least the ones that are adjacent in time?
             return (fmapCheap (IntMap.singleton n) myRequests, result)
       ndm' <- numberOccurrencesFrom 1 dm'
       (children0, children') <- base f' (fmap ((,) 0) dm0) $ fmap (\(n, dm) -> fmap ((,) n) dm) ndm' --TODO: Avoid this somehow, probably by adding some sort of per-cohort information passing to Adjustable
@@ -413,7 +440,7 @@ traverseDMapWithKeyWithAdjustRequesterTWith base mapPatch weakenPatchWith patchN
           pack = Entry
           f' :: forall a. k a -> Compose ((,) Int) v a -> m (Compose ((,) (Event t (IntMap (RequesterData request)))) v' a)
           f' k (Compose (n, v)) = do
-            (result, myRequests) <- runRequesterT (f k v) $ fmapMaybeCheap (IntMap.lookup n) $ select responses (Const2 (Some.This k))
+            (result, myRequests) <- runRequesterT (f k v) $ mapMaybeCheap (IntMap.lookup n) $ select responses (Const2 (Some k))
             return $ Compose (fmapCheap (IntMap.singleton n) myRequests, result)
       ndm' <- numberOccurrencesFrom 1 dm'
       (children0, children') <- base f' (DMap.map (\v -> Compose (0, v)) dm0) $ fmap (\(n, dm) -> mapPatch (\v -> Compose (n, v)) dm) ndm'
@@ -427,3 +454,84 @@ traverseDMapWithKeyWithAdjustRequesterTWith base mapPatch weakenPatchWith patchN
           promptRequests = coincidence $ fmapCheap (mergeMap . patchNewElements) requests' --TODO: Create a mergeIncrementalPromptly, and use that to eliminate this 'coincidence'
       requests <- holdIncremental requests0 requests'
   return (result0, result')
+
+data Decoder rawResponse response =
+  forall a. Decoder (RequesterDataKey a) (rawResponse -> response a)
+
+-- | Matches incoming responses with previously-sent requests
+-- and uses the provided request "decoder" function to process
+-- incoming responses.
+matchResponsesWithRequests
+  :: forall t rawRequest rawResponse request response m.
+     ( MonadFix m
+     , MonadHold t m
+     , Reflex t
+     )
+  => (forall a. request a -> (rawRequest, rawResponse -> response a))
+  -- ^ Given a request (from 'Requester'), produces the wire format of the
+  -- request and a function used to process the associated response
+  -> Event t (RequesterData request)
+  -- ^ The outgoing requests
+  -> Event t (Int, rawResponse)
+  -- ^ The incoming responses, tagged by an identifying key
+  -> m ( Event t (Map Int rawRequest)
+       , Event t (RequesterData response)
+       )
+  -- ^ A map of outgoing wire-format requests and an event of responses keyed
+  -- by the 'RequesterData' key of the associated outgoing request
+matchResponsesWithRequests f send recv = do
+  rec nextId <- hold 1 $ fmap (\(next, _, _) -> next) outgoing
+      waitingFor :: Incremental t (PatchMap Int (Decoder rawResponse response)) <-
+        holdIncremental mempty $ leftmost
+          [ fmap (\(_, outstanding, _) -> outstanding) outgoing
+          , snd <$> incoming
+          ]
+      let outgoing = processOutgoing nextId send
+          incoming = processIncoming waitingFor recv
+  return (fmap (\(_, _, rawReqs) -> rawReqs) outgoing, fst <$> incoming)
+  where
+    -- Tags each outgoing request with an identifying integer key
+    -- and returns the next available key, a map of response decoders
+    -- for requests for which there are outstanding responses, and the
+    -- raw requests to be sent out.
+    processOutgoing
+      :: Behavior t Int
+      -- The next available key
+      -> Event t (RequesterData request)
+      -- The outgoing request
+      -> Event t ( Int
+                 , PatchMap Int (Decoder rawResponse response)
+                 , Map Int rawRequest )
+      -- The new next-available-key, a map of requests expecting responses, and the tagged raw requests
+    processOutgoing nextId out = flip pushAlways out $ \dm -> do
+      oldNextId <- sample nextId
+      let (result, newNextId) = flip runState oldNextId $ forM (requesterDataToList dm) $ \(k :=> v) -> do
+            n <- get
+            put $ succ n
+            let (rawReq, rspF) = f v
+            return (n, rawReq, Decoder k rspF)
+          patchWaitingFor = PatchMap $ Map.fromList $
+            (\(n, _, dec) -> (n, Just dec)) <$> result
+          toSend = Map.fromList $ (\(n, rawReq, _) -> (n, rawReq)) <$> result
+      return (newNextId, patchWaitingFor, toSend)
+    -- Looks up the each incoming raw response in a map of response
+    -- decoders and returns the decoded response and a patch that can
+    -- be used to clear the ID of the consumed response out of the queue
+    -- of expected responses.
+    processIncoming
+      :: Incremental t (PatchMap Int (Decoder rawResponse response))
+      -- A map of outstanding expected responses
+      -> Event t (Int, rawResponse)
+      -- A incoming response paired with its identifying key
+      -> Event t (RequesterData response, PatchMap Int v)
+      -- The decoded response and a patch that clears the outstanding responses queue
+    processIncoming waitingFor inc = flip push inc $ \(n, rawRsp) -> do
+      wf <- sample $ currentIncremental waitingFor
+      case Map.lookup n wf of
+        Nothing -> return Nothing -- TODO How should lookup failures be handled here? They shouldn't ever happen..
+        Just (Decoder k rspF) -> do
+          let rsp = rspF rawRsp
+          return $ Just
+            ( singletonRequesterData k rsp
+            , PatchMap $ Map.singleton n Nothing
+            )

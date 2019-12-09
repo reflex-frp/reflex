@@ -1,15 +1,16 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 import Control.Lens
 import Control.Monad.Fix
 import Data.Align
-import Data.AppendMap () -- for the Align instance
 import qualified Data.AppendMap as AMap
 import Data.Functor.Misc
 import Data.Map (Map)
@@ -17,6 +18,10 @@ import qualified Data.Map as Map
 import Data.Map.Monoidal (MonoidalMap)
 import Data.Semigroup
 import Data.These
+
+#if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
+import Data.These.Lens
+#endif
 
 import Reflex
 import Reflex.Patch.MapWithMove
@@ -35,6 +40,10 @@ instance (Ord k, Query a, Eq (QueryResult a), Align (MonoidalMap k)) => Query (S
 
 newtype Selector k a = Selector { unSelector :: MonoidalMap k a }
   deriving (Show, Read, Eq, Ord, Functor)
+
+#if !(MIN_VERSION_monoidal_containers(0,4,1))
+deriving instance Ord k => Align (MonoidalMap k)
+#endif
 
 instance (Ord k, Eq a, Monoid a, Align (MonoidalMap k)) => Semigroup (Selector k a) where
   (Selector a) <> (Selector b) = Selector $ fmapMaybe id $ f a b

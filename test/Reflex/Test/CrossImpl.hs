@@ -218,6 +218,11 @@ testCases =
        bb <- hold b $ pushAlways (const $ hold "asdf" eo) eo
        let b' = pull $ sample =<< sample bb
        return (b', e)
+  , (,) "foldDynWhileFiring" $ TestCase (Map.singleton 0 "zxc", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(_, e) -> do
+       d <- foldDyn (:) [] $
+         pushAlways (\a -> foldDyn (:) [a] e) e
+       let b = current (join (fmap distributeListOverDynPure d))
+       return (b, e)
   , (,) "joinDyn" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
        bb <- hold "b" e
        bd <- hold never . fmap (const e) =<< headE e

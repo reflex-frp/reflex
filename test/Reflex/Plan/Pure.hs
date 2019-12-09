@@ -55,15 +55,15 @@ instance TestPlan (Pure Int) PurePlan where
 runPure :: PurePlan a -> (a, IntSet)
 runPure (PurePlan p) = runStateT p mempty $ 0
 
-relavantTimes :: IntSet -> IntSet
-relavantTimes occs = IntSet.fromList [0..l + 1]
+relevantTimes :: IntSet -> IntSet
+relevantTimes occs = IntSet.fromList [0..l + 1]
   where l = fromMaybe 0 (fst <$> IntSet.maxView occs)
 
 testBehavior :: (Behavior (Pure Int) a, IntSet) -> IntMap a
-testBehavior (b, occs) = IntMap.fromSet (sample b) (relavantTimes occs)
+testBehavior (b, occs) = IntMap.fromSet (sample b) (relevantTimes occs)
 
 testEvent :: (Event (Pure Int) a, IntSet) -> IntMap (Maybe a)
-testEvent (Event readEvent, occs) = IntMap.fromSet readEvent (relavantTimes occs)
+testEvent (Event readEvent, occs) = IntMap.fromSet readEvent (relevantTimes occs)
 
 
 
