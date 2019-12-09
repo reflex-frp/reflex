@@ -7,7 +7,6 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -37,6 +36,7 @@ module Reflex.Class
   , coerceBehavior
   , coerceEvent
   , coerceDynamic
+  , coerceIncremental
   , MonadSample (..)
   , MonadHold (..)
     -- ** 'fan' related types
@@ -172,6 +172,17 @@ module Reflex.Class
     -- * Slow, but general, implementations
   , slowHeadE
   ) where
+
+#ifdef MIN_VERSION_semialign
+import Prelude hiding (zip, zipWith)
+
+#if MIN_VERSION_these(0,8,0)
+import Data.These.Combinators (justThese)
+#endif
+#if MIN_VERSION_semialign(1,1,0)
+import Data.Zip (Zip (..))
+#endif
+#endif
 
 import Control.Applicative
 import Control.Monad.Identity
@@ -312,6 +323,10 @@ class ( MonadHold t (PushM t)
   -- | Construct a 'Coercion' for a 'Dynamic' given an 'Coercion' for its
   -- occurrence type
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
+  -- | Construct a 'Coercion' for an 'Incremental' given 'Coercion's for its
+  -- patch target and patch types.
+  incrementalCoercion
+    :: Coercion (PatchTarget a) (PatchTarget b) -> Coercion a b -> Coercion (Incremental t a) (Incremental t b)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
 
@@ -344,6 +359,12 @@ coerceEvent = coerceWith $ eventCoercion Coercion
 -- | Coerce a 'Dynamic' between representationally-equivalent value types
 coerceDynamic :: (Reflex t, Coercible a b) => Dynamic t a -> Dynamic t b
 coerceDynamic = coerceWith $ dynamicCoercion Coercion
+
+-- | Coerce an 'Incremental' between representationally-equivalent value types
+coerceIncremental
+  :: (Reflex t, Coercible a b, Coercible (PatchTarget a) (PatchTarget b))
+  => Incremental t a -> Incremental t b
+coerceIncremental = coerceWith $ incrementalCoercion Coercion Coercion
 
 -- | Construct a 'Dynamic' from a 'Behavior' and an 'Event'.  The 'Behavior'
 -- __must__ change when and only when the 'Event' fires, such that the
@@ -669,11 +690,7 @@ instance (Num a, Reflex t) => Num (Dynamic t a) where
 instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
   a <> b = pull $ liftM2 (<>) (sample a) (sample b)
   sconcat = pull . fmap sconcat . mapM sample
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 -- | Alias for 'mapMaybe'
 fmapMaybe :: Filterable f => (a -> Maybe b) -> f a -> f b
@@ -700,9 +717,12 @@ filterRight = mapMaybe (either (const Nothing) Just)
 instance Reflex t => Alt (Event t) where
   ev1 <!> ev2 = leftmost [ev1, ev2]
 
--- | 'Event' intersection (convenient interface to 'coincidence').
+-- | 'Event' intersection. Only occurs when both events are co-incident.
 instance Reflex t => Apply (Event t) where
-  evf <.> evx = coincidence (fmap (<$> evx) evf)
+  evf <.> evx = mapMaybe f (align evf evx) where
+    f (These g a) = Just (g a)
+    f _           = Nothing
+
 
 -- | 'Event' intersection (convenient interface to 'coincidence').
 instance Reflex t => Bind (Event t) where
@@ -871,11 +891,7 @@ traceEventWith f = push $ \x -> trace (f x) $ return $ Just x
 instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
   (<>) = alignWith (mergeThese (<>))
   sconcat = fmap sconcat . mergeList . toList
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 instance (Semigroup a, Reflex t) => Monoid (Event t a) where
   mempty = never
@@ -1064,6 +1080,13 @@ instance Reflex t => Semialign (Event t) where
 #endif
   align = alignEventWithMaybe Just
 
+#ifdef MIN_VERSION_semialign
+#if MIN_VERSION_semialign(1,1,0)
+instance Reflex t => Zip (Event t) where
+#endif
+  zip x y = mapMaybe justThese $ align x y
+#endif
+
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and
 -- the 'Behavior' is true at the time of occurrence.
@@ -1104,11 +1127,7 @@ zipDynWith f da db =
 
 instance (Reflex t, Semigroup a) => Semigroup (Dynamic t a) where
   (<>) = zipDynWith (<>)
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
   mconcat = distributeListOverDynWith mconcat

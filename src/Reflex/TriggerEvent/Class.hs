@@ -2,7 +2,6 @@
 -- new 'Event's that can be triggered from 'IO'.
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Reflex.TriggerEvent.Class
   ( TriggerEvent (..)
