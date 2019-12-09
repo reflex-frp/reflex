@@ -72,9 +72,12 @@ import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
 
-#if defined(MIN_VERSION_semialign)
+#ifdef MIN_VERSION_semialign
 #if MIN_VERSION_these(0,8,0)
 import Data.These.Combinators (justThese)
+#endif
+#if MIN_VERSION_semialign(1,1,0)
+import Data.Zip (Zip (..))
 #endif
 #endif
 
@@ -329,9 +332,9 @@ cacheEvent e =
                     scheduleClear occRef
                     propagateFast a subscribers
                 , subscriberInvalidateHeight = \old -> do
-                    FastWeakBag.traverse subscribers $ invalidateSubscriberHeight old
+                    FastWeakBag.traverse_ subscribers $ invalidateSubscriberHeight old
                 , subscriberRecalculateHeight = \new -> do
-                    FastWeakBag.traverse subscribers $ recalculateSubscriberHeight new
+                    FastWeakBag.traverse_ subscribers $ recalculateSubscriberHeight new
                 }
               when (isJust occ) $ do
                 liftIO $ writeIORef occRef occ -- Set the initial value of occRef; we don't need to do this if occ is Nothing
@@ -447,12 +450,12 @@ newSubscriberFan subscribed = return $ Subscriber
   , subscriberInvalidateHeight = \old -> do
       when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberFan" <> showNodeId subscribed
       subscribers <- readIORef $ fanSubscribedSubscribers subscribed
-      forM_ (DMap.toList subscribers) $ \(_ :=> v) -> WeakBag.traverse (_fanSubscribedChildren_list v) $ invalidateSubscriberHeight old
+      forM_ (DMap.toList subscribers) $ \(_ :=> v) -> WeakBag.traverse_ (_fanSubscribedChildren_list v) $ invalidateSubscriberHeight old
       when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberFan" <> showNodeId subscribed <> " done"
   , subscriberRecalculateHeight = \new -> do
       when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberFan" <> showNodeId subscribed
       subscribers <- readIORef $ fanSubscribedSubscribers subscribed
-      forM_ (DMap.toList subscribers) $ \(_ :=> v) -> WeakBag.traverse (_fanSubscribedChildren_list v) $ recalculateSubscriberHeight new
+      forM_ (DMap.toList subscribers) $ \(_ :=> v) -> WeakBag.traverse_ (_fanSubscribedChildren_list v) $ recalculateSubscriberHeight new
       when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberFan" <> showNodeId subscribed <> " done"
   }
 
@@ -468,7 +471,7 @@ newSubscriberSwitch subscribed = return $ Subscriber
       oldHeight <- readIORef $ switchSubscribedHeight subscribed
       when (oldHeight /= invalidHeight) $ do
         writeIORef (switchSubscribedHeight subscribed) $! invalidHeight
-        WeakBag.traverse (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight oldHeight
+        WeakBag.traverse_ (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight oldHeight
       when debugInvalidateHeight $ putStrLn $ "invalidateSubscriberHeight: SubscriberSwitch" <> showNodeId subscribed <> " done"
   , subscriberRecalculateHeight = \new -> do
       when debugInvalidateHeight $ putStrLn $ "recalculateSubscriberHeight: SubscriberSwitch" <> showNodeId subscribed
@@ -491,8 +494,8 @@ newSubscriberCoincidenceOuter subscribed = return $ Subscriber
         Nothing -> do
           when (innerHeight > outerHeight) $ liftIO $ do -- If the event fires, it will fire at a later height
             writeIORef (coincidenceSubscribedHeight subscribed) $! innerHeight
-            WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) $ invalidateSubscriberHeight outerHeight
-            WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight innerHeight
+            WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ invalidateSubscriberHeight outerHeight
+            WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight innerHeight
         Just o -> do -- Since it's already firing, no need to adjust height
           liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) occ
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
@@ -539,14 +542,14 @@ propagate :: a -> WeakBag (Subscriber x a) -> EventM x ()
 propagate a subscribers = withIncreasedDepth $ do
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
-  WeakBag.traverse subscribers $ \s -> subscriberPropagate s a
+  WeakBag.traverse_ subscribers $ \s -> subscriberPropagate s a
 
 -- | Propagate everything at the current height
 propagateFast :: a -> FastWeakBag (Subscriber x a) -> EventM x ()
 propagateFast a subscribers = withIncreasedDepth $ do
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
-  FastWeakBag.traverse subscribers $ \s -> subscriberPropagate s a
+  FastWeakBag.traverse_ subscribers $ \s -> subscriberPropagate s a
 
 --------------------------------------------------------------------------------
 -- EventSubscribed
@@ -1163,7 +1166,10 @@ instance HasSpiderTimeline x => Semialign (Event x) where
   align ea eb = mapMaybe dmapToThese $ mergeG coerce $ dynamicConst $
      DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
 
-#if defined(MIN_VERSION_semialign)
+#ifdef MIN_VERSION_semialign
+#if MIN_VERSION_semialign(1,1,0)
+instance HasSpiderTimeline x => Zip (Event x) where
+#endif
   zip x y = mapMaybe justThese $ align x y
 #endif
 
@@ -1521,15 +1527,15 @@ fanInt p = unsafePerformIO $ do
             liftIO $ writeIORef (_fanInt_occRef self) m
             scheduleIntClear $ _fanInt_occRef self
             FastMutableIntMap.forIntersectionWithImmutable_ (_fanInt_subscribers self) m $ \b v -> do --TODO: Do we need to know that no subscribers are being added as we traverse?
-              FastWeakBag.traverse b $ \s -> do
+              FastWeakBag.traverse_ b $ \s -> do
                 subscriberPropagate s v
         , subscriberInvalidateHeight = \old -> do
             FastMutableIntMap.for_ (_fanInt_subscribers self) $ \b -> do
-              FastWeakBag.traverse b $ \s -> do
+              FastWeakBag.traverse_ b $ \s -> do
                 subscriberInvalidateHeight s old
         , subscriberRecalculateHeight = \new -> do
             FastMutableIntMap.for_ (_fanInt_subscribers self) $ \b -> do
-              FastWeakBag.traverse b $ \s -> do
+              FastWeakBag.traverse_ b $ \s -> do
                 subscriberRecalculateHeight s new
         }
       liftIO $ do
@@ -2201,7 +2207,7 @@ runFrame a = SpiderHost $ do
     myHeight <- readIORef $ switchSubscribedHeight subscribed
     when (parentHeight /= myHeight) $ do
       writeIORef (switchSubscribedHeight subscribed) $! invalidHeight
-      WeakBag.traverse (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight myHeight
+      WeakBag.traverse_ (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight myHeight
   mapM_ _someMergeUpdate_invalidateHeight mergeUpdates --TODO: In addition to when the patch is completely empty, we should also not run this if it has some Nothing values, but none of them have actually had any effect; potentially, we could even check for Just values with no effect (e.g. by comparing their IORefs and ignoring them if they are unchanged); actually, we could just check if the new height is different
   forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mcs) -> do
     unsubscribe subscription
@@ -2242,7 +2248,7 @@ invalidateCoincidenceHeight subscribed = do
   oldHeight <- readIORef $ coincidenceSubscribedHeight subscribed
   when (oldHeight /= invalidHeight) $ do
     writeIORef (coincidenceSubscribedHeight subscribed) $! invalidHeight
-    WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) $ invalidateSubscriberHeight oldHeight
+    WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ invalidateSubscriberHeight oldHeight
 
 updateSwitchHeight :: Height -> SwitchSubscribed x a -> IO ()
 updateSwitchHeight new subscribed = do
@@ -2250,7 +2256,7 @@ updateSwitchHeight new subscribed = do
   when (oldHeight == invalidHeight) $ do --TODO: This 'when' should probably be an assertion
     when (new /= invalidHeight) $ do --TODO: This 'when' should probably be an assertion
       writeIORef (switchSubscribedHeight subscribed) $! new
-      WeakBag.traverse (switchSubscribedSubscribers subscribed) $ recalculateSubscriberHeight new
+      WeakBag.traverse_ (switchSubscribedSubscribers subscribed) $ recalculateSubscriberHeight new
 
 recalculateCoincidenceHeight :: CoincidenceSubscribed x a -> IO ()
 recalculateCoincidenceHeight subscribed = do
@@ -2259,7 +2265,7 @@ recalculateCoincidenceHeight subscribed = do
     height <- calculateCoincidenceHeight subscribed
     when (height /= invalidHeight) $ do
       writeIORef (coincidenceSubscribedHeight subscribed) $! height
-      WeakBag.traverse (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight height
+      WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight height
 
 calculateSwitchHeight :: SwitchSubscribed x a -> IO Height
 calculateSwitchHeight subscribed = getEventSubscribedHeight . _eventSubscription_subscribed =<< readIORef (switchSubscribedCurrentParent subscribed)
