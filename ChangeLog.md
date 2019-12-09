@@ -1,5 +1,11 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Data.WeakBag.traverse and Data.FastWeakBag.traverse have been
+  renamed to Data.WeakBag.traverse_ and Data.FastWeakBag.traverse_
+  respectively.
+
 ## 0.6.2.4
 
 * Update to monoidal-containers 0.6

@@ -7,13 +7,18 @@
 , transformers-compat, unbounded-delays, prim-uniq
 , data-default, filepath, directory, filemanip, ghcjs-base
 , monoidal-containers, witherable, profunctors
-, semialign ? null, splitThese ? (semialign != null)
+, splitThese ? (semialign != null), semialign ? null, these-lens ? null
 , useTemplateHaskell ? true
 }:
 mkDerivation {
   pname = "reflex";
   version = "0.6.2.4";
-  src = builtins.filterSource (path: type: !(builtins.elem (baseNameOf path) [ ".git" "dist" ])) ./.;
+  src = builtins.filterSource (path: type: !(builtins.elem (baseNameOf path) [
+    "default.nix"
+    "release.nix"
+    ".git"
+    "dist"
+  ])) ./.;
   libraryHaskellDepends = [
     base bifunctors containers dependent-map dependent-sum
     exception-transformers lens
@@ -30,6 +35,7 @@ mkDerivation {
     haskell-src-exts haskell-src-meta
   ]) ++ (if splitThese then [
     semialign
+    these-lens
   ] else []);
   testHaskellDepends = if ghc.isGhcjs or false then [] else [
     hlint filepath directory filemanip
