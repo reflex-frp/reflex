@@ -73,7 +73,7 @@ instance Query Void where
 
 #if MIN_VERSION_base(4,12,0)
 -- | We can lift queries into monoidal containers.
--- But beware of Applicatives who's monoid is different from (pure mempty, liftA2 mappend)
+-- But beware of Applicatives whose monoid is different from (pure mempty, liftA2 mappend)
 instance (Query q, Applicative f) => Query (Ap f q) where
   type QueryResult (Ap f q) = Ap f (QueryResult q)
   crop = liftA2 crop
@@ -148,4 +148,3 @@ queryDyn q = do
 -- | use a query morphism to operate on a smaller version of a query.
 subQuery :: (Reflex t, MonadQuery t q2 m, Monad m) => QueryMorphism q1 q2 -> Dynamic t q1 -> m (Dynamic t (QueryResult q1))
 subQuery (QueryMorphism f g) x = fmap g <$> queryDyn (fmap f x)
-
