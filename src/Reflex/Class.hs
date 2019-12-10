@@ -981,7 +981,7 @@ fanThese e =
 fanMap :: (Reflex t, Ord k) => Event t (Map k a) -> EventSelector t (Const2 k a)
 fanMap = fan . fmap mapToDMap
 
--- | switcHold never = eventjoin
+-- | 'switchHold' never = eventjoin
 eventJoin :: (Reflex t, MonadHold t m) => Event t (Event t a) -> m (Event t a)
 eventJoin = switchHold never
 
