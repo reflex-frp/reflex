@@ -53,11 +53,13 @@ instance (Ord k, Group q) => Group (MonoidalMap k q) where
 
 instance (Ord k, Additive q) => Additive (MonoidalMap k q)
 
+-- | Trivial group.
 instance Group () where
   negateG _ = ()
   _ ~~ _ = ()
 instance Additive ()
 
+-- | Product group.  A Pair of groups gives rise to a group
 instance (Group a, Group b) => Group (a, b) where
   negateG (a, b) = (negateG a, negateG b)
   (a, b) ~~ (c, d) = (a ~~ c, b ~~ d)
@@ -71,21 +73,26 @@ instance Group (f (g a)) => Group ((f :.: g) a) where
   Comp1 xs ~~ Comp1 ys = Comp1 (xs ~~ ys)
 instance Additive (f (g a)) => Additive ((f :.: g) a)
 
+-- | Product of groups, Functor style.
 instance (Group (f a), Group (g a)) => Group ((f :*: g) a) where
   negateG (a :*: b) = negateG a :*: negateG b
   (a :*: b) ~~ (c :*: d) = (a ~~ c :*: b ~~ d)
 instance (Additive (f a), Additive (g a)) => Additive ((f :*: g) a)
 
+-- | Trivial group, Functor style
 instance Group (Proxy x) where
   negateG _ = Proxy
   _ ~~ _ = Proxy
 instance Additive (Proxy x)
 
+-- | Const lifts groups into a functor.
 deriving instance Group a => Group (Const a x)
 instance Additive a => Additive (Const a x)
+-- | Ideitnty lifts groups pointwise (at only one point)
 deriving instance Group a => Group (Identity a)
 instance Additive a => Additive (Identity a)
 
+-- | Functions lift groups pointwise.
 instance Group b => Group (a -> b) where
   negateG f = negateG . f
   (~~) = liftA2 (~~)

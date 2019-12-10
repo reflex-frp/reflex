@@ -55,14 +55,18 @@ instance (Ord k, Query v) => Query (MonoidalMap k v) where
   type QueryResult (MonoidalMap k v) = MonoidalMap k (QueryResult v)
   crop q r = MonoidalMap.intersectionWith (flip crop) r q
 
+-- | the result of two queries is both results.
 instance (Query a, Query b) => Query (a, b) where
   type QueryResult (a, b) = (QueryResult a, QueryResult b)
   crop (x, x') (y, y') = (crop x y, crop x' y')
 
+-- | Trivial queries have trivial results.
 instance Query () where
   type QueryResult () = ()
   crop _ _ = ()
 
+-- | The result of an absurd query is trivial; If you can ask the question, the
+-- answer cannot tell you anything you didn't already know
 instance Query Void where
   type QueryResult Void = ()
   crop = absurd
