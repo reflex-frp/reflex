@@ -5,6 +5,7 @@
 * Data.WeakBag.traverse and Data.FastWeakBag.traverse have been
   renamed to Data.WeakBag.traverse_ and Data.FastWeakBag.traverse_
   respectively.
+* Additional instances for `Group` and `Query` classes for basic types.
 
 ## 0.6.2.4
 
