@@ -145,6 +145,6 @@ queryDyn q = do
   tellQueryDyn q
   zipDynWith crop q <$> askQueryResult
 
--- | use a query morphism to operate on a smaller version of a query.
+-- | Use a query morphism to operate on a smaller version of a query.
 subQuery :: (Reflex t, MonadQuery t q2 m, Monad m) => QueryMorphism q1 q2 -> Dynamic t q1 -> m (Dynamic t (QueryResult q1))
 subQuery (QueryMorphism f g) x = fmap g <$> queryDyn (fmap f x)
