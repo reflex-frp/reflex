@@ -76,7 +76,7 @@ instance Additive (f (g a)) => Additive ((f :.: g) a)
 -- | Product of groups, Functor style.
 instance (Group (f a), Group (g a)) => Group ((f :*: g) a) where
   negateG (a :*: b) = negateG a :*: negateG b
-  (a :*: b) ~~ (c :*: d) = (a ~~ c :*: b ~~ d)
+  (a :*: b) ~~ (c :*: d) = (a ~~ c) :*: (b ~~ d)
 instance (Additive (f a), Additive (g a)) => Additive ((f :*: g) a)
 
 -- | Trivial group, Functor style
