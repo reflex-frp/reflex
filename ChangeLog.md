@@ -5,7 +5,7 @@
 * Data.WeakBag.traverse and Data.FastWeakBag.traverse have been
   renamed to Data.WeakBag.traverse_ and Data.FastWeakBag.traverse_
   respectively.
-* Fixes a bug in Reflex.Patch.MapWithMove.patchThatSortsMapWith that was producing invalid PatchMapWithMove
+* Fixes a bug in `Reflex.Patch.MapWithMove.patchThatSortsMapWith` that was producing invalid `PatchMapWithMove`.
 
 ## 0.6.2.4
 
