@@ -8,6 +8,10 @@
   
 * Fixes a bug in `Reflex.Patch.MapWithMove.patchThatSortsMapWith` that was producing invalid `PatchMapWithMove`.
 
+* Add missing `NotReady` instances:
+   - `instance NotReady (SpiderTimeline x) (SpiderHost x)`
+   - `instance HasSpiderTimeline x => NotReady (SpiderTimeline x) (PerformEventT (SpiderTimeline x) (SpiderHost x))`
+
 ## 0.6.2.4
 
 * Update to monoidal-containers 0.6
