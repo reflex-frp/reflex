@@ -52,7 +52,7 @@ import qualified Data.Map as Map
 import Data.Semigroup
 import Data.Some (Some)
 import Data.Tuple
-import Data.Type.Equality hiding (apply)
+import Data.Type.Equality
 
 import Unsafe.Coerce
 

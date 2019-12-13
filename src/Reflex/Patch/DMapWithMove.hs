@@ -19,9 +19,9 @@ import Reflex.Patch.Class
 import Reflex.Patch.MapWithMove (PatchMapWithMove (..))
 import qualified Reflex.Patch.MapWithMove as MapWithMove
 
+import Data.Constraint.Extras
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
 import qualified Data.Dependent.Map as DMap
-import Data.Dependent.Sum (EqTag (..))
 import Data.Functor.Constant
 import Data.Functor.Misc
 import Data.Functor.Product
@@ -30,8 +30,7 @@ import Data.GADT.Show (GShow, gshow)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup (Semigroup (..), (<>))
-import Data.Some (Some)
-import qualified Data.Some as Some
+import Data.Some (Some(Some))
 import Data.These
 
 -- | Like 'PatchMapWithMove', but for 'DMap'. Each key carries a 'NodeInfo' which describes how it will be changed by the patch and connects move sources and
@@ -105,8 +104,8 @@ validationErrorsForPatchDMapWithMove m =
     unbalancedMove _ = Nothing
 
 -- |Test whether two @'PatchDMapWithMove' k v@ contain the same patch operations.
-instance EqTag k (NodeInfo k v) => Eq (PatchDMapWithMove k v) where
-  PatchDMapWithMove a == PatchDMapWithMove b = a == b
+instance (GEq k, Has' Eq k (NodeInfo k v)) => Eq (PatchDMapWithMove k v) where
+    PatchDMapWithMove a == PatchDMapWithMove b = a == b
 
 -- |Higher kinded 2-tuple, identical to @Data.Functor.Product@ from base ≥ 4.9
 data Pair1 f g a = Pair1 (f a) (g a)
@@ -311,8 +310,8 @@ weakenPatchDMapWithMoveWith f (PatchDMapWithMove p) = PatchMapWithMove $ weakenD
           { MapWithMove._nodeInfo_from = case _nodeInfo_from ni of
               From_Insert v -> MapWithMove.From_Insert $ f v
               From_Delete -> MapWithMove.From_Delete
-              From_Move k -> MapWithMove.From_Move $ Some.This k
-          , MapWithMove._nodeInfo_to = Some.This <$> getComposeMaybe (_nodeInfo_to ni)
+              From_Move k -> MapWithMove.From_Move $ Some k
+          , MapWithMove._nodeInfo_to = Some <$> getComposeMaybe (_nodeInfo_to ni)
           }
 
 -- |"Weaken" a @'PatchDMapWithMove' (Const2 k a) v@ to a @'PatchMapWithMove' k v'@. Weaken is in scare quotes because the 'Const2' has already disabled any

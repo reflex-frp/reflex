@@ -34,7 +34,7 @@ workflow w0 = do
   rec eResult <- networkHold (unWorkflow w0) $ fmap unWorkflow $ switch $ snd <$> current eResult
   return $ fmap fst eResult
 
--- | Similar to 'workflow', but outputs an 'Event' that fires whenever the current 'Workflow' is replaced by the next 'Workflow'.
+-- | Similar to 'workflow', but outputs an 'Event' that fires at post-build time and whenever the current 'Workflow' is replaced by the next 'Workflow'.
 workflowView :: forall t m a. (Reflex t, NotReady t m, Adjustable t m, MonadFix m, MonadHold t m, PostBuild t m) => Workflow t m a -> m (Event t a)
 workflowView w0 = do
   rec eResult <- networkView . fmap unWorkflow =<< holdDyn w0 eReplace

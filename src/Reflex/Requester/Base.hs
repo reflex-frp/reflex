@@ -66,8 +66,7 @@ import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Proxy
 import qualified Data.Semigroup as S
-import Data.Some (Some)
-import qualified Data.Some as Some
+import Data.Some (Some(Some))
 import Data.Type.Equality
 import Data.Unique.Tag
 
@@ -441,7 +440,7 @@ traverseDMapWithKeyWithAdjustRequesterTWith base mapPatch weakenPatchWith patchN
           pack = Entry
           f' :: forall a. k a -> Compose ((,) Int) v a -> m (Compose ((,) (Event t (IntMap (RequesterData request)))) v' a)
           f' k (Compose (n, v)) = do
-            (result, myRequests) <- runRequesterT (f k v) $ mapMaybeCheap (IntMap.lookup n) $ select responses (Const2 (Some.This k))
+            (result, myRequests) <- runRequesterT (f k v) $ mapMaybeCheap (IntMap.lookup n) $ select responses (Const2 (Some k))
             return $ Compose (fmapCheap (IntMap.singleton n) myRequests, result)
       ndm' <- numberOccurrencesFrom 1 dm'
       (children0, children') <- base f' (DMap.map (\v -> Compose (0, v)) dm0) $ fmap (\(n, dm) -> mapPatch (\v -> Compose (n, v)) dm) ndm'
