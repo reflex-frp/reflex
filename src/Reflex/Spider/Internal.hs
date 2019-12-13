@@ -103,6 +103,7 @@ import qualified Reflex.Host.Class
 import Reflex.NotReady.Class
 import Reflex.Patch
 import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
+import Reflex.PerformEvent.Base (PerformEventT)
 
 #ifdef DEBUG_TRACE_EVENTS
 import qualified Data.ByteString.Char8 as BS8
@@ -2705,3 +2706,11 @@ instance MonadAtomicRef (SpiderHostFrame x) where
 instance PrimMonad (SpiderHostFrame x) where
   type PrimState (SpiderHostFrame x) = PrimState IO
   primitive = SpiderHostFrame . EventM . primitive
+
+instance NotReady (SpiderTimeline x) (SpiderHost x) where
+  notReadyUntil _ = return ()
+  notReady = return ()
+
+instance HasSpiderTimeline x => NotReady (SpiderTimeline x) (PerformEventT (SpiderTimeline x) (SpiderHost x)) where
+  notReadyUntil _ = return ()
+  notReady = return ()
