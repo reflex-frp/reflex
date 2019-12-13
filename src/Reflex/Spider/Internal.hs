@@ -84,9 +84,9 @@ import Data.Zip (Zip (..))
 
 #ifdef DEBUG_CYCLES
 import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
-import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 #endif
 
+import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Tree (Forest, Tree (..), drawForest)
 import Data.List (isPrefixOf)
@@ -165,6 +165,10 @@ showNodeId' = ("#"<>) . show
 {-# INLINE showNodeId #-}
 showNodeId :: a -> String
 showNodeId _ = ""
+
+{-# INLINE showNodeId' #-}
+showNodeId' :: Int -> String
+showNodeId' _ = ""
 
 #endif
 
@@ -298,39 +302,18 @@ cacheEvent e =
 #endif
               subscribers <- liftIO FastWeakBag.empty
               occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
-<<<<<<< HEAD
+#ifdef DEBUG_NODEIDS
               (parentSub, occ) <- subscribeAndRead e $ debugSubscriber' ("cacheEvent" <> showNodeId' nodeId) $ Subscriber
+#else
+              (parentSub, occ) <- subscribeAndRead e $ Subscriber
+#endif
                   { subscriberPropagate = \a -> do
-                      -- checkCycle (_eventSubscription_subscribed parentSub)
                       liftIO $ writeIORef occRef (Just a)
                       scheduleClear occRef
                       propagateFast a subscribers
-                  , subscriberInvalidateHeight = FastWeakBag.traverse subscribers . invalidateSubscriberHeight
-                  , subscriberRecalculateHeight = FastWeakBag.traverse subscribers . recalculateSubscriberHeight
+                  , subscriberInvalidateHeight = FastWeakBag.traverse_ subscribers . invalidateSubscriberHeight
+                  , subscriberRecalculateHeight = FastWeakBag.traverse_ subscribers . recalculateSubscriberHeight
                   }
-||||||| merged common ancestors
-              (parentSub, occ) <- subscribeAndRead e $ Subscriber
-                { subscriberPropagate = \a -> do
-                    liftIO $ writeIORef occRef $ Just a
-                    scheduleClear occRef
-                    propagateFast a subscribers
-                , subscriberInvalidateHeight = \old -> do
-                    FastWeakBag.traverse subscribers $ invalidateSubscriberHeight old
-                , subscriberRecalculateHeight = \new -> do
-                    FastWeakBag.traverse subscribers $ recalculateSubscriberHeight new
-                }
-=======
-              (parentSub, occ) <- subscribeAndRead e $ Subscriber
-                { subscriberPropagate = \a -> do
-                    liftIO $ writeIORef occRef $ Just a
-                    scheduleClear occRef
-                    propagateFast a subscribers
-                , subscriberInvalidateHeight = \old -> do
-                    FastWeakBag.traverse_ subscribers $ invalidateSubscriberHeight old
-                , subscriberRecalculateHeight = \new -> do
-                    FastWeakBag.traverse_ subscribers $ recalculateSubscriberHeight new
-                }
->>>>>>> develop
               when (isJust occ) $ do
                 liftIO $ writeIORef occRef occ -- Set the initial value of occRef; we don't need to do this if occ is Nothing
                 scheduleClear occRef
