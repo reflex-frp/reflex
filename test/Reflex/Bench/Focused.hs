@@ -134,7 +134,7 @@ holdDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynami
 holdDynChain = iterM (\d -> sample (current d) >>= flip holdDyn (updated d))
 
 buildDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
-buildDynChain = iterM (\d -> do 
+buildDynChain = iterM (\d -> do
     let b = fmap (+1) (current d)
         e = fmap (*2) (updated d)
     buildDynamic (sample b) e)
