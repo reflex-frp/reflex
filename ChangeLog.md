@@ -5,7 +5,12 @@
 * Data.WeakBag.traverse and Data.FastWeakBag.traverse have been
   renamed to Data.WeakBag.traverse_ and Data.FastWeakBag.traverse_
   respectively.
+  
 * Fixes a bug in `Reflex.Patch.MapWithMove.patchThatSortsMapWith` that was producing invalid `PatchMapWithMove`.
+
+* Add missing `NotReady` instances:
+   - `instance NotReady (SpiderTimeline x) (SpiderHost x)`
+   - `instance HasSpiderTimeline x => NotReady (SpiderTimeline x) (PerformEventT (SpiderTimeline x) (SpiderHost x))`
 
 ## 0.6.2.4
 
@@ -18,7 +23,9 @@
 ## 0.6.2.2
 
 * Support these >= 1. Add `split-these` flag to control whether to use new these/semialign combination or not.
+
 * Update version bounds to fix some CI failures
+
 * Add travis CI configuration
 
 ## 0.6.2.1
@@ -44,21 +51,31 @@
 
 * Fix `holdDyn` so that it is lazy in its event argument  
   These produce `DMap`s  whose values needn't be `Identity`.
+
 * Stop using the now-deprecated `*Tag` classes (e.g., `ShowTag`).
+
 * Fix `holdDyn` so that it is lazy in its event argument.
 
 ## 0.6.1.0
 
 * Re-export all of `Data.Map.Monoidal`
+
 * Fix `QueryT` and `RequesterT` tests
 
 ## 0.6.0.0 -- 2019-03-20
 
 * Deprecate `FunctorMaybe` in favor of `Data.Witherable.Filterable`. We still export `fmapMaybe`, `ffilter`, etc., but they all rely on `Filterable` now.
+
 * Rename `MonadDynamicWriter` to `DynamicWriter` and add a deprecation for the old name.
+
 * Remove many deprecated functions.
+
 * Add a `Num` instance for `Dynamic`.
+
 * Add `matchRequestsWithResponses` to make it easier to use `Requester` with protocols that don't do this matching for you.
+
 * Add `withRequesterT` to map functions over the request and response of a `RequesterT`.
+
 * Suppress nil patches in `QueryT` as an optimization. The `Query` type must now have an `Eq` instance.
+
 * Add `throttleBatchWithLag` to `Reflex.Time`. See that module for details.
