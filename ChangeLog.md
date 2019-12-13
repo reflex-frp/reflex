@@ -7,11 +7,12 @@
   respectively.
   
 * Fixes a bug in `Reflex.Patch.MapWithMove.patchThatSortsMapWith` that was producing invalid `PatchMapWithMove`.
-* Additional instances for `Group` and `Query` classes for basic types.
 
 * Add missing `NotReady` instances:
    - `instance NotReady (SpiderTimeline x) (SpiderHost x)`
    - `instance HasSpiderTimeline x => NotReady (SpiderTimeline x) (PerformEventT (SpiderTimeline x) (SpiderHost x))`
+
+* Additional instances for `Group` and `Query` classes for basic types.
 
 ## 0.6.2.4
 
