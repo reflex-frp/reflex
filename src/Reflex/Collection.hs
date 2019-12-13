@@ -130,7 +130,7 @@ listWithKeyShallowDiff initialVals valsChanged mkChild = do
         Nothing -> Just Nothing
 
         -- We don't want to let spurious re-creations of items through
-        Just _  -> Nothing 
+        Just _  -> Nothing
   listHoldWithKey
       initialVals
       (attachWith (flip (Map.differenceWith relevantPatch))
