@@ -43,11 +43,11 @@ import Data.Witherable (Filterable)
 import Data.These.Lens
 #endif
 
-type Widget t m = (MonadHold t m, Reflex t, MonadFix m) 
+type Widget t m = (MonadHold t m, Reflex t, MonadFix m)
 
 
 connectDyn ::Widget t m => Event t () -> (Dynamic t a, Dynamic t a) -> m (Dynamic t a)
-connectDyn e (d, d') = do 
+connectDyn e (d, d') = do
   dd <- holdDyn d (d' <$ e)
   return $ join dd
 
@@ -64,7 +64,7 @@ connectOnCoincidence :: Widget t m => Event t () -> Event t a -> m (Event t a)
 connectOnCoincidence click e = do
   d <- holdDyn never (e <$ click)
   return $ coincidence (updated d)
-  
+
 coincidenceLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 coincidenceLoop (e1, e2) = do
 -- "heightBagRemove: Height 1 not present in bag HeightBag {_heightBag_size = 1, _heightBag_contents = fromList [(0,0)]}"
@@ -83,11 +83,11 @@ addHeight e = leftmost [e4, e4] where
   e4 = leftmost [e3, e3]
 
 
--- Take an existing test and build it inside a 
+-- Take an existing test and build it inside a
 buildLoop :: Widget t m => (forall t m. Widget t m => (Event t Int, Event t ()) -> m (Event t Int)) -> (Event t Int, Event t ()) -> m (Event t Int)
 buildLoop test (e1, e2) = switchHold never buildLoop
-  where buildLoop = pushAlways (const $ test (e1, e2)) e2 
-  
+  where buildLoop = pushAlways (const $ test (e1, e2)) e2
+
 
 connectButtonPromptly :: Widget t m => Event t () -> Event t a -> m (Event t a)
 connectButtonPromptly click e = do
@@ -110,13 +110,13 @@ switchLoop (e1, e2) = do
 mergeLoop :: forall t m. (Adjustable t m, Widget t m) => (Event t Int, Event t ()) -> m (Event t Int)
 mergeLoop (e1, e2) = do
   rec
-    (_, e) <- runEventWriterT $ 
+    (_, e) <- runEventWriterT $
       runWithReplace w (leftmost [w <$ e1])
 
   return (sum <$> e)
-  
+
   where
-    w = do    
+    w = do
       c <- count e1
       tellEvent (updated ((pure <$> c) :: Dynamic t [Int]))
 
@@ -128,7 +128,7 @@ switchLoop' (e1, e2) = do
   rec
     e' <- connectButton e2 (updated d)
     d <- count (leftmost [e', e1])
-  return $ updated d  
+  return $ updated d
 
 
 switchLoop2 :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
@@ -137,7 +137,7 @@ switchLoop2 (e1, e2) = do
     e' <- connectButton e2 (addHeight $ updated d)
     d <- count (align e' e1)
   return $ updated d
-  
+
 
 staticLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 staticLoop (e1, e2) = do
@@ -149,12 +149,12 @@ staticLoop' :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 staticLoop' (e1, e2) = do
   rec
     d <- foldDyn (+) (0 :: Int) (leftmost [e1, updated d])
-  return $ updated d  
+  return $ updated d
 
 
 buildStaticLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 buildStaticLoop (e1, e2) = switchHold never buildLoop
-  where buildLoop = pushAlways (const $ staticLoop (e1, e2)) e2 
+  where buildLoop = pushAlways (const $ staticLoop (e1, e2)) e2
 
 splitThese :: Filterable f => f (These a b) -> (f a, f b)
 splitThese f = (mapMaybe (preview here) f,  mapMaybe (preview there) f)
@@ -166,31 +166,31 @@ runTest (name, TestCase test) = do
   putStrLn ("Test: " <> name)
   mError <- timeout (milliseconds 5) $
     run `catch` \(e :: EventLoopException) -> pure (show e)
- 
-  case mError of 
+
+  case mError of
     Just err -> putStrLn err
     Nothing  -> error "timed out (loop not detected)"
-    
-  where 
 
-      run = do 
-        r <- runApp' (test . splitThese) (Just <$> occs) 
+  where
+
+      run = do
+        r <- runApp' (test . splitThese) (Just <$> occs)
         error (name <> ": unexpected success " <> show r)
 
       occs = [  This 1, This 2, That (), This 3, That (), This 1 ]
-  
+
       milliseconds = (*1000)
-  
+
 
 newtype TestCase = TestCase { unTest :: forall t m. (Widget t m, Adjustable t m) => (Event t Int, Event t ()) -> m (Event t Int)  }
 
 tests :: [(String, TestCase)]
-tests = 
+tests =
   [ ("switchLoop'", TestCase switchLoop')
   , ("switchLoop",  TestCase switchLoop)
-  
+
   , ("mergeLoop",  TestCase mergeLoop)
- 
+
 
   -- , ("switchLoop2",  TestCase switchLoop2)
 
@@ -207,7 +207,7 @@ tests =
 main :: IO ()
 main = traverse_ runTest tests
 
-    
+
 
 
 

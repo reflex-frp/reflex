@@ -185,7 +185,7 @@ library
   if impl(ghcjs)
     build-depends: ghcjs-base
 
-  
+
 
 test-suite semantics
   type: exitcode-stdio-1.0
@@ -292,7 +292,7 @@ test-suite DebugCycles
     build-depends: these-lens, semialign
 
   other-modules:
-    Test.Run    
+    Test.Run
 
 
 test-suite RequesterT
