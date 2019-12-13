@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-* Data.WeakBag.traverse` and `Data.FastWeakBag.traverse` have been deprecated.
+* `Data.WeakBag.traverse` and `Data.FastWeakBag.traverse` have been deprecated.
   They are replaced with `Data.WeakBag.traverse_` and `Data.FastWeakBag.traverse_`, respectively.
 
 * Fixes a bug in `Reflex.Patch.MapWithMove.patchThatSortsMapWith` that was producing invalid `PatchMapWithMove`.
