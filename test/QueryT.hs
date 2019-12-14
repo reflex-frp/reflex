@@ -19,6 +19,10 @@ import Data.Map.Monoidal (MonoidalMap)
 import Data.Semigroup
 import Data.These
 
+#if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
+import Data.These.Lens
+#endif
+
 import Reflex
 import Reflex.Patch.MapWithMove
 import Test.Run

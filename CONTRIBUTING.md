@@ -5,6 +5,7 @@ Contributions and issue reports are encouraged and appreciated!
 - [Opening Issues](#opening-issues)
 - [Submitting Changes](#submitting-changes)
   - [Guidelines for Commit Messages](#guidelines-for-commit-messages)
+  - [Guidelines for Pull Requests](#guidelines-for-pull-requests)
   - [Code Quality](#code-quality)
   - [Documentation](#documentation)
 
@@ -30,6 +31,10 @@ One way to think about it is that your commit message should be able to complete
 #### Body
 For breaking changes, new features, refactors, or other major changes, the body of the commit message should describe the motivation behind the change in greater detail and may include references to the issue tracker. The body shouldn't repeat code/comments from the diff.
 
+### Guidelines for Pull Requests
+
+Wherever possible, pull requests should add a single feature or fix a single bug. Pull requests should not bundle several unrelated changes.
+
 ### Code Quality
 
 #### Warnings
@@ -39,6 +44,10 @@ Your pull request should add no new warnings to the project. It should also gene
 #### Build and Test
 
 Make sure the project builds and that the tests pass! This will generally also be checked by CI before merge, but trying it yourself first means you'll catch problems earlier and your contribution can be merged that much sooner!
+
+#### Dependencies
+
+Include version bounds whenever adding a dependency to the library stanza of the cabal file. Note that libraries added to reflex.cabal also need to be added to default.nix.
 
 ### Documentation
 

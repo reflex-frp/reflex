@@ -130,6 +130,16 @@ mapDynChain = iterM (return . fmap (+1))
 joinDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
 joinDynChain = iterM (\d -> return $ join $ fmap (const d) d)
 
+holdDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
+holdDynChain = iterM (\d -> sample (current d) >>= flip holdDyn (updated d))
+
+buildDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
+buildDynChain = iterM (\d -> do
+    let b = fmap (+1) (current d)
+        e = fmap (*2) (updated d)
+    buildDynamic (sample b) e)
+
+
 combineDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
 combineDynChain = iterM (\d -> return $ zipDynWith (+) d d)
 
@@ -308,6 +318,8 @@ dynamics :: Word -> [(String, TestCase)]
 dynamics n =
   [ testE "mapDynChain"         $ fmap updated $ mapDynChain n =<< d
   , testE "joinDynChain"        $ fmap updated $ joinDynChain n =<< d
+  , testE "holdDynChain"        $ fmap updated $ holdDynChain n =<< d
+  , testE "buildDynChain"        $ fmap updated $ buildDynChain n =<< d
   , testE "combineDynChain"     $ fmap updated $ combineDynChain n =<< d
   , testE "dense mergeTree"     $ fmap (updated . mergeTreeDyn 8) dense
   , testE "sparse mergeTree"    $ fmap (updated . mergeTreeDyn 8) sparse

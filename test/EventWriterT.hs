@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -12,6 +13,10 @@ import qualified Data.Dependent.Map as DMap
 import Data.Functor.Misc
 import qualified Data.Map as M
 import Data.These
+
+#if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
+import Data.These.Lens
+#endif
 
 import Reflex
 import Reflex.EventWriter.Base
@@ -48,16 +53,13 @@ unwrapApp x appIn = do
   return e
 
 testOrdering :: (Reflex t, Monad m) => Event t () -> EventWriterT t [Int] m ()
-testOrdering pulse = do
-  forM_ [10,9..1] $ \i -> tellEvent ([i] <$ pulse)
-  return ()
+testOrdering pulse = forM_ [10,9..1] $ \i -> tellEvent ([i] <$ pulse)
 
 testSimultaneous :: (Reflex t, Adjustable t m, MonadHold t m) => Event t (These () ()) -> EventWriterT t [Int] m ()
 testSimultaneous pulse = do
   let e0 = fmapMaybe (^? here) pulse
       e1 = fmapMaybe (^? there) pulse
   forM_ [1,3..9] $ \i -> runWithReplace (tellEvent ([i] <$ e0)) $ ffor e1 $ \_ -> tellEvent ([i+1] <$ e0)
-  return ()
 
 -- | Test that a widget telling and event which fires at the same time it has been replaced
 -- doesn't count along with the new widget.
