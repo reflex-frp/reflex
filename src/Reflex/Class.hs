@@ -76,7 +76,6 @@ module Reflex.Class
   , factorEvent
   , filterEventKey
     -- ** Collapsing 'Event . Event'
-  , eventJoin
   , switchHold
   , switchHoldPromptly
   , switchHoldPromptOnly
@@ -287,7 +286,8 @@ class ( MonadHold t (PushM t)
   -- | Create an 'Event' that will occur whenever the currently-selected input
   -- 'Event' occurs
   switch :: Behavior t (Event t a) -> Event t a
-  -- | Create an 'Event' that will occur whenever the input event is occurring -- and its occurrence value, another 'Event', is also occurring
+  -- | Create an 'Event' that will occur whenever the input event is occurring -- and its occurrence value, another 'Event', is also occurring.
+  --   You maybe looking for 'switchHold' never instead.
   coincidence :: Event t (Event t a) -> Event t a
   -- | Extract the 'Behavior' of a 'Dynamic'.
   current :: Dynamic t a -> Behavior t a
@@ -980,10 +980,6 @@ fanThese e =
 -- the individual 'Event's.
 fanMap :: (Reflex t, Ord k) => Event t (Map k a) -> EventSelector t (Const2 k a)
 fanMap = fan . fmap mapToDMap
-
--- | 'switchHold' never = eventjoin
-eventJoin :: (Reflex t, MonadHold t m) => Event t (Event t a) -> m (Event t a)
-eventJoin = switchHold never
 
 -- | Switches to the new event whenever it receives one. Only the old event is
 -- considered the moment a new one is switched in; the output event will fire at
