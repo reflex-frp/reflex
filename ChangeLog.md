@@ -1,6 +1,6 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.6.3
 
 * `Data.WeakBag.traverse` and `Data.FastWeakBag.traverse` have been deprecated.
   They are replaced with `Data.WeakBag.traverse_` and `Data.FastWeakBag.traverse_`, respectively.
