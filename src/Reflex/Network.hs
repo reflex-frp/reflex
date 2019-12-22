@@ -20,7 +20,7 @@ import Reflex.NotReady.Class
 import Reflex.PostBuild.Class
 
 -- | A 'Dynamic' "network": Takes a 'Dynamic' of network-creating actions and replaces the network whenever the 'Dynamic' updates.
--- The returned Event of network results fires when the 'Dynamic' updates.
+-- The returned Event of network results fires at post-build time and when the 'Dynamic' updates.
 -- Note:  Often, the type 'a' is an Event, in which case the return value is an Event-of-Events, where the outer 'Event' fires
 -- when switching networks. Such an 'Event' would typically be flattened (via 'switchPromptly').
 networkView :: (NotReady t m, Adjustable t m, PostBuild t m) => Dynamic t (m a) -> m (Event t a)
