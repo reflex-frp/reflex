@@ -37,7 +37,7 @@ instance Applicative (ReaderIO e) where
 #if MIN_VERSION_base(4,10,0)
   liftA2 = liftM2
   {-# INLINE liftA2 #-}
-#endif  
+#endif
   (*>) = (>>)
   {-# INLINE (*>) #-}
 

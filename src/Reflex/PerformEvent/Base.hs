@@ -141,7 +141,7 @@ hostPerformEventT a = do
           case mToPerform of
             Nothing -> return [result']
             Just toPerform -> do
-              responses <- runHostFrame $ traverseRequesterData (Identity <$>) toPerform
+              responses <- runHostFrame $ traverseRequesterData (fmap Identity) toPerform
               mrt <- readRef responseTrigger
               let followupEventTriggers = case mrt of
                     Just rt -> [rt :=> Identity responses]
