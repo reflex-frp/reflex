@@ -286,7 +286,8 @@ class ( MonadHold t (PushM t)
   -- | Create an 'Event' that will occur whenever the currently-selected input
   -- 'Event' occurs
   switch :: Behavior t (Event t a) -> Event t a
-  -- | Create an 'Event' that will occur whenever the input event is occurring -- and its occurrence value, another 'Event', is also occurring
+  -- | Create an 'Event' that will occur whenever the input event is occurring -- and its occurrence value, another 'Event', is also occurring.
+  --   You maybe looking for '@switchHold@ @never@' instead.
   coincidence :: Event t (Event t a) -> Event t a
   -- | Extract the 'Behavior' of a 'Dynamic'.
   current :: Dynamic t a -> Behavior t a
