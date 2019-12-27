@@ -972,8 +972,10 @@ instance Monad (BehaviorM x) where
   BehaviorM x >> BehaviorM y = BehaviorM $ x >> y
   {-# INLINE return #-}
   return x = BehaviorM $ return x
+#if !MIN_VERSION_base(4,13,0)
   {-# INLINE fail #-}
   fail s = BehaviorM $ fail s
+#endif
 
 data BehaviorSubscribed x a
    = forall p. BehaviorSubscribedHold (Hold x p)
@@ -2357,8 +2359,10 @@ instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) 
   x >>= f = SpiderDynamic $ dynamicDynIdentity $ newJoinDyn $ newMapDyn (unSpiderDynamic . f) $ unSpiderDynamic x
   {-# INLINE (>>) #-}
   (>>) = (*>)
+#if !MIN_VERSION_base(4,13,0)
   {-# INLINE fail #-}
   fail _ = error "Dynamic does not support 'fail'"
+#endif
 
 {-# INLINABLE newJoinDyn #-}
 newJoinDyn :: HasSpiderTimeline x => DynamicS x (Identity (DynamicS x (Identity a))) -> Reflex.Spider.Internal.Dyn x (Identity a)
@@ -2637,6 +2641,10 @@ instance Monad (SpiderHost x) where
   SpiderHost x >> SpiderHost y = SpiderHost $ x >> y
   {-# INLINABLE return #-}
   return x = SpiderHost $ return x
+#if MIN_VERSION_base(4,13,0)
+
+instance MonadFail (SpiderHost x) where
+#endif
   {-# INLINABLE fail #-}
   fail s = SpiderHost $ fail s
 
@@ -2660,8 +2668,10 @@ instance Monad (SpiderHostFrame x) where
   SpiderHostFrame x >> SpiderHostFrame y = SpiderHostFrame $ x >> y
   {-# INLINABLE return #-}
   return x = SpiderHostFrame $ return x
+#if !MIN_VERSION_base(4,13,0)
   {-# INLINABLE fail #-}
   fail s = SpiderHostFrame $ fail s
+#endif
 
 instance NotReady (SpiderTimeline x) (SpiderHostFrame x) where
   notReadyUntil _ = pure ()
