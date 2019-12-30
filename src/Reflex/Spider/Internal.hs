@@ -979,7 +979,7 @@ instance Monad (BehaviorM x) where
   fail s = MonadFail.fail
 #endif
 
-instance MonadFail (SpiderHost x) where
+instance MonadFail (BehaviorM x) where
   {-# INLINABLE fail #-}
   fail s = BehaviorM $ fail s
 
