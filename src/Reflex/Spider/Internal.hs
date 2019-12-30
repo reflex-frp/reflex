@@ -43,6 +43,7 @@ import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
 import Control.Monad.ReaderIO
 import Control.Monad.Ref
+import qualified Control.Monad.Fail as MonadFail
 import Data.Align
 import Data.Coerce
 import Data.Dependent.Map (DMap, DSum (..))
@@ -974,8 +975,12 @@ instance Monad (BehaviorM x) where
   return x = BehaviorM $ return x
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINE fail #-}
-  fail s = BehaviorM $ fail s
+  fail s = MonadFail.fail
 #endif
+
+instance MonadFail (SpiderHost x) where
+  {-# INLINABLE fail #-}
+  fail s = BehaviorM $ fail s
 
 data BehaviorSubscribed x a
    = forall p. BehaviorSubscribedHold (Hold x p)
@@ -2641,10 +2646,12 @@ instance Monad (SpiderHost x) where
   SpiderHost x >> SpiderHost y = SpiderHost $ x >> y
   {-# INLINABLE return #-}
   return x = SpiderHost $ return x
-#if MIN_VERSION_base(4,13,0)
+#if !MIN_VERSION_base(4,13,0)
+  {-# INLINABLE fail #-}
+  fail s = MonadFail.fail
+#endif
 
 instance MonadFail (SpiderHost x) where
-#endif
   {-# INLINABLE fail #-}
   fail s = SpiderHost $ fail s
 
@@ -2670,8 +2677,12 @@ instance Monad (SpiderHostFrame x) where
   return x = SpiderHostFrame $ return x
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINABLE fail #-}
-  fail s = SpiderHostFrame $ fail s
+  fail s = MonadFail.fail
 #endif
+
+instance MonadFail (SpiderHostFrame x) where
+  {-# INLINABLE fail #-}
+  fail s = SpiderHostFrame $ fail s
 
 instance NotReady (SpiderTimeline x) (SpiderHostFrame x) where
   notReadyUntil _ = pure ()
