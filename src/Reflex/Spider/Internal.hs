@@ -981,7 +981,7 @@ instance Monad (BehaviorM x) where
 
 instance MonadFail (BehaviorM x) where
   {-# INLINABLE fail #-}
-  fail s = BehaviorM $ fail s
+  fail s = BehaviorM $ MonadFail.fail s
 
 data BehaviorSubscribed x a
    = forall p. BehaviorSubscribedHold (Hold x p)
@@ -2654,7 +2654,7 @@ instance Monad (SpiderHost x) where
 
 instance MonadFail (SpiderHost x) where
   {-# INLINABLE fail #-}
-  fail s = SpiderHost $ fail s
+  fail s = SpiderHost $ MonadFail.fail s
 
 -- | Run an action affecting the global Spider timeline; this will be guarded by
 -- a mutex for that timeline
@@ -2683,7 +2683,7 @@ instance Monad (SpiderHostFrame x) where
 
 instance MonadFail (SpiderHostFrame x) where
   {-# INLINABLE fail #-}
-  fail s = SpiderHostFrame $ fail s
+  fail s = SpiderHostFrame $ MonadFail.fail s
 
 instance NotReady (SpiderTimeline x) (SpiderHostFrame x) where
   notReadyUntil _ = pure ()
