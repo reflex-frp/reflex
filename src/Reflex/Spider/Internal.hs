@@ -43,6 +43,7 @@ import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
 import Control.Monad.ReaderIO
 import Control.Monad.Ref
+import Control.Monad.Fail (MonadFail)
 import qualified Control.Monad.Fail as MonadFail
 import Data.Align
 import Data.Coerce
