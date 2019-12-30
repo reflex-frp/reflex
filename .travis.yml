@@ -29,6 +29,8 @@ matrix:
   include:
     - compiler: ghcjs-8.4
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["cabal-install-3.0"]}}
+    - compiler: ghc-8.8.1
+      addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.8.1","cabal-install-3.0"]}}
     - compiler: ghc-8.6.5
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.6.5","cabal-install-2.4"]}}
     - compiler: ghc-8.4.4
