@@ -663,6 +663,9 @@ instance Reflex t => Monad (Behavior t) where
   a >>= f = pull $ sample a >>= sample . f
   -- Note: it is tempting to write (_ >> b = b); however, this would result in (fail x >> return y) succeeding (returning y), which violates the law that (a >> b = a >>= \_ -> b), since the implementation of (>>=) above actually will fail.  Since we can't examine 'Behavior's other than by using sample, I don't think it's possible to write (>>) to be more efficient than the (>>=) above.
   return = constant
+#if !MIN_VERSION_base(4,13,0)
+  fail = error "Monad (Behavior t) does not support fail"
+#endif
 
 instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
   mempty = constant mempty
