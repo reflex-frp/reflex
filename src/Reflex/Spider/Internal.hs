@@ -976,12 +976,8 @@ instance Monad (BehaviorM x) where
   return x = BehaviorM $ return x
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINE fail #-}
-  fail s = MonadFail.fail
+  fail s = BehaviorM $ fail s
 #endif
-
-instance MonadFail (BehaviorM x) where
-  {-# INLINABLE fail #-}
-  fail s = BehaviorM $ MonadFail.fail s
 
 data BehaviorSubscribed x a
    = forall p. BehaviorSubscribedHold (Hold x p)
@@ -2649,7 +2645,7 @@ instance Monad (SpiderHost x) where
   return x = SpiderHost $ return x
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINABLE fail #-}
-  fail s = MonadFail.fail
+  fail = MonadFail.fail
 #endif
 
 instance MonadFail (SpiderHost x) where
@@ -2678,12 +2674,8 @@ instance Monad (SpiderHostFrame x) where
   return x = SpiderHostFrame $ return x
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINABLE fail #-}
-  fail s = MonadFail.fail
+  fail s = SpiderHostFrame $ fail s
 #endif
-
-instance MonadFail (SpiderHostFrame x) where
-  {-# INLINABLE fail #-}
-  fail s = SpiderHostFrame $ MonadFail.fail s
 
 instance NotReady (SpiderTimeline x) (SpiderHostFrame x) where
   notReadyUntil _ = pure ()
