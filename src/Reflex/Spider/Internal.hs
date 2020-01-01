@@ -65,6 +65,7 @@ import Data.Monoid ((<>))
 import Data.Proxy
 import Data.These
 import Data.Traversable
+import Data.Type.Equality ((:~:)(Refl))
 import Data.Witherable (Filterable, mapMaybe)
 import GHC.Exts
 import GHC.IORef (IORef (..))

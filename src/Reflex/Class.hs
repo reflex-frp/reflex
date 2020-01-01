@@ -200,7 +200,7 @@ import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Compose
 import Data.Functor.Product
-import Data.GADT.Compare (GEq (..), GCompare (..), (:~:) (..))
+import Data.GADT.Compare (GEq (..), GCompare (..))
 import Data.FastMutableIntMap (PatchIntMap)
 import Data.Foldable
 import Data.Functor.Bind
@@ -215,6 +215,7 @@ import Data.Some (Some(Some))
 import Data.String
 import Data.These
 import Data.Type.Coercion
+import Data.Type.Equality ((:~:) (..))
 import Data.Witherable (Filterable(..))
 import qualified Data.Witherable as W
 import Reflex.FunctorMaybe (FunctorMaybe)
