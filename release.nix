@@ -34,6 +34,9 @@ let
                   "release.nix"
                   ".git"
                   "dist"
+                  "cabal.haskell-ci"
+                  "cabal.project"
+                  ".travis.yml"
                 ])) ./.;
               };
             })
