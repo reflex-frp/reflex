@@ -165,7 +165,7 @@ script:
   # Constraint set no-th
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='reflex -use-template-haskell' all | color_cabal_output
   # Constraint set old-these
-  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='these <1' all | color_cabal_output
+  - if $GHCJS || ! $GHCJS && [ $HCNUMVER -lt 80800 ] ; then ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='these <1' all | color_cabal_output ; fi
   # Constraint set old-witherable
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='witherable <0.3.2' all | color_cabal_output
 
