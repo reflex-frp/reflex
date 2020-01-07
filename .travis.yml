@@ -29,6 +29,8 @@ matrix:
   include:
     - compiler: ghcjs-8.4
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["cabal-install-3.0"]}}
+    - compiler: ghc-8.8.1
+      addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.8.1","cabal-install-3.0"]}}
     - compiler: ghc-8.6.5
       addons: {"apt":{"sources":["hvr-ghc"],"packages":["ghc-8.6.5","cabal-install-2.4"]}}
     - compiler: ghc-8.4.4
@@ -163,7 +165,7 @@ script:
   # Constraint set no-th
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='reflex -use-template-haskell' all | color_cabal_output
   # Constraint set old-these
-  - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='these <1' all | color_cabal_output
+  - if $GHCJS || ! $GHCJS && [ $HCNUMVER -lt 80800 ] ; then ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='these <1' all | color_cabal_output ; fi
   # Constraint set old-witherable
   - ${CABAL} v2-build $WITHCOMPILER --disable-tests --disable-benchmarks --constraint='witherable <0.3.2' all | color_cabal_output
 
