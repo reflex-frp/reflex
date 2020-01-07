@@ -64,6 +64,10 @@ traverseRequesterData f (RequestData tg es) = ResponseData tg . TagMap.fromList 
           Just t -> Just . (t :=>) <$> f req
           Nothing -> Nothing <$ f req
 
+-- | 'traverseRequesterData' with its arguments flipped
+forRequesterData :: forall request response m. Applicative m => RequestData (PrimState m) request -> (forall a. request a -> m (response a)) -> m (ResponseData (PrimState m) response)
+forRequesterData r f = traverseRequesterData f r
+
 runRequesterT :: forall t request response m a
   .  ( Reflex t
      , PrimMonad m
