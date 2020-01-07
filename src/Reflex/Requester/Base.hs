@@ -10,7 +10,7 @@ module Reflex.Requester.Base
 --  , RequesterData
 --  , RequesterDataKey
   , traverseRequesterData
---  , forRequesterData
+  , forRequesterData
 --  , requesterDataToList
 --  , singletonRequesterData
 --  , matchResponsesWithRequests
