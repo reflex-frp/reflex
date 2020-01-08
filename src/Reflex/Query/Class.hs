@@ -38,7 +38,7 @@ import qualified Data.Map.Monoidal as MonoidalMap
 import Data.Semigroup (Semigroup(..))
 import Foreign.Storable
 import Data.Void
-import Data.Monoid
+import Data.Monoid hiding ((<>))
 import Control.Applicative
 
 import Reflex.Class
