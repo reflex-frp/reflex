@@ -288,6 +288,20 @@ test-suite RequesterT
     Reflex.Plan.Pure
     Test.Run
 
+test-suite Adjustable
+  type: exitcode-stdio-1.0
+  main-is: Adjustable.hs
+  hs-source-dirs: test
+  build-depends: base
+               , containers
+               , dependent-sum
+               , reflex
+               , ref-tf
+               , these
+
+  other-modules:
+    Test.Run
+
 test-suite QueryT
   type: exitcode-stdio-1.0
   main-is: QueryT.hs
