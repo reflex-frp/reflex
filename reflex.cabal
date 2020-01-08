@@ -101,7 +101,6 @@ library
     Data.AppendMap,
     Data.FastMutableIntMap,
     Data.FastWeakBag,
-    Data.Functor.Misc,
     Data.List.Deferred,
     Data.List.NonEmpty.Deferred,
     Data.List.NonEmpty.Deferred.Internal,
