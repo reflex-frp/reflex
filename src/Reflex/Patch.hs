@@ -21,7 +21,7 @@ import Reflex.Patch.Map as X
 import Reflex.Patch.MapWithMove as X (PatchMapWithMove, patchMapWithMoveNewElements,
                                       patchMapWithMoveNewElementsMap, unPatchMapWithMove,
                                       unsafePatchMapWithMove)
-import Reflex.Patch.MapWithMove2 as X (PatchMapWithMove2, patchMapWithMove2NewElements,
+import Reflex.Patch.MapWithMove.New as X (PatchMapWithMove2, patchMapWithMove2NewElements,
                                       patchMapWithMove2NewElementsMap, unPatchMapWithMove2,
                                       unsafePatchMapWithMove2)
 

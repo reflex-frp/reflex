@@ -7,7 +7,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 -- | 'Patch'es on 'Map' that can insert, delete, and move values from one key to
 -- another
-module Reflex.Patch.MapWithMove2 where
+module Reflex.Patch.MapWithMove.New where
 
 import Reflex.Patch.Class
 
@@ -25,7 +25,7 @@ import Data.These
 import Data.Tuple
 
 -- | Patch a DMap with additions, deletions, and moves.  Invariant: If key @k1@
--- is coming from @From_Move k2@, then key @k2@ should be going to @Just k1@,
+-- is coming from @From_Move k@, then key @k2@ should be going to @Just k1@,
 -- and vice versa.  There should never be any unpaired From/To keys.
 newtype PatchMapWithMove2 k p = PatchMapWithMove2 (Map k (NodeInfo k p))
 deriving instance (Show k, Show p, Show (PatchTarget p)) => Show (PatchMapWithMove2 k p)
@@ -47,8 +47,8 @@ deriving instance (Eq k, Eq p, Eq (PatchTarget p)) => Eq (NodeInfo k p)
 deriving instance (Ord k, Ord p, Ord (PatchTarget p)) => Ord (NodeInfo k p)
 
 -- | Create a 'PatchMapWithMove2', validating it
-patchMapWithMove2 :: Ord k => Map k (NodeInfo k p) -> Maybe (PatchMapWithMove2 k p)
-patchMapWithMove2 m = if valid then Just $ PatchMapWithMove2 m else Nothing
+patchMapWithMove :: Ord k => Map k (NodeInfo k p) -> Maybe (PatchMapWithMove2 k p)
+patchMapWithMove m = if valid then Just $ PatchMapWithMove2 m else Nothing
   where valid = forwardLinks == backwardLinks
         forwardLinks = Map.mapMaybe _nodeInfo_to m
         backwardLinks = Map.fromList $ catMaybes $ flip fmap (Map.toList m) $ \(to, p) ->
@@ -57,8 +57,8 @@ patchMapWithMove2 m = if valid then Just $ PatchMapWithMove2 m else Nothing
             _ -> Nothing
 
 -- | Create a 'PatchMapWithMove2' that inserts everything in the given 'Map'
-patchMapWithMove2InsertAll :: Map k (PatchTarget p) -> PatchMapWithMove2 k p
-patchMapWithMove2InsertAll m = PatchMapWithMove2 $ flip fmap m $ \v -> NodeInfo
+patchMapWithMoveInsertAll :: Map k (PatchTarget p) -> PatchMapWithMove2 k p
+patchMapWithMoveInsertAll m = PatchMapWithMove2 $ flip fmap m $ \v -> NodeInfo
   { _nodeInfo_from = From_Insert v
   , _nodeInfo_to = Nothing
   }
