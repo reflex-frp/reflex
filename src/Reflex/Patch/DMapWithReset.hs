@@ -41,7 +41,7 @@ instance (Semigroup (p a), Patch (p a)) => Semigroup (By p a) where
   By_Patch x <> By_Patch y = By_Patch (x <> y)
   By_Patch _ <> By_Delete = By_Delete
 
-instance (Monoid (p a), Patch (p a)) => Monoid (By p a) where
+instance (Semigroup (p a), Monoid (p a), Patch (p a)) => Monoid (By p a) where
   mappend = (<>)
   mempty = By_Patch mempty
 
