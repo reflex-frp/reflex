@@ -1,11 +1,10 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.6.3
 
-* Data.WeakBag.traverse and Data.FastWeakBag.traverse have been
-  renamed to Data.WeakBag.traverse_ and Data.FastWeakBag.traverse_
-  respectively.
-  
+* `Data.WeakBag.traverse` and `Data.FastWeakBag.traverse` have been deprecated.
+  They are replaced with `Data.WeakBag.traverse_` and `Data.FastWeakBag.traverse_`, respectively.
+
 * Fixes a bug in `Reflex.Patch.MapWithMove.patchThatSortsMapWith` that was producing invalid `PatchMapWithMove`.
 
 * Add missing `NotReady` instances:
@@ -42,16 +41,16 @@
     * Add incrementalCoercion/coerceIncremental to go with dynamicCoercion/coerceDynamic
 
 * Generalize merging functions:
-  `merge` to `mergeG`, 
-  `mergeIncremental` to `mergeIncrementalG`, 
-  `mergeIncrementalWithMove` to `mergeIncrementalWithMoveG`.  
+  `merge` to `mergeG`,
+  `mergeIncremental` to `mergeIncrementalG`,
+  `mergeIncrementalWithMove` to `mergeIncrementalWithMoveG`.
 
 * Generalize distribute function:
     `distributeDMapOverDynPure` to `distributeDMapOverDynPureG`,
 
 ## 0.6.2.0
 
-* Fix `holdDyn` so that it is lazy in its event argument  
+* Fix `holdDyn` so that it is lazy in its event argument
   These produce `DMap`s  whose values needn't be `Identity`.
 
 * Stop using the now-deprecated `*Tag` classes (e.g., `ShowTag`).
