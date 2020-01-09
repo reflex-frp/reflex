@@ -57,15 +57,15 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   mergeWith  :: (a -> a -> a) -> [Event a] -> Event a
 [ ]   leftmost   :: [Event a] -> Event a
 [ ]   mergeList  :: [Event a] -> Event (NonEmpty a)
-[ ]   merge      :: GCompare k => DMap (WrapArg Event k) -> Event (DMap k)
+[ ]   merge      :: GCompare k => DMap k Event -> Event (DMap k Identity)
 [ ]   mergeMap   :: Ord k => Map k (Event a) -> Event (Map k a)
 
 -- Efficient one-to-many fanout
-[ ]   fanMap    ::      Ord k => Event (Map k a) -> EventSelector (Const2 k a)
-[ ]   fan       :: GCompare k => Event  (DMap k) -> EventSelector k
-[ ]   select    ::                                  EventSelector k -> k a -> Event a
-[ ]   fanEither ::            Event (Either a b) -> (Event a, Event b)
-[ ]   fanThese  ::            Event (These a b)  -> (Event a, Event b)
+[ ]   fanMap    :: Ord k      => Event (Map k a)         -> EventSelector (Const2 k a)
+[ ]   fan       :: GCompare k => Event (DMap k Identity) -> EventSelector k
+[ ]   select    ::                                          EventSelector k -> k a -> Event a
+[ ]   fanEither :: Event (Either a b) -> (Event a, Event b)
+[ ]   fanThese  :: Event (These a b)  -> (Event a, Event b)
 
 -- Event to Event via function that can sample current values
 [ ]   push       :: (a -> m (Maybe b)) -> Event a -> Event b
@@ -166,7 +166,7 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 -- Flatten Behavior-of-Event to Event.  Old Event is used during switchover.
 [ ]   switch            ::                  Behavior (Event a)  ->    Event a
 
--- Flatten Dyanmic-of-Event to Event.  New Event is used immediately.
+-- Flatten Dynamic-of-Event to Event.  New Event is used immediately.
 [ ]   switchDyn         ::                   Dynamic (Event a)  ->    Event a
 
 -- Flatten Event-of-Event to Event that fires when both wrapper AND new Event fire.
@@ -201,7 +201,7 @@ For Events, the returned Event fires whenever the latest Event supplied by the w
 The functions mentioned above are used to create a static FRP network.
 There are additional typeclasses that can be used to modify the FRP network, to have it interact with IO action, or to introspect the building of the network.
 
-Th typeclasses and their associated annotations include:
+The typeclasses and their associated annotations include:
 
 - `PostBuild`
     Fire an Event when an FRP network has been set up.
@@ -209,7 +209,7 @@ Th typeclasses and their associated annotations include:
     [B]   -- Function runs in any monad supporting PostBuild
     ```
 
-- `Adjustable` 
+- `Adjustable`
     Use Events to add or remove pieces of an FRP network.
     ```haskell
     [A]   -- Function runs in any monad supporting Adjustable
@@ -274,7 +274,7 @@ Th typeclasses and their associated annotations include:
 ```haskell
 -- Run side-effecting actions in Event when it occurs; returned Event contains
 -- results. Side effects run in the (Performable m) monad which is associated with
--- the (PerformEvent t m) typeclass constraint. 
+-- the (PerformEvent t m) typeclass constraint.
 -- This allows for working with IO when a ((MonadIO (Performable m)) constraint is available.
 [P]   performEvent        :: Event (Performable m a )                 -> m (Event a)
 
@@ -298,17 +298,20 @@ Th typeclasses and their associated annotations include:
 ## Networks
 
 ```haskell
--- Functions from Reflex.Network used to deal with Dynamics/Events carrying (m a)
+-- Functions from Reflex.Adjustable / Reflex.Network used to deal with Dynamics/Events carrying (m a)
 
--- Given a Dynamic of network-creating actions, create a network that is recreated whenever the Dynamic updates. 
--- The returned Event of network results occurs when the Dynamic does. Note: Often, the type a is an Event, 
+[A]     runWithReplace :: m a -> Event t (m b) -> m (a, Event t b)
+
+-- Given a Dynamic of network-creating actions, create a network that is recreated whenever the Dynamic updates.
+-- The returned Event of network results occurs when the Dynamic does. Note: Often, the type a is an Event,
 -- in which case the return value is an Event-of-Events that would typically be flattened (via switchHold).
-[P,A]   networkView :: Dynamic (m a) -> m (Event a) 
+[P,A]   networkView :: Dynamic (m a) -> m (Event a)
 
--- Given an initial network and an Event of network-creating actions, create a network that is recreated whenever the 
--- Event fires. The returned Dynamic of network results occurs when the Event does. Note: Often, the type a is an 
+-- Given an initial network and an Event of network-creating actions, create a network that is recreated whenever the
+-- Event fires. The returned Dynamic of network results occurs when the Event does. Note: Often, the type a is an
 -- Event, in which case the return value is a Dynamic-of-Events that would typically be flattened.
-[H,A]   networkHold :: m a -> Event (m a) -> m (Dynamic a) 
+[H,A]   networkHold :: m a -> Event (m a) -> m (Dynamic a)
 
 -- Render a placeholder network to be shown while another network is not yet done building
-[P,A]   untilReady :: m a -> m b -> m (a, Event b) 
+[P,A]   untilReady :: m a -> m b -> m (a, Event b)
+```

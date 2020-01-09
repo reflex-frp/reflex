@@ -22,7 +22,7 @@ import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup (Semigroup (..), (<>))
 import qualified Data.Set as Set
-import Data.These
+import Data.These (These(..))
 import Data.Tuple
 
 -- | Patch a DMap with additions, deletions, and moves.  Invariant: If key @k1@
@@ -155,7 +155,7 @@ patchThatSortsMapWith cmp m = PatchMapWithMove $ Map.fromList $ catMaybes $ zipW
           Just (from, to)
         reverseMapping = Map.fromList $ catMaybes $ zipWith f unsorted sorted
         g (to, _) (from, _) = if to == from then Nothing else
-          let Just movingTo = Map.lookup from reverseMapping
+          let Just movingTo = Map.lookup to reverseMapping
           in Just (to, NodeInfo (From_Move from) $ Just movingTo)
 
 -- | Create a 'PatchMapWithMove' that, if applied to the first 'Map' provided,

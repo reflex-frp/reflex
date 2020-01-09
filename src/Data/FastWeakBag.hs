@@ -18,6 +18,7 @@ module Data.FastWeakBag
   , isEmpty
   , insert
   , traverse
+  , traverse_
   , remove
   -- * Internal functions
   -- These will not always be available.
@@ -50,7 +51,7 @@ newtype FastWeakBag a = FastWeakBag JSVal
 #else
 data FastWeakBag a = FastWeakBag
   { _weakBag_nextId :: {-# UNPACK #-} !(IORef Int) --TODO: what if this wraps around?
-  , _weakBag_children :: {-# UNPACK #-} !(IORef (IntMap (Weak a)))
+  , _weakBag_children :: {-# UNPACK #-} !(IORef (IntMap (Weak a))) -- ^ Map of items contained by the 'FastWeakBag'
   }
 #endif
 
@@ -116,14 +117,14 @@ foreign import javascript unsafe "(function(){ for(var i = 0; i < $1.tickets.len
 isEmpty bag = {-# SCC "isEmpty" #-} IntMap.null <$> readIORef (_weakBag_children bag)
 #endif
 
-{-# INLINE traverse #-}
+{-# INLINE traverse_ #-}
 -- | Visit every node in the given list.  If new nodes are appended during the
 -- traversal, they will not be visited.  Every live node that was in the list
 -- when the traversal began will be visited exactly once; however, no guarantee
 -- is made about the order of the traversal.
-traverse :: forall a m. MonadIO m => FastWeakBag a -> (a -> m ()) -> m ()
+traverse_ :: forall a m. MonadIO m => FastWeakBag a -> (a -> m ()) -> m ()
 #ifdef GHCJS_FAST_WEAK
-traverse wb f = do
+traverse_ wb f = do
   let go cursor = when (not $ js_isNull cursor) $ do
         val <- liftIO $ js_getTicketValue cursor
         f $ unsafeFromRawJSVal val
@@ -134,12 +135,16 @@ foreign import javascript unsafe "$r = $1.val;" js_getTicketValue :: JSVal -> IO
 --TODO: Fix the race condition where if a cursor is deleted (presumably using 'remove', below) while we're holding it, it can't find its way back to the correct bag
 foreign import javascript unsafe "(function(){ for(var i = $1.pos - 1; i >= 0; i--) { if($1.bag.tickets[i] !== null) { return $1.bag.tickets[i]; } }; return null; })()" js_getNext :: FastWeakBagTicket a -> IO JSVal --TODO: Clean up as we go along so this isn't O(n) every time -- Result can be null or a FastWeakBagTicket a
 #else
-traverse (FastWeakBag _ children) f = {-# SCC "traverse" #-} do
+traverse_ (FastWeakBag _ children) f = {-# SCC "traverse_" #-} do
   cs <- liftIO $ readIORef children
   forM_ cs $ \c -> do
     ma <- liftIO $ deRefWeak c
     mapM_ f ma
 #endif
+
+{-# DEPRECATED traverse "Use 'traverse_' instead" #-}
+traverse :: forall a m. MonadIO m => FastWeakBag a -> (a -> m ()) -> m ()
+traverse = traverse_
 
 -- | Remove an item from the 'FastWeakBag'; does nothing if invoked multiple times
 -- on the same 'FastWeakBagTicket'.

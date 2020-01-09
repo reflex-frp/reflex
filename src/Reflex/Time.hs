@@ -11,6 +11,11 @@
 #ifdef USE_TEMPLATE_HASKELL
 {-# LANGUAGE TemplateHaskell #-}
 #endif
+-- |
+-- Module:
+--   Reflex.Time
+-- Description:
+--   Clocks, timers, and other time-related functions.
 module Reflex.Time where
 
 import Reflex.Class
@@ -28,7 +33,7 @@ import Control.Monad.IO.Class
 import Data.Align
 import Data.Data (Data)
 import Data.Fixed
-import Data.Semigroup
+import Data.Semigroup (Semigroup(..))
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
 import Data.These
@@ -37,38 +42,39 @@ import Data.Typeable
 import GHC.Generics (Generic)
 import System.Random
 
+-- | Metadata associated with a timer "tick"
 data TickInfo
   = TickInfo { _tickInfo_lastUTC :: UTCTime
              -- ^ UTC time immediately after the last tick.
              , _tickInfo_n :: Integer
-             -- ^ Number of time periods since t0
+             -- ^ Number of time periods or ticks since the start of the timer
              , _tickInfo_alreadyElapsed :: NominalDiffTime
-             -- ^ Amount of time already elapsed in the current tick period.
+             -- ^ Amount of time that has elapsed in the current tick period.
              }
   deriving (Eq, Ord, Show, Typeable)
 
--- | Special case of 'tickLossyFrom' that uses the post-build event to start the
---   tick thread.
+-- | Fires an 'Event' once every time provided interval elapses, approximately.
+-- The provided 'UTCTime' is used bootstrap the determination of how much time has elapsed with each tick.
+-- This is a special case of 'tickLossyFrom' that uses the post-build event to start the tick thread.
 tickLossy :: (PostBuild t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m) => NominalDiffTime -> UTCTime -> m (Event t TickInfo)
 tickLossy dt t0 = tickLossyFrom dt t0 =<< getPostBuild
 
--- | Special case of 'tickLossyFrom' that uses the post-build event to start the
---   tick thread and the time of the post-build as the tick basis time.
+-- | Fires an 'Event' once every time provided interval elapses, approximately.
+-- This is a special case of 'tickLossyFrom' that uses the post-build event to start the tick thread and the time of the post-build as the tick basis time.
 tickLossyFromPostBuildTime :: (PostBuild t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m) => NominalDiffTime -> m (Event t TickInfo)
 tickLossyFromPostBuildTime dt = do
   postBuild <- getPostBuild
   postBuildTime <- performEvent $ liftIO getCurrentTime <$ postBuild
   tickLossyFrom' $ (dt,) <$> postBuildTime
 
--- | Send events over time with the given basis time and interval
---   If the system starts running behind, occurrences will be dropped rather than buffered
---   Each occurrence of the resulting event will contain the index of the current interval, with 0 representing the basis time
+-- | Fires an 'Event' approximately each time the provided interval elapses. If the system starts running behind, occurrences will be dropped rather than buffered.
+-- Each occurrence of the resulting event will contain the index of the current interval, with 0 representing the provided initial time.
 tickLossyFrom
     :: (PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m)
     => NominalDiffTime
     -- ^ The length of a tick interval
     -> UTCTime
-    -- ^ The basis time from which intervals count
+    -- ^ The basis time from which intervals count and with which the initial calculation of elapsed time will be made.
     -> Event t a
     -- ^ Event that starts a tick generation thread.  Usually you want this to
     -- be something like the result of getPostBuild that only fires once.  But
@@ -76,12 +82,12 @@ tickLossyFrom
     -> m (Event t TickInfo)
 tickLossyFrom dt t0 e = tickLossyFrom' $ (dt, t0) <$ e
 
--- | Generalization of tickLossyFrom that takes dt and t0 in the event.
+-- | Generalization of tickLossyFrom that takes the delay and initial time as an 'Event'.
 tickLossyFrom'
     :: (PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m)
     => Event t (NominalDiffTime, UTCTime)
     -- ^ Event that starts a tick generation thread.  Usually you want this to
-    -- be something like the result of getPostBuild that only fires once.  But
+    -- be something like the result of 'getPostBuild' that only fires once.  But
     -- there could be uses for starting multiple timer threads.
     -> m (Event t TickInfo)
 tickLossyFrom' e = do
@@ -92,12 +98,16 @@ tickLossyFrom' e = do
           Concurrent.delay $ ceiling $ (fst pair - _tickInfo_alreadyElapsed tick) * 1000000
           cb (tick, pair)
 
+-- | Like 'tickLossy', but immediately calculates the first tick and provides a 'Dynamic' that is updated as ticks fire.
 clockLossy :: (MonadIO m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), PostBuild t m, MonadHold t m, MonadFix m) => NominalDiffTime -> UTCTime -> m (Dynamic t TickInfo)
 clockLossy dt t0 = do
   initial <- liftIO $ getCurrentTick dt t0
   e <- tickLossy dt t0
   holdDyn initial e
 
+-- | Generates a 'TickInfo', given the specified interval and timestamp. The 'TickInfo' will include the
+-- current time, the number of ticks that have elapsed since the timestamp, and the amount of time that
+-- has elapsed since the start time of this tick.
 getCurrentTick :: NominalDiffTime -> UTCTime -> IO TickInfo
 getCurrentTick dt t0 = do
   t <- getCurrentTime
@@ -278,7 +288,7 @@ data ThrottleState b
 
 data ThrottleBuffer b
   = ThrottleBuffer_Empty -- Empty conflicts with lens, and hiding it would require turning
-           -- on PatternSynonyms
+                         -- on PatternSynonyms
   | ThrottleBuffer_Full b
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data, Typeable)
 
