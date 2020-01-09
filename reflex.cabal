@@ -55,7 +55,7 @@ flag debug-cycles
 flag split-these
   description: Use split these/semialign packages
   manual:      False
-  default:     False
+  default:     True
 
 library
   hs-source-dirs: src
