@@ -29,7 +29,7 @@
 --   convenience functions for working with 'Event's, 'Behavior's, and other
 --   signals.
 module Reflex.Class
-  ( module Reflex.Patch
+  ( module Data.Patch
     -- * Primitives
   , Reflex (..)
   , mergeInt
@@ -220,8 +220,8 @@ import Data.Witherable (Filterable(..))
 import qualified Data.Witherable as W
 import Reflex.FunctorMaybe (FunctorMaybe)
 import qualified Reflex.FunctorMaybe
-import Reflex.Patch
-import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
+import Data.Patch
+import qualified Data.Patch.MapWithMove as PatchMapWithMove
 
 import Debug.Trace (trace)
 
