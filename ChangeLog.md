@@ -4,6 +4,8 @@
 
 * Add `Reflex.Query.Base.mapQueryT`. See that module for documentation
 
+* Additional instances for `Group` and `Query` classes for basic types.
+
 ## 0.6.3
 
 * `Data.WeakBag.traverse` and `Data.FastWeakBag.traverse` have been deprecated.
@@ -14,8 +16,6 @@
 * Add missing `NotReady` instances:
    - `instance NotReady (SpiderTimeline x) (SpiderHost x)`
    - `instance HasSpiderTimeline x => NotReady (SpiderTimeline x) (PerformEventT (SpiderTimeline x) (SpiderHost x))`
-
-* Additional instances for `Group` and `Query` classes for basic types.
 
 ## 0.6.2.4
 
