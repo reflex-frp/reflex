@@ -15,28 +15,19 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.Fix
 import Control.Exception
-
 import System.Timeout
-
 import Data.Maybe (isJust)
 import Data.Functor.Misc
 import qualified Data.Map as Map
 import Data.Map (Map)
-
 import qualified Data.IntMap as IntMap
 import Data.IntMap (IntMap)
-
-
 import Data.These
 import Data.Align
-
 import Reflex
 import Reflex.EventWriter.Base
 import Test.Run
-
 import Reflex.Spider.Internal (EventLoopException)
-
-
 import Data.Witherable (Filterable)
 
 #if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
@@ -45,12 +36,10 @@ import Data.These.Lens
 
 type Widget t m = (MonadHold t m, Reflex t, MonadFix m)
 
-
 connectDyn ::Widget t m => Event t () -> (Dynamic t a, Dynamic t a) -> m (Dynamic t a)
 connectDyn e (d, d') = do
   dd <- holdDyn d (d' <$ e)
   return $ join dd
-
 
 dynLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 dynLoop (e1, e2) = do
@@ -74,7 +63,6 @@ coincidenceLoop (e1, e2) = do
     d <- count (align e' e1)
   return $ updated d
 
-
 addHeight :: Reflex t =>  Event t a -> Event t a
 addHeight e = leftmost [e4, e4] where
   e1 = leftmost [e, e]
@@ -82,12 +70,10 @@ addHeight e = leftmost [e4, e4] where
   e3 = leftmost [e2, e2]
   e4 = leftmost [e3, e3]
 
-
 -- Take an existing test and build it inside a
 buildLoop :: Widget t m => (forall t m. Widget t m => (Event t Int, Event t ()) -> m (Event t Int)) -> (Event t Int, Event t ()) -> m (Event t Int)
 buildLoop test (e1, e2) = switchHold never buildLoop
   where buildLoop = pushAlways (const $ test (e1, e2)) e2
-
 
 connectButtonPromptly :: Widget t m => Event t () -> Event t a -> m (Event t a)
 connectButtonPromptly click e = do
@@ -98,7 +84,6 @@ connectButton :: Widget t m => Event t () -> Event t a -> m (Event t a)
 connectButton click e = do
   d <- hold never (e <$ click)
   return (switch d)
-
 
 switchLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 switchLoop (e1, e2) = do
@@ -112,16 +97,11 @@ mergeLoop (e1, e2) = do
   rec
     (_, e) <- runEventWriterT $
       runWithReplace w (leftmost [w <$ e1])
-
   return (sum <$> e)
-
   where
     w = do
       c <- count e1
       tellEvent (updated ((pure <$> c) :: Dynamic t [Int]))
-
-
-
 
 switchLoop' :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 switchLoop' (e1, e2) = do
@@ -130,14 +110,12 @@ switchLoop' (e1, e2) = do
     d <- count (leftmost [e', e1])
   return $ updated d
 
-
 switchLoop2 :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 switchLoop2 (e1, e2) = do
   rec
     e' <- connectButton e2 (addHeight $ updated d)
     d <- count (align e' e1)
   return $ updated d
-
 
 staticLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 staticLoop (e1, e2) = do
@@ -150,7 +128,6 @@ staticLoop' (e1, e2) = do
   rec
     d <- foldDyn (+) (0 :: Int) (leftmost [e1, updated d])
   return $ updated d
-
 
 buildStaticLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 buildStaticLoop (e1, e2) = switchHold never buildLoop
@@ -166,21 +143,15 @@ runTest (name, TestCase test) = do
   putStrLn ("Test: " <> name)
   mError <- timeout (milliseconds 5) $
     run `catch` \(e :: EventLoopException) -> pure (show e)
-
   case mError of
     Just err -> putStrLn err
     Nothing  -> error "timed out (loop not detected)"
-
   where
-
       run = do
         r <- runApp' (test . splitThese) (Just <$> occs)
         error (name <> ": unexpected success " <> show r)
-
       occs = [  This 1, This 2, That (), This 3, That (), This 1 ]
-
       milliseconds = (*1000)
-
 
 newtype TestCase = TestCase { unTest :: forall t m. (Widget t m, Adjustable t m) => (Event t Int, Event t ()) -> m (Event t Int)  }
 
@@ -188,7 +159,6 @@ tests :: [(String, TestCase)]
 tests =
   [ ("switchLoop'", TestCase switchLoop')
   , ("switchLoop",  TestCase switchLoop)
-
   , ("mergeLoop",  TestCase mergeLoop)
 
 
@@ -206,9 +176,3 @@ tests =
 
 main :: IO ()
 main = traverse_ runTest tests
-
-
-
-
-
-
