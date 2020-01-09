@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+* Support GHC 8.8
+
 * Add `Reflex.Query.Base.mapQueryT`. See that module for documentation
 
 ## 0.6.3
