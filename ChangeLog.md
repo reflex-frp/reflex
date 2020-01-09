@@ -6,6 +6,9 @@
 
 * Add `Reflex.Query.Base.mapQueryT`. See that module for documentation
 
+* The `Reflex.Patch.*` modules were moved to the `patch` library.
+  They are `Data.Patch.*` there, but reexported under their old names for backwards compatability here.
+
 ## 0.6.3
 
 * `Data.WeakBag.traverse` and `Data.FastWeakBag.traverse` have been deprecated.
