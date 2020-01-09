@@ -26,4 +26,3 @@ class (Monad m, Monoid w) => DynamicWriter t w m | m -> t w where
 
 instance DynamicWriter t w m => DynamicWriter t w (ReaderT r m) where
   tellDyn = lift . tellDyn
-
