@@ -69,9 +69,8 @@ processAsyncEvents events run (FireCommand fire) = forkIO $ forever $ do
   ers <- readChan events
   _ <- run $ do
     mes <-
-      liftIO $ for ers $ \(EventTriggerRef er :=> TriggerInvocation a _) -> do
-        me <- readIORef er
-        return $ fmap (\e -> e :=> Identity a) me
+      liftIO $ for ers $ \(EventTriggerRef er :=> TriggerInvocation a _) ->
+        fmap (\ e -> e :=> Identity a) <$> readIORef er
     _ <- fire (catMaybes mes) $ return ()
     liftIO $ for_ ers $ \(_ :=> TriggerInvocation _ cb) -> cb
   return ()
