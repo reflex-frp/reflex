@@ -9,7 +9,7 @@ Maintainer: ryan.trinkle@gmail.com
 Stability: Experimental
 Category: FRP
 Build-type: Simple
-Cabal-version: >=1.9.2
+Cabal-version: 1.22
 homepage: https://reflex-frp.org
 bug-reports: https://github.com/reflex-frp/reflex/issues
 extra-source-files:
@@ -47,6 +47,7 @@ flag split-these
   default:     True
 
 library
+  default-language: Haskell2010
   hs-source-dirs: src
   build-depends:
     MemoTrie == 0.6.*,
@@ -61,6 +62,7 @@ library
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
+    patch >= 0.0 && < 0.1,
     prim-uniq >= 0.1.0.1 && < 0.2,
     primitive >= 0.5 && < 0.8,
     profunctors >= 5.3 && < 5.6,
@@ -88,7 +90,6 @@ library
     Data.AppendMap,
     Data.FastMutableIntMap,
     Data.FastWeakBag,
-    Data.Functor.Misc,
     Data.Map.Misc,
     Data.WeakBag,
     Reflex,
@@ -110,13 +111,6 @@ library
     Reflex.Host.Class,
     Reflex.Network,
     Reflex.NotReady.Class,
-    Reflex.Patch,
-    Reflex.Patch.Class,
-    Reflex.Patch.DMap,
-    Reflex.Patch.DMapWithMove,
-    Reflex.Patch.IntMap,
-    Reflex.Patch.Map,
-    Reflex.Patch.MapWithMove,
     Reflex.PerformEvent.Base,
     Reflex.PerformEvent.Class,
     Reflex.PostBuild.Base,
@@ -134,6 +128,16 @@ library
     Reflex.TriggerEvent.Class,
     Reflex.Widget.Basic,
     Reflex.Workflow
+
+  reexported-modules:
+    patch:Data.Functor.Misc,
+    patch:Data.Patch as Reflex.Patch,
+    patch:Data.Patch.Class as Reflex.Patch.Class,
+    patch:Data.Patch.DMap as Reflex.Patch.DMap,
+    patch:Data.Patch.DMapWithMove as Reflex.Patch.DMapWithMove,
+    patch:Data.Patch.IntMap as Reflex.Patch.IntMap,
+    patch:Data.Patch.Map as Reflex.Patch.Map,
+    patch:Data.Patch.MapWithMove as Reflex.Patch.MapWithMove
 
   ghc-options: -Wall -fwarn-redundant-constraints -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively
 
@@ -167,6 +171,7 @@ library
     build-depends: ghcjs-base
 
 test-suite semantics
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: semantics.hs
   hs-source-dirs: test
@@ -192,6 +197,7 @@ test-suite semantics
     Reflex.TestPlan
 
 test-suite CrossImpl
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: Reflex/Test/CrossImpl.hs
   hs-source-dirs: test
@@ -213,6 +219,7 @@ test-suite CrossImpl
     Reflex.Plan.Pure
 
 test-suite hlint
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: hlint.hs
   hs-source-dirs: test
@@ -225,6 +232,7 @@ test-suite hlint
     buildable: False
 
 test-suite EventWriterT
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: EventWriterT.hs
   hs-source-dirs: test
@@ -252,6 +260,7 @@ test-suite EventWriterT
 
 
 test-suite RequesterT
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: RequesterT.hs
   hs-source-dirs: test
@@ -276,6 +285,7 @@ test-suite RequesterT
     Test.Run
 
 test-suite QueryT
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: QueryT.hs
   hs-source-dirs: test
@@ -287,6 +297,7 @@ test-suite QueryT
                , lens
                , monoidal-containers
                , mtl
+               , patch
                , ref-tf
                , reflex
                , these
@@ -302,6 +313,7 @@ test-suite QueryT
     Reflex.Plan.Pure
 
 test-suite GC-Semantics
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: GC.hs
   hs-source-dirs: test
@@ -311,6 +323,7 @@ test-suite GC-Semantics
                , dependent-map
                , deepseq
                , mtl
+               , patch
                , these
                , transformers
                , reflex
@@ -326,6 +339,7 @@ test-suite GC-Semantics
     Test.Run
 
 test-suite rootCleanup
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: rootCleanup.hs
   hs-source-dirs: test
@@ -343,6 +357,7 @@ test-suite rootCleanup
     Test.Run
 
 benchmark spider-bench
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   hs-source-dirs: bench test
   main-is: Main.hs
@@ -367,6 +382,7 @@ benchmark spider-bench
     Reflex.Bench.Focused
 
 benchmark saulzar-bench
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   hs-source-dirs: bench test
   c-sources: bench-cbits/checkCapability.c
