@@ -272,6 +272,7 @@ test-suite EventWriterT
 
 
 test-suite DebugCycles
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: DebugCycles.hs
   hs-source-dirs: test
