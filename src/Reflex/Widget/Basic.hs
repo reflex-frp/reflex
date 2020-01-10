@@ -13,7 +13,7 @@ import Data.Map (Map)
 
 import Reflex.Class
 import Reflex.Adjustable.Class
-import Reflex.Patch.MapWithMove
+import Data.Patch.MapWithMove
 
 
 -- | Build sortable content in such a way that re-sorting it can cause minimal

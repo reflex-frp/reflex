@@ -106,8 +106,8 @@ import qualified Reflex.Class
 import qualified Reflex.Class as R
 import qualified Reflex.Host.Class
 import Reflex.NotReady.Class
-import Reflex.Patch
-import qualified Reflex.Patch.DMapWithMove as PatchDMapWithMove
+import Data.Patch
+import qualified Data.Patch.DMapWithMove as PatchDMapWithMove
 import Reflex.PerformEvent.Base (PerformEventT)
 
 #ifdef DEBUG_TRACE_EVENTS
