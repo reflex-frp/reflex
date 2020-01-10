@@ -27,6 +27,7 @@ import Data.Align
 import Reflex
 import Reflex.EventWriter.Base
 import Test.Run
+import Test.Hspec
 import Reflex.Spider.Internal (EventLoopException)
 import Data.Witherable (Filterable)
 
@@ -36,7 +37,7 @@ import Data.These.Lens
 
 type Widget t m = (MonadHold t m, Reflex t, MonadFix m)
 
-connectDyn ::Widget t m => Event t () -> (Dynamic t a, Dynamic t a) -> m (Dynamic t a)
+connectDyn :: Widget t m => Event t () -> (Dynamic t a, Dynamic t a) -> m (Dynamic t a)
 connectDyn e (d, d') = do
   dd <- holdDyn d (d' <$ e)
   return $ join dd
@@ -85,8 +86,8 @@ connectButton click e = do
   d <- hold never (e <$ click)
   return (switch d)
 
-switchLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
-switchLoop (e1, e2) = do
+switchLoop01 :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
+switchLoop01 (e1, e2) = do
   rec
     e' <- connectButton e2 (updated d)
     d <- count (align e' e1)
@@ -103,76 +104,68 @@ mergeLoop (e1, e2) = do
       c <- count e1
       tellEvent (updated ((pure <$> c) :: Dynamic t [Int]))
 
-switchLoop' :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
-switchLoop' (e1, e2) = do
+switchLoop02 :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
+switchLoop02 (e1, e2) = do
   rec
     e' <- connectButton e2 (updated d)
     d <- count (leftmost [e', e1])
   return $ updated d
 
-switchLoop2 :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
-switchLoop2 (e1, e2) = do
+switchLoop03 :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
+switchLoop03 (e1, e2) = do
   rec
     e' <- connectButton e2 (addHeight $ updated d)
     d <- count (align e' e1)
   return $ updated d
 
-staticLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
-staticLoop (e1, e2) = do
+staticLoop01 :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
+staticLoop01 (e1, e2) = do
   rec
     d <- foldDyn (+) (0 :: Int) (1 <$ align e1 (updated d))
   return $ updated d
 
-staticLoop' :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
-staticLoop' (e1, e2) = do
+staticLoop02 :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
+staticLoop02 (e1, e2) = do
   rec
     d <- foldDyn (+) (0 :: Int) (leftmost [e1, updated d])
   return $ updated d
 
 buildStaticLoop :: Widget t m => (Event t Int, Event t ()) -> m (Event t Int)
 buildStaticLoop (e1, e2) = switchHold never buildLoop
-  where buildLoop = pushAlways (const $ staticLoop (e1, e2)) e2
+  where buildLoop = pushAlways (const $ staticLoop01 (e1, e2)) e2
 
 splitThese :: Filterable f => f (These a b) -> (f a, f b)
 splitThese f = (mapMaybe (preview here) f,  mapMaybe (preview there) f)
 
-pattern RunTestCaseFlag = "--run-test"
-
-runTest :: (String, TestCase) -> IO ()
-runTest (name, TestCase test) = do
-  putStrLn ("Test: " <> name)
-  mError <- timeout (milliseconds 5) $
-    run `catch` \(e :: EventLoopException) -> pure (show e)
-  case mError of
-    Just err -> putStrLn err
-    Nothing  -> error "timed out (loop not detected)"
-  where
-      run = do
-        r <- runApp' (test . splitThese) (Just <$> occs)
-        error (name <> ": unexpected success " <> show r)
-      occs = [  This 1, This 2, That (), This 3, That (), This 1 ]
-      milliseconds = (*1000)
-
-newtype TestCase = TestCase { unTest :: forall t m. (Widget t m, Adjustable t m) => (Event t Int, Event t ()) -> m (Event t Int)  }
-
-tests :: [(String, TestCase)]
-tests =
-  [ ("switchLoop'", TestCase switchLoop')
-  , ("switchLoop",  TestCase switchLoop)
-  , ("mergeLoop",  TestCase mergeLoop)
-
-
-  -- , ("switchLoop2",  TestCase switchLoop2)
-
-  --  , ("staticLoop'",  TestCase staticLoop')
-  --  , ("staticLoop",  TestCase staticLoop)
-  -- ("buildStaticLoop", TestCase buildStaticLoop)
-  -- , ("buildSwitchLoop", TestCase $ buildLoop switchLoop)
-
-  --  ("coincidenceLoop", TestCase coincidenceLoop)
-  -- , ("dynLoop",     TestCase dynLoop)
-  -- , ("buildCoincidenceLoop", TestCase $ buildLoop coincidenceLoop)
-  ]
-
 main :: IO ()
-main = traverse_ runTest tests
+main = hspec $ do
+  describe "DebugCycles" $ do
+    it "throws EventLoopException on switchLoop01" $ do
+      check switchLoop01
+    it "throws EventLoopException on switchLoop02" $ do
+      check switchLoop02
+    it "throws EventLoopException on switchLoop03" $ do
+      check switchLoop03
+    it "throws EventLoopException on buildSwitchLoop" $ do
+      check $ buildLoop switchLoop01
+    xit "throws EventLoopException on mergeLoop" $ do
+      check mergeLoop
+    xit "throws EventLoopException on staticLoop01" $ do
+      check staticLoop01
+    xit "throws EventLoopException on staticLoop02" $ do
+      check staticLoop02
+    xit "throws EventLoopException on buildStaticLoop" $ do
+      check buildStaticLoop
+    xit "throws EventLoopException on coincidenceLoop" $ do
+      check coincidenceLoop
+    xit "throws EventLoopException on dynLoop" $ do
+      check dynLoop
+    xit "throws EventLoopException on buildCoincidenceLoop" $ do
+      check $ buildLoop coincidenceLoop
+ where
+   milliseconds = (*1000)
+   occs = [  This 1, This 2, That (), This 3, That (), This 1 ]
+   check test = do
+     let action = timeout (milliseconds 50) $ do
+                    runApp' (test . splitThese) (Just <$> occs)
+     action `shouldThrow` (const True :: Selector EventLoopException)

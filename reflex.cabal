@@ -277,6 +277,7 @@ test-suite DebugCycles
                , deepseq
                , dependent-map
                , dependent-sum
+               , hspec
                , lens
                , mtl
                , these
