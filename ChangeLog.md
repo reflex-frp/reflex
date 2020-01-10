@@ -9,7 +9,7 @@
 * The `Reflex.Patch.*` modules were moved to the `patch` library.
   They are `Data.Patch.*` there, but reexported under their old names for backwards compatability here.
 
-* Additional instances for `Group` and `Query` classes for basic types.
+* Additional instances for `Query` classes for basic types.
 
 ## 0.6.3
 
