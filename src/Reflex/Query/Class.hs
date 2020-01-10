@@ -66,7 +66,14 @@ instance Query () where
   crop _ _ = ()
 
 -- | The result of an absurd query is trivial; If you can ask the question, the
--- answer cannot tell you anything you didn't already know
+-- answer cannot tell you anything you didn't already know.
+--
+-- 'QueryResult Void = @Void@' seems like it would also work, but that has
+-- problems of robustness. In some applications, an unasked question can still
+-- be answered, so it is important that the result is inhabited even when the
+-- question isn't. Applications that wish to prevent this can mandate that the
+-- query result be paired with the query: then the whole response will be
+-- uninhabited as desired.
 instance Query Void where
   type QueryResult Void = ()
   crop = absurd
@@ -78,6 +85,7 @@ instance (Query q, Applicative f) => Query (Ap f q) where
   type QueryResult (Ap f q) = Ap f (QueryResult q)
   crop = liftA2 crop
 #endif
+
 -- | QueryMorphism's must be group homomorphisms when acting on the query type
 -- and compatible with the query relationship when acting on the query result.
 data QueryMorphism q q' = QueryMorphism
