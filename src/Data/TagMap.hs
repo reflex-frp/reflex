@@ -2,19 +2,15 @@
 -- GADT keys whose constructors can be counted by 'Int'.
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -91,7 +87,7 @@ insert :: IsTag k => k a -> v a -> TagMap k v -> TagMap k v
 insert k v (TagMap m) = TagMap $ IntMap.insert (fromKey k) (toVany v) m
 
 lookup :: IsTag k => k a -> TagMap k v -> Maybe (v a)
-lookup k (TagMap m) = fmap unsafeCoerce $ IntMap.lookup (fromKey k) m
+lookup k (TagMap m) = unsafeCoerce <$> IntMap.lookup (fromKey k) m
 
 foldrWithKey :: forall k f r. IsTag k => (forall a. k a -> f a -> r -> r) -> r -> TagMap k f -> r
 foldrWithKey f b = \(TagMap m) -> IntMap.foldrWithKey go b m
