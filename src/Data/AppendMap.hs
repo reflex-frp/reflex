@@ -20,7 +20,7 @@ module Data.AppendMap
   , module Data.Map.Monoidal
   ) where
 
-import Prelude hiding (map, null)
+import Prelude hiding (null)
 
 import Data.Coerce
 import Data.Default
