@@ -39,7 +39,7 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.Map (Map)
 
 import Reflex.Class
-import Reflex.Patch.DMapWithMove
+import Data.Patch.DMapWithMove
 
 -- | A 'Monad' that supports adjustment over time.  After an action has been
 -- run, if the given events fire, it will adjust itself so that its net effect

@@ -47,7 +47,7 @@ import Reflex.DynamicWriter.Class
 import Reflex.EventWriter.Base
 import Reflex.EventWriter.Class
 import Reflex.Host.Class
-import qualified Reflex.Patch.MapWithMove as MapWithMove
+import qualified Data.Patch.MapWithMove as MapWithMove
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Query.Class
