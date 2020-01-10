@@ -136,7 +136,7 @@ benchmarks = implGroup "spider" runSpiderHost cases
 pattern RunTestCaseFlag = "--run-test-case"
 
 spawnBenchmark :: String -> Benchmark
-spawnBenchmark name = Benchmark name $ Benchmarkable $ \n -> do
+spawnBenchmark name = bench name . toBenchmarkable $ \n -> do
   self <- getExecutablePath
   callProcess self [RunTestCaseFlag, name, show n, "+RTS", "-N1"]
 

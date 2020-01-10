@@ -7,8 +7,8 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE RoleAnnotations #-}
@@ -16,13 +16,18 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE Trustworthy #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
 
--- | This module contains the Reflex interface, as well as a variety of
--- convenience functions for working with 'Event's, 'Behavior's, and other
--- signals.
+-- |
+-- Module:
+--   Reflex.Class
+-- Description:
+--   This module contains the Reflex interface, as well as a variety of
+--   convenience functions for working with 'Event's, 'Behavior's, and other
+--   signals.
 module Reflex.Class
   ( module Reflex.Patch
     -- * Primitives
@@ -31,27 +36,36 @@ module Reflex.Class
   , coerceBehavior
   , coerceEvent
   , coerceDynamic
+  , coerceIncremental
   , MonadSample (..)
   , MonadHold (..)
-    -- ** 'fan'-related types
+    -- ** 'fan' related types
   , EventSelector (..)
+  , EventSelectorG (..)
   , EventSelectorInt (..)
-    -- ** 'Incremental'-related types
     -- * Convenience functions
   , constDyn
   , pushAlways
     -- ** Combining 'Event's
   , leftmost
+  , merge
+  , mergeIncremental
+  , mergeIncrementalWithMove
   , mergeMap
+  , mergeIntMap
   , mergeMapIncremental
   , mergeMapIncrementalWithMove
   , mergeIntMapIncremental
+  , coincidencePatchMap
+  , coincidencePatchMapWithMove
+  , coincidencePatchIntMap
   , mergeList
   , mergeWith
   , difference
   , alignEventWithMaybe
     -- ** Breaking up 'Event's
   , splitE
+  , fan
   , fanEither
   , fanThese
   , fanMap
@@ -59,12 +73,16 @@ module Reflex.Class
   , EitherTag (..)
   , eitherToDSum
   , dsumToEither
+  , factorEvent
+  , filterEventKey
     -- ** Collapsing 'Event . Event'
   , switchHold
   , switchHoldPromptly
   , switchHoldPromptOnly
+  , switchHoldPromptOnlyIncremental
     -- ** Using 'Event's to sample 'Behavior's
   , tag
+  , tagMaybe
   , attach
   , attachWith
   , attachWithMaybe
@@ -72,6 +90,7 @@ module Reflex.Class
   , gate
     -- ** Combining 'Dynamic's
   , distributeDMapOverDynPure
+  , distributeDMapOverDynPureG
   , distributeListOverDyn
   , distributeListOverDynWith
   , zipDyn
@@ -98,6 +117,14 @@ module Reflex.Class
   , mapAccumM_
   , mapAccumMaybe_
   , mapAccumMaybeM_
+  , accumIncremental
+  , accumMIncremental
+  , accumMaybeIncremental
+  , accumMaybeMIncremental
+  , mapAccumIncremental
+  , mapAccumMIncremental
+  , mapAccumMaybeIncremental
+  , mapAccumMaybeMIncremental
   , zipListWithEvent
   , numberOccurrences
   , numberOccurrencesFrom
@@ -117,8 +144,10 @@ module Reflex.Class
     -- * Unsafe functions
   , unsafeDynamic
   , unsafeMapIncremental
-    -- * 'FunctorMaybe'
-  , FunctorMaybe (..)
+    -- * 'Filterable' convenience functions
+  , FunctorMaybe -- fmapMaybe is purposely not exported from deprecated 'FunctorMaybe' and the new alias is exported instead
+  , mapMaybe -- Re-exported for convenience
+  , fmapMaybe
   , fforMaybe
   , ffilter
   , filterLeft
@@ -128,10 +157,11 @@ module Reflex.Class
   , ffor2
   , ffor3
     -- * Deprecated functions
-  , appendEvents
-  , onceE
-  , sequenceThese
+  , switchPromptly
+  , switchPromptOnly
+  -- * "Cheap" functions
   , fmapMaybeCheap
+  , mapMaybeCheap
   , fmapCheap
   , fforCheap
   , fforMaybeCheap
@@ -139,11 +169,20 @@ module Reflex.Class
   , tagCheap
   , mergeWithCheap
   , mergeWithCheap'
-  , switchPromptly
-  , switchPromptOnly
     -- * Slow, but general, implementations
   , slowHeadE
   ) where
+
+#ifdef MIN_VERSION_semialign
+import Prelude hiding (zip, zipWith)
+
+#if MIN_VERSION_these(0,8,0)
+import Data.These.Combinators (justThese)
+#endif
+#if MIN_VERSION_semialign(1,1,0)
+import Data.Zip (Zip (..))
+#endif
+#endif
 
 import Control.Applicative
 import Control.Monad.Identity
@@ -157,8 +196,11 @@ import Data.Align
 import Data.Bifunctor
 import Data.Coerce
 import Data.Default
-import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
+import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
+import Data.Functor.Compose
+import Data.Functor.Product
+import Data.GADT.Compare (GEq (..), GCompare (..))
 import Data.FastMutableIntMap (PatchIntMap)
 import Data.Foldable
 import Data.Functor.Bind
@@ -169,16 +211,22 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Semigroup (Semigroup, sconcat, stimes, (<>))
+import Data.Some (Some(Some))
 import Data.String
 import Data.These
 import Data.Type.Coercion
-import Reflex.FunctorMaybe
+import Data.Type.Equality ((:~:) (..))
+import Data.Witherable (Filterable(..))
+import qualified Data.Witherable as W
+import Reflex.FunctorMaybe (FunctorMaybe)
+import qualified Reflex.FunctorMaybe
 import Reflex.Patch
+import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
 
 import Debug.Trace (trace)
 
 -- | The 'Reflex' class contains all the primitive functionality needed for
--- Functional Reactive Programming (FRP).  The @t@ type parameter indicates
+-- Functional Reactive Programming (FRP).  The @/t/@ type parameter indicates
 -- which "timeline" is in use.  Timelines are fully-independent FRP contexts,
 -- and the type of the timeline determines the FRP engine to be used.  For most
 -- purposes, the 'Reflex.Spider' implementation is recommended.
@@ -226,16 +274,21 @@ class ( MonadHold t (PushM t)
   -- | Merge a collection of events; the resulting 'Event' will only occur if at
   -- least one input event is occurring, and will contain all of the input keys
   -- that are occurring simultaneously
-  merge :: GCompare k => DMap k (Event t) -> Event t (DMap k Identity) --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
-  -- | Efficiently fan-out an event to many destinations.  This function should
-  -- be partially applied, and then the result applied repeatedly to create
-  -- child events
-  fan :: GCompare k => Event t (DMap k Identity) -> EventSelector t k --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
+
+   --TODO: Generalize to get rid of DMap use --TODO: Provide a type-level guarantee that the result is not empty
+  mergeG :: GCompare k => (forall a. q a -> Event t (v a))
+         -> DMap k q -> Event t (DMap k v)
+
+  -- | Efficiently fan-out an event to many destinations.  You should save the
+  -- result in a @let@-binding, and then repeatedly 'selectG' on the result to
+  -- create child events
+  fanG :: GCompare k => Event t (DMap k v) -> EventSelectorG t k v
+
   -- | Create an 'Event' that will occur whenever the currently-selected input
   -- 'Event' occurs
   switch :: Behavior t (Event t a) -> Event t a
-  -- | Create an 'Event' that will occur whenever the input event is occurring
-  -- and its occurrence value, another 'Event', is also occurring
+  -- | Create an 'Event' that will occur whenever the input event is occurring -- and its occurrence value, another 'Event', is also occurring.
+  --   You maybe looking for '@switchHold@ @never@' instead.
   coincidence :: Event t (Event t a) -> Event t a
   -- | Extract the 'Behavior' of a 'Dynamic'.
   current :: Dynamic t a -> Behavior t a
@@ -244,14 +297,19 @@ class ( MonadHold t (PushM t)
   -- | Create a new 'Dynamic'.  The given 'PullM' must always return the most
   -- recent firing of the given 'Event', if any.
   unsafeBuildDynamic :: PullM t a -> Event t a -> Dynamic t a
-  -- | Create a new 'Incremental'.  The given 'PullM''s value must always change
+  -- | Create a new 'Incremental'.  The given "PullM"'s value must always change
   -- in the same way that the accumulated application of patches would change
   -- that value.
   unsafeBuildIncremental :: Patch p => PullM t (PatchTarget p) -> Event t p -> Incremental t p
   -- | Create a merge whose parents can change over time
-  mergeIncremental :: GCompare k => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
+  mergeIncrementalG :: GCompare k
+    => (forall a. q a -> Event t (v a))
+    -> Incremental t (PatchDMap k q)
+    -> Event t (DMap k v)
   -- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental
-  mergeIncrementalWithMove :: GCompare k => Incremental t (PatchDMapWithMove k (Event t)) -> Event t (DMap k Identity)
+  mergeIncrementalWithMoveG :: GCompare k
+    => (forall a. q a -> Event t (v a))
+    -> Incremental t (PatchDMapWithMove k q) -> Event t (DMap k v)
   -- | Extract the 'Behavior' component of an 'Incremental'
   currentIncremental :: Patch p => Incremental t p -> Behavior t (PatchTarget p)
   -- | Extract the 'Event' component of an 'Incremental'
@@ -267,10 +325,28 @@ class ( MonadHold t (PushM t)
   -- | Construct a 'Coercion' for a 'Dynamic' given an 'Coercion' for its
   -- occurrence type
   dynamicCoercion :: Coercion a b -> Coercion (Dynamic t a) (Dynamic t b)
+  -- | Construct a 'Coercion' for an 'Incremental' given 'Coercion's for its
+  -- patch target and patch types.
+  incrementalCoercion
+    :: Coercion (PatchTarget a) (PatchTarget b) -> Coercion a b -> Coercion (Incremental t a) (Incremental t b)
   mergeIntIncremental :: Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
   fanInt :: Event t (IntMap a) -> EventSelectorInt t a
 
+-- | Efficiently fan-out an event to many destinations. You should save the
+-- result in a @let@-binding, and then repeatedly 'select' on the result to
+-- create child events
+fan :: forall t k. (Reflex t, GCompare k)
+    => Event t (DMap k Identity) -> EventSelector t k
+    --TODO: Can we help enforce the partial application discipline here?  The combinator is worthless without it
+fan e = EventSelector (fixup (selectG (fanG e) :: k a -> Event t (Identity a)) :: forall a. k a -> Event t a)
+  where
+    fixup :: forall a. (k a -> Event t (Identity a)) -> k a -> Event t a
+    fixup = case eventCoercion Coercion :: Coercion (Event t (Identity a)) (Event t a) of
+              Coercion -> coerce
+
 --TODO: Specialize this so that we can take advantage of knowing that there's no changing going on
+-- | Constructs a single 'Event' out of a map of events. The output event may fire with multiple
+-- keys simultaneously.
 mergeInt :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
 mergeInt m = mergeIntIncremental $ unsafeBuildIncremental (return m) never
 
@@ -286,8 +362,14 @@ coerceEvent = coerceWith $ eventCoercion Coercion
 coerceDynamic :: (Reflex t, Coercible a b) => Dynamic t a -> Dynamic t b
 coerceDynamic = coerceWith $ dynamicCoercion Coercion
 
+-- | Coerce an 'Incremental' between representationally-equivalent value types
+coerceIncremental
+  :: (Reflex t, Coercible a b, Coercible (PatchTarget a) (PatchTarget b))
+  => Incremental t a -> Incremental t b
+coerceIncremental = coerceWith $ incrementalCoercion Coercion Coercion
+
 -- | Construct a 'Dynamic' from a 'Behavior' and an 'Event'.  The 'Behavior'
--- _must_ change when and only when the 'Event' fires, such that the
+-- __must__ change when and only when the 'Event' fires, such that the
 -- 'Behavior''s value is always equal to the most recent firing of the 'Event';
 -- if this is not the case, the resulting 'Dynamic' will behave
 -- nondeterministically.
@@ -315,7 +397,7 @@ class MonadSample t m => MonadHold t m where
   -- value and will be updated whenever the given 'Event' occurs.  The update
   -- takes effect immediately after the 'Event' occurs; if the occurrence that
   -- sets the 'Behavior' (or one that is simultaneous with it) is used to sample
-  -- the 'Behavior', it will see the _old_ value of the 'Behavior', not the new
+  -- the 'Behavior', it will see the __old__ value of the 'Behavior', not the new
   -- one.
   hold :: a -> Event t a -> m (Behavior t a)
   default hold :: (m ~ f m', MonadTrans f, MonadHold t m') => a -> Event t a -> m (Behavior t a)
@@ -330,7 +412,7 @@ class MonadSample t m => MonadHold t m where
   holdIncremental :: Patch p => PatchTarget p -> Event t p -> m (Incremental t p)
   default holdIncremental :: (Patch p, m ~ f m', MonadTrans f, MonadHold t m') => PatchTarget p -> Event t p -> m (Incremental t p)
   holdIncremental v0 = lift . holdIncremental v0
-  buildDynamic :: PullM t a -> Event t a -> m (Dynamic t a)
+  buildDynamic :: PushM t a -> Event t a -> m (Dynamic t a)
   {-
   default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PullM t a -> Event t a -> m (Dynamic t a)
   buildDynamic getV0 = lift . buildDynamic getV0
@@ -339,7 +421,102 @@ class MonadSample t m => MonadHold t m where
   -- the supplied 'Event'.
   headE :: Event t a -> m (Event t a)
 
+-- | Accumulate an 'Incremental' with the supplied initial value and the firings of the provided 'Event',
+-- using the combining function to produce a patch.
+accumIncremental
+  :: (Reflex t, Patch p, MonadHold t m, MonadFix m)
+  => (PatchTarget p -> b -> p)
+  -> PatchTarget p
+  -> Event t b
+  -> m (Incremental t p)
+accumIncremental f = accumMaybeIncremental $ \v o -> Just $ f v o
 
+-- | Similar to 'accumIncremental' but the combining function runs in 'PushM'
+accumMIncremental
+  :: (Reflex t, Patch p, MonadHold t m, MonadFix m)
+  => (PatchTarget p -> b -> PushM t p)
+  -> PatchTarget p
+  -> Event t b
+  -> m (Incremental t p)
+accumMIncremental f = accumMaybeMIncremental $ \v o -> Just <$> f v o
+
+-- | Similar to 'accumIncremental' but allows filtering of updates (by dropping updates when the
+-- combining function produces @Nothing@)
+accumMaybeIncremental
+  :: (Reflex t, Patch p, MonadHold t m, MonadFix m)
+  => (PatchTarget p -> b -> Maybe p)
+  -> PatchTarget p
+  -> Event t b
+  -> m (Incremental t p)
+accumMaybeIncremental f = accumMaybeMIncremental $ \v o -> return $ f v o
+
+-- | Similar to 'accumMaybeMIncremental' but the combining function runs in 'PushM'
+accumMaybeMIncremental
+  :: (Reflex t, Patch p, MonadHold t m, MonadFix m)
+  => (PatchTarget p -> b -> PushM t (Maybe p))
+  -> PatchTarget p
+  -> Event t b
+  -> m (Incremental t p)
+accumMaybeMIncremental f z e = do
+  rec let e' = flip push e $ \o -> do
+            v <- sample $ currentIncremental d'
+            f v o
+      d' <- holdIncremental z e'
+  return d'
+
+-- | Accumulate an 'Incremental' by folding occurrences of an 'Event'
+-- with a function that both accumulates and produces a value to fire
+-- as an 'Event'. Returns both the accumulated value and the constructed
+-- 'Event'.
+mapAccumIncremental
+  :: (Reflex t, Patch p, MonadHold t m, MonadFix m)
+  => (PatchTarget p -> b -> (p, c))
+  -> PatchTarget p
+  -> Event t b
+  -> m (Incremental t p, Event t c)
+mapAccumIncremental f = mapAccumMaybeIncremental $ \v o -> bimap Just Just $ f v o
+
+-- | Like 'mapAccumIncremental' but the combining function runs in 'PushM'
+mapAccumMIncremental
+  :: (Reflex t, Patch p, MonadHold t m, MonadFix m)
+  => (PatchTarget p -> b -> PushM t (p, c))
+  -> PatchTarget p
+  -> Event t b
+  -> m (Incremental t p, Event t c)
+mapAccumMIncremental f = mapAccumMaybeMIncremental $ \v o -> bimap Just Just <$> f v o
+
+-- | Accumulate an 'Incremental' by folding occurrences of an 'Event' with
+-- a function that both optionally accumulates and optionally produces
+-- a value to fire as a separate output 'Event'.
+-- Note that because 'Nothing's are discarded in both cases, the output
+-- 'Event' may fire even though the output 'Incremental' has not changed, and
+-- the output 'Incremental' may update even when the output 'Event' is not firing.
+mapAccumMaybeIncremental
+  :: (Reflex t, Patch p, MonadHold t m, MonadFix m)
+  => (PatchTarget p -> b -> (Maybe p, Maybe c))
+  -> PatchTarget p
+  -> Event t b
+  -> m (Incremental t p, Event t c)
+mapAccumMaybeIncremental f = mapAccumMaybeMIncremental $ \v o -> return $ f v o
+
+-- | Like 'mapAccumMaybeIncremental' but the combining function is a 'PushM' action
+mapAccumMaybeMIncremental
+  :: (Reflex t, Patch p, MonadHold t m, MonadFix m)
+  => (PatchTarget p -> b -> PushM t (Maybe p, Maybe c))
+  -> PatchTarget p
+  -> Event t b
+  -> m (Incremental t p, Event t c)
+mapAccumMaybeMIncremental f z e = do
+  rec let e' = flip push e $ \o -> do
+            v <- sample $ currentIncremental d'
+            result <- f v o
+            return $ case result of
+              (Nothing, Nothing) -> Nothing
+              _ -> Just result
+      d' <- holdIncremental z $ mapMaybe fst e'
+  return (d', mapMaybe snd e')
+
+-- | A somewhat slow implementation of 'headE'
 slowHeadE :: (Reflex t, MonadHold t m, MonadFix m) => Event t a -> m (Event t a)
 slowHeadE e = do
   rec be <- hold e $ fmapCheap (const never) e'
@@ -348,18 +525,31 @@ slowHeadE e = do
 
 -- | An 'EventSelector' allows you to efficiently 'select' an 'Event' based on a
 -- key.  This is much more efficient than filtering for each key with
--- 'fmapMaybe'.
+-- 'mapMaybe'.
 newtype EventSelector t k = EventSelector
   { -- | Retrieve the 'Event' for the given key.  The type of the 'Event' is
     -- determined by the type of the key, so this can be used to fan-out
     -- 'Event's whose sub-'Event's have different types.
     --
     -- Using 'EventSelector's and the 'fan' primitive is far more efficient than
-    -- (but equivalent to) using 'fmapMaybe' to select only the relevant
+    -- (but equivalent to) using 'mapMaybe' to select only the relevant
     -- occurrences of an 'Event'.
     select :: forall a. k a -> Event t a
   }
 
+newtype EventSelectorG t k v = EventSelectorG
+  { -- | Retrieve the 'Event' for the given key.  The type of the 'Event' is
+    -- determined by the type of the key, so this can be used to fan-out
+    -- 'Event's whose sub-'Event's have different types.
+    --
+    -- Using 'EventSelector's and the 'fan' primitive is far more efficient than
+    -- (but equivalent to) using 'mapMaybe' to select only the relevant
+    -- occurrences of an 'Event'.
+    selectG :: forall a. k a -> Event t (v a)
+  }
+
+-- | Efficiently select an 'Event' keyed on 'Int'. This is more efficient than manually
+-- filtering by key.
 newtype EventSelectorInt t a = EventSelectorInt { selectInt :: Int -> Event t a }
 
 --------------------------------------------------------------------------------
@@ -474,7 +664,9 @@ instance Reflex t => Monad (Behavior t) where
   a >>= f = pull $ sample a >>= sample . f
   -- Note: it is tempting to write (_ >> b = b); however, this would result in (fail x >> return y) succeeding (returning y), which violates the law that (a >> b = a >>= \_ -> b), since the implementation of (>>=) above actually will fail.  Since we can't examine 'Behavior's other than by using sample, I don't think it's possible to write (>>) to be more efficient than the (>>=) above.
   return = constant
+#if !MIN_VERSION_base(4,13,0)
   fail = error "Monad (Behavior t) does not support fail"
+#endif
 
 instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
   mempty = constant mempty
@@ -490,40 +682,51 @@ instance (Reflex t, Num a) => Num (Behavior t a) where
   negate = fmap negate
   signum = fmap signum
 
+instance (Num a, Reflex t) => Num (Dynamic t a) where
+  (+) = liftA2 (+)
+  (*) = liftA2 (*)
+  abs = fmap abs
+  signum = fmap signum
+  fromInteger = pure . fromInteger
+  negate = fmap negate
+  (-) = liftA2 (-)
+
 instance (Reflex t, Semigroup a) => Semigroup (Behavior t a) where
   a <> b = pull $ liftM2 (<>) (sample a) (sample b)
   sconcat = pull . fmap sconcat . mapM sample
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
--- | Flipped version of 'fmapMaybe'.
-fforMaybe :: FunctorMaybe f => f a -> (a -> Maybe b) -> f b
-fforMaybe = flip fmapMaybe
+-- | Alias for 'mapMaybe'
+fmapMaybe :: Filterable f => (a -> Maybe b) -> f a -> f b
+fmapMaybe = mapMaybe
+
+-- | Flipped version of 'mapMaybe'.
+fforMaybe :: Filterable f => f a -> (a -> Maybe b) -> f b
+fforMaybe = flip mapMaybe
 
 -- | Filter 'f a' using the provided predicate.
--- Relies on 'fforMaybe'.
-ffilter :: FunctorMaybe f => (a -> Bool) -> f a -> f a
-ffilter f = fmapMaybe $ \x -> if f x then Just x else Nothing
+ffilter :: Filterable f => (a -> Bool) -> f a -> f a
+ffilter = W.filter
 
 -- | Filter 'Left's from 'f (Either a b)' into 'a'.
-filterLeft :: FunctorMaybe f => f (Either a b) -> f a
-filterLeft = fmapMaybe (either Just (const Nothing))
+filterLeft :: Filterable f => f (Either a b) -> f a
+filterLeft = mapMaybe (either Just (const Nothing))
 
 -- | Filter 'Right's from 'f (Either a b)' into 'b'.
-filterRight :: FunctorMaybe f => f (Either a b) -> f b
-filterRight = fmapMaybe (either (const Nothing) Just)
+filterRight :: Filterable f => f (Either a b) -> f b
+filterRight = mapMaybe (either (const Nothing) Just)
 
 -- | Left-biased event union (prefers left event on simultaneous
 -- occurrence).
 instance Reflex t => Alt (Event t) where
   ev1 <!> ev2 = leftmost [ev1, ev2]
 
--- | 'Event' intersection (convenient interface to 'coincidence').
+-- | 'Event' intersection. Only occurs when both events are co-incident.
 instance Reflex t => Apply (Event t) where
-  evf <.> evx = coincidence (fmap (<$> evx) evf)
+  evf <.> evx = mapMaybe f (align evf evx) where
+    f (These g a) = Just (g a)
+    f _           = Nothing
+
 
 -- | 'Event' intersection (convenient interface to 'coincidence').
 instance Reflex t => Bind (Event t) where
@@ -532,13 +735,18 @@ instance Reflex t => Bind (Event t) where
 
 instance Reflex t => Functor (Event t) where
   {-# INLINE fmap #-}
-  fmap f = fmapMaybe $ Just . f
+  fmap f = mapMaybe $ Just . f
   {-# INLINE (<$) #-}
   x <$ e = fmapCheap (const x) e
 
+-- TODO Remove this instance
 instance Reflex t => FunctorMaybe (Event t) where
   {-# INLINE fmapMaybe #-}
-  fmapMaybe f = push $ return . f
+  fmapMaybe = mapMaybe
+
+instance Reflex t => Filterable (Event t) where
+  {-# INLINE mapMaybe #-}
+  mapMaybe f = push $ return . f
 
 -- | Never: @'zero' = 'never'@.
 instance Reflex t => Plus (Event t) where
@@ -548,6 +756,12 @@ instance Reflex t => Plus (Event t) where
 -- 'Behavior' at the time of that occurrence.
 tag :: Reflex t => Behavior t b -> Event t a -> Event t b
 tag b = pushAlways $ \_ -> sample b
+
+-- | Replace each occurrence value of the 'Event' with the value of the
+-- 'Behavior' at that time; if it is 'Just', fire with the contained value; if
+-- it is 'Nothing', drop the occurrence.
+tagMaybe :: Reflex t => Behavior t (Maybe b) -> Event t a -> Event t b
+tagMaybe b = push $ \_ -> sample b
 
 -- | Create a new 'Event' that combines occurrences of supplied 'Event' with the
 -- current value of the 'Behavior'.
@@ -583,7 +797,7 @@ headTailE e = do
 -- event returns 'True'.
 --
 -- Starting at the current time, fire all the occurrences of the 'Event' for
--- which the given predicate returns 'True'.  When 'False' first is returned,
+-- which the given predicate returns 'True'.  When first 'False' is returned,
 -- do not fire, and permanently stop firing, even if 'True' values would have
 -- been encountered later.
 takeWhileE
@@ -592,13 +806,13 @@ takeWhileE
   => (a -> Bool)
   -> Event t a
   -> m (Event t a)
-takeWhileE f e = takeWhileJustE (\v -> guard (f v) $> v) e
+takeWhileE f = takeWhileJustE $ \v -> guard (f v) $> v
 
 -- | Take the streak of occurrences starting at the current time for which the
 -- event returns 'Just b'.
 --
 -- Starting at the current time, fire all the occurrences of the 'Event' for
--- which the given predicate returns 'Just b'.  When 'Nothing' first is returned,
+-- which the given predicate returns 'Just b'.  When first 'Nothing' is returned,
 -- do not fire, and permanently stop firing, even if 'Just b' values would have
 -- been encountered later.
 takeWhileJustE
@@ -681,11 +895,7 @@ traceEventWith f = push $ \x -> trace (f x) $ return $ Just x
 instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
   (<>) = alignWith (mergeThese (<>))
   sconcat = fmap sconcat . mergeList . toList
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 instance (Semigroup a, Reflex t) => Monoid (Event t a) where
   mempty = never
@@ -720,7 +930,12 @@ mergeList :: Reflex t => [Event t a] -> Event t (NonEmpty a)
 mergeList [] = never
 mergeList es = mergeWithFoldCheap' id es
 
-unsafeMapIncremental :: (Reflex t, Patch p, Patch p') => (PatchTarget p -> PatchTarget p') -> (p -> p') -> Incremental t p -> Incremental t p'
+unsafeMapIncremental
+  :: (Reflex t, Patch p, Patch p')
+  => (PatchTarget p -> PatchTarget p')
+  -> (p -> p')
+  -> Incremental t p
+  -> Incremental t p'
 unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIncremental a) $ g <$> updatedIncremental a
 
 -- | Create a new 'Event' combining the map of 'Event's into an 'Event' that
@@ -728,6 +943,10 @@ unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIn
 -- occurring at that time.
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
+
+-- | Like 'mergeMap' but for 'IntMap'.
+mergeIntMap :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
+mergeIntMap = fmap dmapToIntMap . merge . intMapWithFunctorToDMap
 
 -- | Create a merge whose parents can change over time
 mergeMapIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Event t a)) -> Event t (Map k a)
@@ -746,7 +965,7 @@ fanEither :: Reflex t => Event t (Either a b) -> (Event t a, Event t b)
 fanEither e =
   let justLeft = either Just (const Nothing)
       justRight = either (const Nothing) Just
-  in (fmapMaybe justLeft e, fmapMaybe justRight e)
+  in (mapMaybe justLeft e, mapMaybe justRight e)
 
 -- | Split the event into separate events for 'This' and 'That' values,
 -- allowing them to fire simultaneously when the input value is 'These'.
@@ -758,7 +977,7 @@ fanThese e =
       that (That y) = Just y
       that (These _ y) = Just y
       that _ = Nothing
-  in (fmapMaybe this e, fmapMaybe that e)
+  in (mapMaybe this e, mapMaybe that e)
 
 -- | Split the event into an 'EventSelector' that allows efficient selection of
 -- the individual 'Event's.
@@ -767,7 +986,7 @@ fanMap = fan . fmap mapToDMap
 
 -- | Switches to the new event whenever it receives one. Only the old event is
 -- considered the moment a new one is switched in; the output event will fire at
--- that moment if only if the old event does.
+-- that moment only if the old event does.
 --
 -- Because the simultaneous firing case is irrelevant, this function imposes
 -- laxer "timing requirements" on the overall circuit, avoiding many potential
@@ -807,17 +1026,79 @@ switchHoldPromptOnly e0 e' = do
   eLag <- switch <$> hold e0 e'
   return $ coincidence $ leftmost [e', eLag <$ eLag]
 
+-- | When the given outer event fires, condense the inner events into the contained patch.  Non-firing inner events will be replaced with deletions.
+coincidencePatchMap :: (Reflex t, Ord k) => Event t (PatchMap k (Event t v)) -> Event t (PatchMap k v)
+coincidencePatchMap e = fmapCheap PatchMap $ coincidence $ ffor e $ \(PatchMap m) -> mergeMap $ ffor m $ \case
+  Nothing -> fmapCheap (const Nothing) e
+  Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
+
+-- | See 'coincidencePatchMap'
+coincidencePatchIntMap :: Reflex t => Event t (PatchIntMap (Event t v)) -> Event t (PatchIntMap v)
+coincidencePatchIntMap e = fmapCheap PatchIntMap $ coincidence $ ffor e $ \(PatchIntMap m) -> mergeIntMap $ ffor m $ \case
+  Nothing -> fmapCheap (const Nothing) e
+  Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
+
+-- | See 'coincidencePatchMap'
+coincidencePatchMapWithMove :: (Reflex t, Ord k) => Event t (PatchMapWithMove k (Event t v)) -> Event t (PatchMapWithMove k v)
+coincidencePatchMapWithMove e = fmapCheap unsafePatchMapWithMove $ coincidence $ ffor e $ \p -> mergeMap $ ffor (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
+  PatchMapWithMove.From_Delete -> fforCheap e $ \_ ->
+    ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
+  PatchMapWithMove.From_Move k -> fforCheap e $ \_ ->
+    ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Move k }
+  PatchMapWithMove.From_Insert ev -> leftmost
+    [ fforCheap ev $ \v ->
+        ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Insert v }
+    , fforCheap e $ \_ ->
+        ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
+    ]
+
+-- | Given a 'PatchTarget' of events (e.g., a 'Map' with 'Event' values) and an event of 'Patch'es
+-- (e.g., a 'PatchMap' with 'Event' values), produce an 'Event' of the 'PatchTarget' type that
+-- fires with the patched value.
+switchHoldPromptOnlyIncremental
+  :: forall t m p pt w
+  .  ( Reflex t
+     , MonadHold t m
+     , Patch (p (Event t w))
+     , PatchTarget (p (Event t w)) ~ pt (Event t w)
+     , Patch (p w)
+     , PatchTarget (p w) ~ pt w
+     , Monoid (pt w)
+     )
+  => (Incremental t (p (Event t w)) -> Event t (pt w))
+  -> (Event t (p (Event t w)) -> Event t (p w))
+  -> pt (Event t w)
+  -> Event t (p (Event t w))
+  -> m (Event t (pt w))
+switchHoldPromptOnlyIncremental mergePatchIncremental coincidencePatch e0 e' = do
+  lag <- mergePatchIncremental <$> holdIncremental e0 e'
+  pure $ ffor (align lag (coincidencePatch e')) $ \case
+    This old -> old
+    That new -> new `applyAlways` mempty
+    These old new -> new `applyAlways` old
+
 instance Reflex t => Align (Event t) where
   nil = never
+#if MIN_VERSION_these(0, 8, 0)
+instance Reflex t => Semialign (Event t) where
+#endif
   align = alignEventWithMaybe Just
+
+#ifdef MIN_VERSION_semialign
+#if MIN_VERSION_semialign(1,1,0)
+instance Reflex t => Zip (Event t) where
+#endif
+  zip x y = mapMaybe justThese $ align x y
+#endif
+
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and
 -- the 'Behavior' is true at the time of occurrence.
 gate :: Reflex t => Behavior t Bool -> Event t a -> Event t a
 gate = attachWithMaybe $ \allow a -> if allow then Just a else Nothing
 
--- | Create a new behavior given a starting behavior and switch to a the behvior
---   carried by the event when it fires.
+-- | Create a new behavior given a starting behavior and switch to the behavior
+-- carried by the event when it fires.
 switcher :: (Reflex t, MonadHold t m)
         => Behavior t a -> Event t (Behavior t a) -> m (Behavior t a)
 switcher b eb = pull . (sample <=< sample) <$> hold b eb
@@ -832,7 +1113,7 @@ zipDyn = zipDynWith (,)
 
 -- | Combine two 'Dynamic's with a combining function.  The result will change
 -- whenever either (or both) input 'Dynamic' changes.
--- More efficient than liftA2.
+-- More efficient than 'liftA2'.
 zipDynWith :: Reflex t => (a -> b -> c) -> Dynamic t a -> Dynamic t b -> Dynamic t c
 zipDynWith f da db =
   let eab = align (updated da) (updated db)
@@ -850,11 +1131,7 @@ zipDynWith f da db =
 
 instance (Reflex t, Semigroup a) => Semigroup (Dynamic t a) where
   (<>) = zipDynWith (<>)
-#if MIN_VERSION_semigroups(0,17,0)
   stimes n = fmap $ stimes n
-#else
-  times1p n = fmap $ times1p n
-#endif
 
 instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
   mconcat = distributeListOverDynWith mconcat
@@ -863,14 +1140,23 @@ instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
 
 -- | This function converts a 'DMap' whose elements are 'Dynamic's into a
 -- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same
--- through the use of multiple uses of 'zipWithDyn' or 'Applicative' operators.
+-- through the use of multiple uses of 'zipDynWith' or 'Applicative' operators.
 distributeDMapOverDynPure :: forall t k. (Reflex t, GCompare k) => DMap k (Dynamic t) -> Dynamic t (DMap k Identity)
-distributeDMapOverDynPure dm = case DMap.toList dm of
+distributeDMapOverDynPure = distributeDMapOverDynPureG coerceDynamic
+
+-- | This function converts a 'DMap' whose elements are 'Dynamic's into a
+-- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same
+-- through the use of multiple uses of 'zipDynWith' or 'Applicative' operators.
+distributeDMapOverDynPureG
+  :: forall t k q v. (Reflex t, GCompare k)
+  => (forall a. q a -> Dynamic t (v a))
+  -> DMap k q -> Dynamic t (DMap k v)
+distributeDMapOverDynPureG nt dm = case DMap.toList dm of
   [] -> constDyn DMap.empty
-  [k :=> v] -> fmap (DMap.singleton k . Identity) v
+  [k :=> v] -> DMap.singleton k <$> nt v
   _ ->
-    let getInitial = DMap.traverseWithKey (\_ -> fmap Identity . sample . current) dm
-        edmPre = merge $ DMap.map updated dm
+    let getInitial = DMap.traverseWithKey (\_ -> sample . current . nt) dm
+        edmPre = mergeG getCompose $ DMap.map (Compose . updated . nt) dm
         result = unsafeBuildDynamic getInitial $ flip pushAlways edmPre $ \news -> do
           olds <- sample $ current result
           return $ DMap.unionWithKey (\_ _ new -> new) olds news
@@ -882,21 +1168,73 @@ distributeListOverDyn = distributeListOverDynWith id
 
 -- | Create a new 'Dynamic' by applying a combining function to a list of 'Dynamic's
 distributeListOverDynWith :: Reflex t => ([a] -> b) -> [Dynamic t a] -> Dynamic t b
-distributeListOverDynWith f = fmap (f . map (\(Const2 _ :=> Identity v) -> v) . DMap.toList) . distributeDMapOverDynPure . DMap.fromList . map (\(k, v) -> Const2 k :=> v) . zip [0 :: Int ..]
+distributeListOverDynWith f =
+  fmap (f . map fromDSum . DMap.toAscList) .
+  distributeDMapOverDynPure .
+  DMap.fromDistinctAscList .
+  zipWith toDSum [0..]
+  where
+    toDSum :: Int -> Dynamic t a -> DSum (Const2 Int a) (Dynamic t)
+    toDSum k v = Const2 k :=> v
+    fromDSum :: DSum (Const2 Int a) Identity -> a
+    fromDSum (Const2 _ :=> Identity v) = v
 
 -- | Create a new 'Event' that occurs when the first supplied 'Event' occurs
 -- unless the second supplied 'Event' occurs simultaneously.
 difference :: Reflex t => Event t a -> Event t b -> Event t a
 difference = alignEventWithMaybe $ \case
   This a -> Just a
-  _      -> Nothing
+  _ -> Nothing
 
+-- | Zips two values by taking the union of their shapes and combining with the provided function.
+-- 'Nothing' values are dropped.
 alignEventWithMaybe :: Reflex t => (These a b -> Maybe c) -> Event t a -> Event t b -> Event t c
-alignEventWithMaybe f ea eb =
-  fmapMaybe (f <=< dmapToThese)
-    $ merge
-    $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
+alignEventWithMaybe f ea eb = mapMaybe (f <=< dmapToThese) $
+  merge $ DMap.fromList [LeftTag :=> ea, RightTag :=> eb]
 
+-- | Produces an 'Event' that fires only when the input event fires with a 'DSum' key that
+-- matches the provided key.
+filterEventKey
+  :: forall t m k v a.
+     ( Reflex t
+     , MonadFix m
+     , MonadHold t m
+     , GEq k
+     )
+  => k a
+  -> Event t (DSum k v)
+  -> m (Event t (v a))
+filterEventKey k kv' = do
+  let f :: DSum k v -> Maybe (v a)
+      f (newK :=> newV) = case newK `geq` k of
+        Just Refl -> Just newV
+        Nothing -> Nothing
+  takeWhileJustE f kv'
+
+-- | "Factor" the input 'DSum' 'Event' to produce an 'Event' which
+-- fires when the 'DSum' key changes and contains both the value of the
+-- 'DSum' at switchover and an 'Event' of values produced by subsequent
+-- firings of the input 'Event' that do not change the 'DSum' key.
+factorEvent
+  :: forall t m k v a.
+     ( Reflex t
+     , MonadFix m
+     , MonadHold t m
+     , GEq k
+     )
+  => k a
+  -> Event t (DSum k v)
+  -> m (Event t (v a), Event t (DSum k (Product v (Compose (Event t) v))))
+factorEvent k0 kv' = do
+  key :: Behavior t (Some k) <- hold (Some k0) $ fmapCheap (\(k :=> _) -> Some k) kv'
+  let update = flip push kv' $ \(newKey :=> newVal) -> sample key >>= \case
+        Some oldKey -> case newKey `geq` oldKey of
+          Just Refl -> return Nothing
+          Nothing -> do
+            newInner <- filterEventKey newKey kv'
+            return $ Just $ newKey :=> Pair newVal (Compose newInner)
+  eInitial <- filterEventKey k0 kv'
+  return (eInitial, update)
 
 --------------------------------------------------------------------------------
 -- Accumulator
@@ -926,26 +1264,94 @@ class Reflex t => Accumulator t f | f -> t where
   mapAccumMaybe f = mapAccumMaybeM $ \v o -> return $ f v o
   mapAccumMaybeM :: (MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (f a, Event t c)
 
-accumDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> a) -> a -> Event t b -> m (Dynamic t a)
+-- | Accumulate a 'Dynamic' by folding occurrences of an 'Event'
+-- with the provided function. See 'foldDyn'.
+accumDyn
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> a)
+  -> a
+  -> Event t b
+  -> m (Dynamic t a)
 accumDyn f = accumMaybeDyn $ \v o -> Just $ f v o
-accumMDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t a) -> a -> Event t b -> m (Dynamic t a)
+
+-- | Accumulate a 'Dynamic' by folding occurrences of an 'Event'
+-- with the provided 'PushM' action.
+accumMDyn
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> PushM t a)
+  -> a
+  -> Event t b
+  -> m (Dynamic t a)
 accumMDyn f = accumMaybeMDyn $ \v o -> Just <$> f v o
-accumMaybeDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> Maybe a) -> a -> Event t b -> m (Dynamic t a)
+
+-- | Accumulate a 'Dynamic' by folding occurrences of an 'Event'
+-- with the provided function, discarding 'Nothing' results.
+accumMaybeDyn
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> Maybe a)
+  -> a
+  -> Event t b
+  -> m (Dynamic t a)
 accumMaybeDyn f = accumMaybeMDyn $ \v o -> return $ f v o
-accumMaybeMDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a)) -> a -> Event t b -> m (Dynamic t a)
+
+-- | Accumulate a 'Dynamic' by folding occurrences of an 'Event'
+-- with the provided 'PushM' action, discarding 'Nothing' results.
+accumMaybeMDyn
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> PushM t (Maybe a))
+  -> a
+  -> Event t b
+  -> m (Dynamic t a)
 accumMaybeMDyn f z e = do
   rec let e' = flip push e $ \o -> do
             v <- sample $ current d'
             f v o
       d' <- holdDyn z e'
   return d'
-mapAccumDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (a, c)) -> a -> Event t b -> m (Dynamic t a, Event t c)
+
+-- | Accumulate a 'Dynamic' by folding occurrences of an 'Event'
+-- with a function that both accumulates and produces a value to fire
+-- as an 'Event'. Returns both the accumulated value and an 'Event'.
+mapAccumDyn
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> (a, c))
+  -> a
+  -> Event t b
+  -> m (Dynamic t a, Event t c)
 mapAccumDyn f = mapAccumMaybeDyn $ \v o -> bimap Just Just $ f v o
-mapAccumMDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (a, c)) -> a -> Event t b -> m (Dynamic t a, Event t c)
+
+-- | Similar to 'mapAccumDyn' except that the combining function is a
+-- 'PushM' action.
+mapAccumMDyn
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> PushM t (a, c))
+  -> a
+  -> Event t b
+  -> m (Dynamic t a, Event t c)
 mapAccumMDyn f = mapAccumMaybeMDyn $ \v o -> bimap Just Just <$> f v o
-mapAccumMaybeDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (Maybe a, Maybe c)) -> a -> Event t b -> m (Dynamic t a, Event t c)
+
+-- | Accumulate a 'Dynamic' by folding occurrences of an 'Event' with
+-- a function that both optionally accumulates and optionally produces
+-- a value to fire as a separate output 'Event'.
+-- Note that because 'Nothing's are discarded in both cases, the output
+-- 'Event' may fire even though the output 'Dynamic' has not changed, and
+-- the output 'Dynamic' may update even when the output 'Event' is not firing.
+mapAccumMaybeDyn
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> (Maybe a, Maybe c))
+  -> a
+  -> Event t b
+  -> m (Dynamic t a, Event t c)
 mapAccumMaybeDyn f = mapAccumMaybeMDyn $ \v o -> return $ f v o
-mapAccumMaybeMDyn :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Dynamic t a, Event t c)
+
+-- | Like 'mapAccumMaybeDyn' except that the combining function is a
+-- 'PushM' action.
+mapAccumMaybeMDyn
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> PushM t (Maybe a, Maybe c))
+  -> a
+  -> Event t b
+  -> m (Dynamic t a, Event t c)
 mapAccumMaybeMDyn f z e = do
   rec let e' = flip push e $ \o -> do
             v <- sample $ current d'
@@ -953,18 +1359,42 @@ mapAccumMaybeMDyn f z e = do
             return $ case result of
               (Nothing, Nothing) -> Nothing
               _ -> Just result
-      d' <- holdDyn z $ fmapMaybe fst e'
-  return (d', fmapMaybe snd e')
+      d' <- holdDyn z $ mapMaybe fst e'
+  return (d', mapMaybe snd e')
 
+-- | Accumulate a 'Behavior' by folding occurrences of an 'Event'
+-- with the provided function.
 {-# INLINE accumB #-}
-accumB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> a) -> a -> Event t b -> m (Behavior t a)
+accumB
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> a)
+  -> a
+  -> Event t b
+  -> m (Behavior t a)
 accumB f = accumMaybeB $ \v o -> Just $ f v o
+
+-- | Like 'accumB' except that the combining function is a 'PushM' action.
 {-# INLINE accumMB #-}
-accumMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t a) -> a -> Event t b -> m (Behavior t a)
+accumMB
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> PushM t a)
+  -> a
+  -> Event t b
+  -> m (Behavior t a)
 accumMB f = accumMaybeMB $ \v o -> Just <$> f v o
+
+-- | Accumulate a 'Behavior' by folding occurrences of an 'Event'
+-- with the provided function, discarding 'Nothing' results.
 {-# INLINE accumMaybeB #-}
-accumMaybeB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> Maybe a) -> a -> Event t b -> m (Behavior t a)
+accumMaybeB
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> Maybe a)
+  -> a
+  -> Event t b
+  -> m (Behavior t a)
 accumMaybeB f = accumMaybeMB $ \v o -> return $ f v o
+
+-- | Like 'accumMaybeB' except that the combining function is a 'PushM' action.
 {-# INLINE accumMaybeMB #-}
 accumMaybeMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a)) -> a -> Event t b -> m (Behavior t a)
 accumMaybeMB f z e = do
@@ -973,16 +1403,42 @@ accumMaybeMB f z e = do
             f v o
       d' <- hold z e'
   return d'
+
+-- | Accumulate a 'Behavior' by folding occurrences of an 'Event'
+-- with a function that both accumulates and produces a value to fire
+-- as an 'Event'. Returns both the accumulated value and an 'Event'.
 {-# INLINE mapAccumB #-}
-mapAccumB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (a, c)) -> a -> Event t b -> m (Behavior t a, Event t c)
+mapAccumB
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> (a, c))
+  -> a
+  -> Event t b
+  -> m (Behavior t a, Event t c)
 mapAccumB f = mapAccumMaybeB $ \v o -> bimap Just Just $ f v o
+
+-- | Like 'mapAccumB' except that the combining function is a 'PushM' action.
 {-# INLINE mapAccumMB #-}
-mapAccumMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (a, c)) -> a -> Event t b -> m (Behavior t a, Event t c)
+mapAccumMB
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> PushM t (a, c))
+  -> a
+  -> Event t b
+  -> m (Behavior t a, Event t c)
 mapAccumMB f = mapAccumMaybeMB $ \v o -> bimap Just Just <$> f v o
+
+-- | Accumulate a 'Behavior' by folding occurrences of an 'Event' with
+-- a function that both optionally accumulates and optionally produces
+-- a value to fire as a separate output 'Event'. 'Nothing's are discarded.
 {-# INLINE mapAccumMaybeB #-}
-mapAccumMaybeB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> (Maybe a, Maybe c)) -> a -> Event t b -> m (Behavior t a, Event t c)
+mapAccumMaybeB
+  :: (Reflex t, MonadHold t m, MonadFix m)
+  => (a -> b -> (Maybe a, Maybe c))
+  -> a
+  -> Event t b
+  -> m (Behavior t a, Event t c)
 mapAccumMaybeB f = mapAccumMaybeMB $ \v o -> return $ f v o
 
+-- | Like 'mapAccumMaybeB' except that the combining function is a 'PushM' action.
 {-# INLINE mapAccumMaybeMB #-}
 mapAccumMaybeMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a, Maybe c)) -> a -> Event t b -> m (Behavior t a, Event t c)
 mapAccumMaybeMB f z e = do
@@ -992,8 +1448,8 @@ mapAccumMaybeMB f z e = do
             return $ case result of
               (Nothing, Nothing) -> Nothing
               _ -> Just result
-      d' <- hold z $ fmapMaybe fst e'
-  return (d', fmapMaybe snd e')
+      d' <- hold z $ mapMaybe fst e'
+  return (d', mapMaybe snd e')
 
 -- | Accumulate occurrences of an 'Event', producing an output occurrence each
 -- time.  Discard the underlying 'Accumulator'.
@@ -1137,38 +1593,70 @@ infixl 4 <@
 -- Cheap Functions
 ------------------
 
+-- | A "cheap" version of 'pushAlways'. See the performance note on 'pushCheap'.
 {-# INLINE pushAlwaysCheap #-}
 pushAlwaysCheap :: Reflex t => (a -> PushM t b) -> Event t a -> Event t b
 pushAlwaysCheap f = pushCheap (fmap Just . f)
 
+-- | A "cheap" version of 'mapMaybe'. See the performance note on 'pushCheap'.
+{-# INLINE mapMaybeCheap #-}
+mapMaybeCheap :: Reflex t => (a -> Maybe b) -> Event t a -> Event t b
+mapMaybeCheap f = pushCheap $ return . f
+
+-- | An alias for 'mapMaybeCheap'
 {-# INLINE fmapMaybeCheap #-}
 fmapMaybeCheap :: Reflex t => (a -> Maybe b) -> Event t a -> Event t b
-fmapMaybeCheap f = pushCheap $ return . f
+fmapMaybeCheap = mapMaybeCheap
 
+
+-- | A "cheap" version of 'fforMaybe'. See the performance note on 'pushCheap'.
 {-# INLINE fforMaybeCheap #-}
 fforMaybeCheap :: Reflex t => Event t a -> (a -> Maybe b) -> Event t b
-fforMaybeCheap = flip fmapMaybeCheap
+fforMaybeCheap = flip mapMaybeCheap
 
+-- | A "cheap" version of 'ffor'. See the performance note on 'pushCheap'.
 {-# INLINE fforCheap #-}
 fforCheap :: Reflex t => Event t a -> (a -> b) -> Event t b
 fforCheap = flip fmapCheap
 
+-- | A "cheap" version of 'fmap'. See the performance note on 'pushCheap'.
 {-# INLINE fmapCheap #-}
 fmapCheap :: Reflex t => (a -> b) -> Event t a -> Event t b
 fmapCheap f = pushCheap $ return . Just . f
 
+-- | A "cheap" version of 'tag'. See the performance note on 'pushCheap'.
 {-# INLINE tagCheap #-}
 tagCheap :: Reflex t => Behavior t b -> Event t a -> Event t b
 tagCheap b = pushAlwaysCheap $ \_ -> sample b
 
+-- | Merge a collection of events; the resulting 'Event' will only occur if at
+-- least one input event is occurring, and will contain all of the input keys
+-- that are occurring simultaneously
+merge :: (Reflex t, GCompare k) => DMap k (Event t) -> Event t (DMap k Identity)
+merge = mergeG coerceEvent
+{-# INLINE merge #-}
+
+-- | Create a merge whose parents can change over time
+mergeIncremental :: (Reflex t, GCompare k)
+  => Incremental t (PatchDMap k (Event t)) -> Event t (DMap k Identity)
+mergeIncremental = mergeIncrementalG coerceEvent
+
+-- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental
+mergeIncrementalWithMove :: (Reflex t, GCompare k)
+  => Incremental t (PatchDMapWithMove k (Event t)) -> Event t (DMap k Identity)
+mergeIncrementalWithMove = mergeIncrementalWithMoveG coerceEvent
+
+-- | A "cheap" version of 'mergeWithCheap'. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithCheap #-}
 mergeWithCheap :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
 mergeWithCheap = mergeWithCheap' id
 
+-- | A "cheap" version of 'mergeWithCheap''. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithCheap' #-}
 mergeWithCheap' :: Reflex t => (a -> b) -> (b -> b -> b) -> [Event t a] -> Event t b
 mergeWithCheap' f g = mergeWithFoldCheap' $ foldl1 g . fmap f
 
+-- | A "cheap" version of 'mergeWithFoldCheap''. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithFoldCheap' #-}
 mergeWithFoldCheap' :: Reflex t => (NonEmpty a -> b) -> [Event t a] -> Event t b
 mergeWithFoldCheap' f es =
@@ -1181,31 +1669,11 @@ mergeWithFoldCheap' f es =
 -- Deprecated functions
 --------------------------------------------------------------------------------
 
--- | Create a new 'Event' that occurs if at least one of the supplied 'Event's
--- occurs. If both occur at the same time they are combined using 'mappend'.
-{-# DEPRECATED appendEvents "If a 'Semigroup a' instance is available, use 'mappend'; otherwise, use 'alignWith (mergeThese mappend)' instead" #-}
-appendEvents :: (Reflex t, Monoid a) => Event t a -> Event t a -> Event t a
-appendEvents = alignWith $ mergeThese mappend
-
--- | Alias for 'headE'
-{-# DEPRECATED onceE "Use 'headE' instead" #-}
-onceE :: MonadHold t m => Event t a -> m (Event t a)
-onceE = headE
-
--- | Run both sides of a 'These' monadically, combining the results.
-{-# DEPRECATED sequenceThese "Use bisequenceA or bisequence from the bifunctors package instead" #-}
-#ifdef USE_TEMPLATE_HASKELL
-{-# ANN sequenceThese "HLint: ignore Use fmap" #-}
-#endif
-sequenceThese :: Monad m => These (m a) (m b) -> m (These a b)
-sequenceThese t = case t of
-  This ma -> fmap This ma
-  These ma mb -> liftM2 These ma mb
-  That mb -> fmap That mb
-
 {-# DEPRECATED switchPromptly "Use 'switchHoldPromptly' instead. The 'switchHold*' naming convention was chosen because those functions are more closely related to each other than they are to 'switch'. " #-}
+-- | See 'switchHoldPromptly'
 switchPromptly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptly = switchHoldPromptly
 {-# DEPRECATED switchPromptOnly "Use 'switchHoldPromptOnly' instead. The 'switchHold*' naming convention was chosen because those functions are more closely related to each other than they are to 'switch'. " #-}
+-- | See 'switchHoldPromptOnly'
 switchPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptOnly = switchHoldPromptOnly

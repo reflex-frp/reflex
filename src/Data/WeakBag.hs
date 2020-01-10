@@ -15,6 +15,7 @@ module Data.WeakBag
   , singleton
   , insert
   , traverse
+  , traverse_
   , remove
   -- * Internal functions
   -- These will not always be available.
@@ -31,8 +32,8 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
 import System.Mem.Weak
 
--- | A @WeakBag a@ holds a set of values of type @a@, but does not retain them -
--- that is, they can still be garbage-collected.  As long as the @a@s remain
+-- | A 'WeakBag' holds a set of values of type @/a/@, but does not retain them -
+-- that is, they can still be garbage-collected.  As long as the @/a/@ values remain
 -- alive, the 'WeakBag' will continue to refer to them.
 data WeakBag a = WeakBag
   { _weakBag_nextId :: {-# UNPACK #-} !(IORef Int) --TODO: what if this wraps around?
@@ -99,17 +100,21 @@ singleton a wbRef finalizer = {-# SCC "singleton" #-} do
   ticket <- insert a bag wbRef finalizer
   return (bag, ticket)
 
-{-# INLINE traverse #-}
+{-# INLINE traverse_ #-}
 -- | Visit every node in the given list.  If new nodes are appended during the
 -- traversal, they will not be visited.  Every live node that was in the list
 -- when the traversal began will be visited exactly once; however, no guarantee
 -- is made about the order of the traversal.
-traverse :: MonadIO m => WeakBag a -> (a -> m ()) -> m ()
-traverse (WeakBag _ children) f = {-# SCC "traverse" #-} do
+traverse_ :: MonadIO m => WeakBag a -> (a -> m ()) -> m ()
+traverse_ (WeakBag _ children) f = {-# SCC "traverse" #-} do
   cs <- liftIO $ readIORef children
   forM_ cs $ \c -> do
     ma <- liftIO $ deRefWeak c
     mapM_ f ma
+
+{-# DEPRECATED traverse "Use 'traverse_' instead" #-}
+traverse :: MonadIO m => WeakBag a -> (a -> m ()) -> m ()
+traverse = traverse_
 
 -- | Remove an item from the 'WeakBag'; does nothing if invoked multiple times
 -- on the same 'WeakBagTicket'.

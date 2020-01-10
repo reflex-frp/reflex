@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 -- | 'Patch'es on 'Map' that consist only of insertions (including overwrites)
@@ -18,8 +17,7 @@ import Data.Semigroup
 newtype PatchMap k v = PatchMap { unPatchMap :: Map k (Maybe v) }
   deriving (Show, Read, Eq, Ord)
 
--- | Applying a 'PatchMap' will update the 'Map' by performing the insertions
--- and deletions specified
+-- | Apply the insertions or deletions to a given 'Map'.
 instance Ord k => Patch (PatchMap k v) where
   type PatchTarget (PatchMap k v) = Map k v
   {-# INLINABLE apply #-}
@@ -36,14 +34,7 @@ instance Ord k => Patch (PatchMap k v) where
 instance Ord k => Semigroup (PatchMap k v) where
   PatchMap a <> PatchMap b = PatchMap $ a `mappend` b --TODO: Add a semigroup instance for Map
   -- PatchMap is idempotent, so stimes n is id for every n
-#if MIN_VERSION_semigroups(0,17,0)
   stimes = stimesIdempotentMonoid
-#else
-  times1p n x = case compare n 0 of
-    LT -> error "stimesIdempotentMonoid: negative multiplier"
-    EQ -> mempty
-    GT -> x
-#endif
 
 -- | The empty 'PatchMap' contains no insertions or deletions
 instance Ord k => Monoid (PatchMap k v) where

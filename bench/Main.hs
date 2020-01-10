@@ -20,6 +20,7 @@ import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.Functor.Misc
 import Data.IORef
+import Data.Maybe (fromJust)
 import Reflex
 import Reflex.Host.Class
 
@@ -70,7 +71,7 @@ micros =
   , withSetupWHNF "fireEventsOnly"
     (newEventWithTriggerRef >>= subscribePair)
     (\(_, trigger) -> do
-        Just key <- liftIO $ readIORef trigger
+        key <- fromJust <$> liftIO (readIORef trigger)
         fireEvents [key :=> Identity (42 :: Int)])
   , withSetupWHNF "fireEventsAndRead(head/merge1)"
     (setupMerge 1 >>= subscribePair)
@@ -84,14 +85,14 @@ micros =
   , withSetupWHNF "fireEventsOnly(head/merge100)"
     (setupMerge 100 >>= subscribePair)
     (\(_, t:_) -> do
-        Just key <- liftIO $ readIORef t
+        key <- fromJust <$> liftIO (readIORef t)
         fireEvents [key :=> Identity (42 :: Int)])
   , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev, _) -> hold (42 :: Int) ev
   , withSetupWHNF "sample" (newEventWithTriggerRef >>= hold (42 :: Int) . fst) sample
   ]
 
 setupMerge :: Int
-           -> SpiderHost Global ( Event (SpiderEnv Global) (DMap (Const2 Int a) Identity)
+           -> SpiderHost Global ( Event (SpiderTimeline Global) (DMap (Const2 Int a) Identity)
                                 , [IORef (Maybe (EventTrigger Spider a))]
                                 )
 setupMerge num = do
@@ -99,11 +100,11 @@ setupMerge num = do
   let !m = DMap.fromList [Const2 i :=> v | (i,v) <- zip [0..] evs]
   pure (merge m, triggers)
 
-subscribePair :: (Event (SpiderEnv Global) a, b) -> SpiderHost Global (EventHandle (SpiderEnv Global) a, b)
+subscribePair :: (Event (SpiderTimeline Global) a, b) -> SpiderHost Global (EventHandle (SpiderTimeline Global) a, b)
 subscribePair (ev, b) = (,b) <$> subscribeEvent ev
 
-fireAndRead :: IORef (Maybe (EventTrigger (SpiderEnv Global) a)) -> a -> EventHandle (SpiderEnv Global) b
+fireAndRead :: IORef (Maybe (EventTrigger (SpiderTimeline Global) a)) -> a -> EventHandle (SpiderTimeline Global) b
             -> SpiderHost Global (Maybe b)
 fireAndRead trigger val subd = do
-  Just key <- liftIO $ readIORef trigger
+  key <- fromJust <$> liftIO (readIORef trigger)
   fireEventsAndRead [key :=> Identity val] $ readEvent subd >>= sequence

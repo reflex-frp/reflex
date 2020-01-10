@@ -26,8 +26,8 @@ import Reflex.Class
 import Prelude
 
 class (Reflex t, MonadHold t m, MonadFix m) => TestPlan t m where
-  -- | Speicify a plan of an input Event firing
-  -- Occurances must be in the future (i.e. Time > 0)
+  -- | Specify a plan of an input Event firing
+  -- Occurrences must be in the future (i.e. Time > 0)
   -- Initial specification is
 
   plan :: [(Word, a)] -> m (Event t a)

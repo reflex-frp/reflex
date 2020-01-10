@@ -19,9 +19,9 @@ import Reflex.Patch.Class
 import Reflex.Patch.MapWithMove (PatchMapWithMove (..))
 import qualified Reflex.Patch.MapWithMove as MapWithMove
 
+import Data.Constraint.Extras
 import Data.Dependent.Map (DMap, DSum (..), GCompare (..))
 import qualified Data.Dependent.Map as DMap
-import Data.Dependent.Sum (EqTag (..))
 import Data.Functor.Constant
 import Data.Functor.Misc
 import Data.Functor.Product
@@ -30,8 +30,7 @@ import Data.GADT.Show (GShow, gshow)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.Semigroup (Semigroup (..), (<>))
-import Data.Some (Some)
-import qualified Data.Some as Some
+import Data.Some (Some(Some))
 import Data.These
 
 -- | Like 'PatchMapWithMove', but for 'DMap'. Each key carries a 'NodeInfo' which describes how it will be changed by the patch and connects move sources and
@@ -104,15 +103,12 @@ validationErrorsForPatchDMapWithMove m =
           Just $ "unbalanced move at source key " <> gshow src <> " supposedly going to " <> gshow dst <> " but destination key is not moving"
     unbalancedMove _ = Nothing
 
-instance EqTag k (NodeInfo k v) => Eq (PatchDMapWithMove k v) where
-  PatchDMapWithMove a == PatchDMapWithMove b = a == b
+-- |Test whether two @'PatchDMapWithMove' k v@ contain the same patch operations.
+instance (GEq k, Has' Eq k (NodeInfo k v)) => Eq (PatchDMapWithMove k v) where
+    PatchDMapWithMove a == PatchDMapWithMove b = a == b
 
 -- |Higher kinded 2-tuple, identical to @Data.Functor.Product@ from base ≥ 4.9
 data Pair1 f g a = Pair1 (f a) (g a)
-
--- |Compose patches having the same effect as applying the patches in turn: @'applyAlways' (p <> q) == 'applyAlways' p . 'applyAlways' q@
-instance GCompare k => Semigroup (PatchDMapWithMove k v) where
-  (<>) = mappend
 
 -- |Helper data structure used for composing patches using the monoid instance.
 data Fixup k v a
@@ -120,9 +116,8 @@ data Fixup k v a
    | Fixup_Update (These (From k v a) (To k a))
 
 -- |Compose patches having the same effect as applying the patches in turn: @'applyAlways' (p <> q) == 'applyAlways' p . 'applyAlways' q@
-instance GCompare k => Monoid (PatchDMapWithMove k v) where
-  mempty = PatchDMapWithMove mempty
-  PatchDMapWithMove ma `mappend` PatchDMapWithMove mb = PatchDMapWithMove m
+instance GCompare k => Semigroup (PatchDMapWithMove k v) where
+  PatchDMapWithMove ma <> PatchDMapWithMove mb = PatchDMapWithMove m
     where
       connections = DMap.toList $ DMap.intersectionWithKey (\_ a b -> Pair1 (_nodeInfo_to a) (_nodeInfo_from b)) ma mb
       h :: DSum k (Pair1 (ComposeMaybe k) (From k v)) -> [DSum k (Fixup k v)]
@@ -156,20 +151,21 @@ instance GCompare k => Monoid (PatchDMapWithMove k v) where
           , _nodeInfo_to = fromMaybe (_nodeInfo_to ni) $ getThere u
           }
       m = DMap.differenceWithKey applyFixup (DMap.unionWithKey combineNodeInfos ma mb) fixups
+      getHere :: These a b -> Maybe a
+      getHere = \case
+        This a -> Just a
+        These a _ -> Just a
+        That _ -> Nothing
+      getThere :: These a b -> Maybe b
+      getThere = \case
+        This _ -> Nothing
+        These _ b -> Just b
+        That b -> Just b
 
--- |Project the @a@ from a @'These' a b@, identical to @preview '_Here'@ but without using preview
-getHere :: These a b -> Maybe a
-getHere = \case
-  This a -> Just a
-  These a _ -> Just a
-  That _ -> Nothing
-
--- |Project the @b@ from a @'These' a b@, identical to @preview '_There'@ but without using preview
-getThere :: These a b -> Maybe b
-getThere = \case
-  This _ -> Nothing
-  These _ b -> Just b
-  That b -> Just b
+-- |Compose patches having the same effect as applying the patches in turn: @'applyAlways' (p <> q) == 'applyAlways' p . 'applyAlways' q@
+instance GCompare k => Monoid (PatchDMapWithMove k v) where
+  mempty = PatchDMapWithMove mempty
+  mappend = (<>)
 
 {-
 mappendPatchDMapWithMoveSlow :: forall k v. (ShowTag k v, GCompare k) => PatchDMapWithMove k v -> PatchDMapWithMove k v -> PatchDMapWithMove k v
@@ -314,8 +310,8 @@ weakenPatchDMapWithMoveWith f (PatchDMapWithMove p) = PatchMapWithMove $ weakenD
           { MapWithMove._nodeInfo_from = case _nodeInfo_from ni of
               From_Insert v -> MapWithMove.From_Insert $ f v
               From_Delete -> MapWithMove.From_Delete
-              From_Move k -> MapWithMove.From_Move $ Some.This k
-          , MapWithMove._nodeInfo_to = Some.This <$> getComposeMaybe (_nodeInfo_to ni)
+              From_Move k -> MapWithMove.From_Move $ Some k
+          , MapWithMove._nodeInfo_to = Some <$> getComposeMaybe (_nodeInfo_to ni)
           }
 
 -- |"Weaken" a @'PatchDMapWithMove' (Const2 k a) v@ to a @'PatchMapWithMove' k v'@. Weaken is in scare quotes because the 'Const2' has already disabled any
@@ -345,6 +341,7 @@ const2PatchDMapWithMoveWith f (PatchMapWithMove p) = PatchDMapWithMove $ DMap.fr
           , _nodeInfo_to = ComposeMaybe $ Const2 <$> MapWithMove._nodeInfo_to ni
           }
 
+-- | Apply the insertions, deletions, and moves to a given 'DMap'.
 instance GCompare k => Patch (PatchDMapWithMove k v) where
   type PatchTarget (PatchDMapWithMove k v) = DMap k v
   apply (PatchDMapWithMove p) old = Just $! insertions `DMap.union` (old `DMap.difference` deletions) --TODO: return Nothing sometimes --Note: the strict application here is critical to ensuring that incremental merges don't hold onto all their prerequisite events forever; can we make this more robust?
@@ -360,8 +357,7 @@ instance GCompare k => Patch (PatchDMapWithMove k v) where
             From_Delete -> Just $ Constant ()
             _ -> Nothing
 
--- | Get the values that will be deleted or moved if the given patch is applied
--- to the given 'DMap'.
+-- | Get the values that will be replaced, deleted, or moved if the given patch is applied to the given 'DMap'.
 getDeletionsAndMoves :: GCompare k => PatchDMapWithMove k v -> DMap k v' -> DMap k (Product v' (ComposeMaybe k))
 getDeletionsAndMoves (PatchDMapWithMove p) m = DMap.intersectionWithKey f m p
   where f _ v ni = Pair v $ _nodeInfo_to ni

@@ -1,14 +1,16 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 import Control.Lens
 import Control.Monad.Fix
 import Data.Align
-import Data.AppendMap () -- for the Align instance
 import qualified Data.AppendMap as AMap
 import Data.Functor.Misc
 import Data.Map (Map)
@@ -16,6 +18,10 @@ import qualified Data.Map as Map
 import Data.Map.Monoidal (MonoidalMap)
 import Data.Semigroup
 import Data.These
+
+#if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
+import Data.These.Lens
+#endif
 
 import Reflex
 import Reflex.Patch.MapWithMove
@@ -28,14 +34,18 @@ instance Query MyQuery where
   type QueryResult MyQuery = ()
   crop _ _ = ()
 
-instance (Ord k, Query a, Eq (QueryResult a)) => Query (Selector k a) where
+instance (Ord k, Query a, Eq (QueryResult a), Align (MonoidalMap k)) => Query (Selector k a) where
   type QueryResult (Selector k a) = Selector k (QueryResult a)
   crop q r = undefined
 
 newtype Selector k a = Selector { unSelector :: MonoidalMap k a }
   deriving (Show, Read, Eq, Ord, Functor)
 
-instance (Ord k, Eq a, Monoid a) => Semigroup (Selector k a) where
+#if !(MIN_VERSION_monoidal_containers(0,4,1))
+deriving instance Ord k => Align (MonoidalMap k)
+#endif
+
+instance (Ord k, Eq a, Monoid a, Align (MonoidalMap k)) => Semigroup (Selector k a) where
   (Selector a) <> (Selector b) = Selector $ fmapMaybe id $ f a b
     where
       f = alignWith $ \case
@@ -45,14 +55,14 @@ instance (Ord k, Eq a, Monoid a) => Semigroup (Selector k a) where
           let z = x `mappend` y
           in if z == mempty then Nothing else Just z
 
-instance (Ord k, Eq a, Monoid a) => Monoid (Selector k a) where
+instance (Ord k, Eq a, Monoid a, Align (MonoidalMap k)) => Monoid (Selector k a) where
   mempty = Selector AMap.empty
   mappend = (<>)
 
-instance (Eq a, Ord k, Group a) => Group (Selector k a) where
+instance (Eq a, Ord k, Group a, Align (MonoidalMap k)) => Group (Selector k a) where
   negateG = fmap negateG
 
-instance (Eq a, Ord k, Group a) => Additive (Selector k a)
+instance (Eq a, Ord k, Group a, Align (MonoidalMap k)) => Additive (Selector k a)
 
 main :: IO ()
 main = do
