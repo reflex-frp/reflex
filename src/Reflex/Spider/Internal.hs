@@ -219,11 +219,11 @@ subscribeAndRead = unEvent
 {-# INLINE [1] pushCheap #-}
 pushCheap :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 pushCheap !f e = Event $ \sub -> do
-  (subscription, occ) <- subscribeAndRead e $ debugSubscriber' "push"  (sub
+  (subscription, occ) <- subscribeAndRead e $ debugSubscriber' "push" $ sub
     { subscriberPropagate = \a -> do
         mb <- f a
         mapM_ (subscriberPropagate sub) mb
-    })
+    }
   occ' <- join <$> mapM f occ
   return (subscription, occ')
 
