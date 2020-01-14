@@ -10,6 +10,7 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -31,10 +32,12 @@ import Reflex.EventWriter.Class
 
 import Control.Applicative (liftA2)
 import Control.Monad.Exception
+import Control.Monad.Fail
 import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
+import Control.Monad.State
 import Data.Coerce
 import Data.Dependent.Map (DSum (..))
 import qualified Data.List.NonEmpty as NonEmpty
@@ -55,7 +58,15 @@ import Unsafe.Coerce
 
 import Debug.Trace
 
+import Data.Map (Map)
+import qualified Data.Map as Map
+import qualified Data.IntMap as IntMap
+import GHC.Exts (Any)
+
 data RequestData ps request = forall s. RequestData !(TagGen ps s) !(NonEmptyDeferred (RequestEnvelope s request))
+
+data RequestEnvelope s request = forall a. RequestEnvelope {-# UNPACK #-} !(Maybe (Tag s a)) !(request a)
+
 data ResponseData ps response = forall s. ResponseData !(TagGen ps s) !(TagMap s response)
 
 traverseRequesterData :: forall m request response. Applicative m => (forall a. request a -> m (response a)) -> RequestData (PrimState m) request -> m (ResponseData (PrimState m) response)
@@ -109,8 +120,6 @@ withRequesterInternalT f = do
   rec let RequesterInternalT a = (unsafeCoerce :: RequesterInternalT s t request response m (Event t (TagMap FakeRequesterStatePhantom response), a) -> RequesterInternalT FakeRequesterStatePhantom t request response m (Event t (TagMap FakeRequesterStatePhantom response), a)) $ f requests
       ((responses, result), requests) <- runEventWriterT $ runReaderT a (fanTag responses, tg)
   pure result
-
-data RequestEnvelope s request = forall a. RequestEnvelope {-# UNPACK #-} !(Maybe (Tag s a)) !(request a)
 
 -- This is because using forall ruins inlining
 data FakeRequesterStatePhantom
@@ -210,3 +219,159 @@ instance (Adjustable t m, MonadHold t m) => Adjustable t (RequesterT t request r
   traverseDMapWithKeyWithAdjust f dm0 dm' = RequesterT $ traverseDMapWithKeyWithAdjust (\k v -> unRequesterT $ f k v) dm0 dm'
   {-# INLINE traverseDMapWithKeyWithAdjustWithMove #-}
   traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = RequesterT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> unRequesterT $ f k v) dm0 dm'
+
+
+data Decoder rawResponse response ps =
+  forall a. Decoder (TagGen ps a) (rawResponse -> response a)
+
+-- | Matches incoming responses with previously-sent requests
+-- and uses the provided request "decoder" function to process
+-- incoming responses.
+matchResponsesWithRequests
+  :: forall t rawRequest rawResponse request response m.
+     ( MonadFix m
+     , MonadHold t m
+     , MonadFail m
+     , PrimMonad m
+     , Reflex t
+     )
+  => (forall a. request a -> (rawRequest, rawResponse -> response a))
+  -- ^ Given a request (from 'Requester'), produces the wire format of the
+  -- request and a function used to process the associated response
+  -> Event t (RequestData (PrimState m) request)
+  -- ^ The outgoing requests
+  -> Event t (Int, rawResponse)
+  -- ^ The incoming responses, tagged by an identifying key
+  -> m ( Event t (Map Int rawRequest)
+       , Event t (ResponseData (PrimState m) response)
+       )
+  -- ^ A map of outgoing wire-format requests and an event of responses keyed
+  -- by the 'RequesterData' key of the associated outgoing request
+matchResponsesWithRequests f send recv = mdo
+  waitingFor :: Incremental t (PatchMap Int (Decoder rawResponse response (PrimState m))) <- holdIncremental mempty $
+    leftmost [ fst <$> outgoing, snd <$> incoming ]
+  let outgoing = processOutgoing send
+      incoming = processIncoming waitingFor recv
+  return (snd <$> outgoing, fst <$> incoming)
+  where
+
+    -- Tags each outgoing request with an identifying integer key
+    -- and returns the next available key, a map of response decoders
+    -- for requests for which there are outstanding responses, and the
+    -- raw requests to be sent out.
+
+    {--
+
+    src/Reflex/Requester/Base/Internal.hs:271:53-67: error:
+    • Couldn't match type ‘a’ with ‘s’
+      ‘a’ is a rigid type variable bound by
+        a pattern with constructor:
+          :=> :: forall k (tag :: k -> *) (f :: k -> *) (a :: k).
+                 tag a -> f a -> DSum tag f,
+        in a lambda abstraction
+        at src/Reflex/Requester/Base/Internal.hs:269:98-104
+      ‘s’ is a rigid type variable bound by
+        a pattern with constructor:
+          RequestData :: forall ps (request :: * -> *) s.
+                         TagGen ps s
+                         -> NonEmptyDeferred (RequestEnvelope s request)
+                         -> RequestData ps request,
+        in a lambda abstraction
+        at src/Reflex/Requester/Base/Internal.hs:268:85-119
+      Expected type: rawResponse -> response s
+        Actual type: rawResponse -> response a
+    • In the second argument of ‘Decoder’, namely ‘responseDecoder’
+      In the expression: Decoder tagGen responseDecoder
+      In the expression:
+        (tagId k, rawRequest, Decoder tagGen responseDecoder)
+    • Relevant bindings include
+        responseDecoder :: rawResponse -> response a
+          (bound at src/Reflex/Requester/Base/Internal.hs:270:30)
+        v :: request a
+          (bound at src/Reflex/Requester/Base/Internal.hs:269:104)
+        k :: Tag s a
+          (bound at src/Reflex/Requester/Base/Internal.hs:269:98)
+        requestEnvelopes :: NonEmptyDeferred (RequestEnvelope s request)
+          (bound at src/Reflex/Requester/Base/Internal.hs:268:104)
+        tagGen :: TagGen (PrimState m) s
+          (bound at src/Reflex/Requester/Base/Internal.hs:268:97)
+    |
+271 |             in (tagId k, rawRequest, Decoder tagGen
+responseDecoder)
+    |
+^^^^^^^^^^^^^^^
+    --}
+    processOutgoing
+      :: Event t (RequestData (PrimState m) request)
+      -- The outgoing request
+      -> Event t ( PatchMap Int (Decoder rawResponse response (PrimState m))
+                 , Map Int rawRequest )
+      -- A map of requests expecting responses, and the tagged raw requests
+    processOutgoing eventOutgoingRequest = flip pushAlways eventOutgoingRequest $ \(RequestData tagGen requestEnvelopes) -> do
+      let results = ffor (requestEnvelopesToList $ NonEmptyDeferred.toList requestEnvelopes) $ \(k :=> v) ->
+            let (rawRequest, responseDecoder) = f v
+            in (tagId k, rawRequest, Decoder tagGen responseDecoder)
+      let patchWaitingFor = PatchMap $ Map.fromList $ (\(n, _, dec) -> (n, Just dec)) <$> results
+      let toSend = Map.fromList $ (\(n, rawRequest, _) -> (n, rawRequest)) <$> results
+      return (patchWaitingFor, toSend)
+
+    -- Looks up the each incoming raw response in a map of response
+    -- decoders and returns the decoded response and a patch that can
+    -- be used to clear the ID of the consumed response out of the queue
+    -- of expected responses.
+    processIncoming
+      :: Incremental t (PatchMap Int (Decoder rawResponse response (PrimState m)))
+      -- A map of outstanding expected responses
+      -> Event t (Int, rawResponse)
+      -- A incoming response paired with its identifying key
+      -> Event t (ResponseData (PrimState m) response, PatchMap Int v)
+      -- The decoded response and a patch that clears the outstanding responses queue
+    processIncoming incWaitingFor inc = flip push inc $ \(n, rawRsp) -> do
+      waitingFor <- sample $ currentIncremental incWaitingFor
+      case Map.lookup n waitingFor of
+        Nothing -> return Nothing -- TODO How should lookup failures be handled here? They shouldn't ever happen..
+        Just (Decoder tagGen responseDecoder) -> do
+          let rsp = responseDecoder rawRsp
+          return $ Just
+            ( singletonRequesterData @m tagGen (unsafeTagFromId n) rsp
+            , PatchMap $ Map.singleton n Nothing
+            )
+
+singletonRequesterData :: TagGen (PrimState m) a -> Tag (PrimState m) a -> response a -> ResponseData (PrimState m) response
+singletonRequesterData tagGen tag response =
+  ResponseData tagGen $ TagMap.singletonTagMap tag response
+
+{--
+  src/Reflex/Requester/Base/Internal.hs:304:40-78: error:
+      • Couldn't match type ‘s1’ with ‘s’
+        ‘s1’ is a rigid type variable bound by
+          a pattern with constructor:
+            RequestData :: forall ps (request :: * -> *) s.
+                          TagGen ps s
+                          -> NonEmptyDeferred (RequestEnvelope s request)
+                          -> RequestData ps request,
+          in an equation for ‘requesterDataToList’
+          at src/Reflex/Requester/Base/Internal.hs:303:22-50
+        ‘s’ is a rigid type variable bound by
+          the type signature for:
+            requesterDataToList :: forall (m :: * -> *) (request :: * ->
+  *) s.
+                                  RequestData (PrimState m) request ->
+  [DSum (Tag s) request]
+          at src/Reflex/Requester/Base/Internal.hs:302:1-102
+        Expected type: [RequestEnvelope s request]
+          Actual type: [RequestEnvelope s1 request]
+      • In the second argument of ‘($)’, namely
+          ‘NonEmptyDeferred.toList requestEnvelope’
+        In the expression:
+          requestEnvelopesToList @s @request
+            $ NonEmptyDeferred.toList requestEnvelope
+--}
+requesterDataToList :: forall m request s. RequestData (PrimState m) request -> [DSum (Tag s) request]
+requesterDataToList (RequestData _ requestEnvelope) =
+  requestEnvelopesToList @s @request $ NonEmptyDeferred.toList requestEnvelope
+
+requestEnvelopesToList :: forall s request. [RequestEnvelope s request] -> [DSum (Tag s) request]
+requestEnvelopesToList reqEnvs = f <$> reqEnvs
+  where f :: (RequestEnvelope s request)-> DSum (Tag s) request
+        f (RequestEnvelope (Just tag) v) = tag :=> v

@@ -20,6 +20,8 @@ import GHC.Exts (Int (..), Int#, MutVar#, unsafeCoerce#)
 
 import Unsafe.Coerce
 
+-- `x` is which generator it's from
+-- `a` is the type of the thing it's tagging
 newtype Tag x a = Tag Int
 
 tagId :: Tag x a -> Int

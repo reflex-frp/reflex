@@ -8,6 +8,7 @@ module Data.TagMap
   , fromList
   , insert
   , size
+  , singletonTagMap
   ) where
 
 import Data.IntMap (IntMap)
@@ -37,3 +38,6 @@ fromList = TagMap . IntMap.fromList . fmap (\(t :=> v) -> (tagId t, (unsafeCoerc
 
 size :: TagMap x v -> Int
 size = IntMap.size . unTagMap
+
+singletonTagMap :: forall ps k v a. Tag ps k -> v a -> TagMap k v
+singletonTagMap tag v = TagMap $ IntMap.singleton (tagId tag) $ (unsafeCoerce :: v a -> Any) v
