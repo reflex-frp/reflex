@@ -1,20 +1,42 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 module Main where
 
-import Control.Lens
+import Control.Lens hiding (has)
 import Control.Monad
 import Control.Monad.Fix
+import Control.Monad.IO.Class (MonadIO)
+import Data.Aeson (Value, FromJSON (..), ToJSON, Result(..), toJSON, fromJSON)
+import Data.Constraint.Extras
+import Data.Constraint.Extras.TH
+import Data.Constraint.Forall
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.Functor.Misc
+import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Some (Some (Some))
+import Data.Text (Text)
 import Data.These
+import Text.Read (readMaybe)
 
 #if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
 import Data.These.Lens
@@ -24,6 +46,8 @@ import Reflex
 import Reflex.Requester.Base
 import Reflex.Requester.Class
 import Test.Run
+
+import GHC.Generics
 
 data RequestInt a where
   RequestInt :: Int -> RequestInt Int
@@ -49,12 +73,15 @@ main = do
   print os5
   os6 <- runApp' (unwrapApp delayedPulse) [Just ()]
   print os6
+  os7 <- runApp' testMatchRequestsWithResponses $ map (Just . Identity) [ "hey" ]
+  print os7
   let ![[Just [1,2,3,4,5,6,7,8,9,10]]] = os1 -- The order is reversed here: see the documentation for 'runRequesterT'
   let ![[Just [9,7,5,3,1]],[Nothing,Nothing],[Just [10,8,6,4,2]],[Just [10,8,6,4,2],Nothing]] = os2
   let ![[Nothing, Just [2]]] = os3
   let ![[Nothing, Just [2]]] = os4
   let ![[Nothing, Just [1, 2]]] = os5
   -- let ![[Nothing, Nothing]] = os6 -- TODO re-enable this test after issue #233 has been resolved
+
   return ()
 
 unwrapRequest :: DSum tag RequestInt -> Int
@@ -172,3 +199,49 @@ delayedPulse pulse = void $ flip runWithReplace (pure () <$ pulse) $ do
     -- This has the effect of delaying pulse' from pulse
     (_, pulse') <- runWithReplace (pure ()) $ pure (RequestInt 1) <$ pulse
     requestingIdentity pulse'
+
+{--
+
+
+matchResponsesWithRequestsSource#
+  :: (MonadFix m, MonadHold t m, Reflex t)
+  => (forall a. request a -> (rawRequest, rawResponse -> response a))
+  Given a request (from Requester), produces the wire format of the request and a function used to process the associated response
+  -> Event t (RequesterData request)
+  The outgoing requests
+  -> Event t (Int, rawResponse)
+  The incoming responses, tagged by an identifying key
+  -> m (Event t (Map Int rawRequest), Event t (RequesterData response))
+  A map of outgoing wire-format requests and an event of responses keyed by the RequesterData key of the associated outgoing request
+
+Matches incoming responses with previously-sent requests and uses the provided request "decoder" function to process incoming responses.
+
+--}
+
+testMatchRequestsWithResponses
+  :: forall m t request a
+   . ( MonadFix m
+     , MonadHold t m
+     , Reflex t
+     , PerformEvent t m
+     , TriggerEvent t m
+     , MonadIO (Performable m)
+     , ForallF Show Identity
+     , Has Read Identity
+     )
+  => Event t (Identity Text) -> m (Event t ())
+testMatchRequestsWithResponses pulse = mdo
+  (_, requests) <- runRequesterT (requesting pulse) responses
+  let rawResponses = rawRequestMap
+  (rawRequestMap, responses) <- matchResponsesWithRequests reqEncoder requests (head . M.toList <$> rawResponses)
+  pure never
+  where
+    reqEncoder :: forall a. Identity a -> (String, String -> Maybe a)
+    reqEncoder r =
+      ( whichever @Show @Identity @a $ show r
+      , \x -> has @Read r $ readMaybe x
+      )
+
+
+deriving instance TriggerEvent (SpiderTimeline Global) (PerformEventT (SpiderTimeline Global) (SpiderHost Global))
+
