@@ -43,7 +43,7 @@ diffMap olds news = flip Map.mapMaybe (align olds news) $ \case
 
 -- |Given a @'Map' k (Maybe v)@ representing keys to insert/update (@Just@) or delete (@Nothing@), produce a new map from the given input @'Map' k v@.
 --
--- See also 'Reflex.Patch.Map' and 'Reflex.Patch.MapWithMove'.
+-- See also 'Data.Patch.Map' and 'Data.Patch.MapWithMove'.
 applyMap :: Ord k => Map k (Maybe v) -> Map k v -> Map k v
 applyMap patch old = insertions `Map.union` (old `Map.difference` deletions)
   where (deletions, insertions) = Map.mapEither maybeToEither patch

@@ -2,7 +2,14 @@
 
 ## Unreleased
 
+* Support GHC 8.8
+
 * Add `Reflex.Query.Base.mapQueryT`. See that module for documentation
+
+* The `Reflex.Patch.*` modules were moved to the `patch` library.
+  They are `Data.Patch.*` there, but reexported under their old names for backwards compatability here.
+
+* Additional instances for `Query` classes for basic types.
 
 ## 0.6.3
 
