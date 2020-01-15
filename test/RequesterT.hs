@@ -1,19 +1,12 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -23,7 +16,6 @@ import Control.Lens hiding (has)
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.IO.Class (MonadIO)
-import Data.Aeson (Value, FromJSON (..), ToJSON, Result(..), toJSON, fromJSON)
 import Data.Constraint.Extras
 import Data.Constraint.Extras.TH
 import Data.Constraint.Forall
@@ -33,11 +25,9 @@ import Data.Functor.Misc
 import Data.List (words)
 import Data.Map (Map)
 import qualified Data.Map as M
-import Data.Some (Some (Some))
 import Data.Text (Text)
 import Data.These
 import Text.Read (readMaybe)
-import Control.Monad.Trans.Class (lift)
 
 #if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
 import Data.These.Lens
@@ -47,8 +37,6 @@ import Reflex
 import Reflex.Requester.Base
 import Reflex.Requester.Class
 import Test.Run
-
-import GHC.Generics
 
 data RequestInt a where
   RequestInt :: Int -> RequestInt Int
