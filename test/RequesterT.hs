@@ -14,7 +14,6 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -31,12 +30,14 @@ import Data.Constraint.Forall
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.Functor.Misc
+import Data.List (words)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Some (Some (Some))
 import Data.Text (Text)
 import Data.These
 import Text.Read (readMaybe)
+import Control.Monad.Trans.Class (lift)
 
 #if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
 import Data.These.Lens
@@ -73,14 +74,18 @@ main = do
   print os5
   os6 <- runApp' (unwrapApp delayedPulse) [Just ()]
   print os6
-  os7 <- runApp' testMatchRequestsWithResponses $ map (Just . Identity) [ "hey" ]
+  os7 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Increment 1 ]
   print os7
+  os8 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Reverse "yoyo" ]
+  print os8
   let ![[Just [1,2,3,4,5,6,7,8,9,10]]] = os1 -- The order is reversed here: see the documentation for 'runRequesterT'
   let ![[Just [9,7,5,3,1]],[Nothing,Nothing],[Just [10,8,6,4,2]],[Just [10,8,6,4,2],Nothing]] = os2
   let ![[Nothing, Just [2]]] = os3
   let ![[Nothing, Just [2]]] = os4
   let ![[Nothing, Just [1, 2]]] = os5
   -- let ![[Nothing, Nothing]] = os6 -- TODO re-enable this test after issue #233 has been resolved
+  let !(Just [(1,"2")]) = M.toList <$> head (head os7)
+  let !(Just [(1,"oyoy")]) = M.toList <$> head (head os8)
 
   return ()
 
@@ -200,48 +205,40 @@ delayedPulse pulse = void $ flip runWithReplace (pure () <$ pulse) $ do
     (_, pulse') <- runWithReplace (pure ()) $ pure (RequestInt 1) <$ pulse
     requestingIdentity pulse'
 
-{--
-
-
-matchResponsesWithRequestsSource#
-  :: (MonadFix m, MonadHold t m, Reflex t)
-  => (forall a. request a -> (rawRequest, rawResponse -> response a))
-  Given a request (from Requester), produces the wire format of the request and a function used to process the associated response
-  -> Event t (RequesterData request)
-  The outgoing requests
-  -> Event t (Int, rawResponse)
-  The incoming responses, tagged by an identifying key
-  -> m (Event t (Map Int rawRequest), Event t (RequesterData response))
-  A map of outgoing wire-format requests and an event of responses keyed by the RequesterData key of the associated outgoing request
-
-Matches incoming responses with previously-sent requests and uses the provided request "decoder" function to process incoming responses.
-
---}
+data TestRequest a where
+  TestRequest_Reverse :: String -> TestRequest String
+  TestRequest_Increment :: Int -> TestRequest Int
 
 testMatchRequestsWithResponses
-  :: forall m t request a
+  :: forall m t req a
    . ( MonadFix m
      , MonadHold t m
      , Reflex t
      , PerformEvent t m
-     , TriggerEvent t m
      , MonadIO (Performable m)
-     , ForallF Show Identity
-     , Has Read Identity
+     , ForallF Show req
+     , Has Read req
      )
-  => Event t (Identity Text) -> m (Event t ())
+  => Event t (req a) -> m (Event t (Map Int String))
 testMatchRequestsWithResponses pulse = mdo
   (_, requests) <- runRequesterT (requesting pulse) responses
-  let rawResponses = rawRequestMap
+  let rawResponses = M.map (\v ->
+        case words v of
+          ["reverse", str] -> reverse str
+          ["increment", i] -> show $ succ $ (read i :: Int)
+        ) <$> rawRequestMap
   (rawRequestMap, responses) <- matchResponsesWithRequests reqEncoder requests (head . M.toList <$> rawResponses)
-  pure never
+  pure rawResponses
   where
-    reqEncoder :: forall a. Identity a -> (String, String -> Maybe a)
+    reqEncoder :: forall a. req a -> (String, String -> Maybe a)
     reqEncoder r =
-      ( whichever @Show @Identity @a $ show r
+      ( whichever @Show @req @a $ show r
       , \x -> has @Read r $ readMaybe x
       )
 
+deriveArgDict ''TestRequest
 
-deriving instance TriggerEvent (SpiderTimeline Global) (PerformEventT (SpiderTimeline Global) (SpiderHost Global))
-
+instance Show (TestRequest a) where
+  show = \case
+    TestRequest_Reverse str -> "reverse " <> str
+    TestRequest_Increment i -> "increment " <> show i
