@@ -1453,8 +1453,11 @@ showStacks :: [[String]] -> String
 showStacks = drawForest . listsToForest . fmap (filterStack "Reflex.Spider.Internal")
 
 filterStack :: String -> [String] -> [String]
+#ifdef DEBUG_HIDE_INTERNALS
 filterStack prefix = filter (not . (prefix `isPrefixOf`))
-
+#else
+filterStack prefix = id
+#endif
 
 #ifdef DEBUG_CYCLES
 
