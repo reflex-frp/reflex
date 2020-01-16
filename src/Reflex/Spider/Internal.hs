@@ -114,7 +114,13 @@ import Reflex.PerformEvent.Base (PerformEventT)
 import qualified Data.ByteString.Char8 as BS8
 import System.IO (stderr)
 import Data.List (isPrefixOf)
+#endif
 
+-- TODO stdout might not be the best channel for debug output
+debugStrLn :: String -> IO ()
+debugStrLn = putStrLn
+
+#ifdef DEBUG_TRACE_EVENTS
 withStackOneLine :: (BS8.ByteString -> a) -> a
 withStackOneLine expr = unsafePerformIO $ do
   stack <- currentCallStack
@@ -1299,7 +1305,7 @@ mkWeakPtrWithDebug x debugNote = do
   x' <- evaluate x
   mkWeakPtr x' $
     if debugFinalize
-    then Just $ putStrLn $ "finalizing: " ++ debugNote
+    then Just $ debugStrLn $ "finalizing: " ++ debugNote
     else Nothing
 
 type WeakList a = [Weak a]
@@ -1321,13 +1327,13 @@ debugSubscriber' description subscribed = Subscriber
       tracePropagate (Proxy :: Proxy x) ("subscriberPropagate: " <> description)
       subscriberPropagate subscribed m
   , subscriberInvalidateHeight = \old -> do
-      putStrLn $ "invalidateSubscriberHeight: " <> description <> ", old = " <> show (unHeight old)
+      traceInvalidateHeight $ "invalidateSubscriberHeight: " <> description <> ", old = " <> show (unHeight old)
       subscriberInvalidateHeight subscribed old
-      putStrLn $ "invalidateSubscriberHeight: " <> description <> ", done"
+      traceInvalidateHeight $ "invalidateSubscriberHeight: " <> description <> ", done"
   , subscriberRecalculateHeight = \new -> do
-      putStrLn $ "subscriberRecalculateHeight: " <> description <> ", new = " <> show (unHeight new)
+      traceInvalidateHeight $ "subscriberRecalculateHeight: " <> description <> ", new = " <> show (unHeight new)
       subscriberRecalculateHeight subscribed new
-      putStrLn $ "subscriberRecalculateHeight: " <> description <> ", done"
+      traceInvalidateHeight $ "subscriberRecalculateHeight: " <> description <> ", done"
   }
 
 
@@ -1341,11 +1347,15 @@ withIncreasedDepth _ a = do
 
 {-# INLINE tracePropagate #-}
 tracePropagate :: (CanTrace x m) => proxy x -> String -> m ()
-tracePropagate p = trace p
+tracePropagate p = when debugPropagate . trace p
 
 {-# INLINE traceInvalidate #-}
 traceInvalidate :: String -> IO ()
-traceInvalidate = liftIO . putStrLn
+traceInvalidate = liftIO . debugStrLn
+
+{-# INLINE traceInvalidateHeight #-}
+traceInvalidateHeight :: String -> IO ()
+traceInvalidateHeight = liftIO . debugStrLn
 
 {-# INLINE trace #-}
 trace :: (CanTrace x m) => proxy x ->  String -> m ()
@@ -1356,7 +1366,7 @@ traceM :: forall x proxy m. (CanTrace x m) => proxy x -> m String -> m ()
 traceM _ getMessage = do
   message <- getMessage
   d <- liftIO $ readIORef $ _spiderTimeline_depth $ unSTE (spiderTimeline :: SpiderTimelineEnv x)
-  liftIO $ putStrLn $ replicate d ' ' <> message
+  liftIO $ debugStrLn $ replicate d ' ' <> message
 
 #else
 
@@ -1371,6 +1381,10 @@ tracePropagate _ _ = return ()
 {-# INLINE traceInvalidate #-}
 traceInvalidate :: String -> IO ()
 traceInvalidate _ = return ()
+
+{-# INLINE traceInvalidateHeight #-}
+traceInvalidateHeight :: String -> IO ()
+traceInvalidateHeight _ = return ()
 
 {-# INLINE debugSubscriber #-}
 debugSubscriber :: String -> Subscriber x a -> IO (Subscriber x a)
@@ -2327,7 +2341,7 @@ runFrame a = SpiderHost $ do
     subscription <- unSpiderHost $ runFrame $ {-# SCC "subscribeSwitch" #-} subscribe e sub --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
     {-
     stackTrace <- liftIO $ fmap renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
-    liftIO $ putStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
+    liftIO $ debugStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
       EventRoot _ -> "EventRoot"
       EventNever -> "EventNever"
       _ -> "something else"
