@@ -82,6 +82,8 @@ main = do
   print os7
   os8 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Reverse "abcd" ]
   print os8
+  os9 <- runApp' testMoribundPerformEvent $ map Just [ 1 .. 3 ]
+  print os9
   let ![[Just [10,9,8,7,6,5,4,3,2,1]]] = os1
   let ![[Just [1,3,5,7,9]],[Nothing,Nothing],[Just [2,4,6,8,10]],[Just [2,4,6,8,10],Nothing]] = os2
   let ![[Nothing, Just [2]]] = os3
@@ -90,6 +92,7 @@ main = do
   let ![[Nothing, Nothing]] = os6 -- TODO re-enable this test after issue #233 has been resolved
   let !(Just [(-9223372036854775808,"2")]) = M.toList <$> head (head os7)
   let !(Just [(-9223372036854775808,"dcba")]) = M.toList <$> head (head os8)
+  let ![[Nothing,Just "0:1"],[Nothing,Just "1:2"],[Nothing,Just "2:3"]] = os9
   return ()
 
 unwrapApp :: forall t m a.
@@ -215,6 +218,11 @@ data TestRequest a where
   TestRequest_Reverse :: String -> TestRequest String
   TestRequest_Increment :: Int -> TestRequest Int
 
+instance Show (TestRequest a) where
+  show = \case
+    TestRequest_Reverse str -> "reverse " <> str
+    TestRequest_Increment i -> "increment " <> show i
+
 testMatchRequestsWithResponses
   :: forall m t req a
    . ( MonadFix m
@@ -246,9 +254,35 @@ testMatchRequestsWithResponses pulse = mdo
       , \x -> has @Read r $ readMaybe x
       )
 
-deriveArgDict ''TestRequest
+-- If a widget is destroyed, and simultaneously it tries to use performEvent, the event does not get performed.
+-- TODO Determine whether this is actually the behavior we want.
+testMoribundPerformEvent
+  :: forall t m
+   . ( Adjustable t m
+     , PerformEvent t m
+     , MonadHold t m
+     , Reflex t
+     )
+  => Event t Int -> m (Event t String)
+testMoribundPerformEvent pulse = do
+  (outputInitial, outputReplaced) <- runWithReplace (performPrint 0 pulse) $ ffor pulse $ \i -> performPrint i pulse
+  switchHold outputInitial outputReplaced
+  where
+    performPrint i evt =
+      performEvent $ ffor evt $ \output ->
+        return $ show i <> ":" <> show output
 
+<<<<<<< HEAD
 instance Show (TestRequest a) where
   show = \case
     TestRequest_Reverse str -> "reverse " <> str
     TestRequest_Increment i -> "increment " <> show i
+||||||| merged common ancestors
+instance Show (TestRequest a) where
+  show = \case
+    TestRequest_Reverse str -> "reverse " <> str
+    TestRequest_Increment i -> "increment " <> show i
+=======
+
+deriveArgDict ''TestRequest
+>>>>>>> test case for performEvent
