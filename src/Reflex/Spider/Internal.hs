@@ -38,7 +38,6 @@ import Control.Monad hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Exception
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Primitive
---import Control.Monad.Reader hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
 import Control.Monad.ReaderIO
