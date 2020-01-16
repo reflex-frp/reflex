@@ -231,7 +231,6 @@ matchResponsesWithRequests
   :: forall t rawRequest rawResponse request response m.
      ( MonadFix m
      , MonadHold t m
-     , MonadFail m
      , PrimMonad m
      , Reflex t
      )
@@ -265,8 +264,8 @@ matchResponsesWithRequests f send recv = withTagGen $ \tagGen ->  mdo
       -> Event t ( PatchMap Int (Decoder rawResponse response)
                  , Map Int rawRequest )
       -- A map of requests expecting responses, and the tagged raw requests
-    processOutgoing eventOutgoingRequest = flip pushAlways eventOutgoingRequest $ \(RequestData tagGen requestEnvelopes) -> do
-      let results = ffor (requestEnvelopesToList $ NonEmptyDeferred.toList requestEnvelopes) $ \(k :=> v) ->
+    processOutgoing eventOutgoingRequest = flip pushAlways eventOutgoingRequest $ \(RequestData _ requestEnvelopes) -> do
+      let results = ffor (requestEnvelopesToList requestEnvelopes) $ \(k :=> v) ->
             let (rawRequest, responseDecoder) = f v
             in (tagId k, rawRequest, Decoder k responseDecoder)
       let patchWaitingFor = PatchMap $ Map.fromList $ (\(n, _, dec) -> (n, Just dec)) <$> results
@@ -279,8 +278,9 @@ matchResponsesWithRequests f send recv = withTagGen $ \tagGen ->  mdo
     -- of expected responses.
     processIncoming
       :: Incremental t (PatchMap Int (Decoder rawResponse response))
-      -> TagGen (PrimState m) s
       -- A map of outstanding expected responses
+      -> TagGen (PrimState m) s
+      -- A tag generator
       -> Event t (Int, rawResponse)
       -- A incoming response paired with its identifying key
       -> Event t (ResponseData (PrimState m) response, PatchMap Int v)
@@ -291,11 +291,20 @@ matchResponsesWithRequests f send recv = withTagGen $ \tagGen ->  mdo
         Nothing -> return Nothing -- TODO How should lookup failures be handled here? They shouldn't ever happen..
         Just (Decoder tag responseDecoder) ->
           return $ Just
-            ( ResponseData tagGen $ TagMap.singletonTagMap (unsafeTagFromId n) (responseDecoder rawRsp)
+            ( singletonResponseData tagGen (unsafeTagFromId n) (responseDecoder rawRsp)
             , PatchMap $ Map.singleton n Nothing
             )
 
-requestEnvelopesToList :: forall s request. [RequestEnvelope s request] -> [DSum (Tag s) request]
-requestEnvelopesToList reqEnvs = f <$> reqEnvs
-  where f :: (RequestEnvelope s request) -> DSum (Tag s) request
-        f (RequestEnvelope (Just tag) v) = tag :=> v
+requestEnvelopesToList :: forall s request. NonEmptyDeferred (RequestEnvelope s request) -> [DSum (Tag s) request]
+requestEnvelopesToList requestEnvelopes = catMaybes $ f <$> NonEmptyDeferred.toList requestEnvelopes
+  where f :: (RequestEnvelope s request) -> Maybe (DSum (Tag s) request)
+        f (RequestEnvelope (Just tag) v) = Just (tag :=> v)
+        f (RequestEnvelope Nothing _) = Nothing
+
+singletonRequestData :: TagGen ps s -> Maybe (Tag s a) -> request a -> RequestData ps request
+singletonRequestData tagGen maybeTag request =
+  RequestData tagGen $ NonEmptyDeferred.singleton $ RequestEnvelope maybeTag request
+
+singletonResponseData :: TagGen ps s -> Tag ps s -> response a -> ResponseData ps response
+singletonResponseData tagGen tag response =
+  ResponseData tagGen $ TagMap.singletonTagMap tag response
