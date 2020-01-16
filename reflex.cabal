@@ -161,7 +161,7 @@ library
     exposed-modules: Reflex.Optimizer
 
   if flag(debug-propagation)
-    cpp-options: -DDEBUG
+    cpp-options: -DDEBUG -DDEBUG_TRACE_PROPAGATION -DDEBUG_TRACE_INVALIDATION
 
   if flag(debug-cycles)
     cpp-options: -DDEBUG_CYCLES

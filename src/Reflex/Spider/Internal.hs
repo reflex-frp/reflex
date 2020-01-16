@@ -129,8 +129,32 @@ withStackOneLine expr = unsafePerformIO $ do
 
 #endif
 
+debugPropagate :: Bool
+
+debugInvalidateHeight :: Bool
+
+debugInvalidate :: Bool
+
 #ifdef DEBUG
 #define DEBUG_NODEIDS
+
+#ifdef DEBUG_TRACE_PROPAGATION
+debugPropagate = True
+#else
+debugPropagate = False
+#endif
+
+#ifdef DEBUG_TRACE_HEIGHT
+debugInvalidateHeight = True
+#else
+debugInvalidateHeight = False
+#endif
+
+#ifdef DEBUG_TRACE_INVALIDATION
+debugInvalidate = True
+#else
+debugInvalidate = False
+#endif
 
 class HasNodeId a where
   getNodeId :: a -> Int
@@ -168,6 +192,10 @@ showNodeId' = ("#"<>) . show
 
 
 #else
+
+debugPropagate = False
+debugInvalidateHeight = False
+debugInvalidate = False
 
 -- This must be inline, or error messages will cause memory leaks due to retaining the node in question
 {-# INLINE showNodeId #-}
@@ -1351,11 +1379,11 @@ tracePropagate p = when debugPropagate . trace p
 
 {-# INLINE traceInvalidate #-}
 traceInvalidate :: String -> IO ()
-traceInvalidate = liftIO . debugStrLn
+traceInvalidate = when debugInvalidate . liftIO . debugStrLn
 
 {-# INLINE traceInvalidateHeight #-}
 traceInvalidateHeight :: String -> IO ()
-traceInvalidateHeight = liftIO . debugStrLn
+traceInvalidateHeight = when debugInvalidateHeight . liftIO . debugStrLn
 
 {-# INLINE trace #-}
 trace :: (CanTrace x m) => proxy x ->  String -> m ()
@@ -1454,7 +1482,7 @@ instance Show EventLoopException where
 {-# INLINE propagateSubscriberHold #-}
 propagateSubscriberHold :: forall x p. (HasSpiderTimeline x, Patch p) => Hold x p -> p -> EventM x ()
 propagateSubscriberHold h a = do
-  traceM (Proxy :: Proxy x) $ liftIO $ do
+  {-# SCC "trace" #-} when debugPropagate $ traceM (Proxy :: Proxy x) $ liftIO $ do
     invalidators <- liftIO $ readIORef $ holdInvalidators h
     return $ "SubscriberHold" <> showNodeId h <> ": " ++ show (length invalidators)
 
@@ -1462,7 +1490,7 @@ propagateSubscriberHold h a = do
   case {-# SCC "apply" #-} apply a v of
     Nothing -> return ()
     Just v' -> do
-      withIncreasedDepth (Proxy :: Proxy x) $
+      {-# SCC "trace2" #-} withIncreasedDepth (Proxy :: Proxy x) $
         tracePropagate (Proxy :: Proxy x) ("propagateSubscriberHold: assigning Hold" <> showNodeId h)
       vRef <- {-# SCC "vRef" #-} liftIO $ evaluate $ holdValue h
       iRef <- {-# SCC "iRef" #-} liftIO $ evaluate $ holdInvalidators h
@@ -1994,7 +2022,7 @@ revalidateMergeHeight m = do
       LT -> return ()
       EQ -> do
         let height = succHeight $ heightBagMax heights
-        traceInvalidate $ "recalculateSubscriberHeight: height: " <> show height
+        traceInvalidateHeight $ "recalculateSubscriberHeight: height: " <> show height
         writeIORef (_merge_heightRef m) $! height
         subscriberRecalculateHeight (_merge_sub m) height
       GT -> error $ "revalidateMergeHeight: more heights (" <> show (heightBagSize heights) <> ") than parents (" <> show (DMap.size parents) <> ") for Merge"
@@ -2158,7 +2186,7 @@ mergeIntCheap d = Event $ \sub -> do
             LT -> return ()
             EQ -> do
               let height = succHeight $ heightBagMax heights
-              traceInvalidate $ "recalculateSubscriberHeight: height: " <> show height
+              traceInvalidateHeight $ "recalculateSubscriberHeight: height: " <> show height
               writeIORef heightRef $! height
               subscriberRecalculateHeight sub height
             GT -> error $ "revalidateMergeHeight: more heights (" <> show (heightBagSize heights) <> ") than parents (" <> show numParents <> ") for Merge"
