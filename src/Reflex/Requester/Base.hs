@@ -11,7 +11,7 @@ module Reflex.Requester.Base
 --  , RequesterDataKey
   , traverseRequesterData
   , forRequesterData
-  , requestEnvelopesToList
+  , requestEnvelopesToDSums
   , singletonRequestData
   , singletonResponseData
   , matchResponsesWithRequests

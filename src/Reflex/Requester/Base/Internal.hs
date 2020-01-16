@@ -265,7 +265,7 @@ matchResponsesWithRequests f send recv = withTagGen $ \tagGen ->  mdo
                  , Map Int rawRequest )
       -- A map of requests expecting responses, and the tagged raw requests
     processOutgoing eventOutgoingRequest = flip pushAlways eventOutgoingRequest $ \(RequestData _ requestEnvelopes) -> do
-      let results = ffor (requestEnvelopesToList requestEnvelopes) $ \(k :=> v) ->
+      let results = ffor (requestEnvelopesToDSums requestEnvelopes) $ \(k :=> v) ->
             let (rawRequest, responseDecoder) = f v
             in (tagId k, rawRequest, Decoder k responseDecoder)
       let patchWaitingFor = PatchMap $ Map.fromList $ (\(n, _, dec) -> (n, Just dec)) <$> results
@@ -295,8 +295,8 @@ matchResponsesWithRequests f send recv = withTagGen $ \tagGen ->  mdo
             , PatchMap $ Map.singleton n Nothing
             )
 
-requestEnvelopesToList :: forall s request. NonEmptyDeferred (RequestEnvelope s request) -> [DSum (Tag s) request]
-requestEnvelopesToList requestEnvelopes = catMaybes $ f <$> NonEmptyDeferred.toList requestEnvelopes
+requestEnvelopesToDSums :: forall s request. NonEmptyDeferred (RequestEnvelope s request) -> [DSum (Tag s) request]
+requestEnvelopesToDSums requestEnvelopes = catMaybes $ f <$> NonEmptyDeferred.toList requestEnvelopes
   where f :: (RequestEnvelope s request) -> Maybe (DSum (Tag s) request)
         f (RequestEnvelope (Just tag) v) = Just (tag :=> v)
         f (RequestEnvelope Nothing _) = Nothing
