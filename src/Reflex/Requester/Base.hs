@@ -11,9 +11,10 @@ module Reflex.Requester.Base
 --  , RequesterDataKey
   , traverseRequesterData
   , forRequesterData
---  , requesterDataToList
---  , singletonRequesterData
---  , matchResponsesWithRequests
+  , requestEnvelopesToList
+  , singletonRequestData
+  , singletonResponseData
+  , matchResponsesWithRequests
 --  , multiEntry
 --  , unMultiEntry
 --  , requesting'
