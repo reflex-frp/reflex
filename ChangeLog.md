@@ -22,6 +22,25 @@
 * Add cabal flags `debug-propagation` and `debug-event-cycles` to build in debugging
   code for performance and for cyclic dependencies between events
 
+* Refactor of `Reflex.Requester`:
+    * Updated:
+        * `RequesterData` to `RequestData`, `RequesterEnvelope`, and `ResponseData`
+        * `singletonRequesterData` to `singletonRequestData` and `singletonResponseData`
+        * `requesterDataToList` to `requestEnvelopesToDSums`
+    * Removed:
+        * `RequesterDataKey`
+        * `multiEntry`
+        * `unMultiEntry`
+        * `withRequesterT`
+        * `runWithReplaceRequesterTWith`
+        * `requesting'`
+        * `traverseIntMapWithKeyWithAdjustRequesterTWith`
+        * `traverseDMapWithKeyWithAdjustRequesterTWith`
+
+* Added `Data.List.Deferred` and `Data.List.NonEmpty.Deferred` for optimizing `<>` operations.
+
+* Added `Data.TagMap`, `Reflex.FanTag`, and `Data.Unique.Tag.Local` to improve request and response tagging.
+
 ## 0.6.3
 
 * `Data.WeakBag.traverse` and `Data.FastWeakBag.traverse` have been deprecated.
