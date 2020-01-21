@@ -41,6 +41,16 @@ flag fast-weak
   default: False
   manual: True
 
+flag debug-propagation
+  description: Enable debugging of spider internals
+  default: False
+  manual: True
+
+flag debug-cycles
+  description: Enable debugging of event cycles
+  default: False
+  manual: True
+
 flag split-these
   description: Use split these/semialign packages
   manual:      False
@@ -150,6 +160,12 @@ library
     build-depends: ghc
     exposed-modules: Reflex.Optimizer
 
+  if flag(debug-propagation)
+    cpp-options: -DDEBUG -DDEBUG_TRACE_PROPAGATION -DDEBUG_TRACE_INVALIDATION
+
+  if flag(debug-cycles)
+    cpp-options: -DDEBUG_CYCLES
+
   if flag(use-template-haskell)
     cpp-options: -DUSE_TEMPLATE_HASKELL
     build-depends:
@@ -252,10 +268,35 @@ test-suite EventWriterT
     build-depends: these-lens
 
   other-modules:
-    Reflex.Test
-    Reflex.TestPlan
-    Reflex.Plan.Reflex
-    Reflex.Plan.Pure
+    Test.Run
+
+
+test-suite DebugCycles
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: DebugCycles.hs
+  hs-source-dirs: test
+  ghc-options: -threaded
+  build-depends: base
+               , containers
+               , deepseq
+               , dependent-map
+               , dependent-sum
+               , hspec
+               , lens
+               , mtl
+               , these
+               , transformers
+               , reflex
+               , ref-tf
+               , witherable
+               , proctest
+
+
+  if flag(split-these)
+    build-depends: these-lens, semialign
+
+  other-modules:
     Test.Run
 
 
@@ -284,6 +325,21 @@ test-suite RequesterT
   other-modules:
     Reflex.TestPlan
     Reflex.Plan.Pure
+    Test.Run
+
+test-suite Adjustable
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Adjustable.hs
+  hs-source-dirs: test
+  build-depends: base
+               , containers
+               , dependent-sum
+               , reflex
+               , ref-tf
+               , these
+
+  other-modules:
     Test.Run
 
 test-suite QueryT

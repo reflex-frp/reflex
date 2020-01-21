@@ -21,6 +21,7 @@ module Data.FastMutableIntMap
   , patchIntMapNewElements
   , patchIntMapNewElementsMap
   , getDeletions
+  , toList
   ) where
 
 --TODO: Pure JS version
@@ -91,3 +92,6 @@ applyPatch (FastMutableIntMap r) p@(PatchIntMap m) = do
   v <- readIORef r
   writeIORef r $! applyAlways p v
   return $ IntMap.intersection v m
+
+toList :: FastMutableIntMap a -> IO [(Int, a)]
+toList (FastMutableIntMap r) = IntMap.toList <$> readIORef r
