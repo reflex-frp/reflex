@@ -1,20 +1,36 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 module Main where
 
-import Control.Lens
+import Control.Lens hiding (has)
 import Control.Monad
 import Control.Monad.Fix
+import Control.Monad.IO.Class (MonadIO)
+import Data.Constraint.Extras
+import Data.Constraint.Extras.TH
+import Data.Constraint.Forall
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.Functor.Misc
+import Data.List (words)
+import Data.Map (Map)
 import qualified Data.Map as M
+#if !MIN_VERSION_these(4,11,0)
+import Data.Semigroup ((<>))
+#endif
+import Data.Text (Text)
 import Data.These
+import Text.Read (readMaybe)
 
 #if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
 import Data.These.Lens
@@ -49,12 +65,19 @@ main = do
   print os5
   os6 <- runApp' (unwrapApp delayedPulse) [Just ()]
   print os6
+  os7 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Increment 1 ]
+  print os7
+  os8 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Reverse "yoyo" ]
+  print os8
   let ![[Just [1,2,3,4,5,6,7,8,9,10]]] = os1 -- The order is reversed here: see the documentation for 'runRequesterT'
   let ![[Just [9,7,5,3,1]],[Nothing,Nothing],[Just [10,8,6,4,2]],[Just [10,8,6,4,2],Nothing]] = os2
   let ![[Nothing, Just [2]]] = os3
   let ![[Nothing, Just [2]]] = os4
   let ![[Nothing, Just [1, 2]]] = os5
   -- let ![[Nothing, Nothing]] = os6 -- TODO re-enable this test after issue #233 has been resolved
+  let !(Just [(1,"2")]) = M.toList <$> head (head os7)
+  let !(Just [(1,"oyoy")]) = M.toList <$> head (head os8)
+
   return ()
 
 unwrapRequest :: DSum tag RequestInt -> Int
@@ -172,3 +195,41 @@ delayedPulse pulse = void $ flip runWithReplace (pure () <$ pulse) $ do
     -- This has the effect of delaying pulse' from pulse
     (_, pulse') <- runWithReplace (pure ()) $ pure (RequestInt 1) <$ pulse
     requestingIdentity pulse'
+
+data TestRequest a where
+  TestRequest_Reverse :: String -> TestRequest String
+  TestRequest_Increment :: Int -> TestRequest Int
+
+testMatchRequestsWithResponses
+  :: forall m t req a
+   . ( MonadFix m
+     , MonadHold t m
+     , Reflex t
+     , PerformEvent t m
+     , MonadIO (Performable m)
+     , ForallF Show req
+     , Has Read req
+     )
+  => Event t (req a) -> m (Event t (Map Int String))
+testMatchRequestsWithResponses pulse = mdo
+  (_, requests) <- runRequesterT (requesting pulse) responses
+  let rawResponses = M.map (\v ->
+        case words v of
+          ["reverse", str] -> reverse str
+          ["increment", i] -> show $ succ $ (read i :: Int)
+        ) <$> rawRequestMap
+  (rawRequestMap, responses) <- matchResponsesWithRequests reqEncoder requests (head . M.toList <$> rawResponses)
+  pure rawResponses
+  where
+    reqEncoder :: forall a. req a -> (String, String -> Maybe a)
+    reqEncoder r =
+      ( whichever @Show @req @a $ show r
+      , \x -> has @Read r $ readMaybe x
+      )
+
+deriveArgDict ''TestRequest
+
+instance Show (TestRequest a) where
+  show = \case
+    TestRequest_Reverse str -> "reverse " <> str
+    TestRequest_Increment i -> "increment " <> show i

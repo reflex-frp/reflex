@@ -210,7 +210,7 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
-import Data.Semigroup (Semigroup, sconcat, stimes, (<>))
+import Data.Semigroup (Semigroup (..))
 import Data.Some (Some(Some))
 import Data.String
 import Data.These
