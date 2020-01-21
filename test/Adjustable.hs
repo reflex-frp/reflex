@@ -60,3 +60,4 @@ testPatchMapWithMove pulse = do
       (fmapMaybe id pulseAction)
     return ()
   return result
+  

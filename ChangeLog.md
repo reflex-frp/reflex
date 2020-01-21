@@ -11,6 +11,9 @@
 
 * Additional instances for `Query` classes for basic types.
 
+* Add cabal flags `debug-propagation` and `debug-event-cycles` to build in debugging
+  code for performance and for cyclic dependencies between events
+
 * Refactor of `Reflex.Requester`:
     * Updated:
         * `RequesterData` to `RequestData`, `RequesterEnvelope`, and `ResponseData`

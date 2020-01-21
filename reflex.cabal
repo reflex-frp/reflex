@@ -41,6 +41,16 @@ flag fast-weak
   default: False
   manual: True
 
+flag debug-propagation
+  description: Enable debugging of spider internals
+  default: False
+  manual: True
+
+flag debug-cycles
+  description: Enable debugging of event cycles
+  default: False
+  manual: True
+
 flag split-these
   description: Use split these/semialign packages
   manual:      False
@@ -63,7 +73,7 @@ library
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
-    patch >= 0.0.1 && < 0.1,
+    patch >= 0.0.2 && < 0.1,
     prim-uniq >= 0.1.0.1 && < 0.2,
     primitive >= 0.5 && < 0.8,
     profunctors >= 5.3 && < 5.6,
@@ -159,6 +169,12 @@ library
     cpp-options: -DUSE_REFLEX_OPTIMIZER
     build-depends: ghc
     exposed-modules: Reflex.Optimizer
+
+  if flag(debug-propagation)
+    cpp-options: -DDEBUG -DDEBUG_TRACE_PROPAGATION -DDEBUG_TRACE_INVALIDATION
+
+  if flag(debug-cycles)
+    cpp-options: -DDEBUG_CYCLES
 
   if flag(use-template-haskell)
     cpp-options: -DUSE_TEMPLATE_HASKELL
@@ -264,10 +280,35 @@ test-suite EventWriterT
     build-depends: these-lens
 
   other-modules:
-    Reflex.Test
-    Reflex.TestPlan
-    Reflex.Plan.Reflex
-    Reflex.Plan.Pure
+    Test.Run
+
+
+test-suite DebugCycles
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: DebugCycles.hs
+  hs-source-dirs: test
+  ghc-options: -threaded
+  build-depends: base
+               , containers
+               , deepseq
+               , dependent-map
+               , dependent-sum
+               , hspec
+               , lens
+               , mtl
+               , these
+               , transformers
+               , reflex
+               , ref-tf
+               , witherable
+               , proctest
+
+
+  if flag(split-these)
+    build-depends: these-lens, semialign
+
+  other-modules:
     Test.Run
 
 
@@ -298,6 +339,7 @@ test-suite RequesterT
     Test.Run
 
 test-suite Adjustable
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: Adjustable.hs
   hs-source-dirs: test
