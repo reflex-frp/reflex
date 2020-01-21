@@ -25,6 +25,9 @@ import Data.Functor.Misc
 import Data.List (words)
 import Data.Map (Map)
 import qualified Data.Map as M
+#if MIN_VERSION_these(4,11,0)
+import Data.Semigroup ((<>))
+#endif
 import Data.Text (Text)
 import Data.These
 import Text.Read (readMaybe)
