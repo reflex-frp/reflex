@@ -20,7 +20,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
-
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
@@ -388,7 +387,7 @@ eventRoot !k !r = Event $ wrap eventSubscribedRoot $ liftIO . getRootSubscribed 
 eventNever :: Event x a
 eventNever = Event $ \_ -> return (EventSubscription (return ()) eventSubscribedNever, Nothing)
 
-eventFan :: (GCompare k, HasSpiderTimeline x) => k a -> Fan x k v -> Event x (v a)
+eventFan :: (GCompare k, HasSpiderTimeline x) => k a -> Fan x k -> Event x a
 eventFan !k !f = Event $ wrap eventSubscribedFan $ getFanSubscribed k f
 
 eventSwitch :: HasSpiderTimeline x => Switch x a -> Event x a
@@ -440,14 +439,14 @@ newSubscriberHold h = return $ Subscriber
   , subscriberRecalculateHeight = \_ -> return ()
   }
 
-newSubscriberFan :: forall x k v. (HasSpiderTimeline x, GCompare k) => FanSubscribed x k v -> IO (Subscriber x (DMap k v))
+newSubscriberFan :: forall x k. (HasSpiderTimeline x, GCompare k) => FanSubscribed x k -> IO (Subscriber x (DMap k Identity))
 newSubscriberFan subscribed = return $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
       subs <- liftIO $ readIORef $ fanSubscribedSubscribers subscribed
       tracePropagate (Proxy :: Proxy x) $ "SubscriberFan" <> showNodeId subscribed <> ": " ++ show (DMap.size subs) ++ " keys subscribed, " ++ show (DMap.size a) ++ " keys firing"
       liftIO $ writeIORef (fanSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ fanSubscribedOccurrence subscribed
-      let f _ (Pair v subsubs) = do
+      let f _ (Pair (Identity v) subsubs) = do
             propagate v $ _fanSubscribedChildren_list subsubs
             return $ Constant ()
       _ <- DMap.traverseWithKey f $ DMap.intersectionWithKey (\_ -> Pair) a subs --TODO: Would be nice to have DMap.traverse_
@@ -600,7 +599,7 @@ eventSubscribedNever = EventSubscribed
 #endif
   }
 
-eventSubscribedFan :: FanSubscribed x k v -> EventSubscribed x
+eventSubscribedFan :: FanSubscribed x k -> EventSubscribed x
 eventSubscribedFan !subscribed = EventSubscribed
   { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ fanSubscribedParent subscribed
   , eventSubscribedRetained = toAny subscribed
@@ -1018,7 +1017,7 @@ data RootSubscribed x a = forall k. GCompare k => RootSubscribed
 #endif
   }
 
-data Root x k
+data Root x (k :: * -> *)
    = Root { rootOccurrence :: !(IORef (DMap k Identity)) -- The currently-firing occurrence of this event
           , rootSubscribed :: !(IORef (DMap k (RootSubscribed x)))
           , rootInit :: !(forall a. k a -> RootTrigger x a -> IO (IO ()))
@@ -1088,25 +1087,25 @@ heightBagVerify b@(HeightBag s c) = if
 heightBagVerify = id
 #endif
 
-data FanSubscribedChildren x k v a = FanSubscribedChildren
-  { _fanSubscribedChildren_list :: !(WeakBag (Subscriber x (v a)))
-  , _fanSubscribedChildren_self :: {-# NOUNPACK #-} !(k a, FanSubscribed x k v)
-  , _fanSubscribedChildren_weakSelf :: !(IORef (Weak (k a, FanSubscribed x k v)))
+data FanSubscribedChildren (x :: *) k a = FanSubscribedChildren
+  { _fanSubscribedChildren_list :: !(WeakBag (Subscriber x a))
+  , _fanSubscribedChildren_self :: {-# NOUNPACK #-} !(k a, FanSubscribed x k)
+  , _fanSubscribedChildren_weakSelf :: !(IORef (Weak (k a, FanSubscribed x k)))
   }
 
-data FanSubscribed x k v
-   = FanSubscribed { fanSubscribedCachedSubscribed :: !(IORef (Maybe (FanSubscribed x k v)))
-                   , fanSubscribedOccurrence :: !(IORef (Maybe (DMap k v)))
-                   , fanSubscribedSubscribers :: !(IORef (DMap k (FanSubscribedChildren x k v))) -- This DMap should never be empty
+data FanSubscribed (x :: *) k
+   = FanSubscribed { fanSubscribedCachedSubscribed :: !(IORef (Maybe (FanSubscribed x k)))
+                   , fanSubscribedOccurrence :: !(IORef (Maybe (DMap k Identity)))
+                   , fanSubscribedSubscribers :: !(IORef (DMap k (FanSubscribedChildren x k))) -- This DMap should never be empty
                    , fanSubscribedParent :: !(EventSubscription x)
 #ifdef DEBUG_NODEIDS
                    , fanSubscribedNodeId :: Int
 #endif
                    }
 
-data Fan x k v
-   = Fan { fanParent :: !(Event x (DMap k v))
-         , fanSubscribed :: !(IORef (Maybe (FanSubscribed x k v)))
+data Fan x k
+   = Fan { fanParent :: !(Event x (DMap k Identity))
+         , fanSubscribed :: !(IORef (Maybe (FanSubscribed x k)))
          }
 
 data SwitchSubscribed x a
@@ -1560,7 +1559,7 @@ fanInt p =
       return (EventSubscription (FastWeakBag.remove t) $! EventSubscribed heightRef $! toAny (_fanInt_subscriptionRef self, t), IntMap.lookup k currentOcc)
 
 {-# INLINABLE getFanSubscribed #-}
-getFanSubscribed :: (HasSpiderTimeline x, GCompare k) => k a -> Fan x k v -> Subscriber x (v a) -> EventM x (WeakBagTicket, FanSubscribed x k v, Maybe (v a))
+getFanSubscribed :: (HasSpiderTimeline x, GCompare k) => k a -> Fan x k -> Subscriber x a -> EventM x (WeakBagTicket, FanSubscribed x k, Maybe a)
 getFanSubscribed k f sub = do
   mSubscribed <- liftIO $ readIORef $ fanSubscribed f
   case mSubscribed of
@@ -1594,7 +1593,7 @@ getFanSubscribed k f sub = do
       liftIO $ writeIORef (fanSubscribed f) $ Just subscribed
       return (slnForSub, subscribed, coerce $ DMap.lookup k =<< parentOcc)
 
-cleanupFanSubscribed :: GCompare k => (k a, FanSubscribed x k v) -> IO ()
+cleanupFanSubscribed :: GCompare k => (k a, FanSubscribed x k) -> IO ()
 cleanupFanSubscribed (k, subscribed) = do
   subscribers <- readIORef $ fanSubscribedSubscribers subscribed
   let reducedSubscribers = DMap.delete k subscribers
@@ -1606,7 +1605,7 @@ cleanupFanSubscribed (k, subscribed) = do
     else writeIORef (fanSubscribedSubscribers subscribed) $! reducedSubscribers
 
 {-# INLINE subscribeFanSubscribed #-}
-subscribeFanSubscribed :: GCompare k => k a -> FanSubscribed x k v -> Subscriber x (v a) -> IO WeakBagTicket
+subscribeFanSubscribed :: GCompare k => k a -> FanSubscribed x k -> Subscriber x a -> IO WeakBagTicket
 subscribeFanSubscribed k subscribed sub = do
   subscribers <- readIORef $ fanSubscribedSubscribers subscribed
   case DMap.lookup k subscribers of
@@ -2082,15 +2081,14 @@ mergeIntCheap d = Event $ \sub -> do
          )
 
 newtype EventSelector x k = EventSelector { select :: forall a. k a -> Event x a }
-newtype EventSelectorG x k v = EventSelectorG { selectG :: forall a. k a -> Event x (v a) }
 
-fanG :: (HasSpiderTimeline x, GCompare k) => Event x (DMap k v) -> EventSelectorG x k v
-fanG e =
+fan :: (HasSpiderTimeline x, GCompare k) => Event x (DMap k Identity) -> EventSelector x k
+fan e =
   let f = Fan
         { fanParent = e
         , fanSubscribed = unsafeNewIORef e Nothing
         }
-  in EventSelectorG $ \k -> eventFan k f
+  in EventSelector $ \k -> eventFan k f
 
 runHoldInits :: HasSpiderTimeline x => IORef [SomeHoldInit x] -> IORef [SomeDynInit x] -> IORef [SomeMergeInit x] -> EventM x ()
 runHoldInits holdInitRef dynInitRef mergeInitRef = do
@@ -2559,8 +2557,6 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   pushCheap f = SpiderEvent . pushCheap (coerce f) . unSpiderEvent
   {-# INLINABLE pull #-}
   pull = SpiderBehavior . pull . coerce
-  {-# INLINABLE fanG #-}
-  fanG e = R.EventSelectorG $ SpiderEvent . selectG (fanG (unSpiderEvent e))
   {-# INLINABLE mergeG #-}
   mergeG
     :: forall (k :: k2 -> *) q (v :: k2 -> *). GCompare k
@@ -2568,6 +2564,8 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
     -> DMap k q
     -> R.Event (SpiderTimeline x) (DMap k v)
   mergeG nt = SpiderEvent . mergeG (unSpiderEvent #. nt) . dynamicConst
+  {-# INLINABLE fan #-}
+  fan e = R.EventSelector $ SpiderEvent . select (fan (unSpiderEvent e))
   {-# INLINABLE switch #-}
   switch = SpiderEvent . switch . (coerce :: Behavior x (R.Event (SpiderTimeline x) a) -> Behavior x (Event x a)) . unSpiderBehavior
   {-# INLINABLE coincidence #-}

@@ -136,11 +136,11 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   push f (Event_Profiled e) = coerce $ push (coerce f) $ profileEvent e -- Profile before rather than after; this way fanout won't count against us
   pushCheap f (Event_Profiled e) = coerce $ pushCheap (coerce f) $ profileEvent e
   pull = Behavior_Profiled . pull . coerce
-  fanG (Event_Profiled e) = EventSelectorG $ coerce $ selectG (fanG $ profileEvent e)
   mergeG :: forall (k :: z -> *) q v. GCompare k
     => (forall a. q a -> Event (ProfiledTimeline t) (v a))
     -> DMap k q -> Event (ProfiledTimeline t) (DMap k v)
   mergeG nt = Event_Profiled #. mergeG (coerce nt)
+  fan (Event_Profiled e) = EventSelector $ coerce $ select (fan $ profileEvent e)
   switch (Behavior_Profiled b) = coerce $ profileEvent $ switch (coerceBehavior b)
   coincidence (Event_Profiled e) = coerce $ profileEvent $ coincidence (coerceEvent e)
   current (Dynamic_Profiled d) = coerce $ current d

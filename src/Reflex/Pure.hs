@@ -7,7 +7,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
-
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
@@ -34,6 +33,7 @@ module Reflex.Pure
 import Control.Monad
 import Data.Dependent.Map (DMap, GCompare)
 import qualified Data.Dependent.Map as DMap
+import Data.Functor.Identity
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Data.Maybe
@@ -88,8 +88,8 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
        then Nothing
        else Just currentOccurrences
 
-  -- fanG :: GCompare k => Event (Pure t) (DMap k v) -> EventSelectorG (Pure t) k v
-  fanG e = EventSelectorG $ \k -> Event $ \t -> unEvent e t >>= DMap.lookup k
+  fan :: GCompare k => Event (Pure t) (DMap k Identity) -> EventSelector (Pure t) k
+  fan e = EventSelector $ \k -> Event $ \t -> unEvent e t >>= fmap runIdentity . DMap.lookup k
 
   switch :: Behavior (Pure t) (Event (Pure t) a) -> Event (Pure t) a
   switch b = Event $ memo $ \t -> unEvent (unBehavior b t) t
