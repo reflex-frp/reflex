@@ -88,7 +88,6 @@ module Reflex.Class
   , gate
     -- ** Combining 'Dynamic's
   , distributeDMapOverDynPure
-  , distributeDMapOverDynPureG
   , distributeListOverDyn
   , distributeListOverDynWith
   , zipDyn
@@ -1110,21 +1109,12 @@ instance (Reflex t, Monoid a) => Monoid (Dynamic t a) where
 -- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same
 -- through the use of multiple uses of 'zipDynWith' or 'Applicative' operators.
 distributeDMapOverDynPure :: forall t k. (Reflex t, GCompare k) => DMap k (Dynamic t) -> Dynamic t (DMap k Identity)
-distributeDMapOverDynPure = distributeDMapOverDynPureG coerceDynamic
-
--- | This function converts a 'DMap' whose elements are 'Dynamic's into a
--- 'Dynamic' 'DMap'.  Its implementation is more efficient than doing the same
--- through the use of multiple uses of 'zipDynWith' or 'Applicative' operators.
-distributeDMapOverDynPureG
-  :: forall t k q v. (Reflex t, GCompare k)
-  => (forall a. q a -> Dynamic t (v a))
-  -> DMap k q -> Dynamic t (DMap k v)
-distributeDMapOverDynPureG nt dm = case DMap.toList dm of
+distributeDMapOverDynPure dm = case DMap.toList dm of
   [] -> constDyn DMap.empty
-  [k :=> v] -> DMap.singleton k <$> nt v
+  [k :=> v] -> fmap (DMap.singleton k . Identity) v
   _ ->
-    let getInitial = DMap.traverseWithKey (\_ -> sample . current . nt) dm
-        edmPre = mergeG getCompose $ DMap.map (Compose . updated . nt) dm
+    let getInitial = DMap.traverseWithKey (\_ -> fmap Identity . sample . current) dm
+        edmPre = merge $ DMap.map updated dm
         result = unsafeBuildDynamic getInitial $ flip pushAlways edmPre $ \news -> do
           olds <- sample $ current result
           return $ DMap.unionWithKey (\_ _ new -> new) olds news
