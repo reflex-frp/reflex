@@ -85,7 +85,6 @@ library
                        monoidal-containers == 0.4.0.0
 
   exposed-modules:
-    Control.Monad.ReaderIO
     Data.AppendMap,
     Data.FastMutableIntMap,
     Data.FastWeakBag,
