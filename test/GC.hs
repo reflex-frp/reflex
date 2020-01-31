@@ -27,7 +27,6 @@ import qualified Reflex.Spider.Internal as S
 
 import System.Exit
 import System.Mem
-import Data.Coerce
 
 main :: IO ()
 main = do
@@ -47,7 +46,7 @@ hostPerf ref = S.runSpiderHost $ do
   eventToPerform <- Host.runHostFrame $ do
     (reqMap :: S.Event S.Global (DMap (Const2 Int (DMap Tell (S.SpiderHostFrame S.Global))) Identity))
       <- S.SpiderHostFrame
-       $ fmap ( S.mergeG coerce
+       $ fmap ( S.merge
               . S.dynamicHold)
        $ S.hold DMap.empty
        -- Construct a new heap object for the subscriber, invalidating any weak references to the subscriber if they are not retained
