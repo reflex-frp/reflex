@@ -1,5 +1,13 @@
 # Revision history for reflex
 
+## 0.6.5
+
+* Fix a bug in the Reflex Profiled transformer where
+  `Reflex.Class.mergeIncrementalG` and
+  `Reflex.Class.mergeIncrementalWithMoveG` implementations referenced
+  itself instead of the inner transformed timeline, causing an
+  infinite loop.
+
 ## 0.6.4
 
 * Support GHC 8.8
