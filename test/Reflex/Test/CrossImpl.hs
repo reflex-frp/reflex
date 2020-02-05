@@ -36,8 +36,6 @@ import Data.Traversable
 import System.Exit
 import System.Mem
 
-import System.IO.Unsafe
-
 mapToPureBehavior :: Map Int a -> Behavior PureReflexDomain a
 mapToPureBehavior m = P.Behavior $ \t -> case Map.lookupLE t m of
   Nothing -> error $ "mapToPureBehavior: no value for time " <> show t
@@ -106,9 +104,9 @@ testAgreement :: (Eq c, Eq d, Show c, Show d) => (forall m t. TestCaseConstraint
 testAgreement builder inputs = do
   let identityResult = testPure builder inputs
   tracePerf "---------" $ return ()
-  let spiderResult = unsafePerformIO $ S.runSpiderHost $ testTimeline builder inputs
+  spiderResult <- S.runSpiderHost $ testTimeline builder inputs
   tracePerf "---------" $ return ()
-  let profiledResult = unsafePerformIO $ S.runSpiderHost $ Prof.runProfiledM $ testTimeline builder inputs
+  profiledResult <- S.runSpiderHost $ Prof.runProfiledM $ testTimeline builder inputs
   tracePerf "---------" $ return ()
   let resultsAgree = identityResult == spiderResult && identityResult == profiledResult
   if resultsAgree
