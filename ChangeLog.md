@@ -1,6 +1,6 @@
 # Revision history for reflex
 
-## 0.6.5
+## 0.6.4.1
 
 * Fix a bug in the Reflex Profiled transformer where
   `Reflex.Class.mergeIncrementalG` and
