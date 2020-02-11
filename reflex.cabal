@@ -486,6 +486,49 @@ benchmark saulzar-bench
     Reflex.Plan.Reflex
     Reflex.Bench.Focused
 
+executable holddynchain
+  default-language: Haskell2010
+  hs-source-dirs: bench test
+  c-sources: bench-cbits/checkCapability.c
+  main-is: HoldDynChain.hs
+  ghc-options: -Wall -O2 -rtsopts -threaded
+  ghc-prof-options: -fprof-auto-calls
+  build-depends:
+    base,
+    containers,
+    criterion,
+    deepseq,
+    dependent-map,
+    dependent-sum,
+    loch-th,
+    mtl,
+    primitive,
+    process,
+    ref-tf,
+    reflex,
+    split,
+    stm,
+    time,
+    transformers,
+    patch,
+    these,
+    semialign,
+    witherable,
+    data-default,
+    semigroupoids,
+    monoidal-containers,
+    exception-transformers,
+    unbounded-delays,
+    lens,
+    random,
+    profunctors,
+    monad-control,
+    reflection
+  other-modules:
+    Reflex.TestPlan
+    Reflex.Plan.Reflex
+    Reflex.Bench.Focused
+
 source-repository head
   type: git
   location: https://github.com/reflex-frp/reflex

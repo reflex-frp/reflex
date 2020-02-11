@@ -272,3 +272,8 @@ testMoribundPerformEvent pulse = do
         return $ show i <> ":" <> show output
 
 deriveArgDict ''TestRequest
+
+instance Show (TestRequest a) where
+  show = \case
+    TestRequest_Reverse str -> "reverse " <> str
+    TestRequest_Increment i -> "increment " <> show i
