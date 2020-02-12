@@ -38,7 +38,6 @@ import Data.Semigroup ((<>))
 import Data.Text (Text)
 import Data.These
 import Text.Read (readMaybe)
-import Data.Foldable
 import Data.List.NonEmpty.Deferred
 import Text.Read (readMaybe)
 
@@ -272,17 +271,4 @@ testMoribundPerformEvent pulse = do
       performEvent $ ffor evt $ \output ->
         return $ show i <> ":" <> show output
 
-<<<<<<< HEAD
-instance Show (TestRequest a) where
-  show = \case
-    TestRequest_Reverse str -> "reverse " <> str
-    TestRequest_Increment i -> "increment " <> show i
-||||||| merged common ancestors
-instance Show (TestRequest a) where
-  show = \case
-    TestRequest_Reverse str -> "reverse " <> str
-    TestRequest_Increment i -> "increment " <> show i
-=======
-
 deriveArgDict ''TestRequest
->>>>>>> test case for performEvent

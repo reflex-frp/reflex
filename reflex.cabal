@@ -329,6 +329,7 @@ test-suite RequesterT
                , dependent-sum
                , lens
                , mtl
+               , primitive
                , ref-tf
                , reflex
                , text

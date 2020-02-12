@@ -10,7 +10,6 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -297,7 +296,7 @@ matchResponsesWithRequests f send recv = withTagGen $ \tagGen ->  mdo
 
 requestEnvelopesToDSums :: forall s request. NonEmptyDeferred (RequestEnvelope s request) -> [DSum (Tag s) request]
 requestEnvelopesToDSums requestEnvelopes = catMaybes $ f <$> NonEmptyDeferred.toList requestEnvelopes
-  where f :: (RequestEnvelope s request) -> Maybe (DSum (Tag s) request)
+  where f :: RequestEnvelope s request -> Maybe (DSum (Tag s) request)
         f (RequestEnvelope (Just tag) v) = Just (tag :=> v)
         f (RequestEnvelope Nothing _) = Nothing
 
