@@ -100,8 +100,8 @@ benchmarks = implGroup "spider" runSpiderHost cases
       , dynamics 4000
       ]
 
-    holdDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
-    holdDynChain = Focused.iterM (\d' -> sample (current d') >>= flip holdDyn (updated d'))
+holdDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
+holdDynChain = Focused.iterM (\d' -> sample (current d') >>= flip holdDyn (updated d'))
 
 pattern RunTestCaseFlag = "--run-test-case"
 
