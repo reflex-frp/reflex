@@ -17,8 +17,6 @@
 
 module Main where
 
-import Criterion.Main
-import Criterion.Types
 
 import Reflex
 import Reflex.Host.Class
@@ -29,37 +27,21 @@ import Reflex.TestPlan
 import qualified Reflex.Bench.Focused as Focused
 import Reflex.Spider.Internal (SpiderEventHandle)
 
-import Control.Applicative
 import Control.DeepSeq (NFData (..))
 
 import Prelude
-import System.IO
 import System.Mem
 
 import Control.Arrow
 import Control.Concurrent
-import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad
 import Control.Monad.Trans
 import Data.Bool
 import Data.Function
-import Data.Int
-import Data.IORef
-import Data.Monoid
-import Data.Time.Clock
-import Debug.Trace.LocationTH
-import GHC.Stats
 import System.Environment
-import System.Mem.Weak
 import System.Process
 import Text.Read
-
-import Unsafe.Coerce
-
-import Data.Map (Map)
-import qualified Data.Map as Map
-
 
 type MonadReflexHost' t m = (MonadReflexHost t m, MonadIORef m, MonadIORef (HostFrame t))
 
@@ -113,6 +95,9 @@ benchmarks = implGroup "spider" runSpiderHost cases
     cases = concat
       [ dynamics 100
       , dynamics 1000
+      , dynamics 2000
+      , dynamics 3000
+      , dynamics 4000
       ]
 
     holdDynChain :: (Reflex t, MonadHold t m) => Word -> Dynamic t Word -> m (Dynamic t Word)
@@ -120,8 +105,9 @@ benchmarks = implGroup "spider" runSpiderHost cases
 
 pattern RunTestCaseFlag = "--run-test-case"
 
-spawnBenchmark :: String -> Benchmark
-spawnBenchmark name = bench name . toBenchmarkable $ \n -> do
+spawnBenchmark :: String -> (Int -> IO ())
+spawnBenchmark name = \n -> do
+  putStrLn name
   self <- getExecutablePath
   callProcess self [RunTestCaseFlag, name, show n, "+RTS", "-N1"]
 
@@ -139,4 +125,4 @@ main = do
         fix $ \loop -> bool (return ()) (yield >> loop) =<< myCapabilityHasOtherRunnableThreads
         return ()
       _ -> error "--run-test-case: expected test name and iteration count to follow"
-    _ -> defaultMainWith (defaultConfig { timeLimit = 20, csvFile = Just "dmap-original.csv", reportFile = Just "report.html" }) $ fmap (spawnBenchmark . fst) benchmarks
+    _ -> mapM_ ($ 50) $ fmap (spawnBenchmark . fst) benchmarks
