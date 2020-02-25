@@ -320,7 +320,7 @@ cacheEvent e =
         <- newIORef emptyFastWeak
     pure $ \sub -> {-# SCC "cacheEvent" #-} do
 #ifdef DEBUG_TRACE_EVENTS
-          unless (BS8.null callSite) $ liftIO $ BS8.hPutStrLn stderr callSite
+          unless (BS8.null callSite) $ liftIO $ BS8.appendFile "out.log" callSite
 #endif
           subscribedTicket <- liftIO (readIORef mSubscribedRef >>= getFastWeakTicket) >>= \case
             Just subscribedTicket -> return subscribedTicket
