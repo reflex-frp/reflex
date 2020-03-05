@@ -21,5 +21,4 @@ A summary of Reflex functions is available in the [quick reference](Quickref.md)
 
 ### Hacking
 
-Use the `./scripts/hack-on reflex` script in [Reflex Platform](https://github.com/reflex-frp/reflex-platform) to checkout the source code of `reflex` locally in `reflex-platform/reflex` directory.
-Then do modifications to the source in place, and use the `./try-reflex` or `./scripts/work-on` scripts to create the shell to test your changes.
+Use the `./dev` script to enter a nix shell with all dependencies available.
