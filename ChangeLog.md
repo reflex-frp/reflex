@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+* Add lifting instances for most classes to `Reflex.Profiled.Profiled`.
 * Class `MonadQuery t q m` now has a `Monad m` superclass constraint.
 * Rename class `MonadBehaviorWriter` -> `BehaviorWriter` for
   consistency with `EventWriter`/`DynamicWriter`.
