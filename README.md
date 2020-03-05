@@ -21,4 +21,4 @@ A summary of Reflex functions is available in the [quick reference](Quickref.md)
 
 ### Hacking
 
-Use the `./dev` script to enter a nix shell with all dependencies available.
+Use the [`./dev`](dev) script to enter a nix shell with all dependencies available.
