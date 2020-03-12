@@ -10,7 +10,14 @@ constraint-set no-th
   constraints: reflex -use-template-haskell
 
 constraint-set old-these
+  ghc: <8.8
   constraints: these <1
 
 constraint-set old-witherable
   constraints: witherable <0.3.2
+
+constraint-set debug-propagation
+  constraints: reflex +debug-propagation
+
+constraint-set debug-cycles
+  constraints: reflex +debug-cycles

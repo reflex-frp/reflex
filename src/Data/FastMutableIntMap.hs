@@ -21,6 +21,7 @@ module Data.FastMutableIntMap
   , patchIntMapNewElements
   , patchIntMapNewElementsMap
   , getDeletions
+  , toList
   ) where
 
 --TODO: Pure JS version
@@ -34,8 +35,8 @@ import Data.Foldable (traverse_)
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
-import Reflex.Patch.Class
-import Reflex.Patch.IntMap
+import Data.Patch.Class
+import Data.Patch.IntMap
 
 -- | A 'FastMutableIntMap' holds a map of values of type @a@ and allows low-overhead modifications via IO.
 -- Operations on 'FastMutableIntMap' run in IO.
@@ -84,10 +85,13 @@ getFrozenAndClear (FastMutableIntMap r) = do
   writeIORef r IntMap.empty
   return result
 
--- | Updates the value of a 'FastMutableIntMap' with the given patch (see 'Reflex.Patch.IntMap'),
+-- | Updates the value of a 'FastMutableIntMap' with the given patch (see 'Data.Patch.IntMap'),
 -- and returns an 'IntMap' with the modified keys and values.
 applyPatch :: FastMutableIntMap a -> PatchIntMap a -> IO (IntMap a)
 applyPatch (FastMutableIntMap r) p@(PatchIntMap m) = do
   v <- readIORef r
   writeIORef r $! applyAlways p v
   return $ IntMap.intersection v m
+
+toList :: FastMutableIntMap a -> IO [(Int, a)]
+toList (FastMutableIntMap r) = IntMap.toList <$> readIORef r

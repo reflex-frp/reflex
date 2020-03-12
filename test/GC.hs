@@ -20,7 +20,7 @@ import Data.Semigroup
 import Data.These
 
 import Data.Functor.Misc
-import Reflex.Patch
+import Data.Patch
 
 import qualified Reflex.Host.Class as Host
 import qualified Reflex.Spider.Internal as S
@@ -83,7 +83,6 @@ hostPerf ref = S.runSpiderHost $ do
               Nothing -> []
         Host.fireEventsAndRead followupEventTriggers $ return ()
         return ()
-  return ()
 
 data Tell a where
   Action :: Tell ()

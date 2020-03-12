@@ -24,7 +24,7 @@ import Data.These.Lens
 #endif
 
 import Reflex
-import Reflex.Patch.MapWithMove
+import Data.Patch.MapWithMove
 import Test.Run
 
 newtype MyQuery = MyQuery SelectedCount

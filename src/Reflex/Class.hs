@@ -29,7 +29,7 @@
 --   convenience functions for working with 'Event's, 'Behavior's, and other
 --   signals.
 module Reflex.Class
-  ( module Reflex.Patch
+  ( module Data.Patch
     -- * Primitives
   , Reflex (..)
   , mergeInt
@@ -200,7 +200,7 @@ import Data.Dependent.Map (DMap, DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Compose
 import Data.Functor.Product
-import Data.GADT.Compare (GEq (..), GCompare (..), (:~:) (..))
+import Data.GADT.Compare (GEq (..), GCompare (..))
 import Data.FastMutableIntMap (PatchIntMap)
 import Data.Foldable
 import Data.Functor.Bind
@@ -210,17 +210,18 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
-import Data.Semigroup (Semigroup, sconcat, stimes, (<>))
+import Data.Semigroup (Semigroup (..))
 import Data.Some (Some(Some))
 import Data.String
 import Data.These
 import Data.Type.Coercion
+import Data.Type.Equality ((:~:) (..))
 import Data.Witherable (Filterable(..))
 import qualified Data.Witherable as W
 import Reflex.FunctorMaybe (FunctorMaybe)
 import qualified Reflex.FunctorMaybe
-import Reflex.Patch
-import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
+import Data.Patch
+import qualified Data.Patch.MapWithMove as PatchMapWithMove
 
 import Debug.Trace (trace)
 
@@ -286,7 +287,8 @@ class ( MonadHold t (PushM t)
   -- | Create an 'Event' that will occur whenever the currently-selected input
   -- 'Event' occurs
   switch :: Behavior t (Event t a) -> Event t a
-  -- | Create an 'Event' that will occur whenever the input event is occurring -- and its occurrence value, another 'Event', is also occurring
+  -- | Create an 'Event' that will occur whenever the input event is occurring -- and its occurrence value, another 'Event', is also occurring.
+  --   You maybe looking for '@switchHold@ @never@' instead.
   coincidence :: Event t (Event t a) -> Event t a
   -- | Extract the 'Behavior' of a 'Dynamic'.
   current :: Dynamic t a -> Behavior t a
@@ -662,7 +664,9 @@ instance Reflex t => Monad (Behavior t) where
   a >>= f = pull $ sample a >>= sample . f
   -- Note: it is tempting to write (_ >> b = b); however, this would result in (fail x >> return y) succeeding (returning y), which violates the law that (a >> b = a >>= \_ -> b), since the implementation of (>>=) above actually will fail.  Since we can't examine 'Behavior's other than by using sample, I don't think it's possible to write (>>) to be more efficient than the (>>=) above.
   return = constant
+#if !MIN_VERSION_base(4,13,0)
   fail = error "Monad (Behavior t) does not support fail"
+#endif
 
 instance (Reflex t, Monoid a) => Monoid (Behavior t a) where
   mempty = constant mempty
