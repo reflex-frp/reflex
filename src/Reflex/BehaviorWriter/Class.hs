@@ -1,8 +1,9 @@
 {-|
 Module: Reflex.BehaviorWriter.Class
-Description: This module defines the 'MonadBehaviorWriter' class
+Description: This module defines the 'BehaviorWriter' class
 -}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -10,16 +11,21 @@ Description: This module defines the 'MonadBehaviorWriter' class
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
 #endif
 module Reflex.BehaviorWriter.Class
-  ( MonadBehaviorWriter (..)
+  ( MonadBehaviorWriter
+  , BehaviorWriter(..)
   ) where
 
 import Control.Monad.Reader (ReaderT, lift)
 import Reflex.Class (Behavior)
 
--- | 'MonadBehaviorWriter' efficiently collects 'Behavior' values using 'tellBehavior'
+{-# DEPRECATED MonadBehaviorWriter "Use 'BehaviorWriter' instead" #-}
+-- | Type synonym for 'BehaviorWriter'
+type MonadBehaviorWriter = BehaviorWriter
+
+-- | 'BehaviorWriter' efficiently collects 'Behavior' values using 'tellBehavior'
 -- and combines them monoidally to provide a 'Behavior' result.
-class (Monad m, Monoid w) => MonadBehaviorWriter t w m | m -> t w where
+class (Monad m, Monoid w) => BehaviorWriter t w m | m -> t w where
   tellBehavior :: Behavior t w -> m ()
 
-instance MonadBehaviorWriter t w m => MonadBehaviorWriter t w (ReaderT r m) where
+instance BehaviorWriter t w m => BehaviorWriter t w (ReaderT r m) where
   tellBehavior = lift . tellBehavior

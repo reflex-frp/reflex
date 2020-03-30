@@ -1,5 +1,11 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Rename class `MonadBehaviorWriter` -> `BehaviorWriter` for
+  consistency with `EventWriter`/`DynamicWriter`.
+* Introduce deprecated alias `MonadBehaviorWriter = BehaviorWriter`.
+
 ## 0.6.4.1
 
 * Fix a bug in the Reflex Profiled transformer where
