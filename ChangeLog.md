@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+* Class `MonadQuery t q m` now has a `Monad m` superclass constraint.
 * Rename class `MonadBehaviorWriter` -> `BehaviorWriter` for
   consistency with `EventWriter`/`DynamicWriter`.
 * Introduce deprecated alias `MonadBehaviorWriter = BehaviorWriter`.
