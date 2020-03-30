@@ -125,7 +125,7 @@ instance Group SelectedCount where
 
 instance Additive SelectedCount
 
--- | The Semigroup/Monoid/Group instances for a Query containing 'SelectedCount's should use
+-- | The Semigroup\/Monoid\/Group instances for a Query containing 'SelectedCount's should use
 -- this function which returns Nothing if the result is 0. This allows the pruning of leaves
 -- of the 'Query' that are no longer wanted.
 combineSelectedCounts :: SelectedCount -> SelectedCount -> Maybe SelectedCount
