@@ -450,16 +450,6 @@ data Subscriber x a = Subscriber
   , subscriberRecalculateHeight :: !(Height -> IO ())
   }
 
---TODO: Move this comment to WeakBag
--- These function are constructor functions that are marked NOINLINE so they are
--- opaque to GHC. If we do not do this, then GHC will sometimes fuse the constructor away
--- so any weak references that are attached to the constructors will have their
--- finalizer run. Using the opaque constructor, does not see the
--- constructor application, so it behaves like an IORef and cannot be fused away.
---
--- The result is also evaluated to WHNF, since forcing a thunk invalidates
--- the weak pointer to it in some cases.
-
 newSubscriberHold :: (HasSpiderTimeline x, Patch p) => Hold x p -> IO (Subscriber x p)
 newSubscriberHold h = return $ Subscriber
   { subscriberPropagate = {-# SCC "traverseHold" #-} propagateSubscriberHold h

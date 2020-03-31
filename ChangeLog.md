@@ -1,5 +1,13 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Add lifting instances for most classes to `Reflex.Profiled.Profiled`.
+* Class `MonadQuery t q m` now has a `Monad m` superclass constraint.
+* Rename class `MonadBehaviorWriter` -> `BehaviorWriter` for
+  consistency with `EventWriter`/`DynamicWriter`.
+* Introduce deprecated alias `MonadBehaviorWriter = BehaviorWriter`.
+
 ## 0.6.4.1
 
 * Fix a bug in the Reflex Profiled transformer where
