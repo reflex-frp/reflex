@@ -151,6 +151,16 @@ getFastWeakTicket w = do
 
 -- | Create a 'FastWeakTicket' directly from a value, creating a 'FastWeak' in the process
 -- which can be obtained with 'getFastWeakTicketValue'.
+--
+-- This function is marked NOINLINE so it is opaque to GHC.
+-- If we do not do this, then GHC will sometimes fuse the constructor away
+-- so any weak references that are attached to the ticket will have their
+-- finalizer run. Using the opaque constructor, GHC does not see the
+-- constructor application, so it behaves like an IORef and cannot be fused away.
+--
+-- The result is also evaluated to WHNF, since forcing a thunk invalidates
+-- the weak pointer to it in some cases.
+{-# NOINLINE mkFastWeakTicket #-}
 mkFastWeakTicket :: a -> IO (FastWeakTicket a)
 -- I think it's fine if this is lazy - it'll retain the 'a', but so would the output; we just need to make sure it's forced before we start relying on the
 -- associated FastWeak to actually be weak
