@@ -26,6 +26,7 @@ import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict (StateT, execStateT, modify)
+import Data.Bifunctor
 import Data.Coerce
 import Data.Dependent.Map (DMap, GCompare)
 import Data.FastMutableIntMap
@@ -42,12 +43,20 @@ import Foreign.Ptr
 import GHC.Foreign
 import GHC.IO.Encoding
 import GHC.Stack
+import Reflex.Adjustable.Class
+import Reflex.BehaviorWriter.Class
 import Reflex.Class
+import Reflex.DynamicWriter.Class
+import Reflex.EventWriter.Class
 import Reflex.Host.Class
+import Reflex.NotReady.Class
 import Reflex.PerformEvent.Class
+import Reflex.PostBuild.Class
+import Reflex.Query.Class
+import Reflex.Requester.Class
+import Reflex.TriggerEvent.Class
 
 import System.IO.Unsafe
-import Unsafe.Coerce
 
 data ProfiledTimeline t
 
@@ -178,6 +187,16 @@ instance MonadHold t m => MonadHold (ProfiledTimeline t) (ProfiledM m) where
 instance MonadSample t m => MonadSample (ProfiledTimeline t) (ProfiledM m) where
   sample (Behavior_Profiled b) = ProfiledM $ sample b
 
+instance Adjustable t m => Adjustable (ProfiledTimeline t) (ProfiledM m) where
+  runWithReplace a0 a' = (fmap . fmap) coerce . lift $
+    runWithReplace (coerce a0) (coerce $ coerce <$> a')
+  traverseIntMapWithKeyWithAdjust f dm0 dm' = (fmap . fmap) coerce . lift $
+    traverseIntMapWithKeyWithAdjust (\k v -> coerce $ f k v) dm0 (coerce dm')
+  traverseDMapWithKeyWithAdjust f dm0 dm' = (fmap . fmap) coerce . lift $
+    traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) dm0 (coerce dm')
+  traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = (fmap . fmap) coerce . lift $
+    traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) dm0 (coerce dm')
+
 instance MonadTrans ProfiledM where
   lift = ProfiledM
 
@@ -188,6 +207,39 @@ instance PerformEvent t m => PerformEvent (ProfiledTimeline t) (ProfiledM m) whe
   type Performable (ProfiledM m) = Performable m
   performEvent_ = lift . performEvent_ . coerce
   performEvent = lift . fmap coerce . performEvent . coerce
+
+instance TriggerEvent t m => TriggerEvent (ProfiledTimeline t) (ProfiledM m) where
+  newTriggerEvent = first coerce <$> lift newTriggerEvent
+  newTriggerEventWithOnComplete = first coerce <$> lift newTriggerEventWithOnComplete
+  newEventWithLazyTriggerWithOnComplete f = coerce <$> lift (newEventWithLazyTriggerWithOnComplete f)
+
+instance PostBuild t m => PostBuild (ProfiledTimeline t) (ProfiledM m) where
+  getPostBuild = coerce <$> lift getPostBuild
+
+instance NotReady t m => NotReady (ProfiledTimeline t) (ProfiledM m) where
+  notReady = lift notReady
+  notReadyUntil = lift . notReadyUntil . coerce
+
+instance BehaviorWriter t w m => BehaviorWriter (ProfiledTimeline t) w (ProfiledM m) where
+  tellBehavior = lift . tellBehavior . coerce
+
+instance DynamicWriter t w m => DynamicWriter (ProfiledTimeline t) w (ProfiledM m) where
+  tellDyn = lift . tellDyn . coerce
+
+instance EventWriter t w m => EventWriter (ProfiledTimeline t) w (ProfiledM m) where
+  tellEvent = lift . tellEvent . coerce
+
+instance MonadQuery t q m => MonadQuery (ProfiledTimeline t) q (ProfiledM m) where
+  tellQueryIncremental = lift . tellQueryIncremental . coerce
+  askQueryResult = coerce <$> lift askQueryResult
+  queryIncremental = fmap coerce . lift . queryIncremental . coerce
+
+instance Requester t m => Requester (ProfiledTimeline t) (ProfiledM m) where
+  type Request (ProfiledM m) = Request m
+  type Response (ProfiledM m) = Response m
+
+  requesting = fmap coerce . lift . requesting . coerce
+  requesting_ = lift . requesting_ . coerce
 
 instance MonadRef m => MonadRef (ProfiledM m) where
   type Ref (ProfiledM m) = Ref m
