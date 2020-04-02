@@ -1,6 +1,6 @@
 {-|
 Module: Reflex.BehaviorWriter.Base
-Description: Implementation of MonadBehaviorWriter
+Description: Implementation of BehaviorWriter
 -}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -46,7 +46,7 @@ import Reflex.Query.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
--- | A basic implementation of 'MonadBehaviorWriter'.
+-- | A basic implementation of 'BehaviorWriter'.
 newtype BehaviorWriterT t w m a = BehaviorWriterT { unBehaviorWriterT :: StateT [Behavior t w] m a }
   deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadAsyncException, MonadException) -- The list is kept in reverse order
 
@@ -89,7 +89,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (BehaviorWri
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
 
-instance (Monad m, Monoid w, Reflex t) => MonadBehaviorWriter t w (BehaviorWriterT t w m) where
+instance (Monad m, Monoid w, Reflex t) => BehaviorWriter t w (BehaviorWriterT t w m) where
   tellBehavior w = BehaviorWriterT $ modify (w :)
 
 instance MonadReader r m => MonadReader r (BehaviorWriterT t w m) where

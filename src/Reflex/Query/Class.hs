@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -21,6 +22,7 @@ module Reflex.Query.Class
   , MonadQuery (..)
   , tellQueryDyn
   , queryDyn
+  , subQuery
   , mapQuery
   , mapQueryResult
   ) where
@@ -35,6 +37,9 @@ import Data.Map.Monoidal (MonoidalMap)
 import qualified Data.Map.Monoidal as MonoidalMap
 import Data.Semigroup (Semigroup(..))
 import Foreign.Storable
+import Data.Void
+import Data.Monoid hiding ((<>))
+import Control.Applicative
 
 import Reflex.Class
 
@@ -49,6 +54,37 @@ class (Monoid (QueryResult a), Semigroup (QueryResult a)) => Query a where
 instance (Ord k, Query v) => Query (MonoidalMap k v) where
   type QueryResult (MonoidalMap k v) = MonoidalMap k (QueryResult v)
   crop q r = MonoidalMap.intersectionWith (flip crop) r q
+
+-- | the result of two queries is both results.
+instance (Query a, Query b) => Query (a, b) where
+  type QueryResult (a, b) = (QueryResult a, QueryResult b)
+  crop (x, x') (y, y') = (crop x y, crop x' y')
+
+-- | Trivial queries have trivial results.
+instance Query () where
+  type QueryResult () = ()
+  crop _ _ = ()
+
+-- | The result of an absurd query is trivial; If you can ask the question, the
+-- answer cannot tell you anything you didn't already know.
+--
+-- 'QueryResult Void = @Void@' seems like it would also work, but that has
+-- problems of robustness. In some applications, an unasked question can still
+-- be answered, so it is important that the result is inhabited even when the
+-- question isn't. Applications that wish to prevent this can mandate that the
+-- query result be paired with the query: then the whole response will be
+-- uninhabited as desired.
+instance Query Void where
+  type QueryResult Void = ()
+  crop = absurd
+
+#if MIN_VERSION_base(4,12,0)
+-- | We can lift queries into monoidal containers.
+-- But beware of Applicatives whose monoid is different from (pure mempty, liftA2 mappend)
+instance (Query q, Applicative f) => Query (Ap f q) where
+  type QueryResult (Ap f q) = Ap f (QueryResult q)
+  crop = liftA2 crop
+#endif
 
 -- | QueryMorphism's must be group homomorphisms when acting on the query type
 -- and compatible with the query relationship when acting on the query result.
@@ -89,7 +125,7 @@ instance Group SelectedCount where
 
 instance Additive SelectedCount
 
--- | The Semigroup/Monoid/Group instances for a Query containing 'SelectedCount's should use
+-- | The Semigroup\/Monoid\/Group instances for a Query containing 'SelectedCount's should use
 -- this function which returns Nothing if the result is 0. This allows the pruning of leaves
 -- of the 'Query' that are no longer wanted.
 combineSelectedCounts :: SelectedCount -> SelectedCount -> Maybe SelectedCount
@@ -97,12 +133,12 @@ combineSelectedCounts (SelectedCount i) (SelectedCount j) = if i == negate j the
 
 -- | A class that allows sending of 'Query's and retrieval of 'QueryResult's. See 'queryDyn' for a commonly
 -- used interface.
-class (Group q, Additive q, Query q) => MonadQuery t q m | m -> q t where
+class (Group q, Additive q, Query q, Monad m) => MonadQuery t q m | m -> q t where
   tellQueryIncremental :: Incremental t (AdditivePatch q) -> m ()
   askQueryResult :: m (Dynamic t (QueryResult q))
   queryIncremental :: Incremental t (AdditivePatch q) -> m (Dynamic t (QueryResult q))
 
-instance (Monad m, MonadQuery t q m) => MonadQuery t q (ReaderT r m) where
+instance MonadQuery t q m => MonadQuery t q (ReaderT r m) where
   tellQueryIncremental = lift . tellQueryIncremental
   askQueryResult = lift askQueryResult
   queryIncremental = lift . queryIncremental
@@ -112,7 +148,11 @@ tellQueryDyn :: (Reflex t, MonadQuery t q m) => Dynamic t q -> m ()
 tellQueryDyn d = tellQueryIncremental $ unsafeBuildIncremental (sample (current d)) $ attachWith (\old new -> AdditivePatch $ new ~~ old) (current d) (updated d)
 
 -- | Retrieve 'Dynamic'ally updating 'QueryResult's for a 'Dynamic'ally updating 'Query'.
-queryDyn :: (Reflex t, Monad m, MonadQuery t q m) => Dynamic t q -> m (Dynamic t (QueryResult q))
+queryDyn :: (Reflex t, MonadQuery t q m) => Dynamic t q -> m (Dynamic t (QueryResult q))
 queryDyn q = do
   tellQueryDyn q
   zipDynWith crop q <$> askQueryResult
+
+-- | Use a query morphism to operate on a smaller version of a query.
+subQuery :: (Reflex t, MonadQuery t q2 m) => QueryMorphism q1 q2 -> Dynamic t q1 -> m (Dynamic t (QueryResult q1))
+subQuery (QueryMorphism f g) x = fmap g <$> queryDyn (fmap f x)

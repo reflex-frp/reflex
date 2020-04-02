@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.6.3
+Version: 0.6.4.1
 Synopsis: Higher-order Functional Reactive Programming
 Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system
 License: BSD3
@@ -9,7 +9,7 @@ Maintainer: ryan.trinkle@gmail.com
 Stability: Experimental
 Category: FRP
 Build-type: Simple
-Cabal-version: >=1.9.2
+Cabal-version: 1.22
 homepage: https://reflex-frp.org
 bug-reports: https://github.com/reflex-frp/reflex/issues
 extra-source-files:
@@ -41,12 +41,23 @@ flag fast-weak
   default: False
   manual: True
 
+flag debug-propagation
+  description: Enable debugging of spider internals
+  default: False
+  manual: True
+
+flag debug-cycles
+  description: Enable debugging of event cycles
+  default: False
+  manual: True
+
 flag split-these
   description: Use split these/semialign packages
   manual:      False
   default:     True
 
 library
+  default-language: Haskell2010
   hs-source-dirs: src
   build-depends:
     MemoTrie == 0.6.*,
@@ -61,6 +72,7 @@ library
     lens >= 4.7 && < 5,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
+    patch >= 0.0.1 && < 0.1,
     prim-uniq >= 0.1.0.1 && < 0.2,
     primitive >= 0.5 && < 0.8,
     profunctors >= 5.3 && < 5.6,
@@ -88,7 +100,6 @@ library
     Data.AppendMap,
     Data.FastMutableIntMap,
     Data.FastWeakBag,
-    Data.Functor.Misc,
     Data.Map.Misc,
     Data.WeakBag,
     Reflex,
@@ -111,13 +122,6 @@ library
     Reflex.Main
     Reflex.Network,
     Reflex.NotReady.Class,
-    Reflex.Patch,
-    Reflex.Patch.Class,
-    Reflex.Patch.DMap,
-    Reflex.Patch.DMapWithMove,
-    Reflex.Patch.IntMap,
-    Reflex.Patch.Map,
-    Reflex.Patch.MapWithMove,
     Reflex.PerformEvent.Base,
     Reflex.PerformEvent.Class,
     Reflex.PostBuild.Base,
@@ -136,6 +140,16 @@ library
     Reflex.Widget.Basic,
     Reflex.Workflow
 
+  reexported-modules:
+    patch:Data.Functor.Misc,
+    patch:Data.Patch as Reflex.Patch,
+    patch:Data.Patch.Class as Reflex.Patch.Class,
+    patch:Data.Patch.DMap as Reflex.Patch.DMap,
+    patch:Data.Patch.DMapWithMove as Reflex.Patch.DMapWithMove,
+    patch:Data.Patch.IntMap as Reflex.Patch.IntMap,
+    patch:Data.Patch.Map as Reflex.Patch.Map,
+    patch:Data.Patch.MapWithMove as Reflex.Patch.MapWithMove
+
   ghc-options: -Wall -fwarn-redundant-constraints -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively
 
   if flag(debug-trace-events)
@@ -146,6 +160,12 @@ library
     cpp-options: -DUSE_REFLEX_OPTIMIZER
     build-depends: ghc
     exposed-modules: Reflex.Optimizer
+
+  if flag(debug-propagation)
+    cpp-options: -DDEBUG -DDEBUG_TRACE_PROPAGATION -DDEBUG_TRACE_INVALIDATION
+
+  if flag(debug-cycles)
+    cpp-options: -DDEBUG_CYCLES
 
   if flag(use-template-haskell)
     cpp-options: -DUSE_TEMPLATE_HASKELL
@@ -168,6 +188,7 @@ library
     build-depends: ghcjs-base
 
 test-suite semantics
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: semantics.hs
   hs-source-dirs: test
@@ -193,6 +214,7 @@ test-suite semantics
     Reflex.TestPlan
 
 test-suite CrossImpl
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: Reflex/Test/CrossImpl.hs
   hs-source-dirs: test
@@ -214,6 +236,7 @@ test-suite CrossImpl
     Reflex.Plan.Pure
 
 test-suite hlint
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: hlint.hs
   hs-source-dirs: test
@@ -226,6 +249,7 @@ test-suite hlint
     buildable: False
 
 test-suite EventWriterT
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: EventWriterT.hs
   hs-source-dirs: test
@@ -245,28 +269,57 @@ test-suite EventWriterT
     build-depends: these-lens
 
   other-modules:
-    Reflex.Test
-    Reflex.TestPlan
-    Reflex.Plan.Reflex
-    Reflex.Plan.Pure
     Test.Run
 
 
-test-suite RequesterT
+test-suite DebugCycles
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
-  main-is: RequesterT.hs
+  main-is: DebugCycles.hs
   hs-source-dirs: test
+  ghc-options: -threaded
   build-depends: base
                , containers
                , deepseq
-               , dependent-sum
                , dependent-map
+               , dependent-sum
+               , hspec
                , lens
                , mtl
                , these
                , transformers
                , reflex
                , ref-tf
+               , witherable
+               , proctest
+
+
+  if flag(split-these)
+    build-depends: these-lens, semialign
+
+  other-modules:
+    Test.Run
+
+
+test-suite RequesterT
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: RequesterT.hs
+  hs-source-dirs: test
+  build-depends: base
+               , constraints
+               , constraints-extras
+               , containers
+               , deepseq
+               , dependent-map
+               , dependent-sum
+               , lens
+               , mtl
+               , ref-tf
+               , reflex
+               , text
+               , these
+               , transformers
 
   if flag(split-these)
     build-depends: these-lens
@@ -276,7 +329,23 @@ test-suite RequesterT
     Reflex.Plan.Pure
     Test.Run
 
+test-suite Adjustable
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Adjustable.hs
+  hs-source-dirs: test
+  build-depends: base
+               , containers
+               , dependent-sum
+               , reflex
+               , ref-tf
+               , these
+
+  other-modules:
+    Test.Run
+
 test-suite QueryT
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: QueryT.hs
   hs-source-dirs: test
@@ -288,6 +357,7 @@ test-suite QueryT
                , lens
                , monoidal-containers
                , mtl
+               , patch
                , ref-tf
                , reflex
                , these
@@ -303,6 +373,7 @@ test-suite QueryT
     Reflex.Plan.Pure
 
 test-suite GC-Semantics
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: GC.hs
   hs-source-dirs: test
@@ -312,6 +383,7 @@ test-suite GC-Semantics
                , dependent-map
                , deepseq
                , mtl
+               , patch
                , these
                , transformers
                , reflex
@@ -327,6 +399,7 @@ test-suite GC-Semantics
     Test.Run
 
 test-suite rootCleanup
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   main-is: rootCleanup.hs
   hs-source-dirs: test
@@ -344,6 +417,7 @@ test-suite rootCleanup
     Test.Run
 
 benchmark spider-bench
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   hs-source-dirs: bench test
   main-is: Main.hs
@@ -368,6 +442,7 @@ benchmark spider-bench
     Reflex.Bench.Focused
 
 benchmark saulzar-bench
+  default-language: Haskell2010
   type: exitcode-stdio-1.0
   hs-source-dirs: bench test
   c-sources: bench-cbits/checkCapability.c

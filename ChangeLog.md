@@ -2,9 +2,33 @@
 
 ## Unreleased
 
+* Add lifting instances for most classes to `Reflex.Profiled.Profiled`.
+* Class `MonadQuery t q m` now has a `Monad m` superclass constraint.
+* Rename class `MonadBehaviorWriter` -> `BehaviorWriter` for
+  consistency with `EventWriter`/`DynamicWriter`.
+* Introduce deprecated alias `MonadBehaviorWriter = BehaviorWriter`.
+
+## 0.6.4.1
+
+* Fix a bug in the Reflex Profiled transformer where
+  `Reflex.Class.mergeIncrementalG` and
+  `Reflex.Class.mergeIncrementalWithMoveG` implementations referenced
+  itself instead of the inner transformed timeline, causing an
+  infinite loop.
+
+## 0.6.4
+
 * Support GHC 8.8
 
 * Add `Reflex.Query.Base.mapQueryT`. See that module for documentation
+
+* The `Reflex.Patch.*` modules were moved to the `patch` library.
+  They are `Data.Patch.*` there, but reexported under their old names for backwards compatability here.
+
+* Additional instances for `Query` classes for basic types.
+
+* Add cabal flags `debug-propagation` and `debug-event-cycles` to build in debugging
+  code for performance and for cyclic dependencies between events
 
 ## 0.6.3
 

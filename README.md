@@ -21,5 +21,11 @@ A summary of Reflex functions is available in the [quick reference](Quickref.md)
 
 ### Hacking
 
-Use the `./scripts/hack-on reflex` script in [Reflex Platform](https://github.com/reflex-frp/reflex-platform) to checkout the source code of `reflex` locally in `reflex-platform/reflex` directory.
-Then do modifications to the source in place, and use the `./try-reflex` or `./scripts/work-on` scripts to create the shell to test your changes.
+From the root of a [Reflex
+Platform](https://github.com/reflex-frp/reflex-platform) checkout, run
+`./scripts/hack-on haskell-overlays/reflex-packages/dep/reflex`. This
+will check out the reflex source code into the
+`haskell-overlays/reflex-packages/dep/reflex` directory. You can then
+point that checkout at your fork, make changes, etc. Use the
+`./try-reflex` or `./scripts/work-on` scripts to start a shell in
+which you can test your changes.
