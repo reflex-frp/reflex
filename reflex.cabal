@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.6.3
+Version: 0.7.0.0
 Synopsis: Higher-order Functional Reactive Programming
 Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system
 License: BSD3
@@ -318,6 +318,8 @@ test-suite RequesterT
   main-is: RequesterT.hs
   hs-source-dirs: test
   build-depends: base
+               , constraints
+               , constraints-extras
                , containers
                , constraints
                , constraints-extras
@@ -329,6 +331,7 @@ test-suite RequesterT
                , primitive
                , ref-tf
                , reflex
+               , text
                , these
                , transformers
 

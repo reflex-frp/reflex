@@ -12,6 +12,7 @@ import Reflex.Class
 import Control.Monad.Reader
 import Control.Monad.State
 import qualified Control.Monad.State.Strict as Strict
+import Control.Monad.Trans.Maybe (MaybeT)
 
 --TODO: Shouldn't have IO hard-coded
 -- | 'TriggerEvent' represents actions that can create 'Event's that can be
@@ -44,6 +45,11 @@ instance TriggerEvent t m => TriggerEvent t (StateT s m) where
   newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete
 
 instance TriggerEvent t m => TriggerEvent t (Strict.StateT s m) where
+  newTriggerEvent = lift newTriggerEvent
+  newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
+  newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete
+
+instance TriggerEvent t m => TriggerEvent t (MaybeT m) where
   newTriggerEvent = lift newTriggerEvent
   newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
   newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete

@@ -25,8 +25,13 @@ import Data.Constraint.Forall
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.Functor.Misc
+import Data.List (words)
 import Data.Map (Map)
 import qualified Data.Map as M
+#if !MIN_VERSION_these(4,11,0)
+import Data.Semigroup ((<>))
+#endif
+import Data.Text (Text)
 import Data.These
 import Data.List.NonEmpty.Deferred
 import Text.Read (readMaybe)
@@ -72,15 +77,22 @@ main = do
   print os8
   os9 <- runApp' testMoribundPerformEvent $ map Just [ 1 .. 3 ]
   print os9
+  os10 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Increment 1 ]
+  print os10
+  os11 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Reverse "yoyo" ]
+  print os11
   let ![[Just [10,9,8,7,6,5,4,3,2,1]]] = os1
   let ![[Just [1,3,5,7,9]],[Nothing,Nothing],[Just [2,4,6,8,10]],[Just [2,4,6,8,10],Nothing]] = os2
   let ![[Nothing, Just [2]]] = os3
   let ![[Nothing, Just [2]]] = os4
   let ![[Nothing, Just [1, 2]]] = os5
-  let ![[Nothing, Nothing]] = os6 -- TODO re-enable this test after issue #233 has been resolved
+  -- let ![[Nothing, Nothing]] = os6 -- TODO re-enable this test after issue #233 has been resolved
   let !(Just [(-9223372036854775808,"2")]) = M.toList <$> head (head os7)
   let !(Just [(-9223372036854775808,"dcba")]) = M.toList <$> head (head os8)
   let ![[Nothing,Just "0:1"],[Nothing,Just "1:2"],[Nothing,Just "2:3"]] = os9
+  let !(Just [(-9223372036854775808,"2")]) = M.toList <$> head (head os10)
+  let !(Just [(-9223372036854775808,"oyoy")]) = M.toList <$> head (head os11)
+
   return ()
 
 unwrapApp :: forall t m a.
