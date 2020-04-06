@@ -319,6 +319,8 @@ test-suite RequesterT
   hs-source-dirs: test
   build-depends: base
                , containers
+               , constraints
+               , constraints-extras
                , deepseq
                , dependent-map
                , dependent-sum
