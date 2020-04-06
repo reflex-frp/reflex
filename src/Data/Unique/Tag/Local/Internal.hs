@@ -2,9 +2,6 @@
 -- 1. If the `s` parameters on two `TagGen`s can unify, then they contain the same MutVar
 -- 2. Two Tag values made from the same TagGen never contain the same Int
 
-{-# LANGUAGE EmptyDataDecls #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -31,7 +28,7 @@ tagId (Tag n) = n
 -- incorrect unsafeCoerce applications, which can segfault or cause arbitrary
 -- other damage to your program
 unsafeTagFromId :: Int -> Tag x a
-unsafeTagFromId n = Tag n
+unsafeTagFromId = Tag
 
 -- We use Int because it is supported by e.g. IntMap
 newtype TagGen ps s = TagGen { unTagGen :: MutVar ps Int }

@@ -2,7 +2,6 @@
 -- prevents external observers from observing the non-associativity.  This
 -- allows O(1) '(<>)'.
 
-{-# LANGUAGE LambdaCase #-}
 module Data.List.NonEmpty.Deferred
   ( NonEmptyDeferred
   , singleton
