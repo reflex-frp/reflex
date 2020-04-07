@@ -94,7 +94,6 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
     (result0, requests0) <- lift $ runA a0
     newA <- requestingIdentity $ runA <$> a'
     requests <- switchHoldPromptOnly requests0 $ fmapCheap snd newA
-    --TODO: promptly *prevent* events, then sign up the new ones; this is a serious breaking change to PerformEvent
     RequesterInternalT $ tellEvent requests
     pure (result0, fmapCheap fst newA)
   {-# INLINE traverseIntMapWithKeyWithAdjust #-}
@@ -109,7 +108,6 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
         results' = fmap fst <$> children'
         requests' = fmap snd `fmapCheap` children'
     requests <- switchHoldPromptOnlyIncremental mergeIntIncremental coincidencePatchIntMap requests0 requests'
-    --TODO: promptly *prevent* events, then sign up the new ones; this is a serious breaking change to PerformEvent
     RequesterInternalT $ tellEvent $ fforMaybeCheap requests concatIntMapMaybe
     pure (results0, results')
   {-# INLINE traverseDMapWithKeyWithAdjust #-}
@@ -125,7 +123,6 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
         results' = mapPatchDMap (snd . getCompose) <$> children'
         requests' = weakenPatchDMapWith (fst . getCompose) `fmapCheap` children'
     requests <- switchHoldPromptOnlyIncremental mergeMapIncremental coincidencePatchMap requests0 requests'
-    --TODO: promptly *prevent* events, then sign up the new ones; this is a serious breaking change to PerformEvent
     RequesterInternalT $ tellEvent $ fforMaybeCheap requests concatMapMaybe
     pure (results0, results')
   {-# INLINE traverseDMapWithKeyWithAdjustWithMove #-}
@@ -141,7 +138,6 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
         results' = mapPatchDMapWithMove (snd . getCompose) <$> children'
         requests' = weakenPatchDMapWithMoveWith (fst . getCompose) `fmapCheap` children'
     requests <- switchHoldPromptOnlyIncremental mergeMapIncrementalWithMove coincidencePatchMapWithMove requests0 requests'
-    --TODO: promptly *prevent* events, then sign up the new ones; this is a serious breaking change to PerformEvent
     RequesterInternalT $ tellEvent $ fforMaybeCheap requests concatMapMaybe
     pure (results0, results')
 
