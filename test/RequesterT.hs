@@ -255,7 +255,6 @@ testMatchRequestsWithResponses pulse = mdo
       )
 
 -- If a widget is destroyed, and simultaneously it tries to use performEvent, the event does not get performed.
--- TODO Determine whether this is actually the behavior we want.
 testMoribundPerformEvent
   :: forall t m
    . ( Adjustable t m
