@@ -287,7 +287,7 @@ matchResponsesWithRequests f send recv = withTagGen $ \tagGen ->  mdo
     processIncoming incWaitingFor tagGen inc = flip push inc $ \(n, rawRsp) -> do
       waitingFor <- sample $ currentIncremental incWaitingFor
       case Map.lookup n waitingFor of
-        Nothing -> return Nothing -- TODO How should lookup failures be handled here? They shouldn't ever happen..
+        Nothing -> return $ trace ("processIncoming: lookup failure for response key '" <> show n <> "'") Nothing
         Just (Decoder tag responseDecoder) ->
           return $ Just
             ( singletonResponseData tagGen (unsafeTagFromId n) (responseDecoder rawRsp)
