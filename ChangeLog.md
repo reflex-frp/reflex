@@ -45,6 +45,7 @@
         * `requesting'`
         * `traverseIntMapWithKeyWithAdjustRequesterTWith`
         * `traverseDMapWithKeyWithAdjustRequesterTWith`
+        * `TellId`
 
 * Added `Data.List.Deferred` and `Data.List.NonEmpty.Deferred` for optimizing `<>` operations.
 
