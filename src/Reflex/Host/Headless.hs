@@ -14,7 +14,7 @@ import Reflex.Host.Class
 import Control.Monad.IO.Class
 import Control.Monad.Ref
 import Data.IORef
-import Data.Dependent.Sum
+import Data.Dependent.Sum (DSum (..))
 import Control.Concurrent.Chan (newChan, readChan)
 import Control.Monad (forM, forM_)
 import Control.Monad.Identity (Identity(..))
@@ -38,8 +38,14 @@ type MonadHeadlessApp t m =
   , Adjustable t m
   )
 
+-- | Run a headless FRP network. Inside the action, you will most probably use
+-- the capabilities provided by the 'TriggerEvent' and 'PerformEvent' type
+-- classes to interface the FRP network with the outside world. Useful for
+-- testing.
 runHeadlessApp
   :: (forall t m. MonadHeadlessApp t m => m (Event t ()))
+  -- ^ The action to be run in the headless FRP network. The FRP network is
+  -- closed at the first occurrence of the resulting 'Event'.
   -> IO ()
 runHeadlessApp guest =
   (runSpiderHost :: SpiderHost Global a -> IO a) $ do
