@@ -66,6 +66,9 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   constant :: a -> Behavior (Pure t) a
   constant x = Behavior $ \_ -> x
 
+  now :: PushM (Pure t) (Event (Pure t) ())
+  now t = Event $ guard . (t ==)
+
   push :: (a -> PushM (Pure t) (Maybe b)) -> Event (Pure t) a -> Event (Pure t) b
   push f e = Event $ memo $ \t -> unEvent e t >>= \o -> f o t
 

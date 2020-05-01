@@ -415,6 +415,12 @@ subscribeAndReadNever = return (EventSubscription (return ()) eventSubscribedNev
 eventNever :: Event x a
 eventNever = Event $ const subscribeAndReadNever
 
+eventNow :: Event x ()
+eventNow = Event . const . pure $
+           ( EventSubscription (return ()) eventSubscribedNever
+           , Just ()
+           )
+
 eventFan :: (GCompare k, HasSpiderTimeline x) => k a -> Fan x k v -> Event x (v a)
 eventFan !k !f = Event $ wrap eventSubscribedFan $ getFanSubscribed k f
 
@@ -2729,6 +2735,8 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   never = SpiderEvent eventNever
   {-# INLINABLE constant #-}
   constant = SpiderBehavior . behaviorConst
+  {-# INLINABLE now #-}
+  now = pure . SpiderEvent $ eventNow
   {-# INLINE push #-}
   push f = SpiderEvent . push (coerce f) . unSpiderEvent
   {-# INLINE pushCheap #-}

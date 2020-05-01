@@ -262,6 +262,8 @@ class ( MonadHold t (PushM t)
   never :: Event t a
   -- | Create a 'Behavior' that always has the given value
   constant :: a -> Behavior t a --TODO: Refactor to use 'pure' from Applicative instead; however, we need to make sure that encouraging Applicative-style use of 'Behavior's doesn't have a negative performance impact
+  -- | An event which occurs at the current moment.
+  now :: PushM t (Event t ())
   -- | Create an 'Event' from another 'Event'; the provided function can sample
   -- 'Behavior's and hold 'Event's, and use the results to produce a occurring
   -- (Just) or non-occurring (Nothing) result
