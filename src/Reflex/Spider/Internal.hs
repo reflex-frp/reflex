@@ -599,6 +599,16 @@ eventSubscribedNever = EventSubscribed
   , eventSubscribedWhoCreated = return ["never"]
 #endif
   }
+eventSubscribedNow :: EventSubscribed x
+eventSubscribedNow = EventSubscribed
+  { eventSubscribedHeightRef = zeroRef
+  , eventSubscribedRetained = toAny ()
+#ifdef DEBUG_CYCLES
+  , eventSubscribedGetParents = return []
+  , eventSubscribedHasOwnHeightRef = False
+  , eventSubscribedWhoCreated = return ["now"]
+#endif
+  }
 
 eventSubscribedFan :: FanSubscribed x k v -> EventSubscribed x
 eventSubscribedFan !subscribed = EventSubscribed
