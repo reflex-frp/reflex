@@ -322,8 +322,9 @@ testCases =
                 let e = never <$ switch b
             return $ void e
       lazyHold
-
-
+  , testE "now" $ do
+      e1 <- events1
+      switchHoldPromptly never . pushAlways (\a -> fmap (a <$) now) $ e1
   ] where
 
     events1, events2, events3 ::  TestPlan t m => m (Event t String)
