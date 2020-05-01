@@ -6,36 +6,38 @@
 
 module Reflex.Host.Headless where
 
-import Data.Maybe
-import Reflex
-import Control.Monad.Fix
-import Control.Monad.Primitive
-import Reflex.Host.Class
-import Control.Monad.IO.Class
-import Control.Monad.Ref
-import Data.IORef
-import Data.Dependent.Sum (DSum (..))
 import Control.Concurrent.Chan (newChan, readChan)
-import Control.Monad (forM, forM_)
-import Control.Monad.Identity (Identity(..))
+import Control.Monad.Fix (MonadFix, fix)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Primitive (PrimMonad)
+import Control.Monad.Ref (MonadRef, Ref, readRef)
+import Data.Dependent.Sum (DSum (..), (==>))
+import Data.Foldable (for_)
+import Data.Functor.Identity (Identity(..))
+import Data.IORef (IORef, readIORef)
+import Data.Maybe (catMaybes)
+import Data.Traversable (for)
+
+import Reflex
+import Reflex.Host.Class
 
 type MonadHeadlessApp t m =
-  ( Reflex t
-  , MonadHold t m
+  ( Adjustable t m
   , MonadFix m
-  , PrimMonad (HostFrame t)
-  , ReflexHost t
+  , MonadHold t m
   , MonadIO (HostFrame t)
-  , Ref m ~ IORef
-  , Ref (HostFrame t) ~ IORef
+  , MonadIO (Performable m)
+  , MonadIO m
   , MonadRef (HostFrame t)
   , NotReady t m
-  , TriggerEvent t m
-  , PostBuild t m
   , PerformEvent t m
-  , MonadIO m
-  , MonadIO (Performable m)
-  , Adjustable t m
+  , PostBuild t m
+  , PrimMonad (HostFrame t)
+  , Ref (HostFrame t) ~ IORef
+  , Ref m ~ IORef
+  , Reflex t
+  , ReflexHost t
+  , TriggerEvent t m
   )
 
 -- | Run a headless FRP network. Inside the action, you will most probably use
@@ -60,7 +62,7 @@ runHeadlessApp guest =
     -- processed.
     events <- liftIO newChan
     -- Run the "guest" application, providing the appropriate context. We'll
-    -- return the result of the action, and a 'FireCommand' that will be used to
+    -- pure the result of the action, and a 'FireCommand' that will be used to
     -- trigger events.
     (result, fc@(FireCommand fire)) <- do
       hostPerformEventT $                 -- Allows the guest app to run
@@ -83,8 +85,8 @@ runHeadlessApp guest =
     mPostBuildTrigger <- readRef postBuildTriggerRef
 
     -- When there is a subscriber to the post-build event, fire the event.
-    forM_ mPostBuildTrigger $ \postBuildTrigger ->
-      fire [postBuildTrigger :=> Identity ()] $ return ()
+    for_ mPostBuildTrigger $ \postBuildTrigger ->
+      fire [postBuildTrigger :=> Identity ()] $ pure ()
 
     -- Subscribe to an 'Event' of that the guest application can use to
     -- request application shutdown. We'll check whether this 'Event' is firing
@@ -102,25 +104,25 @@ runHeadlessApp guest =
         fireEventTriggerRefs fc ers $
           -- Check if the shutdown 'Event' is firing.
           readEvent shutdown >>= \case
-            Nothing -> return False
-            Just _ -> return True
+            Nothing -> pure False
+            Just _ -> pure True
       if or stop
-        then return ()
+        then pure ()
         else loop
   where
     -- Use the given 'FireCommand' to fire events that have subscribers
     -- and call the callback for the 'TriggerInvocation' of each.
     fireEventTriggerRefs
-      :: (MonadIO m)
+      :: MonadIO m
       => FireCommand t m
       -> [DSum (EventTriggerRef t) TriggerInvocation]
       -> ReadPhase m a
       -> m [a]
     fireEventTriggerRefs (FireCommand fire) ers rcb = do
       mes <- liftIO $
-        forM ers $ \(EventTriggerRef er :=> TriggerInvocation a _) -> do
+        for ers $ \(EventTriggerRef er :=> TriggerInvocation a _) -> do
           me <- readIORef er
-          return $ fmap (\e -> e :=> Identity a) me
+          pure $ fmap (==> a) me
       a <- fire (catMaybes mes) rcb
-      liftIO $ forM_ ers $ \(_ :=> TriggerInvocation _ cb) -> cb
-      return a
+      liftIO $ for_ ers $ \(_ :=> TriggerInvocation _ cb) -> cb
+      pure a
