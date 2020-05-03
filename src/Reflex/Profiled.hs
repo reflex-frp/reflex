@@ -142,6 +142,7 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   type PullM (ProfiledTimeline t) = ProfiledM (PullM t)
   never = Event_Profiled never
   constant = Behavior_Profiled . constant
+  now =  ProfiledM $ Event_Profiled <$> now
   push f (Event_Profiled e) = coerce $ push (coerce f) $ profileEvent e -- Profile before rather than after; this way fanout won't count against us
   pushCheap f (Event_Profiled e) = coerce $ pushCheap (coerce f) $ profileEvent e
   pull = Behavior_Profiled . pull . coerce
