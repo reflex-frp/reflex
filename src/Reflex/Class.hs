@@ -180,7 +180,7 @@ import Prelude hiding (zip, zipWith)
 import Data.These.Combinators (justThese)
 #endif
 #if MIN_VERSION_semialign(1,1,0)
-import Data.Zip (Zip (..))
+import Data.Zip (Zip (..), Unzip (..))
 #endif
 #endif
 
@@ -1091,6 +1091,12 @@ instance Reflex t => Zip (Event t) where
   zip x y = mapMaybe justThese $ align x y
 #endif
 
+#ifdef MIN_VERSION_semialign
+#if MIN_VERSION_semialign(1,1,0)
+instance Reflex t => Unzip (Event t) where
+  unzip = splitE
+#endif
+#endif
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and
 -- the 'Behavior' is true at the time of occurrence.
