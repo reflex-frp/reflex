@@ -1,12 +1,12 @@
 { reflex-platform-fun ? import ./dep/reflex-platform
+, supportedSystems ? ["x86_64-linux" "x86_64-darwin"]
 }:
 
 let
   native-reflex-platform = reflex-platform-fun {};
   inherit (native-reflex-platform.nixpkgs) lib;
-  systems = ["x86_64-linux" "x86_64-darwin"];
 
-  perPlatform = lib.genAttrs systems (system: let
+  perPlatform = lib.genAttrs supportedSystems (system: let
     reflex-platform = reflex-platform-fun { inherit system; };
     compilers = [
       "ghc"
