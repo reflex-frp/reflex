@@ -43,7 +43,7 @@ type MonadHeadlessApp t m =
 -- | Run a headless FRP network. Inside the action, you will most probably use
 -- the capabilities provided by the 'TriggerEvent' and 'PerformEvent' type
 -- classes to interface the FRP network with the outside world. Useful for
--- testing.
+-- testing. Each headless network runs on its own spider timeline.
 runHeadlessApp
   :: (forall t m. MonadHeadlessApp t m => m (Event t ()))
   -- ^ The action to be run in the headless FRP network. The FRP network is
@@ -51,10 +51,8 @@ runHeadlessApp
   -> IO ()
 runHeadlessApp guest =
   -- We are using the 'Spider' implementation of reflex. Running the host
-  -- allows us to take actions on the FRP timeline. The scoped type signature
-  -- specifies that our host runs on the Global timeline.
-  -- For more information, see 'Reflex.Spider.Internal.runSpiderHost'.
-  (runSpiderHost :: SpiderHost Global a -> IO a) $ do
+  -- allows us to take actions on the FRP timeline.
+  withSpiderTimeline $ runSpiderHostForTimeline $ do
     -- Create the "post-build" event and associated trigger. This event fires
     -- once, when the application starts.
     (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
