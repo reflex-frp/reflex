@@ -166,6 +166,8 @@ instance (ReflexHost t, MonadHold t m) => MonadHold t (PerformEventT t m) where
   headE = PerformEventT . lift . headE
   {-# INLINABLE now #-}
   now = PerformEventT . lift $ now
+  {-# INLINABLE occurs #-}
+  occurs = PerformEventT . lift . occurs
 
 instance (MonadRef (HostFrame t), ReflexHost t) => MonadRef (PerformEventT t m) where
   type Ref (PerformEventT t m) = Ref (HostFrame t)

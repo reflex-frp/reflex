@@ -151,7 +151,6 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
     -> DMap k q -> Event (ProfiledTimeline t) (DMap k v)
   mergeG nt = Event_Profiled #. mergeG (coerce nt)
   switch (Behavior_Profiled b) = coerce $ profileEvent $ switch (coerceBehavior b)
-  coincidence (Event_Profiled e) = coerce $ profileEvent $ coincidence (coerceEvent e)
   current (Dynamic_Profiled d) = coerce $ current d
   updated (Dynamic_Profiled d) = coerce $ profileEvent $ updated d
   unsafeBuildDynamic (ProfiledM a0) (Event_Profiled a') = coerce $ unsafeBuildDynamic a0 a'
@@ -184,6 +183,7 @@ instance MonadHold t m => MonadHold (ProfiledTimeline t) (ProfiledM m) where
   buildDynamic (ProfiledM v0) (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> buildDynamic v0 v'
   headE (Event_Profiled e) = ProfiledM $ Event_Profiled <$> headE e
   now = ProfiledM $ Event_Profiled <$> now
+  occurs (Event_Profiled e) = ProfiledM . occurs $ e
 
 instance MonadSample t m => MonadSample (ProfiledTimeline t) (ProfiledM m) where
   sample (Behavior_Profiled b) = ProfiledM $ sample b

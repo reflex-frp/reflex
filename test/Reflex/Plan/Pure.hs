@@ -42,6 +42,7 @@ instance MonadHold (Pure Int) PurePlan where
   buildDynamic getInitial = liftPlan . buildDynamic getInitial
   headE = liftPlan . headE
   now = liftPlan now
+  occurs = liftPlan . occurs
 
 instance MonadSample (Pure Int) PurePlan where
   sample = liftPlan . sample

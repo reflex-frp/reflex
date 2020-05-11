@@ -321,6 +321,11 @@ now = do
            , occ
            )
 
+occursSpiderEventM :: (HasSpiderTimeline x) => R.Event (SpiderTimeline x) a -> EventM x (Maybe a)
+occursSpiderEventM (SpiderEvent (Event e)) =
+  snd <$> subscribeAndReadHead (Event e) (terminalSubscriber (const (pure ())))
+--  snd <$> e (terminalSubscriber (const (pure ())))
+
 -- | Construct an 'Event' whose value is guaranteed not to be recomputed
 -- repeatedly
 --
@@ -1178,7 +1183,6 @@ data Coincidence x a
    = Coincidence { coincidenceParent :: !(Event x (Event x a))
                  , coincidenceSubscribed :: !(IORef (Maybe (CoincidenceSubscribed x a)))
                  }
-
 {-# NOINLINE newInvalidatorSwitch #-}
 newInvalidatorSwitch :: SwitchSubscribed x a -> IO (Invalidator x)
 newInvalidatorSwitch subd = return $! InvalidatorSwitch subd
@@ -2521,6 +2525,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
 --  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = nowSpiderEventM
+  {-# INLINABLE occurs #-}
+  occurs = occursSpiderEventM
 
 instance Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPullM x) where
   {-# INLINABLE sample #-}
@@ -2544,7 +2550,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
 --  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = SpiderPushM nowSpiderEventM
-
+  {-# INLINABLE occurs #-}
+  occurs = SpiderPushM . occursSpiderEventM
 
 instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) where
   {-# INLINE return #-}
@@ -2610,6 +2617,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   headE e = runFrame . runSpiderHostFrame $ Reflex.Class.headE e
   {-# INLINABLE now #-}
   now = runFrame . runSpiderHostFrame $ Reflex.Class.now
+  {-# INLINABLE occurs #-}
+  occurs = runFrame . runSpiderHostFrame . Reflex.Class.occurs
   
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
@@ -2629,6 +2638,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
 --  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = SpiderHostFrame Reflex.Class.now
+  {-# INLINABLE occurs #-}
+  occurs = SpiderHostFrame . Reflex.Class.occurs
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHost x) where
   {-# INLINABLE sample #-}
@@ -2651,6 +2662,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
   headE e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.headE e
   {-# INLINABLE now #-}
   now = Reflex.Spider.Internal.ReadPhase Reflex.Class.now
+  {-# INLINABLE occurs #-}
+  occurs = Reflex.Spider.Internal.ReadPhase . Reflex.Class.occurs
 
 --------------------------------------------------------------------------------
 -- Deprecated items
@@ -2781,8 +2794,6 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   mergeG nt = SpiderEvent . mergeG (unSpiderEvent #. nt) . dynamicConst
   {-# INLINABLE switch #-}
   switch = SpiderEvent . switch . (coerce :: Behavior x (R.Event (SpiderTimeline x) a) -> Behavior x (Event x a)) . unSpiderBehavior
-  {-# INLINABLE coincidence #-}
-  coincidence = SpiderEvent . coincidence . (coerce :: Event x (R.Event (SpiderTimeline x) a) -> Event x (Event x a)) . unSpiderEvent
   {-# INLINABLE current #-}
   current = SpiderBehavior . dynamicCurrent . unSpiderDynamic
   {-# INLINABLE updated #-}

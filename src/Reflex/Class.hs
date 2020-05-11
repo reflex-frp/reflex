@@ -56,6 +56,7 @@ module Reflex.Class
   , mergeMapIncremental
   , mergeMapIncrementalWithMove
   , mergeIntMapIncremental
+  , coincidence
   , coincidencePatchMap
   , coincidencePatchMapWithMove
   , coincidencePatchIntMap
@@ -287,9 +288,6 @@ class ( MonadHold t (PushM t)
   -- | Create an 'Event' that will occur whenever the currently-selected input
   -- 'Event' occurs
   switch :: Behavior t (Event t a) -> Event t a
-  -- | Create an 'Event' that will occur whenever the input event is occurring -- and its occurrence value, another 'Event', is also occurring.
-  --   You maybe looking for '@switchHold@ @never@' instead.
-  coincidence :: Event t (Event t a) -> Event t a
   -- | Extract the 'Behavior' of a 'Dynamic'.
   current :: Dynamic t a -> Behavior t a
   -- | Extract the 'Event' of the 'Dynamic'.
@@ -424,6 +422,10 @@ class MonadSample t m => MonadHold t m where
   now :: m (Event t ())
   default now :: (m ~ f m', MonadTrans f, MonadHold t m') => m (Event t ())
   now = lift now
+  -- | Get the current event occurrence, if any.
+  occurs :: Event t a -> m (Maybe a)
+  default occurs :: (m ~ f m', MonadTrans f, MonadHold t m') => Event t a -> m (Maybe a)
+  occurs = lift . occurs
 
 -- | Accumulate an 'Incremental' with the supplied initial value and the firings of the provided 'Event',
 -- using the combining function to produce a patch.
@@ -570,6 +572,7 @@ instance MonadHold t m => MonadHold t (ReaderT r m) where
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  occurs = lift . occurs
 
 instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
   sample = lift . sample
@@ -581,6 +584,7 @@ instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  occurs = lift . occurs
 
 instance MonadSample t m => MonadSample t (StateT s m) where
   sample = lift . sample
@@ -592,6 +596,7 @@ instance MonadHold t m => MonadHold t (StateT s m) where
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  occurs = lift . occurs
 
 instance MonadSample t m => MonadSample t (ExceptT e m) where
   sample = lift . sample
@@ -603,6 +608,7 @@ instance MonadHold t m => MonadHold t (ExceptT e m) where
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  occurs = lift . occurs
 
 instance (MonadSample t m, Monoid w) => MonadSample t (RWST r w s m) where
   sample = lift . sample
@@ -614,6 +620,7 @@ instance (MonadHold t m, Monoid w) => MonadHold t (RWST r w s m) where
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  occurs = lift . occurs
 
 instance MonadSample t m => MonadSample t (ContT r m) where
   sample = lift . sample
@@ -625,6 +632,7 @@ instance MonadHold t m => MonadHold t (ContT r m) where
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  occurs = lift . occurs
 
 --------------------------------------------------------------------------------
 -- Convenience functions
@@ -911,6 +919,13 @@ instance (Semigroup a, Reflex t) => Monoid (Event t a) where
   mempty = never
   mappend = (<>)
   mconcat = fmap sconcat . mergeList
+
+-- | Merge a collection of events; the resulting 'Event' will only occur if at
+-- least one input event is occurring, and will contain all of the input keys
+-- that are occurring simultaneously.
+--   You may be looking for '@switchHold@ @never@' instead.
+coincidence :: (Reflex t) => Event t (Event t a) -> Event t a
+coincidence = push occurs
 
 -- | Create a new 'Event' that occurs if at least one of the 'Event's in the
 -- list occurs. If multiple occur at the same time they are folded from the left

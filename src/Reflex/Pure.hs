@@ -95,9 +95,6 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   switch :: Behavior (Pure t) (Event (Pure t) a) -> Event (Pure t) a
   switch b = Event $ memo $ \t -> unEvent (unBehavior b t) t
 
-  coincidence :: Event (Pure t) (Event (Pure t) a) -> Event (Pure t) a
-  coincidence e = Event $ memo $ \t -> unEvent e t >>= \o -> unEvent o t
-
   current :: Dynamic (Pure t) a -> Behavior (Pure t) a
   current d = Behavior $ \t -> fst $ unDynamic d t
 
@@ -211,6 +208,4 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
 
   headE = slowHeadE
   now t = Event $ guard . (t ==)
-
-  
-
+  occurs = unEvent
