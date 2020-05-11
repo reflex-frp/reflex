@@ -422,6 +422,8 @@ class MonadSample t m => MonadHold t m where
   headE :: Event t a -> m (Event t a)
   -- | An event which occurs at the current moment.
   now :: m (Event t ())
+  default now :: (m ~ f m', MonadTrans f, MonadHold t m') => m (Event t ())
+  now = lift now
 
 -- | Accumulate an 'Incremental' with the supplied initial value and the firings of the provided 'Event',
 -- using the combining function to produce a patch.
