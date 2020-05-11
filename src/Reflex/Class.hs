@@ -262,8 +262,6 @@ class ( MonadHold t (PushM t)
   never :: Event t a
   -- | Create a 'Behavior' that always has the given value
   constant :: a -> Behavior t a --TODO: Refactor to use 'pure' from Applicative instead; however, we need to make sure that encouraging Applicative-style use of 'Behavior's doesn't have a negative performance impact
-  -- | An event which occurs at the current moment.
-  now :: PushM t (Event t ())
   -- | Create an 'Event' from another 'Event'; the provided function can sample
   -- 'Behavior's and hold 'Event's, and use the results to produce a occurring
   -- (Just) or non-occurring (Nothing) result
@@ -422,6 +420,8 @@ class MonadSample t m => MonadHold t m where
   -- | Create a new 'Event' that only occurs only once, on the first occurrence of
   -- the supplied 'Event'.
   headE :: Event t a -> m (Event t a)
+  -- | An event which occurs at the current moment.
+  now :: m (Event t ())
 
 -- | Accumulate an 'Incremental' with the supplied initial value and the firings of the provided 'Event',
 -- using the combining function to produce a patch.
@@ -567,6 +567,7 @@ instance MonadHold t m => MonadHold t (ReaderT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
   sample = lift . sample
@@ -577,6 +578,7 @@ instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 instance MonadSample t m => MonadSample t (StateT s m) where
   sample = lift . sample
@@ -587,6 +589,7 @@ instance MonadHold t m => MonadHold t (StateT s m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 instance MonadSample t m => MonadSample t (ExceptT e m) where
   sample = lift . sample
@@ -597,6 +600,7 @@ instance MonadHold t m => MonadHold t (ExceptT e m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 instance (MonadSample t m, Monoid w) => MonadSample t (RWST r w s m) where
   sample = lift . sample
@@ -607,6 +611,7 @@ instance (MonadHold t m, Monoid w) => MonadHold t (RWST r w s m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 instance MonadSample t m => MonadSample t (ContT r m) where
   sample = lift . sample
@@ -617,6 +622,7 @@ instance MonadHold t m => MonadHold t (ContT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 --------------------------------------------------------------------------------
 -- Convenience functions

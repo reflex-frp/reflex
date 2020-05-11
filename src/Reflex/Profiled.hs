@@ -142,7 +142,6 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   type PullM (ProfiledTimeline t) = ProfiledM (PullM t)
   never = Event_Profiled never
   constant = Behavior_Profiled . constant
-  now =  ProfiledM $ Event_Profiled <$> now
   push f (Event_Profiled e) = coerce $ push (coerce f) $ profileEvent e -- Profile before rather than after; this way fanout won't count against us
   pushCheap f (Event_Profiled e) = coerce $ pushCheap (coerce f) $ profileEvent e
   pull = Behavior_Profiled . pull . coerce
@@ -184,6 +183,7 @@ instance MonadHold t m => MonadHold (ProfiledTimeline t) (ProfiledM m) where
   holdIncremental v0 (Event_Profiled v') = ProfiledM $ Incremental_Profiled <$> holdIncremental v0 v'
   buildDynamic (ProfiledM v0) (Event_Profiled v') = ProfiledM $ Dynamic_Profiled <$> buildDynamic v0 v'
   headE (Event_Profiled e) = ProfiledM $ Event_Profiled <$> headE e
+  now = ProfiledM $ Event_Profiled <$> now
 
 instance MonadSample t m => MonadSample (ProfiledTimeline t) (ProfiledM m) where
   sample (Behavior_Profiled b) = ProfiledM $ sample b
