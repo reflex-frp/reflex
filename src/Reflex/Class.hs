@@ -420,7 +420,10 @@ class MonadSample t m => MonadHold t m where
   -- | Create a new 'Event' that only occurs only once, on the first occurrence of
   -- the supplied 'Event'.
   headE :: Event t a -> m (Event t a)
-  -- | An event which occurs at the current moment.
+  -- | An event which only occurs at the current moment in time, such that:
+  --
+  -- > coincidence (pushAlways (\a -> (a <$) <$> now) e) = e
+  --
   now :: m (Event t ())
   default now :: (m ~ f m', MonadTrans f, MonadHold t m') => m (Event t ())
   now = lift now
