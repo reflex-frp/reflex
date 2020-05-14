@@ -122,6 +122,8 @@ instance MonadHold t m => MonadHold t (TriggerEventT t m) where
   buildDynamic a0 = lift . buildDynamic a0
   {-# INLINABLE headE #-}
   headE = lift . headE
+  {-# INLINABLE now #-}
+  now = lift now
 
 instance Adjustable t m => Adjustable t (TriggerEventT t m) where
   {-# INLINABLE runWithReplace #-}
