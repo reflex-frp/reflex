@@ -127,6 +127,7 @@ library
     Reflex.PostBuild.Base,
     Reflex.PostBuild.Class,
     Reflex.Profiled,
+    Reflex.PubSub,
     Reflex.Pure,
     Reflex.Query.Base,
     Reflex.Query.Class,
