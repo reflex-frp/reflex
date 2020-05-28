@@ -119,6 +119,7 @@ library
     Reflex.FastWeak,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,
+    Reflex.Host.Headless,
     Reflex.Network,
     Reflex.NotReady.Class,
     Reflex.PerformEvent.Base,
