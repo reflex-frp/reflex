@@ -28,8 +28,10 @@ import Reflex.Class
 import Reflex.Adjustable.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
-import Reflex.Requester.Base
+import Reflex.Requester.Base.Internal
 import Reflex.Requester.Class
+import Reflex.EventWriter.Class
+import Reflex.EventWriter.Base
 
 import Control.Lens
 import Control.Monad.Exception
@@ -37,13 +39,21 @@ import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
-import Data.Coerce
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
+import Data.Functor.Compose
+import Data.Functor.Misc
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty.Deferred (NonEmptyDeferred)
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Semigroup (Semigroup (sconcat))
 import qualified Data.Semigroup as S
+import Data.Unique.Tag.Local
+import Data.Tuple
 
 -- | A function that fires events for the given 'EventTrigger's and then runs
 -- any followup actions provided via 'PerformEvent'.  The given 'ReadPhase'
@@ -68,7 +78,7 @@ instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m
   type PrimState (PerformEventT t m) = PrimState (HostFrame t)
   primitive = PerformEventT . lift . primitive
 
-instance (ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
+instance (ReflexHost t, Ref m ~ Ref IO, PrimMonad (HostFrame t)) => PerformEvent t (PerformEventT t m) where
   type Performable (PerformEventT t m) = HostFrame t
   {-# INLINABLE performEvent_ #-}
   performEvent_ = PerformEventT . requesting_
@@ -76,37 +86,70 @@ instance (ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) wh
   performEvent = PerformEventT . requestingIdentity
 
 instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT t m) where
-  runWithReplace outerA0 outerA' = PerformEventT $ runWithReplaceRequesterTWith f (coerce outerA0) (coerceEvent outerA')
-    where f :: HostFrame t a -> Event t (HostFrame t b) -> RequesterT t (HostFrame t) Identity (HostFrame t) (a, Event t b)
-          f a0 a' = do
-            result0 <- lift a0
-            result' <- requestingIdentity a'
-            return (result0, result')
-  traverseIntMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseIntMapWithKeyWithAdjustRequesterTWith (defaultAdjustIntBase traverseIntMapPatchWithKey) patchIntMapNewElementsMap mergeIntIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
-  traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
-  traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
+  {-# INLINE runWithReplace #-}
+  runWithReplace a0 a' = PerformEventT $ RequesterT $ do
+    env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
+    let runA :: forall a. PerformEventT t m a -> HostFrame t (a, Event t (NonEmptyDeferred (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))
+        runA (PerformEventT (RequesterT a)) = runEventWriterT $ runReaderT (unRequesterInternalT a) env
+    (result0, requests0) <- lift $ runA a0
+    newA <- requestingIdentity $ runA <$> a'
+    requests <- switchHoldPromptOnly requests0 $ fmapCheap snd newA
+    RequesterInternalT $ tellEvent requests
+    pure (result0, fmapCheap fst newA)
+  {-# INLINE traverseIntMapWithKeyWithAdjust #-}
+  traverseIntMapWithKeyWithAdjust f a0 a' = PerformEventT $ RequesterT $ do
+    env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
+    let runA :: forall a. PerformEventT t m a -> HostFrame t (a, Event t (NonEmptyDeferred (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))
+        runA (PerformEventT (RequesterT a)) = runEventWriterT $ runReaderT (unRequesterInternalT a) env
+    children' <- requestingIdentity $ itraverse (\k -> runA . f k) <$> a'
+    children0 <- lift $ itraverse (\k -> runA . f k) a0
+    let results0 = fmap fst children0
+        requests0 = fmap snd children0
+        results' = fmap fst <$> children'
+        requests' = fmap snd `fmapCheap` children'
+    requests <- switchHoldPromptOnlyIncremental mergeIntIncremental coincidencePatchIntMap requests0 requests'
+    RequesterInternalT $ tellEvent $ fforMaybeCheap requests concatIntMapMaybe
+    pure (results0, results')
+  {-# INLINE traverseDMapWithKeyWithAdjust #-}
+  traverseDMapWithKeyWithAdjust (f :: forall a. k a -> v a -> PerformEventT t m (v' a)) (a0 :: DMap k v) a' = PerformEventT $ RequesterT $ do
+    env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
+    let runA :: forall a. k a -> v a -> HostFrame t (Compose ((,) (Event t (NonEmptyDeferred (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))) v' a)
+        runA k v = fmap (Compose . swap) $ runEventWriterT $ runReaderT (unRequesterInternalT a) env
+          where (PerformEventT (RequesterT a)) = f k v
+    children' <- requestingIdentity $ traversePatchDMapWithKey runA <$> a'
+    children0 <- lift $ DMap.traverseWithKey runA a0
+    let results0 = DMap.map (snd . getCompose) children0
+        requests0 = weakenDMapWith (fst . getCompose) children0
+        results' = mapPatchDMap (snd . getCompose) <$> children'
+        requests' = weakenPatchDMapWith (fst . getCompose) `fmapCheap` children'
+    requests <- switchHoldPromptOnlyIncremental mergeMapIncremental coincidencePatchMap requests0 requests'
+    RequesterInternalT $ tellEvent $ fforMaybeCheap requests concatMapMaybe
+    pure (results0, results')
+  {-# INLINE traverseDMapWithKeyWithAdjustWithMove #-}
+  traverseDMapWithKeyWithAdjustWithMove (f :: forall a. k a -> v a -> PerformEventT t m (v' a)) (a0 :: DMap k v) a' = PerformEventT $ RequesterT $ do
+    env@(_, _ :: TagGen (PrimState (HostFrame t)) FakeRequesterStatePhantom) <- RequesterInternalT ask
+    let runA :: forall a. k a -> v a -> HostFrame t (Compose ((,) (Event t (NonEmptyDeferred (RequestEnvelope FakeRequesterStatePhantom (HostFrame t))))) v' a)
+        runA k v = fmap (Compose . swap) $ runEventWriterT $ runReaderT (unRequesterInternalT a) env
+          where (PerformEventT (RequesterT a)) = f k v
+    children' <- requestingIdentity $ traversePatchDMapWithMoveWithKey runA <$> a'
+    children0 <- lift $ DMap.traverseWithKey runA a0
+    let results0 = DMap.map (snd . getCompose) children0
+        requests0 = weakenDMapWith (fst . getCompose) children0
+        results' = mapPatchDMapWithMove (snd . getCompose) <$> children'
+        requests' = weakenPatchDMapWithMoveWith (fst . getCompose) `fmapCheap` children'
+    requests <- switchHoldPromptOnlyIncremental mergeMapIncrementalWithMove coincidencePatchMapWithMove requests0 requests'
+    RequesterInternalT $ tellEvent $ fforMaybeCheap requests concatMapMaybe
+    pure (results0, results')
 
-defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
-  => ((forall a. k' a -> v a -> HostFrame t (v2 a)) -> p k' v -> HostFrame t (p k' v2))
-  -> (forall a. k' a -> v a -> HostFrame t (v2 a))
-  -> DMap k' v
-  -> Event t (p k' v)
-  -> RequesterT t (HostFrame t) Identity (HostFrame t) (DMap k' v2, Event t (p k' v2))
-defaultAdjustBase traversePatchWithKey f' dm0 dm' = do
-  result0 <- lift $ DMap.traverseWithKey f' dm0
-  result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
-  return (result0, result')
+concatIntMapMaybe :: Semigroup a => IntMap a -> Maybe a
+concatIntMapMaybe m = case IntMap.elems m of
+  [] -> Nothing
+  h : t -> Just $ sconcat $ h :| t
 
-defaultAdjustIntBase :: forall t v v2 p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
-  => ((IntMap.Key -> v -> HostFrame t v2) -> p v -> HostFrame t (p v2))
-  -> (IntMap.Key -> v -> HostFrame t v2)
-  -> IntMap v
-  -> Event t (p v)
-  -> RequesterT t (HostFrame t) Identity (HostFrame t) (IntMap v2, Event t (p v2))
-defaultAdjustIntBase traversePatchWithKey f' dm0 dm' = do
-  result0 <- lift $ IntMap.traverseWithKey f' dm0
-  result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
-  return (result0, result')
+concatMapMaybe :: Semigroup a => Map k a -> Maybe a
+concatMapMaybe m = case Map.elems m of
+  [] -> Nothing
+  h : t -> Just $ sconcat $ h :| t
 
 instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
   {-# INLINABLE newEventWithTrigger #-}
@@ -124,6 +167,7 @@ hostPerformEventT :: forall t m a.
                      , MonadReflexHost t m
                      , MonadRef m
                      , Ref m ~ Ref IO
+                     , PrimMonad (HostFrame t)
                      )
                   => PerformEventT t m a
                   -> m (a, FireCommand t m)

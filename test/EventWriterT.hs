@@ -24,26 +24,30 @@ import Test.Run
 
 main :: IO ()
 main = do
-  os1@[[Just [10,9,8,7,6,5,4,3,2,1]]] <- runApp' (unwrapApp testOrdering) $
+  os1 <- runApp' (unwrapApp testOrdering) $
     [ Just ()
     ]
   print os1
-  os2@[[Just [1,3,5,7,9]],[Nothing,Nothing],[Just [2,4,6,8,10]],[Just [2,4,6,8,10],Nothing]]
-    <- runApp' (unwrapApp testSimultaneous) $ map Just $
-         [ This ()
-         , That ()
-         , This ()
-         , These () ()
-         ]
+  os2 <- runApp' (unwrapApp testSimultaneous) $ map Just $
+    [ This ()
+    , That ()
+    , This ()
+    , These () ()
+    ]
   print os2
-  os3@[[Nothing, Just [2]]] <- runApp' (unwrapApp testMoribundTellEvent) [Just ()]
+  os3 <- runApp' (unwrapApp testMoribundTellEvent) [Just ()]
   print os3
-  os4@[[Nothing, Just [2]]] <- runApp' (unwrapApp testMoribundTellEventDMap) [Just ()]
+  os4 <- runApp' (unwrapApp testMoribundTellEventDMap) [Just ()]
   print os4
-  os5@[[Nothing, Just [1, 2]]] <- runApp' (unwrapApp testLiveTellEventDMap) [Just ()]
+  os5 <- runApp' (unwrapApp testLiveTellEventDMap) [Just ()]
   print os5
   os6 <- runApp' (unwrapApp delayedPulse) [Just ()]
   print os6
+  let ![[Just [10,9,8,7,6,5,4,3,2,1]]] = os1
+  let ![[Just [1,3,5,7,9]],[Nothing,Nothing],[Just [2,4,6,8,10]],[Just [2,4,6,8,10],Nothing]] = os2
+  let ![[Nothing, Just [2]]] = os3
+  let ![[Nothing, Just [2]]] = os4
+  let ![[Nothing, Just [1, 2]]] = os5
   let ![[Nothing, Nothing]] = os6
   return ()
 

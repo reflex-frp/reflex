@@ -82,7 +82,6 @@ import Data.Functor.Compose
 import Data.Functor.Misc
 import Reflex.Class
 
-import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity
 import Data.Align
@@ -196,6 +195,7 @@ switchPromptlyDyn de =
   let eLag = switch $ current de
       eCoincidences = coincidence $ updated de
   in leftmost [eCoincidences, eLag]
+--TODO: switchPromptlyDyn should get the `only` treatment like switchHoldPromptOnly
 
 -- | Split a 'Dynamic' pair into a pair of 'Dynamic's
 splitDynPure :: Reflex t => Dynamic t (a, b) -> (Dynamic t a, Dynamic t b)

@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -14,8 +15,10 @@ module Main where
 
 import Control.Lens hiding (has)
 import Control.Monad
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.Fix
 import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Primitive
 import Data.Constraint.Extras
 import Data.Constraint.Extras.TH
 import Data.Constraint.Forall
@@ -30,6 +33,7 @@ import Data.Semigroup ((<>))
 #endif
 import Data.Text (Text)
 import Data.These
+import Data.List.NonEmpty.Deferred
 import Text.Read (readMaybe)
 
 #if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
@@ -41,6 +45,8 @@ import Reflex.Requester.Base
 import Reflex.Requester.Class
 import Test.Run
 
+import Debug.Trace hiding (traceEvent)
+
 data RequestInt a where
   RequestInt :: Int -> RequestInt Int
 
@@ -49,7 +55,7 @@ main = do
   os1 <- runApp' (unwrapApp testOrdering) $
     [ Just ()
     ]
-  print os1
+  --print os1
   os2 <- runApp' (unwrapApp testSimultaneous) $ map Just $
     [ This ()
     , That ()
@@ -65,31 +71,43 @@ main = do
   print os5
   os6 <- runApp' (unwrapApp delayedPulse) [Just ()]
   print os6
-  os7 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Increment 1 ]
+  os7 <- runApp' testMatchRequestsWithResponses $ map Just [ TestRequest_Increment 1, TestRequest_Increment 2 ]
   print os7
-  os8 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Reverse "yoyo" ]
+  os8 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Reverse "abcd" ]
   print os8
-  let ![[Just [1,2,3,4,5,6,7,8,9,10]]] = os1 -- The order is reversed here: see the documentation for 'runRequesterT'
-  let ![[Just [9,7,5,3,1]],[Nothing,Nothing],[Just [10,8,6,4,2]],[Just [10,8,6,4,2],Nothing]] = os2
+  os9 <- runApp' testMoribundPerformEvent $ map Just [ 1 .. 3 ]
+  print os9
+  os10 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Increment 1 ]
+  print os10
+  os11 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Reverse "yoyo" ]
+  print os11
+  let ![[Just [10,9,8,7,6,5,4,3,2,1]]] = os1
+  let ![[Just [1,3,5,7,9]],[Nothing,Nothing],[Just [2,4,6,8,10]],[Just [2,4,6,8,10],Nothing]] = os2
   let ![[Nothing, Just [2]]] = os3
   let ![[Nothing, Just [2]]] = os4
   let ![[Nothing, Just [1, 2]]] = os5
   -- let ![[Nothing, Nothing]] = os6 -- TODO re-enable this test after issue #233 has been resolved
-  let !(Just [(1,"2")]) = M.toList <$> head (head os7)
-  let !(Just [(1,"oyoy")]) = M.toList <$> head (head os8)
+  let !(Just [(-9223372036854775808,"2")]) = M.toList <$> head (head os7)
+  let !(Just [(-9223372036854775808,"dcba")]) = M.toList <$> head (head os8)
+  let ![[Nothing,Just "0:1"],[Nothing,Just "1:2"],[Nothing,Just "2:3"]] = os9
+  let !(Just [(-9223372036854775808,"2")]) = M.toList <$> head (head os10)
+  let !(Just [(-9223372036854775808,"oyoy")]) = M.toList <$> head (head os11)
 
   return ()
 
-unwrapRequest :: DSum tag RequestInt -> Int
-unwrapRequest (_ :=> RequestInt i) = i
-
-unwrapApp :: ( Reflex t, Monad m )
+unwrapApp :: forall t m a.
+             ( Reflex t
+             , MonadFix m
+             , PrimMonad m
+             )
           => (a -> RequesterT t RequestInt Identity m ())
           -> a
           -> m (Event t [Int])
 unwrapApp x appIn = do
   ((), e) <- runRequesterT (x appIn) never
-  return $ fmap (map unwrapRequest . requesterDataToList) e
+  let unwrapRequests :: forall x. RequestData (PrimState m) RequestInt -> [Int]
+      unwrapRequests (RequestData _ es) = fmap (\(RequestEnvelope _ (RequestInt i)) -> i) $ toList es
+  return $ fmap unwrapRequests e
 
 testOrdering :: ( Response m ~ Identity
                 , Request m ~ RequestInt
@@ -200,6 +218,11 @@ data TestRequest a where
   TestRequest_Reverse :: String -> TestRequest String
   TestRequest_Increment :: Int -> TestRequest Int
 
+instance Show (TestRequest a) where
+  show = \case
+    TestRequest_Reverse str -> "reverse " <> str
+    TestRequest_Increment i -> "increment " <> show i
+
 testMatchRequestsWithResponses
   :: forall m t req a
    . ( MonadFix m
@@ -209,17 +232,21 @@ testMatchRequestsWithResponses
      , MonadIO (Performable m)
      , ForallF Show req
      , Has Read req
+     , PrimMonad m
+     , Show (req a)
+     , Show a
+     , MonadIO m
      )
   => Event t (req a) -> m (Event t (Map Int String))
 testMatchRequestsWithResponses pulse = mdo
   (_, requests) <- runRequesterT (requesting pulse) responses
-  let rawResponses = M.map (\v ->
+  let rawResponseMap = M.map (\v ->
         case words v of
           ["reverse", str] -> reverse str
           ["increment", i] -> show $ succ $ (read i :: Int)
         ) <$> rawRequestMap
-  (rawRequestMap, responses) <- matchResponsesWithRequests reqEncoder requests (head . M.toList <$> rawResponses)
-  pure rawResponses
+  (rawRequestMap, responses) <- matchResponsesWithRequests reqEncoder requests (head . M.toList <$> rawResponseMap)
+  pure rawResponseMap
   where
     reqEncoder :: forall a. req a -> (String, String -> Maybe a)
     reqEncoder r =
@@ -227,9 +254,22 @@ testMatchRequestsWithResponses pulse = mdo
       , \x -> has @Read r $ readMaybe x
       )
 
-deriveArgDict ''TestRequest
+-- If a widget is destroyed, and simultaneously it tries to use performEvent, the event does not get performed.
+testMoribundPerformEvent
+  :: forall t m
+   . ( Adjustable t m
+     , PerformEvent t m
+     , MonadHold t m
+     , Reflex t
+     )
+  => Event t Int -> m (Event t String)
+testMoribundPerformEvent pulse = do
+  (outputInitial, outputReplaced) <- runWithReplace (performPrint 0 pulse) $ ffor pulse $ \i -> performPrint i pulse
+  switchHold outputInitial outputReplaced
+  where
+    performPrint i evt =
+      performEvent $ ffor evt $ \output ->
+        return $ show i <> ":" <> show output
 
-instance Show (TestRequest a) where
-  show = \case
-    TestRequest_Reverse str -> "reverse " <> str
-    TestRequest_Increment i -> "increment " <> show i
+
+deriveArgDict ''TestRequest

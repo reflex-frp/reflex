@@ -169,6 +169,8 @@ module Reflex.Class
   , tagCheap
   , mergeWithCheap
   , mergeWithCheap'
+  , sconcatCheap
+  , mconcatCheap
     -- * Slow, but general, implementations
   , slowHeadE
   ) where
@@ -210,7 +212,8 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
-import Data.Semigroup (Semigroup (..))
+import qualified Data.Map as Map
+import Data.Semigroup (Semigroup, sconcat, stimes, (<>))
 import Data.Some (Some(Some))
 import Data.String
 import Data.These
@@ -752,11 +755,6 @@ instance Reflex t => Functor (Event t) where
   {-# INLINE (<$) #-}
   x <$ e = fmapCheap (const x) e
 
--- TODO Remove this instance
-instance Reflex t => FunctorMaybe (Event t) where
-  {-# INLINE fmapMaybe #-}
-  fmapMaybe = mapMaybe
-
 instance Reflex t => Filterable (Event t) where
   {-# INLINE mapMaybe #-}
   mapMaybe f = push $ return . f
@@ -910,6 +908,12 @@ instance (Semigroup a, Reflex t) => Semigroup (Event t a) where
   sconcat = fmap sconcat . mergeList . toList
   stimes n = fmap $ stimes n
 
+sconcatCheap :: (Semigroup a, Reflex t) => NonEmpty (Event t a) -> Event t a
+sconcatCheap = fmapCheap sconcat . mergeList . toList
+
+mconcatCheap :: (Semigroup a, Reflex t) => [Event t a] -> Event t a
+mconcatCheap = fmapCheap sconcat . mergeList
+
 instance (Semigroup a, Reflex t) => Monoid (Event t a) where
   mempty = never
   mappend = (<>)
@@ -924,6 +928,8 @@ mergeWith = mergeWith' id
 
 {-# INLINE mergeWith' #-}
 mergeWith' :: Reflex t => (a -> b) -> (b -> b -> b) -> [Event t a] -> Event t b
+mergeWith' _ _ [] = never
+mergeWith' f _ [e] = fmap f e
 mergeWith' f g es = fmap (Prelude.foldl1 g . fmap f)
                   . mergeInt
                   . IntMap.fromDistinctAscList
@@ -941,6 +947,7 @@ leftmost = mergeWith const
 -- time.
 mergeList :: Reflex t => [Event t a] -> Event t (NonEmpty a)
 mergeList [] = never
+mergeList [e] = fmapCheap (:|[]) e
 mergeList es = mergeWithFoldCheap' id es
 
 unsafeMapIncremental
@@ -956,10 +963,6 @@ unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIn
 -- occurring at that time.
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
-
--- | Like 'mergeMap' but for 'IntMap'.
-mergeIntMap :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
-mergeIntMap = fmap dmapToIntMap . merge . intMapWithFunctorToDMap
 
 -- | Create a merge whose parents can change over time
 mergeMapIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Event t a)) -> Event t (Map k a)
@@ -1037,33 +1040,45 @@ switchHoldPromptly ea0 eea = do
 switchHoldPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchHoldPromptOnly e0 e' = do
   eLag <- switch <$> hold e0 e'
-  return $ coincidence $ leftmost [e', eLag <$ eLag]
+  return $ fmapMaybeCheap id $ leftmost
+    [ fmapCheap Just $ coincidence e'
+    , fmapCheap (const Nothing) e'
+    , fmapCheap Just eLag
+    ]
 
 -- | When the given outer event fires, condense the inner events into the contained patch.  Non-firing inner events will be replaced with deletions.
 coincidencePatchMap :: (Reflex t, Ord k) => Event t (PatchMap k (Event t v)) -> Event t (PatchMap k v)
-coincidencePatchMap e = fmapCheap PatchMap $ coincidence $ ffor e $ \(PatchMap m) -> mergeMap $ ffor m $ \case
-  Nothing -> fmapCheap (const Nothing) e
-  Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
+coincidencePatchMap e = fmapCheap PatchMap $ coincidence $ fforCheap e $ \(PatchMap m) -> if Map.null m then never else
+  let firingNewItems = mergeMap $ fforMaybe m $ \case
+        Nothing -> Nothing
+        Just ev -> Just $ fmapCheap Just ev
+      oldItemMask = (Nothing <$ m) <$ e
+  in alignWith (mergeThese Map.union) firingNewItems oldItemMask -- Must be left-biased
 
 -- | See 'coincidencePatchMap'
 coincidencePatchIntMap :: Reflex t => Event t (PatchIntMap (Event t v)) -> Event t (PatchIntMap v)
-coincidencePatchIntMap e = fmapCheap PatchIntMap $ coincidence $ ffor e $ \(PatchIntMap m) -> mergeIntMap $ ffor m $ \case
-  Nothing -> fmapCheap (const Nothing) e
-  Just ev -> leftmost [fmapCheap Just ev, fmapCheap (const Nothing) e]
+coincidencePatchIntMap e = fmapCheap PatchIntMap $ coincidence $ fforCheap e $ \(PatchIntMap m) -> if IntMap.null m then never else
+  let firingNewItems = mergeIntMap $ fforMaybe m $ \case
+        Nothing -> Nothing
+        Just ev -> Just $ fmapCheap Just ev
+      oldItemMask = (Nothing <$ m) <$ e
+  in alignWith (mergeThese IntMap.union) firingNewItems oldItemMask -- Must be left-biased
 
 -- | See 'coincidencePatchMap'
 coincidencePatchMapWithMove :: (Reflex t, Ord k) => Event t (PatchMapWithMove k (Event t v)) -> Event t (PatchMapWithMove k v)
-coincidencePatchMapWithMove e = fmapCheap unsafePatchMapWithMove $ coincidence $ ffor e $ \p -> mergeMap $ ffor (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
-  PatchMapWithMove.From_Delete -> fforCheap e $ \_ ->
-    ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
-  PatchMapWithMove.From_Move k -> fforCheap e $ \_ ->
-    ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Move k }
-  PatchMapWithMove.From_Insert ev -> leftmost
-    [ fforCheap ev $ \v ->
-        ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Insert v }
-    , fforCheap e $ \_ ->
-        ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
-    ]
+coincidencePatchMapWithMove e = fmapCheap unsafePatchMapWithMove $ coincidence $ fforCheap e $ \p -> if Map.null (unPatchMapWithMove p) then never else
+  let firingNewItems = mergeMap $ fforMaybe (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
+        PatchMapWithMove.From_Insert ev -> Just $ fforCheap ev $ \v ->
+          ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Insert v }
+        _ -> Nothing
+      oldItemMask = fforCheap e $ \_ -> ffor (unPatchMapWithMove p) $ \ni -> case PatchMapWithMove._nodeInfo_from ni of
+        PatchMapWithMove.From_Delete ->
+          ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
+        PatchMapWithMove.From_Move k ->
+          ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Move k }
+        PatchMapWithMove.From_Insert _ ->
+          ni { PatchMapWithMove._nodeInfo_from = PatchMapWithMove.From_Delete }
+  in alignWith (mergeThese Map.union) firingNewItems oldItemMask -- Must be left-biased
 
 -- | Given a 'PatchTarget' of events (e.g., a 'Map' with 'Event' values) and an event of 'Patch'es
 -- (e.g., a 'PatchMap' with 'Event' values), produce an 'Event' of the 'PatchTarget' type that
@@ -1322,7 +1337,7 @@ accumMaybeMDyn
   -> Event t b
   -> m (Dynamic t a)
 accumMaybeMDyn f z e = do
-  rec let e' = flip push e $ \o -> do
+  rec let e' = flip pushCheap e $ \o -> do
             v <- sample $ current d'
             f v o
       d' <- holdDyn z e'
@@ -1378,8 +1393,8 @@ mapAccumMaybeMDyn f z e = do
             return $ case result of
               (Nothing, Nothing) -> Nothing
               _ -> Just result
-      d' <- holdDyn z $ mapMaybe fst e'
-  return (d', mapMaybe snd e')
+      d' <- holdDyn z $ fmapMaybeCheap fst e'
+  return (d', fmapMaybeCheap snd e')
 
 -- | Accumulate a 'Behavior' by folding occurrences of an 'Event'
 -- with the provided function.
@@ -1417,7 +1432,7 @@ accumMaybeB f = accumMaybeMB $ \v o -> return $ f v o
 {-# INLINE accumMaybeMB #-}
 accumMaybeMB :: (Reflex t, MonadHold t m, MonadFix m) => (a -> b -> PushM t (Maybe a)) -> a -> Event t b -> m (Behavior t a)
 accumMaybeMB f z e = do
-  rec let e' = flip push e $ \o -> do
+  rec let e' = flip pushCheap e $ \o -> do
             v <- sample d'
             f v o
       d' <- hold z e'
@@ -1467,8 +1482,8 @@ mapAccumMaybeMB f z e = do
             return $ case result of
               (Nothing, Nothing) -> Nothing
               _ -> Just result
-      d' <- hold z $ mapMaybe fst e'
-  return (d', mapMaybe snd e')
+      d' <- hold z $ fmapMaybeCheap fst e'
+  return (d', fmapMaybeCheap snd e')
 
 -- | Accumulate occurrences of an 'Event', producing an output occurrence each
 -- time.  Discard the underlying 'Accumulator'.
@@ -1678,6 +1693,8 @@ mergeWithCheap' f g = mergeWithFoldCheap' $ foldl1 g . fmap f
 -- | A "cheap" version of 'mergeWithFoldCheap''. See the performance note on 'pushCheap'.
 {-# INLINE mergeWithFoldCheap' #-}
 mergeWithFoldCheap' :: Reflex t => (NonEmpty a -> b) -> [Event t a] -> Event t b
+mergeWithFoldCheap' _ [] = never
+mergeWithFoldCheap' f [e] = fmapCheap (f . (:|[])) e
 mergeWithFoldCheap' f es =
   fmapCheap (f . (\(h : t) -> h :| t) . IntMap.elems)
   . mergeInt
@@ -1692,7 +1709,18 @@ mergeWithFoldCheap' f es =
 -- | See 'switchHoldPromptly'
 switchPromptly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptly = switchHoldPromptly
+
 {-# DEPRECATED switchPromptOnly "Use 'switchHoldPromptOnly' instead. The 'switchHold*' naming convention was chosen because those functions are more closely related to each other than they are to 'switch'. " #-}
 -- | See 'switchHoldPromptOnly'
 switchPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptOnly = switchHoldPromptOnly
+
+{-# DEPRECATED mergeIntMap "Use 'mergeInt' instead" #-}
+-- | Like 'mergeMap' but for 'IntMap'.
+mergeIntMap :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
+mergeIntMap = mergeInt
+
+-- NOTE: A deprecation warning is expected on this instance
+instance Reflex t => FunctorMaybe (Event t) where
+  {-# INLINE fmapMaybe #-}
+  fmapMaybe = mapMaybe
