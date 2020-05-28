@@ -416,6 +416,20 @@ test-suite rootCleanup
     Reflex.TestPlan
     Test.Run
 
+test-suite nestedAdjustable
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: nestedAdjustable.hs
+  hs-source-dirs: test
+  build-depends: base
+               , containers
+               , deepseq
+               , dependent-sum
+               , mtl
+               , reflex
+               , ref-tf
+               , these
+
 benchmark spider-bench
   default-language: Haskell2010
   type: exitcode-stdio-1.0
