@@ -41,9 +41,11 @@ import Unsafe.Coerce
 #ifdef GHCJS_FAST_WEAK
 import GHCJS.Types
 #else
+import Control.Monad ((<=<))
 import Control.Exception (evaluate)
 import System.IO.Unsafe
 import System.Mem.Weak
+import Data.IORef
 #endif
 
 
@@ -81,8 +83,8 @@ unsafeToRawJSVal v = unsafeCoerce (Val v)
 -- can be used to get the referred to value without fear of @Nothing@,
 -- and 'getFastWeakTicketWeak' can be used to get the weak version.
 data FastWeakTicket a = FastWeakTicket
-  { _fastWeakTicket_val :: !a
-  , _fastWeakTicket_weak :: {-# UNPACK #-} !(Weak a)
+  { _fastWeakTicket_val :: {-# UNPACK #-} !(IORef a)
+  , _fastWeakTicket_weak :: {-# UNPACK #-} !(Weak (IORef a))
   }
 
 -- | A reference to some value which can be garbage collected if there are only weak references to the value left.
@@ -93,7 +95,7 @@ data FastWeakTicket a = FastWeakTicket
 -- if the value hasn't been collected yet.
 --
 -- Synonymous with 'Weak'.
-type FastWeak a = Weak a
+type FastWeak a = Weak (IORef a)
 #endif
 
 -- | Return the @a@ kept alive by the given 'FastWeakTicket'.
@@ -107,7 +109,7 @@ getFastWeakTicketValue t = do
 
 foreign import javascript unsafe "$r = $1.val;" js_ticketVal :: FastWeakTicket a -> IO JSVal
 #else
-getFastWeakTicketValue = return . _fastWeakTicket_val
+getFastWeakTicketValue = readIORef . _fastWeakTicket_val
 #endif
 
 -- | Get the value referred to by a 'FastWeak' if it hasn't yet been collected,
@@ -124,9 +126,10 @@ foreign import javascript unsafe "$1 === null" js_isNull :: JSVal -> Bool
 
 foreign import javascript unsafe "$r = ($1.ticket === null) ? null : $1.ticket.val;" js_weakVal :: FastWeak a -> IO JSVal
 #else
-getFastWeakValue = deRefWeak
+getFastWeakValue = mapM readIORef <=< deRefWeak
 #endif
 
+{-# NOINLINE getFastWeakTicket #-}
 -- | Try to create a 'FastWeakTicket' for the given 'FastWeak' which will ensure the value referred
 -- remains alive. Returns @Just@ if the value hasn't been collected
 -- and a ticket can therefore be obtained, @Nothing@ if it's been collected.
@@ -171,9 +174,11 @@ foreign import javascript unsafe "$r = new h$FastWeakTicket($1);" js_fastWeakTic
 #else
 mkFastWeakTicket v = do
   v' <- evaluate v
-  w <- mkWeakPtr v' Nothing
+  n <- mapM evaluate $ show (unsafeCoerce v' :: Int)
+  vr <- newIORef v'
+  w <- mkWeakIORef vr $ putStrLn $ "finalizing FastWeak for " <> n
   return $ FastWeakTicket
-    { _fastWeakTicket_val = v'
+    { _fastWeakTicket_val = vr
     , _fastWeakTicket_weak = w
     }
 #endif
