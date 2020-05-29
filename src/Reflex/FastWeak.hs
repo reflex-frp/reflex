@@ -4,6 +4,9 @@
 #if GHCJS_FAST_WEAK
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE JavaScriptFFI #-}
+#else
+{-# LANGUAGE MagicHash #-}
+{-# LANGUAGE UnboxedTuples #-}
 #endif
 
 -- |
@@ -42,10 +45,12 @@ import Unsafe.Coerce
 import GHCJS.Types
 #else
 import Control.Monad ((<=<))
-import Control.Exception (evaluate)
+import GHC.Base (IO (..), mkWeakNoFinalizer#)
+import GHC.IORef (IORef (..), newIORef, readIORef)
+import GHC.STRef
+import GHC.Weak
 import System.IO.Unsafe
 import System.Mem.Weak
-import Data.IORef
 #endif
 
 
@@ -173,14 +178,17 @@ mkFastWeakTicket v = js_fastWeakTicket (unsafeToRawJSVal v)
 foreign import javascript unsafe "$r = new h$FastWeakTicket($1);" js_fastWeakTicket :: JSVal -> IO (FastWeakTicket a)
 #else
 mkFastWeakTicket v = do
-  v' <- evaluate v
-  n <- mapM evaluate $ show (unsafeCoerce v' :: Int)
-  vr <- newIORef v'
-  w <- mkWeakIORef vr $ putStrLn $ "finalizing FastWeak for " <> n
+  vr <- newIORef v
+  w <- mkWeakIORefNoFinalizer vr
   return $ FastWeakTicket
     { _fastWeakTicket_val = vr
     , _fastWeakTicket_weak = w
     }
+
+-- |Make a 'Weak' pointer to an 'IORef', without a finalizer
+mkWeakIORefNoFinalizer :: IORef a -> IO (Weak (IORef a))
+mkWeakIORefNoFinalizer r@(IORef (STRef r#)) = IO $ \s ->
+    case mkWeakNoFinalizer# r# r s of (# s1, w #) -> (# s1, Weak w #)
 #endif
 
 -- | Demote a 'FastWeakTicket'; which ensures the value is alive, to a 'FastWeak' which doesn't.
