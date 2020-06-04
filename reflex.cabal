@@ -1,7 +1,7 @@
 Name: reflex
 Version: 0.7.1.0
 Synopsis: Higher-order Functional Reactive Programming
-Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system
+Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system: <https://reflex-frp.org>
 License: BSD3
 License-file: LICENSE
 Author: Ryan Trinkle
