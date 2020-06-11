@@ -306,7 +306,20 @@ data CacheSubscribed x a
 #endif
                      }
 
+nowSpiderEventM :: (HasSpiderTimeline x) => EventM x (R.Event (SpiderTimeline x) ())
+nowSpiderEventM =
+  SpiderEvent <$> now
 
+now :: (MonadIO m, Defer (Some Clear) m, HasSpiderTimeline x
+       ) => m (Event x ())
+now = do
+  nowOrNot <- liftIO $ newIORef $ Just ()
+  scheduleClear nowOrNot
+  return . Event $ \_ -> do
+    occ <- liftIO . readIORef $ nowOrNot
+    return ( EventSubscription (return ()) eventSubscribedNow
+           , occ
+           )
 
 -- | Construct an 'Event' whose value is guaranteed not to be recomputed
 -- repeatedly
@@ -591,6 +604,16 @@ eventSubscribedNever = EventSubscribed
   , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = return ["never"]
+#endif
+  }
+eventSubscribedNow :: EventSubscribed x
+eventSubscribedNow = EventSubscribed
+  { eventSubscribedHeightRef = zeroRef
+  , eventSubscribedRetained = toAny ()
+#ifdef DEBUG_CYCLES
+  , eventSubscribedGetParents = return []
+  , eventSubscribedHasOwnHeightRef = False
+  , eventSubscribedWhoCreated = return ["now"]
 #endif
   }
 
@@ -2496,6 +2519,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
+  {-# INLINABLE now #-}
+  now = nowSpiderEventM
 
 instance Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPullM x) where
   {-# INLINABLE sample #-}
@@ -2517,6 +2542,9 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+  {-# INLINABLE now #-}
+  now = SpiderPushM nowSpiderEventM
+
 
 instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) where
   {-# INLINE return #-}
@@ -2580,6 +2608,9 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   buildDynamic getV0 e = runFrame . runSpiderHostFrame $ Reflex.Class.buildDynamic getV0 e
   {-# INLINABLE headE #-}
   headE e = runFrame . runSpiderHostFrame $ Reflex.Class.headE e
+  {-# INLINABLE now #-}
+  now = runFrame . runSpiderHostFrame $ Reflex.Class.now
+  
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
   sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
@@ -2596,6 +2627,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+  {-# INLINABLE now #-}
+  now = SpiderHostFrame Reflex.Class.now
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHost x) where
   {-# INLINABLE sample #-}
@@ -2616,6 +2649,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
   buildDynamic getV0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.buildDynamic getV0 e
   {-# INLINABLE headE #-}
   headE e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.headE e
+  {-# INLINABLE now #-}
+  now = Reflex.Spider.Internal.ReadPhase Reflex.Class.now
 
 --------------------------------------------------------------------------------
 -- Deprecated items

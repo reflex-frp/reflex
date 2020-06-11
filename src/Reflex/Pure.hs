@@ -210,3 +210,7 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
                    Just x -> fromMaybe lastValue $ apply x lastValue
 
   headE = slowHeadE
+  now t = Event $ guard . (t ==)
+
+  
+

@@ -41,6 +41,7 @@ instance MonadHold (Pure Int) PurePlan where
   holdIncremental initial = liftPlan . holdIncremental initial
   buildDynamic getInitial = liftPlan . buildDynamic getInitial
   headE = liftPlan . headE
+  now = liftPlan now
 
 instance MonadSample (Pure Int) PurePlan where
   sample = liftPlan . sample
