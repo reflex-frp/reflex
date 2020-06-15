@@ -2,7 +2,7 @@ Name: reflex
 Version: 0.7.1.0
 Synopsis: Higher-order Functional Reactive Programming
 Description:
-  Build interactive programs without callbacks or side-effects.
+  Interactive programs without callbacks or side-effects.
   Functional Reactive Programming (FRP) uses composable events and time-varying
   values to describe interactive systems as pure functions.
   Just like other pure functional code, functional reactive code is easier

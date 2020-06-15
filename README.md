@@ -2,7 +2,7 @@
 
 [![Haskell](https://img.shields.io/badge/language-Haskell-orange.svg)](https://haskell.org) [![Hackage](https://img.shields.io/hackage/v/reflex.svg)](https://hackage.haskell.org/package/reflex) [![Hackage CI](https://matrix.hackage.haskell.org/api/v2/packages/reflex/badge)](https://matrix.hackage.haskell.org/#/package/reflex) [![Travis CI](https://api.travis-ci.org/reflex-frp/reflex.svg?branch=master)](https://travis-ci.org/reflex-frp/reflex) [![BSD3 License](https://img.shields.io/badge/license-BSD3-blue.svg)](https://github.com/reflex-frp/reflex/blob/master/LICENSE)
 
-Build interactive programs without callbacks or side-effects. Functional Reactive Programming (FRP) uses composable events and time-varying values to describe interactive systems as pure functions. Just like other pure functional code, functional reactive code is easier to get right on the first try, maintain, and reuse.
+Interactive programs without callbacks or side-effects. Functional Reactive Programming (FRP) uses composable events and time-varying values to describe interactive systems as pure functions. Just like other pure functional code, functional reactive code is easier to get right on the first try, maintain, and reuse.
 
 Reflex is a fully-deterministic, higher-order Functional Reactive Programming interface and an engine that efficiently implements that interface.
 
