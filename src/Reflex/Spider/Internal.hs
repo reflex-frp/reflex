@@ -46,8 +46,9 @@ import Control.Monad.Fail (MonadFail)
 import qualified Control.Monad.Fail as MonadFail
 import Data.Align
 import Data.Coerce
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum (DSum (..))
 import Data.FastMutableIntMap (FastMutableIntMap, PatchIntMap (..))
 import qualified Data.FastMutableIntMap as FastMutableIntMap
 import Data.Foldable hiding (concat, elem, sequence_)
