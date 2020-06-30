@@ -24,6 +24,7 @@ module Reflex.BehaviorWriter.Base
 import Control.Monad.Exception
 import Control.Monad.Identity
 import Control.Monad.IO.Class
+import Control.Monad.Morph
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
@@ -48,7 +49,18 @@ import Reflex.TriggerEvent.Class
 
 -- | A basic implementation of 'BehaviorWriter'.
 newtype BehaviorWriterT t w m a = BehaviorWriterT { unBehaviorWriterT :: StateT [Behavior t w] m a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadAsyncException, MonadException) -- The list is kept in reverse order
+  -- The list is kept in reverse order
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadTrans
+    , MFunctor
+    , MonadIO
+    , MonadFix
+    , MonadAsyncException
+    , MonadException
+    )
 
 -- | Run a 'BehaviorWriterT' action.  The behavior writer output will be provided
 -- along with the result of the action.
@@ -72,9 +84,6 @@ withBehaviorWriterT f dw = do
 
 deriving instance MonadHold t m => MonadHold t (BehaviorWriterT t w m)
 deriving instance MonadSample t m => MonadSample t (BehaviorWriterT t w m)
-
-instance MonadTrans (BehaviorWriterT t w) where
-  lift = BehaviorWriterT . lift
 
 instance MonadRef m => MonadRef (BehaviorWriterT t w m) where
   type Ref (BehaviorWriterT t w m) = Ref m

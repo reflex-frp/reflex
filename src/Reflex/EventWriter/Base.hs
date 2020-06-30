@@ -35,6 +35,7 @@ import Reflex.TriggerEvent.Class
 
 import Control.Monad.Exception
 import Control.Monad.Identity
+import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
@@ -97,7 +98,17 @@ data EventWriterState t w = EventWriterState
 
 -- | A basic implementation of 'EventWriter'.
 newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT (EventWriterState t w) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadTrans
+    , MFunctor
+    , MonadFix
+    , MonadIO
+    , MonadException
+    , MonadAsyncException
+    )
 
 -- | Run a 'EventWriterT' action.
 runEventWriterT :: forall t m w a. (Reflex t, Monad m, Semigroup w) => EventWriterT t w m a -> m (a, Event t w)
@@ -116,9 +127,6 @@ instance (Reflex t, Monad m, Semigroup w) => EventWriter t w (EventWriterT t w m
        { _eventWriterState_nextId = pred myId
        , _eventWriterState_told = (tellId myId :=> w) : _eventWriterState_told old
        }
-
-instance MonadTrans (EventWriterT t w) where
-  lift = EventWriterT . lift
 
 instance MonadSample t m => MonadSample t (EventWriterT t w m) where
   sample = lift . sample

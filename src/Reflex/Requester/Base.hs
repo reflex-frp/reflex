@@ -49,6 +49,7 @@ import Reflex.TriggerEvent.Class
 import Control.Applicative (liftA2)
 import Control.Monad.Exception
 import Control.Monad.Identity
+import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
@@ -316,6 +317,9 @@ responseFromTag (MyTagWrap t) = do
 
 instance MonadTrans (RequesterT t request response) where
   lift = RequesterT . lift . lift
+
+instance MFunctor (RequesterT t request response) where
+  hoist f = RequesterT . hoist (hoist f) . unRequesterT
 
 instance PerformEvent t m => PerformEvent t (RequesterT t request response m) where
   type Performable (RequesterT t request response m) = Performable m
