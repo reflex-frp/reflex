@@ -178,6 +178,11 @@ testCases =
       switchHoldPromptly never $ flip pushAlways e $
         const (switchHoldPromptly e never)
 
+  , testE "switchHoldPromptly-7" $ do
+      e1 <- events1
+      e2 <- events2
+      pure . coincidence . pushAlways (\_ -> switchHoldPromptly e1 never) $ e2
+
   , testE "coincidence-1" $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $
