@@ -178,11 +178,6 @@ testCases =
       switchHoldPromptly never $ flip pushAlways e $
         const (switchHoldPromptly e never)
 
-  , testE "switchHoldPromptly-7" $ do
-      e1 <- events1
-      e2 <- events2
-      pure . coincidence . pushAlways (\_ -> switchHoldPromptly e1 never) $ e2
-
   , testE "coincidence-1" $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $
@@ -218,6 +213,11 @@ testCases =
   , testE "coincidence-7" $ do
       e <- events1
       return $ coincidence (deep e <$ e)
+
+  , testE "coincidence-8" $ do
+      e1 <- events1
+      e2 <- events2
+      pure . coincidence . fmap (const e1) $ e2
 
   , testB "holdWhileFiring" $ do
       e <- events1
