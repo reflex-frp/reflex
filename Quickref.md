@@ -50,14 +50,16 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   <@                         ::                        Behavior a -> Event b -> Event a
 
 -- Combine multiple Events
-[ ]   <>                  ::      Semigroup a => Event a -> Event a -> Event a
-[ ]   difference          ::                     Event a -> Event b -> Event a
-[ ]   alignEventWithMaybe :: (These a b -> Maybe c) -> Event a -> Event b -> Event c
-[ ]   mergeWith           :: (a -> a -> a) -> [Event a] -> Event a
-[ ]   leftmost            :: [Event a] -> Event a
-[ ]   mergeList           :: [Event a] -> Event (NonEmpty a)
-[ ]   merge               :: GCompare k => DMap k Event -> Event (DMap k Identity)
-[ ]   mergeMap            :: Ord k => Map k (Event a) -> Event (Map k a)
+[ ]   <>         ::      Semigroup a => Event a -> Event a -> Event a
+[ ]   difference ::                     Event a -> Event b -> Event a
+[ ]   align      ::                     Event a -> Event b -> Event (These a b)
+[ ]   alignWith  :: (These a b -> c) -> Event a -> Event b -> Event c
+      -- Note align functions from Data.Align in semialign package
+[ ]   mergeWith  :: (a -> a -> a) -> [Event a] -> Event a
+[ ]   leftmost   :: [Event a] -> Event a
+[ ]   mergeList  :: [Event a] -> Event (NonEmpty a)
+[ ]   merge      :: GCompare k => DMap k Event -> Event (DMap k Identity)
+[ ]   mergeMap   :: Ord k => Map k (Event a) -> Event (Map k a)
 
 -- Efficient one-to-many fanout
 [ ]   fanMap    :: Ord k      => Event (Map k a)         -> EventSelector (Const2 k a)
