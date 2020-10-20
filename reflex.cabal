@@ -342,6 +342,14 @@ test-suite RequesterT
     Reflex.Plan.Pure
     Test.Run
 
+test-suite Headless
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Headless.hs
+  hs-source-dirs: test
+  build-depends: base
+               , reflex
+
 test-suite Adjustable
   default-language: Haskell2010
   type: exitcode-stdio-1.0
