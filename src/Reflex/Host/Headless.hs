@@ -7,6 +7,7 @@
 module Reflex.Host.Headless where
 
 import Control.Concurrent.Chan (newChan, readChan)
+import Control.Monad (unless)
 import Control.Monad.Fix (MonadFix, fix)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Primitive (PrimMonad)
@@ -15,7 +16,7 @@ import Data.Dependent.Sum (DSum (..), (==>))
 import Data.Foldable (for_)
 import Data.Functor.Identity (Identity(..))
 import Data.IORef (IORef, readIORef)
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.Traversable (for)
 
 import Reflex
@@ -82,32 +83,33 @@ runHeadlessApp guest =
     -- 'Nothing' if the guest application hasn't subscribed to this event.
     mPostBuildTrigger <- readRef postBuildTriggerRef
 
-    -- When there is a subscriber to the post-build event, fire the event.
-    for_ mPostBuildTrigger $ \postBuildTrigger ->
-      fire [postBuildTrigger :=> Identity ()] $ pure ()
-
     -- Subscribe to an 'Event' of that the guest application can use to
     -- request application shutdown. We'll check whether this 'Event' is firing
     -- to determine whether to terminate.
     shutdown <- subscribeEvent result
 
+    -- When there is a subscriber to the post-build event, fire the event.
+    soa <- for mPostBuildTrigger $ \postBuildTrigger ->
+      fire [postBuildTrigger :=> Identity ()] $ isFiring shutdown
+
     -- The main application loop. We wait for new events and fire those that
     -- have subscribers. If we detect a shutdown request, the application
     -- terminates.
-    fix $ \loop -> do
+    unless (or (fromMaybe [] soa)) $ fix $ \loop -> do
       -- Read the next event (blocking).
       ers <- liftIO $ readChan events
       stop <- do
         -- Fire events that have subscribers.
         fireEventTriggerRefs fc ers $
           -- Check if the shutdown 'Event' is firing.
-          readEvent shutdown >>= \case
-            Nothing -> pure False
-            Just _ -> pure True
+          isFiring shutdown
       if or stop
         then pure ()
         else loop
   where
+    isFiring ev = readEvent ev >>= \case
+      Nothing -> pure False
+      Just _ -> pure True
     -- Use the given 'FireCommand' to fire events that have subscribers
     -- and call the callback for the 'TriggerInvocation' of each.
     fireEventTriggerRefs
