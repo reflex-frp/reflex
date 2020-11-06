@@ -54,6 +54,7 @@ Since MonadHold depends on MonadSample, any [S] function also runs in [H] contex
 [ ]   difference ::                     Event a -> Event b -> Event a
 [ ]   align      ::                     Event a -> Event b -> Event (These a b)
 [ ]   alignWith  :: (These a b -> c) -> Event a -> Event b -> Event c
+      -- Note align functions from Data.Align in semialign package
 [ ]   mergeWith  :: (a -> a -> a) -> [Event a] -> Event a
 [ ]   leftmost   :: [Event a] -> Event a
 [ ]   mergeList  :: [Event a] -> Event (NonEmpty a)

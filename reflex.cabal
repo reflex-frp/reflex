@@ -77,9 +77,10 @@ library
     constraints-extras >= 0.3 && < 0.4,
     containers >= 0.6 && < 0.7,
     data-default >= 0.5 && < 0.8,
-    dependent-map >= 0.3 && < 0.4,
+    dependent-map >= 0.3 && < 0.5,
     exception-transformers == 0.4.*,
     lens >= 4.7 && < 5,
+    mmorph >= 1.0 && < 1.2,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
     patch >= 0.0.1 && < 0.1,
@@ -343,6 +344,14 @@ test-suite RequesterT
     Reflex.TestPlan
     Reflex.Plan.Pure
     Test.Run
+
+test-suite Headless
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Headless.hs
+  hs-source-dirs: test
+  build-depends: base
+               , reflex
 
 test-suite Adjustable
   default-language: Haskell2010
