@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.7.1.0
+Version: 0.7.2.0
 Synopsis: Higher-order Functional Reactive Programming
 Description:
   Interactive programs without callbacks or side-effects.
@@ -257,7 +257,10 @@ test-suite hlint
                , directory
                , filepath
                , filemanip
-               , hlint (< 2.1 || >= 2.2.2) && < 3
+  if impl(ghc >= 8.8)
+    build-depends: hlint >= 3
+  else
+    build-depends: hlint (< 2.1 || >= 2.2.2) && < 3
   if impl(ghcjs)
     buildable: False
 
