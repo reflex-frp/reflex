@@ -1,7 +1,8 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.7.2.0
 * ([#416](https://github.com/reflex-frp/reflex/pull/416)) Add `now :: m (Event t ())` to `MonadHold`.
+* Extend some dependency version bounds
 
 ## 0.7.1.0
 
