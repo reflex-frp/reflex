@@ -18,7 +18,7 @@ import Data.GADT.Compare
 import Data.IORef
 import Data.Semigroup
 import Data.These
-import Data.Type.Equality
+import Data.Type.Equality ((:~:)(Refl))
 
 import Data.Functor.Misc
 import Data.Patch
