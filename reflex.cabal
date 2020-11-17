@@ -185,7 +185,7 @@ library
       dependent-sum >= 0.6 && < 0.8,
       haskell-src-exts >= 1.16 && < 1.24,
       haskell-src-meta >= 0.6 && < 0.9,
-      template-haskell >= 2.9 && < 2.16
+      template-haskell >= 2.9 && < 2.17
     exposed-modules:
       Reflex.Dynamic.TH
     other-extensions: TemplateHaskell
