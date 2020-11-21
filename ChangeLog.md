@@ -1,7 +1,13 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.8.0.0
+
+* Replace 0.7.2.0 with 0.8.0.0 to reflect the `MonadHold` interface change. Deprecates 0.7.2.0.
+
+## 0.7.2.0
 * ([#416](https://github.com/reflex-frp/reflex/pull/416)) Add `now :: m (Event t ())` to `MonadHold`.
+* Extend some dependency version bounds
+* Fix HLint 3 test
 
 ## 0.7.1.0
 
