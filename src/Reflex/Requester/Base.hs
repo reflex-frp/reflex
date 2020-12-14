@@ -49,14 +49,16 @@ import Reflex.TriggerEvent.Class
 import Control.Applicative (liftA2)
 import Control.Monad.Exception
 import Control.Monad.Identity
+import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Bits
 import Data.Coerce
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.IntMap.Strict (IntMap)
@@ -315,6 +317,9 @@ responseFromTag (MyTagWrap t) = do
 
 instance MonadTrans (RequesterT t request response) where
   lift = RequesterT . lift . lift
+
+instance MFunctor (RequesterT t request response) where
+  hoist f = RequesterT . hoist (hoist f) . unRequesterT
 
 instance PerformEvent t m => PerformEvent t (RequesterT t request response m) where
   type Performable (RequesterT t request response m) = Performable m

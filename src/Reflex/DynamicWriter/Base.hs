@@ -22,6 +22,7 @@ module Reflex.DynamicWriter.Base
 import Control.Monad.Exception
 import Control.Monad.Identity
 import Control.Monad.IO.Class
+import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
@@ -44,15 +45,12 @@ import Reflex.Class
 import Reflex.DynamicWriter.Class
 import Reflex.EventWriter.Class (EventWriter, tellEvent)
 import Reflex.Host.Class
-import qualified Reflex.Patch.MapWithMove as MapWithMove
+import qualified Data.Patch.MapWithMove as MapWithMove
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Query.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
-
-instance MonadTrans (DynamicWriterT t w) where
-  lift = DynamicWriterT . lift
 
 mapIncrementalMapValues :: (Reflex t, Patch (p v), Patch (p v'), PatchTarget (p v) ~ f v, PatchTarget (p v') ~ f v', Functor p, Functor f) => (v -> v') -> Incremental t (p v) -> Incremental t (p v')
 mapIncrementalMapValues f = unsafeMapIncremental (fmap f) (fmap f)
@@ -90,7 +88,18 @@ mergeDynIncrementalWithMove a = unsafeBuildIncremental (mapM (sample . current) 
 
 -- | A basic implementation of 'DynamicWriter'.
 newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic t w] m a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadAsyncException, MonadException) -- The list is kept in reverse order
+  -- The list is kept in reverse order
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadTrans
+    , MFunctor
+    , MonadIO
+    , MonadFix
+    , MonadAsyncException
+    , MonadException
+    )
 
 deriving instance MonadHold t m => MonadHold t (DynamicWriterT t w m)
 deriving instance MonadSample t m => MonadSample t (DynamicWriterT t w m)

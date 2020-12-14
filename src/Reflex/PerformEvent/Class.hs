@@ -8,7 +8,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
@@ -22,6 +21,7 @@ import Reflex.Class
 import Reflex.TriggerEvent.Class
 
 import Control.Monad.Reader
+import Control.Monad.Trans.Maybe (MaybeT (..))
 
 -- | 'PerformEvent' represents actions that can trigger other actions based on
 -- 'Event's.
@@ -61,3 +61,8 @@ instance PerformEvent t m => PerformEvent t (ReaderT r m) where
   performEvent e = do
     r <- ask
     lift $ performEvent $ flip runReaderT r <$> e
+
+instance PerformEvent t m => PerformEvent t (MaybeT m) where
+  type Performable (MaybeT m) = MaybeT (Performable m)
+  performEvent_ = lift . performEvent_ . fmapCheap (void . runMaybeT)
+  performEvent = lift . fmap (fmapMaybe id) . performEvent . fmapCheap runMaybeT

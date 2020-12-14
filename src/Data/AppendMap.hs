@@ -71,7 +71,7 @@ mapMaybeNoNull f as =
        then Nothing
        else Just bs
 
--- TODO: Move instances to `Reflex.Patch`
+-- TODO: Move instances to `Data.Patch`
 -- | Displays a 'MonoidalMap' as a tree. See 'Data.Map.Lazy.showTree' for details.
 showTree :: forall k a. (Show k, Show a) => MonoidalMap k a -> String
 showTree = coerce (Map.showTree :: Map k a -> String)

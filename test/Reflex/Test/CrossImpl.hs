@@ -21,11 +21,12 @@ import Reflex.Dynamic
 import Reflex.Host.Class
 import qualified Reflex.Pure as P
 import qualified Reflex.Spider.Internal as S
+import qualified Reflex.Profiled as Prof
 
 import Control.Arrow (second, (&&&))
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Data.Dependent.Map (DSum (..))
+import Data.Dependent.Sum (DSum (..))
 import Data.Foldable
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -34,8 +35,6 @@ import Data.Monoid
 import Data.Traversable
 import System.Exit
 import System.Mem
-
-import System.IO.Unsafe
 
 mapToPureBehavior :: Map Int a -> Behavior PureReflexDomain a
 mapToPureBehavior m = P.Behavior $ \t -> case Map.lookupLE t m of
@@ -73,11 +72,14 @@ instance MapMSignals (Event t a) (Event t' a) t t' where
 instance (MapMSignals a a' t t', MapMSignals b b' t t') => MapMSignals (a, b) (a', b') t t' where
   mapMSignals fb fe (a, b) = liftM2 (,) (mapMSignals fb fe a) (mapMSignals fb fe b)
 
-testSpider :: (forall m t. TestCaseConstraint t m => (Behavior t a, Event t b) -> m (Behavior t c, Event t d)) -> (Map Int a, Map Int b) -> (Map Int c, Map Int d)
-testSpider builder (bMap, eMap) = unsafePerformIO $ S.runSpiderHost $ do
+testTimeline
+  :: (forall m t. TestCaseConstraint t m => (Behavior t a, Event t b) -> m (Behavior t c, Event t d))
+  -> (Map Int a, Map Int b)
+  -> (forall m t. (MonadReflexHost t m, MonadIO m, MonadRef m, Ref m ~ Ref IO, MonadSample t m) => m (Map Int c, Map Int d))
+testTimeline builder (bMap, eMap) = do
   (re, reTrigger) <- newEventWithTriggerRef
   (rb, rbTrigger) <- newEventWithTriggerRef
-  b <- runHostFrame $ hold (error "testSpider: No value for input behavior yet") rb
+  b <- runHostFrame $ hold (error "testTimeline: No value for input behavior yet") rb
   (b', e') <- runHostFrame $ builder (b, re)
   e'Handle <- subscribeEvent e' --TODO: This should be unnecessary
   let times = relevantTestingTimes (bMap, eMap)
@@ -102,9 +104,11 @@ testAgreement :: (Eq c, Eq d, Show c, Show d) => (forall m t. TestCaseConstraint
 testAgreement builder inputs = do
   let identityResult = testPure builder inputs
   tracePerf "---------" $ return ()
-  let spiderResult = testSpider builder inputs
+  spiderResult <- S.runSpiderHost $ testTimeline builder inputs
   tracePerf "---------" $ return ()
-  let resultsAgree = identityResult == spiderResult
+  profiledResult <- S.runSpiderHost $ Prof.runProfiledM $ testTimeline builder inputs
+  tracePerf "---------" $ return ()
+  let resultsAgree = identityResult == spiderResult && identityResult == profiledResult
   if resultsAgree
     then do --putStrLn "Success:"
             --print identityResult
@@ -112,6 +116,7 @@ testAgreement builder inputs = do
     else do putStrLn "Failure:"
             putStrLn $ "Pure result: " <> show identityResult
             putStrLn $ "Spider result:   " <> show spiderResult
+            putStrLn $ "Profiled result:   " <> show profiledResult
   return resultsAgree
 
 type TestCaseConstraint t m = (Reflex t, MonadSample t m, MonadHold t m, MonadFix m, MonadFix (PushM t))

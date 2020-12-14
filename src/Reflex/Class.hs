@@ -29,7 +29,7 @@
 --   convenience functions for working with 'Event's, 'Behavior's, and other
 --   signals.
 module Reflex.Class
-  ( module Reflex.Patch
+  ( module Data.Patch
     -- * Primitives
   , Reflex (..)
   , mergeInt
@@ -180,7 +180,7 @@ import Prelude hiding (zip, zipWith)
 import Data.These.Combinators (justThese)
 #endif
 #if MIN_VERSION_semialign(1,1,0)
-import Data.Zip (Zip (..))
+import Data.Zip (Zip (..), Unzip (..))
 #endif
 #endif
 
@@ -196,7 +196,8 @@ import Data.Align
 import Data.Bifunctor
 import Data.Coerce
 import Data.Default
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.Dependent.Map (DMap)
+import Data.Dependent.Sum (DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Compose
 import Data.Functor.Product
@@ -210,7 +211,7 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
-import Data.Semigroup (Semigroup, sconcat, stimes, (<>))
+import Data.Semigroup (Semigroup (..))
 import Data.Some (Some(Some))
 import Data.String
 import Data.These
@@ -220,8 +221,8 @@ import Data.Witherable (Filterable(..))
 import qualified Data.Witherable as W
 import Reflex.FunctorMaybe (FunctorMaybe)
 import qualified Reflex.FunctorMaybe
-import Reflex.Patch
-import qualified Reflex.Patch.MapWithMove as PatchMapWithMove
+import Data.Patch
+import qualified Data.Patch.MapWithMove as PatchMapWithMove
 
 import Debug.Trace (trace)
 
@@ -420,6 +421,13 @@ class MonadSample t m => MonadHold t m where
   -- | Create a new 'Event' that only occurs only once, on the first occurrence of
   -- the supplied 'Event'.
   headE :: Event t a -> m (Event t a)
+  -- | An event which only occurs at the current moment in time, such that:
+  --
+  -- > coincidence (pushAlways (\a -> (a <$) <$> now) e) = e
+  --
+  now :: m (Event t ())
+  default now :: (m ~ f m', MonadTrans f, MonadHold t m') => m (Event t ())
+  now = lift now
 
 -- | Accumulate an 'Incremental' with the supplied initial value and the firings of the provided 'Event',
 -- using the combining function to produce a patch.
@@ -565,6 +573,7 @@ instance MonadHold t m => MonadHold t (ReaderT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
   sample = lift . sample
@@ -575,6 +584,7 @@ instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 instance MonadSample t m => MonadSample t (StateT s m) where
   sample = lift . sample
@@ -585,6 +595,7 @@ instance MonadHold t m => MonadHold t (StateT s m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 instance MonadSample t m => MonadSample t (ExceptT e m) where
   sample = lift . sample
@@ -595,6 +606,7 @@ instance MonadHold t m => MonadHold t (ExceptT e m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 instance (MonadSample t m, Monoid w) => MonadSample t (RWST r w s m) where
   sample = lift . sample
@@ -605,6 +617,7 @@ instance (MonadHold t m, Monoid w) => MonadHold t (RWST r w s m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 instance MonadSample t m => MonadSample t (ContT r m) where
   sample = lift . sample
@@ -615,6 +628,7 @@ instance MonadHold t m => MonadHold t (ContT r m) where
   holdIncremental a0 = lift . holdIncremental a0
   buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
+  now = lift now
 
 --------------------------------------------------------------------------------
 -- Convenience functions
@@ -1091,6 +1105,12 @@ instance Reflex t => Zip (Event t) where
   zip x y = mapMaybe justThese $ align x y
 #endif
 
+#ifdef MIN_VERSION_semialign
+#if MIN_VERSION_semialign(1,1,0)
+instance Reflex t => Unzip (Event t) where
+  unzip = splitE
+#endif
+#endif
 
 -- | Create a new 'Event' that only occurs if the supplied 'Event' occurs and
 -- the 'Behavior' is true at the time of occurrence.
