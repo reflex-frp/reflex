@@ -145,6 +145,8 @@ library
     Reflex.Requester.Class,
     Reflex.Spider,
     Reflex.Spider.Internal,
+    Reflex.Test.SimpleHost
+    Reflex.Test.Monad.Host
     Reflex.Time,
     Reflex.TriggerEvent.Base,
     Reflex.TriggerEvent.Class,
@@ -247,6 +249,36 @@ test-suite CrossImpl
     Reflex.TestPlan
     Reflex.Plan.Reflex
     Reflex.Plan.Pure
+
+test-suite MonadHostSpec
+  type: exitcode-stdio-1.0
+  main-is: Reflex/Test/Monad/HostSpec.hs
+  hs-source-dirs: test
+  default-extensions:
+  ghc-options: -O2 -Wall -rtsopts
+  build-depends:
+    base
+    , these
+    , HUnit
+    , hspec
+    , hspec-contrib
+    , reflex
+  default-language: Haskell2010
+
+test-suite SimpleHostSpec
+  type: exitcode-stdio-1.0
+  main-is: Reflex/Test/SimpleHostSpec.hs
+  hs-source-dirs: test
+  default-extensions:
+  ghc-options: -O2 -Wall -rtsopts
+  build-depends:
+    base
+    , these
+    , HUnit
+    , hspec
+    , hspec-contrib
+    , reflex
+  default-language: Haskell2010
 
 test-suite hlint
   default-language: Haskell2010
