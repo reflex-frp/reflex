@@ -43,7 +43,6 @@ import Reflex.Host.Class
 
 type TestGuestT t (m :: Type -> Type) = PostBuildT t (PerformEventT t m)
 
--- TODO some of these constraints can be dropped probably
 type TestGuestConstraints t (m :: Type -> Type)
   = ( MonadReflexHost t m
     , MonadHold t m
@@ -53,7 +52,6 @@ type TestGuestConstraints t (m :: Type -> Type)
     , MonadRef (HostFrame t)
     , Ref (HostFrame t) ~ Ref IO
     , MonadIO (HostFrame t)
-  --, PrimMonad (HostFrame t)
     , MonadIO m
     , MonadFix m
     )
