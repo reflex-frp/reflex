@@ -316,9 +316,6 @@ test-suite EventWriterT
   if flag(split-these)
     build-depends: these-lens
 
-  other-modules:
-    Test.Run
-
 
 test-suite DebugCycles
   default-language: Haskell2010
@@ -344,9 +341,6 @@ test-suite DebugCycles
 
   if flag(split-these)
     build-depends: these-lens, semialign
-
-  other-modules:
-    Test.Run
 
 
 test-suite RequesterT
@@ -375,7 +369,6 @@ test-suite RequesterT
   other-modules:
     Reflex.TestPlan
     Reflex.Plan.Pure
-    Test.Run
 
 test-suite Headless
   default-language: Haskell2010
@@ -396,9 +389,6 @@ test-suite Adjustable
                , reflex
                , ref-tf
                , these
-
-  other-modules:
-    Test.Run
 
 test-suite QueryT
   default-language: Haskell2010
@@ -423,7 +413,6 @@ test-suite QueryT
     build-depends: semialign, these-lens
 
   other-modules:
-    Test.Run
     Reflex.TestPlan
     Reflex.Plan.Reflex
     Reflex.Plan.Pure
@@ -452,7 +441,6 @@ test-suite GC-Semantics
     Reflex.Plan.Pure
     Reflex.Plan.Reflex
     Reflex.TestPlan
-    Test.Run
 
 test-suite rootCleanup
   default-language: Haskell2010
@@ -470,7 +458,6 @@ test-suite rootCleanup
   other-modules:
     Reflex.Plan.Pure
     Reflex.TestPlan
-    Test.Run
 
 benchmark spider-bench
   default-language: Haskell2010

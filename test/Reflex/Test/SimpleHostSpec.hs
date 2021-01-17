@@ -1,21 +1,21 @@
-{-# LANGUAGE RankNTypes      #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 
-import           Prelude
+import Prelude
 
-import           Test.Hspec
-import           Test.Hspec.Contrib.HUnit (fromHUnitTest)
-import           Test.HUnit
+import Test.Hspec
+import Test.Hspec.Contrib.HUnit (fromHUnitTest)
+import Test.HUnit
 
-import           Reflex
-import           Reflex.Test.SimpleHost
+import Reflex
+import Reflex.Test.SimpleHost
 
-import           Control.Monad            (forM_)
-import           Control.Monad.IO.Class   (liftIO)
-import           Data.Functor
-import qualified Data.List                as L
-import           Data.These
+import Control.Monad (forM_)
+import Control.Monad.IO.Class (liftIO)
+import Data.Functor
+import qualified Data.List as L
+import Data.These
 
 
 -- | network that ensures postbuild event was triggered

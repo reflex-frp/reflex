@@ -39,7 +39,7 @@ import Data.These.Lens
 import Reflex
 import Reflex.Requester.Base
 import Reflex.Requester.Class
-import Test.Run
+import Reflex.Test.SimpleHost
 
 data RequestInt a where
   RequestInt :: Int -> RequestInt Int

@@ -25,7 +25,7 @@ import Data.These.Lens
 
 import Reflex
 import Data.Patch.MapWithMove
-import Test.Run
+import Reflex.Test.SimpleHost
 
 newtype MyQuery = MyQuery SelectedCount
   deriving (Show, Read, Eq, Ord, Monoid, Semigroup, Additive, Group)
