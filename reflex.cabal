@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.8.0.0
+Version: 0.8.1.0
 Synopsis: Higher-order Functional Reactive Programming
 Description:
   Interactive programs without callbacks or side-effects.
@@ -28,7 +28,7 @@ extra-source-files:
   ChangeLog.md
 
 tested-with:
-  GHC  ==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2,
+  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2,
   GHCJS ==8.4
 
 flag use-reflex-optimizer
