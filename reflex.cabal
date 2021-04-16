@@ -28,7 +28,7 @@ extra-source-files:
   ChangeLog.md
 
 tested-with:
-  GHC  ==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5 || ==8.8.1,
+  GHC  ==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2,
   GHCJS ==8.4
 
 flag use-reflex-optimizer
