@@ -2775,7 +2775,7 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   fanG e = R.EventSelectorG $ SpiderEvent . selectG (fanG (unSpiderEvent e))
   {-# INLINABLE mergeG #-}
   mergeG
-    :: forall (k :: k2 -> *) q (v :: k2 -> *). GCompare k
+    :: forall k2 (k :: k2 -> *) q (v :: k2 -> *). GCompare k
     => (forall a. q a -> R.Event (SpiderTimeline x) (v a))
     -> DMap k q
     -> R.Event (SpiderTimeline x) (DMap k v)
