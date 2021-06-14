@@ -27,11 +27,13 @@ import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Align
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum (DSum(..))
 import Data.Foldable
 import Data.Functor.Compose
 import Data.Functor.Misc
+import Data.GADT.Compare (GCompare)
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Data.Map (Map)
@@ -135,7 +137,7 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, Eq q, MonadHold t 
     tellQueryIncremental $ unsafeBuildIncremental (fold <$> mapM sampleBs liftedBs0) qpatch
     return (liftedResult0, liftedResult')
 
-  traverseDMapWithKeyWithAdjust :: forall (k :: * -> *) v v'. (DMap.GCompare k) => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> QueryT t q m (DMap k v', Event t (PatchDMap k v'))
+  traverseDMapWithKeyWithAdjust :: forall (k :: * -> *) v v'. (GCompare k) => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> QueryT t q m (DMap k v', Event t (PatchDMap k v'))
   traverseDMapWithKeyWithAdjust f dm0 dm' = do
     let f' :: forall a. k a -> v a -> EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m) (Compose (QueryTLoweredResult t q) v' a)
         f' k v = fmap (Compose . QueryTLoweredResult) $ flip runStateT [] $ unQueryT $ f k v
@@ -180,7 +182,7 @@ instance (Reflex t, MonadFix m, Group q, Additive q, Query q, Eq q, MonadHold t 
     tellQueryIncremental $ unsafeBuildIncremental (fold <$> mapM sampleBs liftedBs0) qpatch
     return (liftedResult0, liftedResult')
 
-  traverseDMapWithKeyWithAdjustWithMove :: forall (k :: * -> *) v v'. (DMap.GCompare k) => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> QueryT t q m (DMap k v', Event t (PatchDMapWithMove k v'))
+  traverseDMapWithKeyWithAdjustWithMove :: forall (k :: * -> *) v v'. (GCompare k) => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> QueryT t q m (DMap k v', Event t (PatchDMapWithMove k v'))
   traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = do
     let f' :: forall a. k a -> v a -> EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m) (Compose (QueryTLoweredResult t q) v' a)
         f' k v = fmap (Compose . QueryTLoweredResult) $ flip runStateT [] $ unQueryT $ f k v

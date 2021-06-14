@@ -1,5 +1,11 @@
 # Revision history for reflex
 
+## 0.7.1.1
+
+* Add support for GHC 8.10
+* Extend some dependency version bounds
+* Fix HLint 3 test
+
 ## 0.7.1.0
 
 * ([#413](https://github.com/reflex-frp/reflex/pull/413), [#417](https://github.com/reflex-frp/reflex/pull/417)) Add `Reflex.Host.Headless` module which provides `runHeadlessApp` as an easy way to run a Reflex network in a "headless" environment.

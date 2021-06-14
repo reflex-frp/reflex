@@ -1,6 +1,6 @@
 ## [Reflex](https://reflex-frp.org/)
 
-[![Hackage](https://img.shields.io/hackage/v/reflex.svg)](http://hackage.haskell.org/package/reflex)
+[![Haskell](https://img.shields.io/badge/language-Haskell-orange.svg)](https://haskell.org) [![Hackage](https://img.shields.io/hackage/v/reflex.svg)](https://hackage.haskell.org/package/reflex) [![Hackage CI](https://matrix.hackage.haskell.org/api/v2/packages/reflex/badge)](https://matrix.hackage.haskell.org/#/package/reflex) [![BSD3 License](https://img.shields.io/badge/license-BSD3-blue.svg)](https://github.com/reflex-frp/reflex/blob/master/LICENSE)
 
 ### Practical Functional Reactive Programming
 
