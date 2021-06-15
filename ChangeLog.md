@@ -3,6 +3,7 @@
 ## 0.7.1.1
 
 * Add support for GHC 8.10
+* Drop support for GHC < 8.4
 * Extend some dependency version bounds
 * Fix HLint 3 test
 
