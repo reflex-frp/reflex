@@ -1,2 +1,0 @@
-constraints: any.text < 1.2.4.0
-           , hlint < 2.2.6 || > 2.2.6

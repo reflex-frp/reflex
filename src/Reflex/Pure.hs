@@ -32,7 +32,8 @@ module Reflex.Pure
   ) where
 
 import Control.Monad
-import Data.Dependent.Map (DMap, GCompare)
+import Data.Dependent.Map (DMap)
+import Data.GADT.Compare (GCompare)
 import qualified Data.Dependent.Map as DMap
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap

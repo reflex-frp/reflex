@@ -26,7 +26,7 @@ import qualified Reflex.Profiled as Prof
 import Control.Arrow (second, (&&&))
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
-import Data.Dependent.Map (DSum (..))
+import Data.Dependent.Sum (DSum (..))
 import Data.Foldable
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map

@@ -55,8 +55,9 @@ import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Bits
 import Data.Coerce
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.IntMap.Strict (IntMap)

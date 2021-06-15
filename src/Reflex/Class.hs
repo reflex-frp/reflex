@@ -196,7 +196,8 @@ import Data.Align
 import Data.Bifunctor
 import Data.Coerce
 import Data.Default
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.Dependent.Map (DMap)
+import Data.Dependent.Sum (DSum (..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Compose
 import Data.Functor.Product
