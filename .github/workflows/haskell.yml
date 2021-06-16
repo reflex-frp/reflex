@@ -1,6 +1,6 @@
 name: github-action
 
-on: [push, pull_request] 
+on: [push, pull_request]
 
 jobs:
   build:
@@ -8,12 +8,6 @@ jobs:
       matrix:
         ghc: ['8.4.4', '8.6.5', '8.8.4', '8.10.2']
         os: ['ubuntu-latest', 'macos-latest']
-        exclude:
-          # There are some linker warnings in 802 on darwin that
-          # cause compilation to fail
-          # See https://github.com/NixOS/nixpkgs/issues/25139
-          - ghc: '8.0.2'
-            os: 'macos-latest'
     runs-on: ${{ matrix.os }}
 
     name: GHC ${{ matrix.ghc }} on ${{ matrix.os }}
@@ -43,3 +37,5 @@ jobs:
       run: cabal build --enable-tests --enable-benchmarks all
     - name: Run tests
       run: cabal test all
+    - name: Build Docs
+      run: cabal haddock
