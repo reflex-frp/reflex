@@ -1,16 +1,31 @@
 # Revision history for reflex
 
+## 0.8.1.1
+
+* Allow newer hlint for older GHCs, and add upper bound for newer GHCs
+
 ## 0.8.1.0
 
 * Add support for GHC 8.10
-* Drop support for GHC 8.2.* and earlier
+* Drop support for GHC < 8.4
 
 ## 0.8.0.0
 
 * Replace 0.7.2.0 with 0.8.0.0 to reflect the `MonadHold` interface change. Deprecates 0.7.2.0.
 
-## 0.7.2.0
+## 0.7.2.0 -- *Deprecated*
+
 * ([#416](https://github.com/reflex-frp/reflex/pull/416)) Add `now :: m (Event t ())` to `MonadHold`.
+* Extend some dependency version bounds
+* Fix HLint 3 test
+
+## 0.7.1.1
+
+*Backport release*.
+Changes do not carry forward to 0.7.2.0.
+
+* Add support for GHC 8.10
+* Drop support for GHC < 8.4
 * Extend some dependency version bounds
 * Fix HLint 3 test
 
