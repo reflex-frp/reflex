@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Allow newer hlint for older GHCs, and add upper bound for newer GHCs
+
 ## 0.8.1.0
 
 * Add support for GHC 8.10

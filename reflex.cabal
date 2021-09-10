@@ -258,9 +258,9 @@ test-suite hlint
                , filepath
                , filemanip
   if impl(ghc >= 8.8)
-    build-depends: hlint >= 3
+    build-depends: hlint >= 3 && < 4
   else
-    build-depends: hlint (< 2.1 || >= 2.2.2) && < 3
+    build-depends: hlint (< 2.1 || >= 2.2.2) && < 4
   if impl(ghcjs)
     buildable: False
 
