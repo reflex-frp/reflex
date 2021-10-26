@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Add `matchResponseMapWithRequests`, which it similar to `matchResponsesWithRequests` but allows processing of multiple responses at once.
+
 ## 0.8.1.1
 
 * Allow newer hlint for older GHCs, and add upper bound for newer GHCs
