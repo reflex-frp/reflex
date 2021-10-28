@@ -1,6 +1,6 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.8.2.0
 
 * Add `matchResponseMapWithRequests`, which it similar to `matchResponsesWithRequests` but allows processing of multiple responses at once.
 
