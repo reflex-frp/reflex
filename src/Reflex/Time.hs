@@ -9,7 +9,6 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 #ifdef USE_TEMPLATE_HASKELL
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
 #endif
 -- |
@@ -376,5 +375,5 @@ tickInfo_n f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 y x3) <$> f x2
 {-# INLINE tickInfo_n #-}
 
 tickInfo_alreadyElapsed :: Functor f => (NominalDiffTime -> f NominalDiffTime) -> TickInfo -> f TickInfo
-tickInfo_alreadyElapsed f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 x2 y) <$> f x3
+tickInfo_alreadyElapsed f (TickInfo x1 x2 x3) = TickInfo x1 x2 <$> f x3
 {-# INLINE tickInfo_alreadyElapsed #-}
