@@ -348,7 +348,7 @@ factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
 --
 -- > demuxed (demux d) k === fmap (== k) d
 --
--- However, when getDemuxed is used multiple times, the complexity is only
+-- However, when 'demuxed' is used multiple times, the complexity is only
 -- /O(log(n))/, rather than /O(n)/ for fmap.
 data Demux t k = Demux { demuxValue :: Behavior t k
                        , demuxSelector :: EventSelector t (Const2 k Bool)

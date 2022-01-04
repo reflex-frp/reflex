@@ -30,7 +30,8 @@ module Reflex.Adjustable.Class
 
 import Control.Monad.Identity
 import Control.Monad.Reader
-import Data.Dependent.Map (DMap, GCompare (..))
+import Data.Dependent.Map (DMap)
+import Data.GADT.Compare (GCompare(..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Constant
 import Data.Functor.Misc
