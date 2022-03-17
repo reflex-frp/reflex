@@ -1,4 +1,4 @@
--- | This module defines 'PerformEvent' and 'TriggerEvent', which mediate the
+-- | This module defines 'PerformEvent', which mediates the
 -- interaction between a "Reflex"-based program and the external side-effecting
 -- actions such as 'IO'.
 {-# LANGUAGE CPP #-}
