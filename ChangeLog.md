@@ -1,5 +1,54 @@
 # Revision history for reflex
 
+## 0.8.2.0
+
+* Add `matchResponseMapWithRequests`, which it similar to `matchResponsesWithRequests` but allows processing of multiple responses at once.
+
+## 0.8.1.1
+
+* Allow newer hlint for older GHCs, and add upper bound for newer GHCs
+
+## 0.8.1.0
+
+* Add support for GHC 8.10
+* Drop support for GHC < 8.4
+
+## 0.8.0.0
+
+* Replace 0.7.2.0 with 0.8.0.0 to reflect the `MonadHold` interface change. Deprecates 0.7.2.0.
+
+## 0.7.2.0 -- *Deprecated*
+
+* ([#416](https://github.com/reflex-frp/reflex/pull/416)) Add `now :: m (Event t ())` to `MonadHold`.
+* Extend some dependency version bounds
+* Fix HLint 3 test
+
+## 0.7.1.1
+
+*Backport release*.
+Changes do not carry forward to 0.7.2.0.
+
+* Add support for GHC 8.10
+* Drop support for GHC < 8.4
+* Extend some dependency version bounds
+* Fix HLint 3 test
+
+## 0.7.1.0
+
+* ([#413](https://github.com/reflex-frp/reflex/pull/413), [#417](https://github.com/reflex-frp/reflex/pull/417)) Add `Reflex.Host.Headless` module which provides `runHeadlessApp` as an easy way to run a Reflex network in a "headless" environment.
+* ([#420](https://github.com/reflex-frp/reflex/pull/420)) Add a [`Data.Zip.Unzip`](https://hackage.haskell.org/package/semialign-1.1/docs/Data-Zip.html#t:Unzip) instance for `Event`.
+* ([#419](https://github.com/reflex-frp/reflex/pull/419)) Add `distributeIntMapOverDynPure` and `joinDynThroughIntMap` as convenience functions for working with `Dynamic` `IntMap`s.
+
+
+## 0.7.0.0
+
+* Add lifting instances for most classes to `Reflex.Profiled.Profiled`. ([#398](https://github.com/reflex-frp/reflex/pull/398))
+* Class `MonadQuery t q m` now has a `Monad m` superclass constraint. ([#400](https://github.com/reflex-frp/reflex/pull/400))
+* **(Breaking change)** Rename class `MonadBehaviorWriter` -> `BehaviorWriter` for consistency with `EventWriter`/`DynamicWriter`. ([#401](https://github.com/reflex-frp/reflex/pull/401))
+* Introduce deprecated alias `MonadBehaviorWriter = BehaviorWriter`. ([#401](https://github.com/reflex-frp/reflex/pull/401))
+* Fix bug in spider where event subscriptions would be prematurely finalized due to over-aggressive inlining. ([#409](https://github.com/reflex-frp/reflex/pull/409))
+* Add instances of `PerformEvent` and `TriggerEvent` for `MaybeT`. ([#395](https://github.com/reflex-frp/reflex/pull/395))
+
 ## 0.6.4.1
 
 * Fix a bug in the Reflex Profiled transformer where

@@ -9,7 +9,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -20,6 +19,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE MultiWayIf #-}
 
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
@@ -46,8 +46,9 @@ import Control.Monad.Fail (MonadFail)
 import qualified Control.Monad.Fail as MonadFail
 import Data.Align
 import Data.Coerce
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum (DSum (..))
 import Data.FastMutableIntMap (FastMutableIntMap, PatchIntMap (..))
 import qualified Data.FastMutableIntMap as FastMutableIntMap
 import Data.Foldable hiding (concat, elem, sequence_)
@@ -306,7 +307,20 @@ data CacheSubscribed x a
 #endif
                      }
 
+nowSpiderEventM :: (HasSpiderTimeline x) => EventM x (R.Event (SpiderTimeline x) ())
+nowSpiderEventM =
+  SpiderEvent <$> now
 
+now :: (MonadIO m, Defer (Some Clear) m, HasSpiderTimeline x
+       ) => m (Event x ())
+now = do
+  nowOrNot <- liftIO $ newIORef $ Just ()
+  scheduleClear nowOrNot
+  return . Event $ \_ -> do
+    occ <- liftIO . readIORef $ nowOrNot
+    return ( EventSubscription (return ()) eventSubscribedNow
+           , occ
+           )
 
 -- | Construct an 'Event' whose value is guaranteed not to be recomputed
 -- repeatedly
@@ -450,16 +464,6 @@ data Subscriber x a = Subscriber
   , subscriberRecalculateHeight :: !(Height -> IO ())
   }
 
---TODO: Move this comment to WeakBag
--- These function are constructor functions that are marked NOINLINE so they are
--- opaque to GHC. If we do not do this, then GHC will sometimes fuse the constructor away
--- so any weak references that are attached to the constructors will have their
--- finalizer run. Using the opaque constructor, does not see the
--- constructor application, so it behaves like an IORef and cannot be fused away.
---
--- The result is also evaluated to WHNF, since forcing a thunk invalidates
--- the weak pointer to it in some cases.
-
 newSubscriberHold :: (HasSpiderTimeline x, Patch p) => Hold x p -> IO (Subscriber x p)
 newSubscriberHold h = return $ Subscriber
   { subscriberPropagate = {-# SCC "traverseHold" #-} propagateSubscriberHold h
@@ -601,6 +605,16 @@ eventSubscribedNever = EventSubscribed
   , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = return ["never"]
+#endif
+  }
+eventSubscribedNow :: EventSubscribed x
+eventSubscribedNow = EventSubscribed
+  { eventSubscribedHeightRef = zeroRef
+  , eventSubscribedRetained = toAny ()
+#ifdef DEBUG_CYCLES
+  , eventSubscribedGetParents = return []
+  , eventSubscribedHasOwnHeightRef = False
+  , eventSubscribedWhoCreated = return ["now"]
 #endif
   }
 
@@ -2506,6 +2520,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
+  {-# INLINABLE now #-}
+  now = nowSpiderEventM
 
 instance Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPullM x) where
   {-# INLINABLE sample #-}
@@ -2527,6 +2543,9 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+  {-# INLINABLE now #-}
+  now = SpiderPushM nowSpiderEventM
+
 
 instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) where
   {-# INLINE return #-}
@@ -2590,6 +2609,9 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   buildDynamic getV0 e = runFrame . runSpiderHostFrame $ Reflex.Class.buildDynamic getV0 e
   {-# INLINABLE headE #-}
   headE e = runFrame . runSpiderHostFrame $ Reflex.Class.headE e
+  {-# INLINABLE now #-}
+  now = runFrame . runSpiderHostFrame $ Reflex.Class.now
+  
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
   sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
@@ -2606,6 +2628,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE headE #-}
   headE = R.slowHeadE
 --  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+  {-# INLINABLE now #-}
+  now = SpiderHostFrame Reflex.Class.now
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHost x) where
   {-# INLINABLE sample #-}
@@ -2626,6 +2650,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
   buildDynamic getV0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.buildDynamic getV0 e
   {-# INLINABLE headE #-}
   headE e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.headE e
+  {-# INLINABLE now #-}
+  now = Reflex.Spider.Internal.ReadPhase Reflex.Class.now
 
 --------------------------------------------------------------------------------
 -- Deprecated items
@@ -2749,7 +2775,7 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   fanG e = R.EventSelectorG $ SpiderEvent . selectG (fanG (unSpiderEvent e))
   {-# INLINABLE mergeG #-}
   mergeG
-    :: forall (k :: k2 -> *) q (v :: k2 -> *). GCompare k
+    :: forall k2 (k :: k2 -> *) q (v :: k2 -> *). GCompare k
     => (forall a. q a -> R.Event (SpiderTimeline x) (v a))
     -> DMap k q
     -> R.Event (SpiderTimeline x) (DMap k v)

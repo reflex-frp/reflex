@@ -53,10 +53,12 @@ module Reflex.Dynamic
   , foldDynMaybe
   , foldDynMaybeM
   , joinDynThroughMap
+  , joinDynThroughIntMap
   , traceDyn
   , traceDynWith
   , splitDynPure
   , distributeMapOverDynPure
+  , distributeIntMapOverDynPure
   , distributeDMapOverDynPure
   , distributeListOverDynPure
   , Demux
@@ -88,6 +90,8 @@ import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare (GCompare (..), GEq (..), GOrdering (..))
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import Data.Maybe
 import Data.Monoid ((<>))
@@ -202,6 +206,11 @@ splitDynPure d = (fmap fst d, fmap snd d)
 distributeMapOverDynPure :: (Reflex t, Ord k) => Map k (Dynamic t v) -> Dynamic t (Map k v)
 distributeMapOverDynPure = fmap dmapToMap . distributeDMapOverDynPure . mapWithFunctorToDMap
 
+-- | Convert an 'IntMap' with 'Dynamic' elements into a 'Dynamic' of an 'IntMap' with
+-- non-'Dynamic' elements.
+distributeIntMapOverDynPure :: (Reflex t) => IntMap (Dynamic t v) -> Dynamic t (IntMap v)
+distributeIntMapOverDynPure = fmap dmapToIntMap . distributeDMapOverDynPure . intMapWithFunctorToDMap
+
 -- | Convert a list with 'Dynamic' elements into a 'Dynamic' of a list with
 -- non-'Dynamic' elements, preserving the order of the elements.
 {-# DEPRECATED distributeListOverDynPure "Use 'distributeListOverDyn' instead" #-}
@@ -213,6 +222,11 @@ distributeListOverDynPure = distributeListOverDyn
 -- with the current values of the 'Dynamic's in a map.
 joinDynThroughMap :: forall t k a. (Reflex t, Ord k) => Dynamic t (Map k (Dynamic t a)) -> Dynamic t (Map k a)
 joinDynThroughMap = (distributeMapOverDynPure =<<)
+
+-- | Combine a 'Dynamic' of an 'IntMap' of 'Dynamic's into a 'Dynamic'
+-- with the current values of the 'Dynamic's in a map.
+joinDynThroughIntMap :: forall t a. (Reflex t) => Dynamic t (IntMap (Dynamic t a)) -> Dynamic t (IntMap a)
+joinDynThroughIntMap = (distributeIntMapOverDynPure =<<)
 
 -- | Print the value of the 'Dynamic' when it is first read and on each
 -- subsequent change that is observed (as 'traceEvent'), prefixed with the
@@ -334,7 +348,7 @@ factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
 --
 -- > demuxed (demux d) k === fmap (== k) d
 --
--- However, when getDemuxed is used multiple times, the complexity is only
+-- However, when 'demuxed' is used multiple times, the complexity is only
 -- /O(log(n))/, rather than /O(n)/ for fmap.
 data Demux t k = Demux { demuxValue :: Behavior t k
                        , demuxSelector :: EventSelector t (Const2 k Bool)

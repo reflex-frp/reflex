@@ -322,8 +322,14 @@ testCases =
                 let e = never <$ switch b
             return $ void e
       lazyHold
-
-
+  , testE "now-1" $ do
+      e1 <- events1
+      switchHoldPromptly never . pushAlways (\a -> fmap (a <$) now) $ e1
+  , testE "now-2" $ do
+      e1 <- events1
+      let e = pushAlways (\a -> if a == "a" then now else return never) e1
+      x <- accumDyn (<>) never e 
+      return . coincidence $ updated x
   ] where
 
     events1, events2, events3 ::  TestPlan t m => m (Event t String)

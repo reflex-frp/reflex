@@ -1,6 +1,7 @@
 -- | This module provides 'RequesterT', the standard implementation of
 -- 'Requester'.
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE ExistentialQuantification #-}
@@ -32,6 +33,7 @@ module Reflex.Requester.Base
   , requesterDataToList
   , singletonRequesterData
   , matchResponsesWithRequests
+  , matchResponseMapWithRequests
   , multiEntry
   , unMultiEntry
   , requesting'
@@ -49,14 +51,17 @@ import Reflex.TriggerEvent.Class
 import Control.Applicative (liftA2)
 import Control.Monad.Exception
 import Control.Monad.Identity
+import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
 import Control.Monad.State.Strict
 import Data.Bits
 import Data.Coerce
-import Data.Dependent.Map (DMap, DSum (..))
+import Data.Constraint
+import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum (DSum (..))
 import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.IntMap.Strict (IntMap)
@@ -79,18 +84,50 @@ newtype TagMap (f :: * -> *) = TagMap (IntMap Any)
 
 newtype RequesterData f = RequesterData (TagMap (Entry f))
 
+emptyRequesterData :: RequesterData f
+emptyRequesterData = RequesterData $ TagMap IntMap.empty
+
 data RequesterDataKey a where
   RequesterDataKey_Single :: {-# UNPACK #-} !(MyTag (Single a)) -> RequesterDataKey a
   RequesterDataKey_Multi :: {-# UNPACK #-} !(MyTag Multi) -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a --TODO: Don't put a second Int here (or in the other Multis); use a single Int instead
-  RequesterDataKey_Multi2 :: {-# UNPACK #-} !(MyTag (Multi2 k)) -> !(Some k) -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a
+  RequesterDataKey_Multi2 :: GCompare k => {-# UNPACK #-} !(MyTag (Multi2 k)) -> !(Some k) -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a
   RequesterDataKey_Multi3 :: {-# UNPACK #-} !(MyTag Multi3) -> {-# UNPACK #-} !Int -> {-# UNPACK #-} !Int -> !(RequesterDataKey a) -> RequesterDataKey a
 
 singletonRequesterData :: RequesterDataKey a -> f a -> RequesterData f
 singletonRequesterData rdk v = case rdk of
   RequesterDataKey_Single k -> RequesterData $ singletonTagMap k $ Entry v
   RequesterDataKey_Multi k k' k'' -> RequesterData $ singletonTagMap k $ Entry $ IntMap.singleton k' $ singletonRequesterData k'' v
-  RequesterDataKey_Multi2 k k' k'' k''' -> RequesterData $ singletonTagMap k $ Entry $ Map.singleton k' $ IntMap.singleton k'' $ singletonRequesterData k''' v
+  RequesterDataKey_Multi2 k k' k'' k''' -> RequesterData $ singletonTagMap k $ Entry $ Multi2Contents
+    { _multi2Contents_values = Map.singleton k' $ IntMap.singleton k'' $ singletonRequesterData k''' v
+    , _multi2Contents_dict = Dict
+    }
   RequesterDataKey_Multi3 k k' k'' k''' -> RequesterData $ singletonTagMap k $ Entry $ IntMap.singleton k' $ IntMap.singleton k'' $ singletonRequesterData k''' v
+
+mergeRequesterData :: RequesterData f -> RequesterData f -> RequesterData f
+mergeRequesterData (RequesterData a) (RequesterData b) = RequesterData $ mergeTagMap a b
+
+mergeTagMap :: forall f. TagMap (Entry f) -> TagMap (Entry f) -> TagMap (Entry f)
+mergeTagMap (TagMap m) (TagMap n) =
+  TagMap $ IntMap.unionWithKey (g' combiner) m n
+  where
+    combiner :: forall a. MyTag a -> Entry f a -> Entry f a -> Entry f a
+    combiner k (Entry a) (Entry b) = Entry $ case myKeyType k of
+      MyTagType_Single -> a
+      MyTagType_Multi -> IntMap.unionWith mergeRequesterData a b
+      MyTagType_Multi2 -> case _multi2Contents_dict a of
+        Dict -> Multi2Contents
+          { _multi2Contents_values = Map.unionWith (IntMap.unionWith mergeRequesterData) (_multi2Contents_values a) (_multi2Contents_values b)
+          , _multi2Contents_dict = Dict
+          }
+      MyTagType_Multi3 -> IntMap.unionWith (IntMap.unionWith mergeRequesterData) a b
+    g' :: (forall a. MyTag a -> Entry f a -> Entry f a -> Entry f a) -> Int -> Any -> Any -> Any
+    g' f rawKey a b =
+      let k = MyTag rawKey :: MyTag a
+          fromAny :: Any -> Entry f a
+          fromAny = unsafeCoerce
+          toAny :: Entry f a -> Any
+          toAny = unsafeCoerce
+      in toAny $ f k (fromAny a) (fromAny b)
 
 requesterDataToList :: RequesterData f -> [DSum RequesterDataKey f]
 requesterDataToList (RequesterData m) = do
@@ -101,11 +138,12 @@ requesterDataToList (RequesterData m) = do
       (k', e') <- IntMap.toList e
       k'' :=> e'' <- requesterDataToList e'
       return $ RequesterDataKey_Multi k k' k'' :=> e''
-    MyTagType_Multi2 -> do
-      (k', e') <- Map.toList e
-      (k'', e'') <- IntMap.toList e'
-      k''' :=> e''' <- requesterDataToList e''
-      return $ RequesterDataKey_Multi2 k k' k'' k''' :=> e'''
+    MyTagType_Multi2 -> case _multi2Contents_dict e of
+      Dict -> do
+        (k', e') <- Map.toList $ _multi2Contents_values e
+        (k'', e'') <- IntMap.toList e'
+        k''' :=> e''' <- requesterDataToList e''
+        return $ RequesterDataKey_Multi2 k k' k'' k''' :=> e'''
     MyTagType_Multi3 -> do
       (k', e') <- IntMap.toList e
       (k'', e'') <- IntMap.toList e'
@@ -133,7 +171,13 @@ traverseRequesterData f (RequesterData m) = RequesterData <$> traverseTagMapWith
         go k (Entry request) = Entry <$> case myKeyType k of
           MyTagType_Single -> f request
           MyTagType_Multi -> traverse (traverseRequesterData f) request
-          MyTagType_Multi2 -> traverse (traverse (traverseRequesterData f)) request
+          MyTagType_Multi2 -> case request of
+            Multi2Contents { _multi2Contents_values = request', _multi2Contents_dict = Dict } -> do
+              v <- traverse (traverse (traverseRequesterData f)) request'
+              pure $ Multi2Contents
+                { _multi2Contents_values = v
+                , _multi2Contents_dict = Dict
+                }
           MyTagType_Multi3 -> traverse (traverse (traverseRequesterData f)) request
 
 -- | 'traverseRequesterData' with its arguments flipped
@@ -177,8 +221,13 @@ instance MyTagTypeOffset Multi3 where
 type family EntryContents request a where
   EntryContents request (Single a) = request a
   EntryContents request Multi = IntMap (RequesterData request)
-  EntryContents request (Multi2 k) = Map (Some k) (IntMap (RequesterData request))
+  EntryContents request (Multi2 k) = Multi2Contents k request
   EntryContents request Multi3 = IntMap (IntMap (RequesterData request))
+
+data Multi2Contents k request = Multi2Contents
+  { _multi2Contents_dict :: {-# UNPACK #-} !(Dict (GCompare k)) -- This is a Dict instead of an existential context because we only want to use it in certain circumstances
+  , _multi2Contents_values :: {-# UNPACK #-} !(Map (Some k) (IntMap (RequesterData request)))
+  }
 
 newtype Entry request x = Entry { unEntry :: EntryContents request x }
 
@@ -308,13 +357,16 @@ tagRequest req = do
   return t
 
 {-# INLINE responseFromTag #-}
-responseFromTag :: Monad m => MyTagWrap response (Entry response x) -> RequesterT t request response m (Event t (Entry response x))
+responseFromTag :: forall m t request response x. Monad m => MyTagWrap response (Entry response x) -> RequesterT t request response m (Event t (Entry response x))
 responseFromTag (MyTagWrap t) = do
   responses :: EventSelectorInt t Any <- RequesterT ask
   return $ (unsafeCoerce :: Event t Any -> Event t (Entry response x)) $ selectInt responses t
 
 instance MonadTrans (RequesterT t request response) where
   lift = RequesterT . lift . lift
+
+instance MFunctor (RequesterT t request response) where
+  hoist f = RequesterT . hoist (hoist f) . unRequesterT
 
 instance PerformEvent t m => PerformEvent t (RequesterT t request response m) where
   type Performable (RequesterT t request response m) = Performable m
@@ -435,9 +487,9 @@ traverseDMapWithKeyWithAdjustRequesterTWith base mapPatch weakenPatchWith patchN
       let responses :: EventSelector t (Const2 (Some k) (IntMap (RequesterData response)))
           responses = fanMap $ fmapCheap unpack response
           unpack :: Entry response (Multi2 k) -> Map (Some k) (IntMap (RequesterData response))
-          unpack = unEntry
+          unpack = _multi2Contents_values . unEntry
           pack :: Map (Some k) (IntMap (RequesterData request)) -> Entry request (Multi2 k)
-          pack = Entry
+          pack m = Entry $ Multi2Contents { _multi2Contents_values = m, _multi2Contents_dict = Dict }
           f' :: forall a. k a -> Compose ((,) Int) v a -> m (Compose ((,) (Event t (IntMap (RequesterData request)))) v' a)
           f' k (Compose (n, v)) = do
             (result, myRequests) <- runRequesterT (f k v) $ mapMaybeCheap (IntMap.lookup n) $ select responses (Const2 (Some k))
@@ -458,9 +510,6 @@ traverseDMapWithKeyWithAdjustRequesterTWith base mapPatch weakenPatchWith patchN
 data Decoder rawResponse response =
   forall a. Decoder (RequesterDataKey a) (rawResponse -> response a)
 
--- | Matches incoming responses with previously-sent requests
--- and uses the provided request "decoder" function to process
--- incoming responses.
 matchResponsesWithRequests
   :: forall t rawRequest rawResponse request response m.
      ( MonadFix m
@@ -479,7 +528,30 @@ matchResponsesWithRequests
        )
   -- ^ A map of outgoing wire-format requests and an event of responses keyed
   -- by the 'RequesterData' key of the associated outgoing request
-matchResponsesWithRequests f send recv = do
+matchResponsesWithRequests f send recv = matchResponseMapWithRequests f send $ uncurry Map.singleton <$> recv
+
+-- | Matches incoming responses with previously-sent requests
+-- and uses the provided request "decoder" function to process
+-- incoming responses.
+matchResponseMapWithRequests
+  :: forall t rawRequest rawResponse request response m.
+     ( MonadFix m
+     , MonadHold t m
+     , Reflex t
+     )
+  => (forall a. request a -> (rawRequest, rawResponse -> response a))
+  -- ^ Given a request (from 'Requester'), produces the wire format of the
+  -- request and a function used to process the associated response
+  -> Event t (RequesterData request)
+  -- ^ The outgoing requests
+  -> Event t (Map Int rawResponse)
+  -- ^ A map of incoming responses, tagged by an identifying key
+  -> m ( Event t (Map Int rawRequest)
+       , Event t (RequesterData response)
+       )
+  -- ^ A map of outgoing wire-format requests and an event of responses keyed
+  -- by the 'RequesterData' key of the associated outgoing request
+matchResponseMapWithRequests f send recv = do
   rec nextId <- hold 1 $ fmap (\(next, _, _) -> next) outgoing
       waitingFor :: Incremental t (PatchMap Int (Decoder rawResponse response)) <-
         holdIncremental mempty $ leftmost
@@ -521,17 +593,15 @@ matchResponsesWithRequests f send recv = do
     processIncoming
       :: Incremental t (PatchMap Int (Decoder rawResponse response))
       -- A map of outstanding expected responses
-      -> Event t (Int, rawResponse)
+      -> Event t (Map Int rawResponse)
       -- A incoming response paired with its identifying key
       -> Event t (RequesterData response, PatchMap Int v)
       -- The decoded response and a patch that clears the outstanding responses queue
-    processIncoming waitingFor inc = flip push inc $ \(n, rawRsp) -> do
+    processIncoming waitingFor inc = flip push inc $ \rspMap -> do
       wf <- sample $ currentIncremental waitingFor
-      case Map.lookup n wf of
-        Nothing -> return Nothing -- TODO How should lookup failures be handled here? They shouldn't ever happen..
-        Just (Decoder k rspF) -> do
-          let rsp = rspF rawRsp
-          return $ Just
-            ( singletonRequesterData k rsp
-            , PatchMap $ Map.singleton n Nothing
-            )
+      let match rawRsp (Decoder k rspF) =
+            let rsp = rspF rawRsp
+            in singletonRequesterData k rsp
+          matches = Map.intersectionWith match rspMap wf
+      pure $ if Map.null matches then Nothing else Just
+        (Map.foldl' mergeRequesterData emptyRequesterData matches, PatchMap $ Nothing <$ matches)

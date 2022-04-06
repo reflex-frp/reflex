@@ -1,7 +1,17 @@
 Name: reflex
-Version: 0.6.4.1
+Version: 0.8.2.0
 Synopsis: Higher-order Functional Reactive Programming
-Description: Reflex is a high-performance, deterministic, higher-order Functional Reactive Programming system
+Description:
+  Interactive programs without callbacks or side-effects.
+  Functional Reactive Programming (FRP) uses composable events and time-varying
+  values to describe interactive systems as pure functions.
+  Just like other pure functional code, functional reactive code is easier
+  to get right on the first try, maintain, and reuse.
+  .
+  Reflex is a fully-deterministic, higher-order Functional Reactive Programming
+  interface and an engine that efficiently implements that interface.
+  .
+  <https://reflex-frp.org>
 License: BSD3
 License-file: LICENSE
 Author: Ryan Trinkle
@@ -18,8 +28,8 @@ extra-source-files:
   ChangeLog.md
 
 tested-with:
-  GHC  ==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5 || ==8.8.1,
-  GHCJS ==8.4
+  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2,
+  GHCJS ==8.6
 
 flag use-reflex-optimizer
   description: Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.
@@ -61,21 +71,23 @@ library
   hs-source-dirs: src
   build-depends:
     MemoTrie == 0.6.*,
-    base >= 4.9 && < 4.14,
+    base >= 4.11 && < 4.15,
     bifunctors >= 5.2 && < 5.6,
     comonad >= 5.0.4 && < 5.1,
+    constraints >= 0.10 && <0.14,
     constraints-extras >= 0.3 && < 0.4,
     containers >= 0.6 && < 0.7,
     data-default >= 0.5 && < 0.8,
-    dependent-map >= 0.3 && < 0.4,
+    dependent-map >= 0.3 && < 0.5,
     exception-transformers == 0.4.*,
     lens >= 4.7 && < 5,
+    mmorph >= 1.0 && < 1.2,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
     patch >= 0.0.1 && < 0.1,
-    prim-uniq >= 0.1.0.1 && < 0.2,
+    prim-uniq >= 0.1.0.1 && < 0.3,
     primitive >= 0.5 && < 0.8,
-    profunctors >= 5.3 && < 5.6,
+    profunctors >= 5.3 && < 5.7,
     random == 1.1.*,
     ref-tf == 0.4.*,
     reflection == 2.1.*,
@@ -85,10 +97,10 @@ library
     time >= 1.4 && < 1.10,
     transformers >= 0.5.6.0 && < 0.6,
     unbounded-delays >= 0.1.0.0 && < 0.2,
-    witherable >= 0.3 && < 0.3.2
+    witherable >= 0.3 && < 0.5
 
   if flag(split-these)
-    build-depends:     these >= 1 && <1.1,
+    build-depends:     these >= 1 && <1.2,
                        semialign >=1 && <1.2,
                        monoidal-containers >= 0.6 && < 0.7
   else
@@ -119,6 +131,7 @@ library
     Reflex.FastWeak,
     Reflex.FunctorMaybe,
     Reflex.Host.Class,
+    Reflex.Host.Headless,
     Reflex.Network,
     Reflex.NotReady.Class,
     Reflex.PerformEvent.Base,
@@ -153,7 +166,8 @@ library
 
   if flag(debug-trace-events)
     cpp-options: -DDEBUG_TRACE_EVENTS
-    build-depends: bytestring
+    build-depends:
+      bytestring >= 0.10.8 && < 0.11
 
   if flag(use-reflex-optimizer)
     cpp-options: -DUSE_REFLEX_OPTIMIZER
@@ -169,22 +183,23 @@ library
   if flag(use-template-haskell)
     cpp-options: -DUSE_TEMPLATE_HASKELL
     build-depends:
-      dependent-sum >= 0.6 && < 0.7,
-      haskell-src-exts >= 1.16 && < 1.23,
+      dependent-sum >= 0.6 && < 0.8,
+      haskell-src-exts >= 1.16 && < 1.24,
       haskell-src-meta >= 0.6 && < 0.9,
-      template-haskell >= 2.9 && < 2.16
+      template-haskell >= 2.9 && < 2.17
     exposed-modules:
       Reflex.Dynamic.TH
     other-extensions: TemplateHaskell
   else
     build-depends:
-      dependent-sum >= 0.6 && < 0.7
+      dependent-sum >= 0.6 && < 0.8
 
   if flag(fast-weak) && impl(ghcjs)
     cpp-options: -DGHCJS_FAST_WEAK
 
   if impl(ghcjs)
-    build-depends: ghcjs-base
+    build-depends:
+      ghcjs-base == 0.2.*
 
 test-suite semantics
   default-language: Haskell2010
@@ -243,7 +258,10 @@ test-suite hlint
                , directory
                , filepath
                , filemanip
-               , hlint < 2.1 || >= 2.2.2
+  if impl(ghc >= 8.8)
+    build-depends: hlint >= 3 && < 4
+  else
+    build-depends: hlint (< 2.1 || >= 2.2.2) && < 4
   if impl(ghcjs)
     buildable: False
 
@@ -327,6 +345,14 @@ test-suite RequesterT
     Reflex.TestPlan
     Reflex.Plan.Pure
     Test.Run
+
+test-suite Headless
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Headless.hs
+  hs-source-dirs: test
+  build-depends: base
+               , reflex
 
 test-suite Adjustable
   default-language: Haskell2010

@@ -9,7 +9,6 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 #ifdef USE_REFLEX_OPTIMIZER
 {-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
@@ -84,6 +83,8 @@ instance MonadHold t m => MonadHold t (PostBuildT t m) where
   buildDynamic a0 = lift . buildDynamic a0
   {-# INLINABLE headE #-}
   headE = lift . headE
+  {-# INLINABLE now #-}
+  now = lift now
 
 instance PerformEvent t m => PerformEvent t (PostBuildT t m) where
   type Performable (PostBuildT t m) = Performable m
