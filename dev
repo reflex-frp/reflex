@@ -1,0 +1,1 @@
+nix-shell -E "let rp = import ./dep/reflex-platform {}; in rp.workOn rp.ghc rp.ghc.reflex"

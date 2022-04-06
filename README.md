@@ -20,4 +20,4 @@ Reflex is a fully-deterministic, higher-order Functional Reactive Programming in
 
 ## Hacking
 
-From the root of a [Reflex Platform](https://github.com/reflex-frp/reflex-platform) checkout, run `./scripts/hack-on haskell-overlays/reflex-packages/dep/reflex`. This will check out the reflex source code into the `haskell-overlays/reflex-packages/dep/reflex` directory. You can then point that checkout at your fork, make changes, etc. Use the `./try-reflex` or `./scripts/work-on` scripts to start a shell in which you can test your changes.
+Use the [`./dev`](dev) script to enter a nix shell with all dependencies available.
