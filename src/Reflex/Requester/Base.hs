@@ -42,6 +42,7 @@ module Reflex.Requester.Base
 import Reflex.Class
 import Reflex.Adjustable.Class
 import Reflex.Dynamic
+import Reflex.EventWriter.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
@@ -297,6 +298,9 @@ deriving instance MonadSample t m => MonadSample t (RequesterT t request respons
 deriving instance MonadHold t m => MonadHold t (RequesterT t request response m)
 deriving instance PostBuild t m => PostBuild t (RequesterT t request response m)
 deriving instance TriggerEvent t m => TriggerEvent t (RequesterT t request response m)
+
+instance EventWriter t w m => EventWriter t w (RequesterT t request response m) where
+  tellEvent = lift . tellEvent
 
 instance PrimMonad m => PrimMonad (RequesterT t request response m) where
   type PrimState (RequesterT t request response m) = PrimState m
