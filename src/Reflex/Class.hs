@@ -1028,7 +1028,7 @@ switchHoldPromptly ea0 eea = do
 
 -- | switches to a new event whenever it receives one.  At the moment of
 -- switching, the old event will be ignored if it fires, and the new one will be
--- used if it fires; this is the opposite of 'switch', which will use only the
+-- used if it fires; this is the opposite of 'switchHold', which will use only the
 -- old value.
 --
 -- 'switchHold', by always forwarding the old event the moment it is switched
