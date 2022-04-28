@@ -43,7 +43,7 @@ import Reflex.Class
 import Data.Patch.DMapWithMove
 
 -- | A 'Monad' that supports adjustment over time.  After an action has been
--- run, if the given events fire, it will adjust itself so that its net effect
+-- run, if the given events fires, it will adjust itself so that its net effect
 -- is as though it had originally been run with the new value.  Note that there
 -- is some issue here with persistent side-effects: obviously, IO (and some
 -- other side-effects) cannot be undone, so it is up to the instance implementer
