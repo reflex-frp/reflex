@@ -45,8 +45,15 @@ qDynPure qe = do
   (e', exprsReversed) <- runStateT (gmapM f e) []
   let exprs = reverse exprsReversed
       arg = foldr (\a b -> ConE 'FHCons `AppE` snd a `AppE` b) (ConE 'FHNil) exprs
-      param = foldr (\a b -> ConP 'HCons [VarP (fst a), b]) (ConP 'HNil []) exprs
+      param = foldr (\a b -> conPCompat 'HCons [VarP (fst a), b]) (conPCompat 'HNil []) exprs
   [| $(return $ LamE [param] e') <$> distributeFHListOverDynPure $(return arg) |]
+
+conPCompat :: Name -> [Pat] -> Pat
+#if MIN_VERSION_template_haskell(2, 18, 0)
+conPCompat name = ConP name []
+#else
+conPCompat = ConP
+#endif
 
 -- | Antiquote a 'Dynamic' expression.  This can /only/ be used inside of a
 -- 'qDyn' quotation.
