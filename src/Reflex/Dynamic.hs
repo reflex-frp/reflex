@@ -92,6 +92,7 @@ import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare (GCompare (..), GEq (..), GOrdering (..))
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
+import Data.Kind (Type)
 import Data.Map (Map)
 import Data.Maybe
 import Data.Monoid ((<>))
@@ -381,7 +382,7 @@ demuxed d k =
 -- | A heterogeneous list whose type and length are fixed statically.  This is
 -- reproduced from the 'HList' package due to integration issues, and because
 -- very little other functionality from that library is needed.
-data HList (l::[*]) where
+data HList (l::[Type]) where
   HNil  :: HList '[]
   HCons :: e -> HList l -> HList (e ': l)
 
@@ -437,7 +438,7 @@ data HListPtr l a where
 deriving instance Eq (HListPtr l a)
 deriving instance Ord (HListPtr l a)
 
-fhlistToDMap :: forall (f :: * -> *) l. FHList f l -> DMap (HListPtr l) f
+fhlistToDMap :: forall (f :: Type -> Type) l. FHList f l -> DMap (HListPtr l) f
 fhlistToDMap = DMap.fromList . go
   where go :: forall l'. FHList f l' -> [DSum (HListPtr l') f]
         go = \case
@@ -477,8 +478,8 @@ distributeFHListOverDynPure l = fmap dmapToHList $ distributeDMapOverDynPure $ f
 
 -- | Indicates that all elements in a type-level list are applications of the
 -- same functor.
-class AllAreFunctors (f :: a -> *) (l :: [a]) where
-  type FunctorList f l :: [*]
+class AllAreFunctors (f :: a -> Type) (l :: [a]) where
+  type FunctorList f l :: [Type]
   toFHList :: HList (FunctorList f l) -> FHList f l
   fromFHList :: FHList f l -> HList (FunctorList f l)
 
@@ -513,7 +514,7 @@ collectDynPure ds = fmap fromHList $ distributeFHListOverDynPure $ toFHList $ to
 
 -- | Poor man's 'Generic's for product types only.
 class IsHList a where
-  type HListElems a :: [*]
+  type HListElems a :: [Type]
   toHList :: a -> HList (HListElems a)
   fromHList :: HList (HListElems a) -> a
 

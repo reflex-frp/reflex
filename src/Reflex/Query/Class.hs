@@ -27,19 +27,20 @@ module Reflex.Query.Class
   , mapQueryResult
   ) where
 
+import Control.Applicative
 import Control.Category (Category)
 import qualified Control.Category as Cat
 import Control.Monad.Reader
 import Data.Bits
 import Data.Data
 import Data.Ix
+import Data.Kind (Type)
 import Data.Map.Monoidal (MonoidalMap)
 import qualified Data.Map.Monoidal as MonoidalMap
 import Data.Semigroup (Semigroup(..))
-import Foreign.Storable
 import Data.Void
 import Data.Monoid hiding ((<>))
-import Control.Applicative
+import Foreign.Storable
 
 import Reflex.Class
 
@@ -48,7 +49,7 @@ import Reflex.Class
 -- The @crop@ function provides a way to determine what part of a given 'QueryResult'
 -- is relevant to a given 'Query'.
 class (Monoid (QueryResult a), Semigroup (QueryResult a)) => Query a where
-  type QueryResult a :: *
+  type QueryResult a :: Type
   crop :: a -> QueryResult a -> QueryResult a
 
 instance (Ord k, Query v) => Query (MonoidalMap k v) where
