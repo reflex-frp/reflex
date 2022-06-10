@@ -29,7 +29,7 @@ extra-source-files:
   ChangeLog.md
 
 tested-with:
-  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2 || ==9.0.1,
+  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2 || ==9.0.1 || ==9.2.2,
   GHCJS ==8.6
 
 flag use-reflex-optimizer
@@ -72,7 +72,7 @@ library
   hs-source-dirs: src
   build-depends:
     MemoTrie == 0.6.*,
-    base >= 4.11 && < 4.16,
+    base >= 4.11 && < 4.17,
     bifunctors >= 5.2 && < 5.6,
     comonad >= 5.0.4 && < 5.1,
     constraints >= 0.10 && <0.14,
@@ -81,7 +81,7 @@ library
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.3 && < 0.5,
     exception-transformers == 0.4.*,
-    lens >= 4.7 && < 5.1,
+    lens >= 4.7 && < 5.2,
     mmorph >= 1.0 && < 1.2,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
@@ -95,7 +95,7 @@ library
     semigroupoids >= 4.0 && < 6,
     stm >= 2.4 && < 2.6,
     syb >= 0.5 && < 0.8,
-    time >= 1.4 && < 1.10,
+    time >= 1.4 && < 1.12,
     transformers >= 0.5.6.0 && < 0.6,
     unbounded-delays >= 0.1.0.0 && < 0.2,
     witherable >= 0.3 && < 0.5
@@ -187,7 +187,7 @@ library
       dependent-sum >= 0.6 && < 0.8,
       haskell-src-exts >= 1.16 && < 1.24,
       haskell-src-meta >= 0.6 && < 0.9,
-      template-haskell >= 2.9 && < 2.18
+      template-haskell >= 2.9 && < 2.19
     exposed-modules:
       Reflex.Dynamic.TH
     other-extensions: TemplateHaskell

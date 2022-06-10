@@ -66,6 +66,7 @@ import Data.Functor.Compose
 import Data.Functor.Misc
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import Data.Kind (Type)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid ((<>))
@@ -80,7 +81,7 @@ import Unsafe.Coerce
 
 --TODO: Make this module type-safe
 
-newtype TagMap (f :: * -> *) = TagMap (IntMap Any)
+newtype TagMap (f :: Type -> Type) = TagMap (IntMap Any)
 
 newtype RequesterData f = RequesterData (TagMap (Entry f))
 
@@ -184,7 +185,7 @@ traverseRequesterData f (RequesterData m) = RequesterData <$> traverseTagMapWith
 forRequesterData :: forall request response m. Applicative m => RequesterData request -> (forall a. request a -> m (response a)) -> m (RequesterData response)
 forRequesterData r f = traverseRequesterData f r
 
-data MyTagType :: * -> * where
+data MyTagType :: Type -> Type where
   MyTagType_Single :: MyTagType (Single a)
   MyTagType_Multi :: MyTagType Multi
   MyTagType_Multi2 :: MyTagType (Multi2 k)
@@ -200,7 +201,7 @@ myKeyType (MyTag k) = case k .&. 0x3 of
 
 data Single a
 data Multi
-data Multi2 (k :: * -> *)
+data Multi2 (k :: Type -> Type)
 data Multi3
 
 class MyTagTypeOffset x where
@@ -247,7 +248,7 @@ unMultiEntry = unEntry
 -- WARNING: This type should never be exposed.  In particular, this is extremely unsound if a MyTag from one run of runRequesterT is ever compared against a MyTag from another
 newtype MyTag x = MyTag Int deriving (Show, Eq, Ord, Enum)
 
-newtype MyTagWrap (f :: * -> *) x = MyTagWrap Int deriving (Show, Eq, Ord, Enum)
+newtype MyTagWrap (f :: Type -> Type) x = MyTagWrap Int deriving (Show, Eq, Ord, Enum)
 
 {-# INLINE castMyTagWrap #-}
 castMyTagWrap :: MyTagWrap f (Entry f x) -> MyTagWrap g (Entry g x)
@@ -279,13 +280,13 @@ instance GCompare (MyTagWrap f) where
       EQ -> unsafeCoerce GEQ
       GT -> GGT
 
-data RequesterState t (request :: * -> *) = RequesterState
+data RequesterState t (request :: Type -> Type) = RequesterState
   { _requesterState_nextMyTag :: {-# UNPACK #-} !Int -- Starts at -4 and goes down by 4 each time, to accommodate two 'type' bits at the bottom
   , _requesterState_requests :: ![(Int, Event t Any)]
   }
 
 -- | A basic implementation of 'Requester'.
-newtype RequesterT t request (response :: * -> *) m a = RequesterT { unRequesterT :: StateT (RequesterState t request) (ReaderT (EventSelectorInt t Any) m) a }
+newtype RequesterT t request (response :: Type -> Type) m a = RequesterT { unRequesterT :: StateT (RequesterState t request) (ReaderT (EventSelectorInt t Any) m) a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException
 -- MonadAsyncException can't be derived on ghc-8.0.1; we use base-4.9.1 as a proxy for ghc-8.0.2
 #if MIN_VERSION_base(4,9,1)
