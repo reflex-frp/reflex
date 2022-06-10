@@ -55,7 +55,6 @@ runPostBuildT (PostBuildT a) = runReaderT a
 -- TODO: Monoid and Semigroup can likely be derived once ReaderT has them.
 instance (Monoid a, Applicative m) => Monoid (PostBuildT t m a) where
   mempty = pure mempty
-  mappend = liftA2 mappend
 
 instance (S.Semigroup a, Applicative m) => S.Semigroup (PostBuildT t m a) where
   (<>) = liftA2 (S.<>)

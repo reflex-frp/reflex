@@ -37,7 +37,6 @@ import Data.Ix
 import Data.Kind (Type)
 import Data.Map.Monoidal (MonoidalMap)
 import qualified Data.Map.Monoidal as MonoidalMap
-import Data.Semigroup (Semigroup(..))
 import Data.Void
 import Data.Monoid hiding ((<>))
 import Foreign.Storable
