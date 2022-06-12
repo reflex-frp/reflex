@@ -40,7 +40,6 @@ import qualified Data.IntMap as IntMap
 import Data.Kind (Type)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid ((<>))
 import qualified Data.Semigroup as S
 import Data.Some (Some(Some))
 import Data.These
