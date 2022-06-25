@@ -66,7 +66,7 @@ import Data.Proxy
 import Data.These
 import Data.Traversable
 import Data.Type.Equality ((:~:)(Refl))
-import Data.Witherable (Filterable, mapMaybe)
+import Witherable (Filterable, mapMaybe)
 import GHC.Exts hiding (toList)
 import GHC.IORef (IORef (..))
 import GHC.Stack
