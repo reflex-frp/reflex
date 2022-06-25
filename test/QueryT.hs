@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
@@ -30,6 +31,8 @@ import Test.Run
 
 newtype MyQuery = MyQuery SelectedCount
   deriving (Show, Read, Eq, Ord, Monoid, Semigroup, Commutative, Group)
+
+instance Commutative (Selector Int MyQuery)
 
 instance Query MyQuery where
   type QueryResult MyQuery = ()

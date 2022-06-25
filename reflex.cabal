@@ -377,6 +377,7 @@ test-suite QueryT
   main-is: QueryT.hs
   hs-source-dirs: test
   build-depends: base
+               , commutative-semigroups
                , containers
                , dependent-map
                , dependent-sum
