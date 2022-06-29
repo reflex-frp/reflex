@@ -42,6 +42,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import qualified Data.Semigroup as S
+import Data.Semigroup.Commutative
 import Data.Some (Some(Some))
 import Data.These
 
@@ -64,7 +65,7 @@ newtype QueryT t q m a = QueryT { unQueryT :: StateT [Behavior t q] (EventWriter
 deriving instance MonadHold t m => MonadHold t (QueryT t q m)
 deriving instance MonadSample t m => MonadSample t (QueryT t q m)
 
-runQueryT :: (MonadFix m, Additive q, Group q, Reflex t) => QueryT t q m a -> Dynamic t (QueryResult q) -> m (a, Incremental t (AdditivePatch q))
+runQueryT :: (MonadFix m, Commutative q, Group q, Reflex t) => QueryT t q m a -> Dynamic t (QueryResult q) -> m (a, Incremental t (AdditivePatch q))
 runQueryT (QueryT a) qr = do
   ((r, bs), es) <- runReaderT (runEventWriterT (runStateT a mempty)) qr
   return (r, unsafeBuildIncremental (foldlM (\b c -> (b <>) <$> sample c) mempty bs) (fmapCheap AdditivePatch es))
@@ -80,7 +81,7 @@ getQueryTLoweredResultWritten (QueryTLoweredResult (_, w)) = w
 maskMempty :: (Eq a, Monoid a) => a -> Maybe a
 maskMempty x = if x == mempty then Nothing else Just x
 
-instance (Reflex t, MonadFix m, Group q, Additive q, Query q, Eq q, MonadHold t m, Adjustable t m) => Adjustable t (QueryT t q m) where
+instance (Reflex t, MonadFix m, Group q, Commutative q, Query q, Eq q, MonadHold t m, Adjustable t m) => Adjustable t (QueryT t q m) where
   runWithReplace (QueryT a0) a' = do
     ((r0, bs0), r') <- QueryT $ lift $ runWithReplace (runStateT a0 []) $ fmapCheap (flip runStateT [] . unQueryT) a'
     let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
@@ -283,7 +284,7 @@ instance (S.Semigroup a, Monad m) => S.Semigroup (QueryT t q m a) where
   (<>) = liftA2 (S.<>)
 
 -- | withQueryT's QueryMorphism argument needs to be a group homomorphism in order to behave correctly
-withQueryT :: (MonadFix m, PostBuild t m, Group q, Group q', Additive q, Additive q', Query q')
+withQueryT :: (MonadFix m, PostBuild t m, Group q, Group q', Commutative q, Commutative q', Query q')
            => QueryMorphism q q'
            -> QueryT t q m a
            -> QueryT t q' m a
@@ -300,7 +301,7 @@ mapQueryT :: (forall b. m b -> n b) -> QueryT t q m a -> QueryT t q n a
 mapQueryT f (QueryT a) = QueryT $ mapStateT (mapEventWriterT (mapReaderT f)) a
 
 -- | dynWithQueryT's (Dynamic t QueryMorphism) argument needs to be a group homomorphism at all times in order to behave correctly
-dynWithQueryT :: (MonadFix m, PostBuild t m, Group q, Additive q, Group q', Additive q', Query q')
+dynWithQueryT :: (MonadFix m, PostBuild t m, Group q, Commutative q, Group q', Commutative q', Query q')
            => Dynamic t (QueryMorphism q q')
            -> QueryT t q m a
            -> QueryT t q' m a
@@ -325,7 +326,7 @@ dynWithQueryT f q = do
                    return $ Just $ AdditivePatch $ mconcat [ g a bOld, negateG (g aOld bOld), g a b]
          in unsafeBuildIncremental (g <$> sample (current da) <*> sample (currentIncremental ib)) ec
 
-instance (Monad m, Group q, Additive q, Query q, Reflex t) => MonadQuery t q (QueryT t q m) where
+instance (Monad m, Group q, Commutative q, Query q, Reflex t) => MonadQuery t q (QueryT t q m) where
   tellQueryIncremental q = do
     QueryT (modify (currentIncremental q:))
     QueryT (lift (tellEvent (fmapCheap unAdditivePatch (updatedIncremental q))))

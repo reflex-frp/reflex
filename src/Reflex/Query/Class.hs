@@ -38,6 +38,7 @@ import Data.Kind (Type)
 import Data.Map.Monoidal (MonoidalMap)
 import qualified Data.Map.Monoidal as MonoidalMap
 import Data.Semigroup (Semigroup(..))
+import Data.Semigroup.Commutative
 import Data.Void
 import Data.Monoid hiding ((<>))
 import Foreign.Storable
@@ -124,7 +125,7 @@ instance Monoid SelectedCount where
 instance Group SelectedCount where
   negateG (SelectedCount a) = SelectedCount (negate a)
 
-instance Additive SelectedCount
+instance Commutative SelectedCount
 
 -- | The Semigroup\/Monoid\/Group instances for a Query containing 'SelectedCount's should use
 -- this function which returns Nothing if the result is 0. This allows the pruning of leaves
@@ -134,7 +135,7 @@ combineSelectedCounts (SelectedCount i) (SelectedCount j) = if i == negate j the
 
 -- | A class that allows sending of 'Query's and retrieval of 'QueryResult's. See 'queryDyn' for a commonly
 -- used interface.
-class (Group q, Additive q, Query q, Monad m) => MonadQuery t q m | m -> q t where
+class (Group q, Commutative q, Query q, Monad m) => MonadQuery t q m | m -> q t where
   tellQueryIncremental :: Incremental t (AdditivePatch q) -> m ()
   askQueryResult :: m (Dynamic t (QueryResult q))
   queryIncremental :: Incremental t (AdditivePatch q) -> m (Dynamic t (QueryResult q))

@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-Fix build for GHC 9.2
+* Fix build for GHC 9.2
+* Require patch >= 0.0.7.0
 
 ## 0.8.2.0
 
