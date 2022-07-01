@@ -1,6 +1,5 @@
 Name: reflex
-Version: 0.8.2.0
-x-revision: 2
+Version: 0.8.2.1
 Synopsis: Higher-order Functional Reactive Programming
 Description:
   Interactive programs without callbacks or side-effects.
@@ -75,6 +74,7 @@ library
     base >= 4.11 && < 4.17,
     bifunctors >= 5.2 && < 5.6,
     comonad >= 5.0.4 && < 5.1,
+    commutative-semigroups >= 0.1 && <0.2,
     constraints >= 0.10 && <0.14,
     constraints-extras >= 0.3 && < 0.4,
     containers >= 0.6 && < 0.7,
@@ -85,7 +85,7 @@ library
     mmorph >= 1.0 && < 1.2,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
-    patch >= 0.0.1 && < 0.1,
+    patch >= 0.0.7 && < 0.1,
     prim-uniq >= 0.1.0.1 && < 0.3,
     primitive >= 0.5 && < 0.8,
     profunctors >= 5.3 && < 5.7,
@@ -376,6 +376,7 @@ test-suite QueryT
   main-is: QueryT.hs
   hs-source-dirs: test
   build-depends: base
+               , commutative-semigroups
                , containers
                , dependent-map
                , dependent-sum
