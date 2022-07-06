@@ -1,6 +1,6 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.8.2.1
 
 * Fix build for GHC 9.2
 * Require patch >= 0.0.7.0
