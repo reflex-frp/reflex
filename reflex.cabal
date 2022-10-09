@@ -143,6 +143,7 @@ library
     Reflex.Query.Base,
     Reflex.Query.Class,
     Reflex.Requester.Base,
+    Reflex.Requester.Base.Internal,
     Reflex.Requester.Class,
     Reflex.Spider,
     Reflex.Spider.Internal,
