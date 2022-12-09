@@ -1,5 +1,10 @@
 # Revision history for reflex
 
+## 0.8.2.2
+
+* Require witherable >= 0.4 and, hence, a newer monoidal-containers
+* Support newer constraints-extras (0.4)
+
 ## 0.8.2.1
 
 * Fix build for GHC 9.2
