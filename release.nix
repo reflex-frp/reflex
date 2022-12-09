@@ -35,8 +35,8 @@ let
               } {};
               patch = self.callHackageDirect {
                 pkg = "patch";
-                ver = "0.0.7.0";
-                sha256 = "0yr2hk3fpwjxi1z0n384k3aq9b3z00c02bbwqybcj3n20l4k17l6";
+                ver = "0.0.8.0";
+                sha256 = "1nnp7jn0vbx9zrnf57dxbknp6fbkqz7bca4i40aa6fabpwjw97kg";
               } {};
             })
             # Use this package's source for reflex
