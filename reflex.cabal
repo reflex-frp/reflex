@@ -76,7 +76,7 @@ library
     comonad >= 5.0.4 && < 5.1,
     commutative-semigroups >= 0.1 && <0.2,
     constraints >= 0.10 && <0.14,
-    constraints-extras >= 0.3 && < 0.4,
+    constraints-extras >= 0.3 && < 0.5,
     containers >= 0.6 && < 0.7,
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.3 && < 0.5,
