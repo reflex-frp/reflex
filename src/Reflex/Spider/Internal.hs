@@ -1158,9 +1158,6 @@ data Switch x a
             , switchSubscribed :: !(IORef (Maybe (SwitchSubscribed x a)))
             }
 
-#ifdef USE_TEMPLATE_HASKELL
-{-# ANN CoincidenceSubscribed "HLint: ignore Redundant bracket" #-}
-#endif
 data CoincidenceSubscribed x a
    = CoincidenceSubscribed { coincidenceSubscribedCachedSubscribed :: !(IORef (Maybe (CoincidenceSubscribed x a)))
                            , coincidenceSubscribedOccurrence :: !(IORef (Maybe a))
@@ -1609,9 +1606,6 @@ getRootSubscribed k r sub = do
       occ <- getOcc
       return (sln, subscribed, occ)
 
-#ifdef USE_TEMPLATE_HASKELL
-{-# ANN cleanupRootSubscribed "HLint: ignore Redundant bracket" #-}
-#endif
 cleanupRootSubscribed :: RootSubscribed x a -> IO ()
 cleanupRootSubscribed self@RootSubscribed { rootSubscribedKey = k, rootSubscribedCachedSubscribed = cached } = do
   rootSubscribedUninit self
