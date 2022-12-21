@@ -6,14 +6,14 @@ jobs:
   build:
     strategy:
       matrix:
-        ghc: ['8.4.4', '8.6.5', '8.8.4', '8.10.2']
+        ghc: ['8.4.4', '8.6.5', '8.8.4', '8.10.2', '9.0.1', '9.2.2']
         os: ['ubuntu-latest', 'macos-latest']
     runs-on: ${{ matrix.os }}
 
     name: GHC ${{ matrix.ghc }} on ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
-    - uses: actions/setup-haskell@v1
+    - uses: haskell/actions/setup@v1
       with:
         ghc-version: ${{ matrix.ghc }}
     - name: Cache
@@ -36,6 +36,6 @@ jobs:
     - name: Build
       run: cabal build --enable-tests --enable-benchmarks all
     - name: Run tests
-      run: cabal test all
+      run: cabal test --enable-tests all
     - name: Build Docs
       run: cabal haddock

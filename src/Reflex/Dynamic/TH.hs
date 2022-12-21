@@ -44,9 +44,15 @@ qDynPure qe = do
         _ -> gmapM f d
   (e', exprsReversed) <- runStateT (gmapM f e) []
   let exprs = reverse exprsReversed
-      arg = foldr (\a b -> ConE 'FHCons `AppE` snd a `AppE` b) (ConE 'FHNil) exprs
-      param = foldr (\a b -> ConP 'HCons [VarP (fst a), b]) (ConP 'HNil []) exprs
-  [| $(return $ LamE [param] e') <$> distributeFHListOverDynPure $(return arg) |]
+      arg = foldr
+        (\(_, expr) rest -> [e| FHCons $(pure expr) $rest |])
+        [e| FHNil |]
+        exprs
+      param = foldr
+        (\(name, _) rest -> [p| HCons $(pure $ VarP name) $rest |])
+        [p| HNil |]
+        exprs
+  [| (\ $param -> $(pure e')) <$> distributeFHListOverDynPure $arg |]
 
 -- | Antiquote a 'Dynamic' expression.  This can /only/ be used inside of a
 -- 'qDyn' quotation.

@@ -27,6 +27,18 @@ let
           inherit system;
           __useTemplateHaskell = variation == "reflex"; # TODO hack
           haskellOverlays = [
+            (self: super: {
+              commutative-semigroups = self.callHackageDirect {
+                pkg = "commutative-semigroups";
+                ver = "0.1.0.0";
+                sha256 = "0xmv20n3iqjc64xi3c91bwqrg8x79sgipmflmk21zz4rj9jdkv8i";
+              } {};
+              patch = self.callHackageDirect {
+                pkg = "patch";
+                ver = "0.0.8.0";
+                sha256 = "1nnp7jn0vbx9zrnf57dxbknp6fbkqz7bca4i40aa6fabpwjw97kg";
+              } {};
+            })
             # Use this package's source for reflex
             (self: super: {
               _dep = super._dep // {

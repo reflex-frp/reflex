@@ -22,6 +22,7 @@ import Control.Monad.Identity
 import Control.Monad.Reader
 import qualified Control.Monad.State.Lazy as Lazy
 import Control.Monad.State.Strict
+import Data.Kind (Type)
 import Reflex.Class
 
 -- | A 'Requester' action can trigger requests of type @Request m a@ based on
@@ -32,9 +33,9 @@ import Reflex.Class
 -- 'Reflex.PerformEvent.Class.performEvent'.
 class (Reflex t, Monad m) => Requester t m | m -> t where
   -- | The type of requests that this 'Requester' can emit
-  type Request m :: * -> *
+  type Request m :: Type -> Type
   -- | The type of responses that this 'Requester' can receive
-  type Response m :: * -> *
+  type Response m :: Type -> Type
   -- | Emit a request whenever the given 'Event' fires, and return responses in
   -- the resulting 'Event'.
   requesting :: Event t (Request m a) -> m (Event t (Response m a))
