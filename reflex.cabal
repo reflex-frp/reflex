@@ -28,8 +28,8 @@ extra-source-files:
   ChangeLog.md
 
 tested-with:
-  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2 || ==9.0.1 || ==9.2.2,
-  GHCJS ==8.6
+  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2 || ==9.0.1 || ==9.2.2 || ==9.4.3,
+  GHCJS ==8.6 || ==8.10
 
 flag use-reflex-optimizer
   description: Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.
