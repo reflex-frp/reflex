@@ -28,23 +28,10 @@ let
           __useNewerCompiler = true;
           __useTemplateHaskell = variation == "reflex"; # TODO hack
           haskellOverlays = [
-            (self: super: {
-              commutative-semigroups = self.callHackageDirect {
-                pkg = "commutative-semigroups";
-                ver = "0.1.0.0";
-                sha256 = "0xmv20n3iqjc64xi3c91bwqrg8x79sgipmflmk21zz4rj9jdkv8i";
-              } {};
-              patch = self.callHackageDirect {
-                pkg = "patch";
-                ver = "0.0.8.1";
-                sha256 = "0q5rxnyilhbnfph48fnxbclggsbbhs0pkn0kfiadm0hmfr440cgk";
-              } {};
-            })
+            (self: super: import ./overlay.nix { inherit self super; haskellLib = native-reflex-platform.nixpkgs.haskell.lib; })
             # Use this package's source for reflex
             (self: super: {
-              _dep = super._dep // {
-                reflex = import ./src.nix;
-              };
+              _dep = super._dep // { reflex = import ./src.nix; };
             })
           ];
         };

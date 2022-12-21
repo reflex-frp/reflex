@@ -28,7 +28,7 @@ extra-source-files:
   ChangeLog.md
 
 tested-with:
-  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2 || ==9.0.1 || ==9.2.2 || ==9.4.3,
+  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.7 || ==9.0.1 || ==9.2.5 || ==9.4.3,
   GHCJS ==8.6 || ==8.10
 
 flag use-reflex-optimizer
@@ -81,7 +81,7 @@ library
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.3 && < 0.5,
     exception-transformers == 0.4.*,
-    lens >= 4.7 && < 5.2,
+    lens >= 4.7 && < 5.3,
     mmorph >= 1.0 && < 1.2,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
@@ -260,10 +260,10 @@ test-suite hlint
                , directory
                , filepath
                , filemanip
-  if impl(ghc >= 8.8)
-    build-depends: hlint >= 3 && < 4
+  if impl(ghc < 9.2)
+    build-depends: hlint (< 2.1 || >= 2.2.2) && < 3.5
   else
-    build-depends: hlint (< 2.1 || >= 2.2.2) && < 4
+    build-depends: hlint >= 3.5 && < 3.6
   if impl(ghcjs)
     buildable: False
 
