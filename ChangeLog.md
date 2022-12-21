@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Expose all Requester internals in Reflex.Requester.Base.Internal
+
 ## 0.8.2.2
 
 * Require witherable >= 0.4 and, hence, a newer monoidal-containers
