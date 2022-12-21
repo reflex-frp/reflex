@@ -3,11 +3,11 @@
 }:
 
 let
-  native-reflex-platform = reflex-platform-fun {};
+  native-reflex-platform = reflex-platform-fun { __useNewerCompiler = true; };
   inherit (native-reflex-platform.nixpkgs) lib;
 
   perPlatform = lib.genAttrs supportedSystems (system: let
-    reflex-platform = reflex-platform-fun { inherit system; };
+    reflex-platform = reflex-platform-fun { inherit system;  __useNewerCompiler = true; };
     compilers = [
       "ghc"
       "ghcjs"
@@ -25,6 +25,7 @@ let
       variationPkgs = lib.genAttrs variations (variation: let
         reflex-platform = reflex-platform-fun {
           inherit system;
+          __useNewerCompiler = true;
           __useTemplateHaskell = variation == "reflex"; # TODO hack
           haskellOverlays = [
             (self: super: {
@@ -35,21 +36,14 @@ let
               } {};
               patch = self.callHackageDirect {
                 pkg = "patch";
-                ver = "0.0.8.0";
-                sha256 = "1nnp7jn0vbx9zrnf57dxbknp6fbkqz7bca4i40aa6fabpwjw97kg";
+                ver = "0.0.8.1";
+                sha256 = "0q5rxnyilhbnfph48fnxbclggsbbhs0pkn0kfiadm0hmfr440cgk";
               } {};
             })
             # Use this package's source for reflex
             (self: super: {
               _dep = super._dep // {
-                reflex = builtins.filterSource (path: type: !(builtins.elem (baseNameOf path) [
-                  "release.nix"
-                  ".git"
-                  "dist"
-                  "cabal.haskell-ci"
-                  "cabal.project"
-                  ".travis.yml"
-                ])) ./.;
+                reflex = import ./src.nix;
               };
             })
           ];
