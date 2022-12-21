@@ -3,6 +3,7 @@
 ## Unreleased
 
 * Expose all Requester internals in Reflex.Requester.Base.Internal
+* [Add EventWriter instance for RequesterT #469](https://github.com/reflex-frp/reflex/pull/469)
 
 ## 0.8.2.2
 
