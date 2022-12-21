@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.8.2.2
+Version: 0.9.0.0
 Synopsis: Higher-order Functional Reactive Programming
 Description:
   Interactive programs without callbacks or side-effects.
