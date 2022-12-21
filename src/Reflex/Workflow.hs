@@ -25,6 +25,7 @@ import Reflex.NotReady.Class
 import Reflex.PostBuild.Class
 
 -- | A widget in a workflow
+--
 -- When the 'Event' returned by a 'Workflow' fires, the current 'Workflow' is replaced by the one inside the firing 'Event'. A series of 'Workflow's must share the same return type.
 newtype Workflow t m a = Workflow { unWorkflow :: m (a, Event t (Workflow t m a)) }
 

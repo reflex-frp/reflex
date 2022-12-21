@@ -1,5 +1,5 @@
 Name: reflex
-Version: 0.8.2.0
+Version: 0.8.2.2
 Synopsis: Higher-order Functional Reactive Programming
 Description:
   Interactive programs without callbacks or side-effects.
@@ -28,7 +28,7 @@ extra-source-files:
   ChangeLog.md
 
 tested-with:
-  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2,
+  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2 || ==9.0.1 || ==9.2.2,
   GHCJS ==8.6
 
 flag use-reflex-optimizer
@@ -71,11 +71,12 @@ library
   hs-source-dirs: src
   build-depends:
     MemoTrie == 0.6.*,
-    base >= 4.11 && < 4.15,
+    base >= 4.11 && < 4.17,
     bifunctors >= 5.2 && < 5.6,
     comonad >= 5.0.4 && < 5.1,
+    commutative-semigroups >= 0.1 && <0.2,
     constraints >= 0.10 && <0.14,
-    constraints-extras >= 0.3 && < 0.4,
+    constraints-extras >= 0.3 && < 0.5,
     containers >= 0.6 && < 0.7,
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.3 && < 0.5,
@@ -83,25 +84,25 @@ library
     mmorph >= 1.0 && < 1.2,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
-    patch >= 0.0.1 && < 0.1,
+    patch >= 0.0.7 && < 0.1,
     prim-uniq >= 0.1.0.1 && < 0.3,
     primitive >= 0.5 && < 0.8,
     profunctors >= 5.3 && < 5.7,
-    random == 1.1.*,
-    ref-tf == 0.4.*,
+    random >= 1.1 && < 1.3,
+    ref-tf >= 0.4 && < 0.6,
     reflection == 2.1.*,
     semigroupoids >= 4.0 && < 6,
     stm >= 2.4 && < 2.6,
     syb >= 0.5 && < 0.8,
-    time >= 1.4 && < 1.10,
+    time >= 1.4 && < 1.12,
     transformers >= 0.5.6.0 && < 0.6,
     unbounded-delays >= 0.1.0.0 && < 0.2,
-    witherable >= 0.3 && < 0.5
+    witherable >= 0.4 && < 0.5
 
   if flag(split-these)
-    build-depends:     these >= 1 && <1.2,
-                       semialign >=1 && <1.2,
-                       monoidal-containers >= 0.6 && < 0.7
+    build-depends:     these >= 1 && <1.3,
+                       semialign >=1 && <1.3,
+                       monoidal-containers >= 0.6.2.0 && < 0.7
   else
     build-depends:     these >= 0.4 && <0.9,
                        monoidal-containers == 0.4.0.0
@@ -142,6 +143,7 @@ library
     Reflex.Query.Base,
     Reflex.Query.Class,
     Reflex.Requester.Base,
+    Reflex.Requester.Base.Internal,
     Reflex.Requester.Class,
     Reflex.Spider,
     Reflex.Spider.Internal,
@@ -185,7 +187,7 @@ library
       dependent-sum >= 0.6 && < 0.8,
       haskell-src-exts >= 1.16 && < 1.24,
       haskell-src-meta >= 0.6 && < 0.9,
-      template-haskell >= 2.9 && < 2.17
+      template-haskell >= 2.9 && < 2.19
     exposed-modules:
       Reflex.Dynamic.TH
     other-extensions: TemplateHaskell
@@ -374,6 +376,7 @@ test-suite QueryT
   main-is: QueryT.hs
   hs-source-dirs: test
   build-depends: base
+               , commutative-semigroups
                , containers
                , dependent-map
                , dependent-sum

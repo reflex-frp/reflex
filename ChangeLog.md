@@ -1,5 +1,20 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Expose all Requester internals in Reflex.Requester.Base.Internal
+* [Add EventWriter instance for RequesterT #469](https://github.com/reflex-frp/reflex/pull/469)
+
+## 0.8.2.2
+
+* Require witherable >= 0.4 and, hence, a newer monoidal-containers
+* Support newer constraints-extras (0.4)
+
+## 0.8.2.1
+
+* Fix build for GHC 9.2
+* Require patch >= 0.0.7.0
+
 ## 0.8.2.0
 
 * Add `matchResponseMapWithRequests`, which it similar to `matchResponsesWithRequests` but allows processing of multiple responses at once.

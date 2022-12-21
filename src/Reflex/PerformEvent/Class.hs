@@ -1,4 +1,4 @@
--- | This module defines 'PerformEvent' and 'TriggerEvent', which mediate the
+-- | This module defines 'PerformEvent', which mediates the
 -- interaction between a "Reflex"-based program and the external side-effecting
 -- actions such as 'IO'.
 {-# LANGUAGE CPP #-}
@@ -17,18 +17,20 @@ module Reflex.PerformEvent.Class
   , performEventAsync
   ) where
 
-import Reflex.Class
-import Reflex.TriggerEvent.Class
-
 import Control.Monad.Reader
 import Control.Monad.Trans.Maybe (MaybeT (..))
+
+import Data.Kind (Type)
+
+import Reflex.Class
+import Reflex.TriggerEvent.Class
 
 -- | 'PerformEvent' represents actions that can trigger other actions based on
 -- 'Event's.
 class (Reflex t, Monad (Performable m), Monad m) => PerformEvent t m | m -> t where
   -- | The type of action to be triggered; this is often not the same type as
   -- the triggering action.
-  type Performable m :: * -> *
+  type Performable m :: Type -> Type
   -- | Perform the action contained in the given 'Event' whenever the 'Event'
   -- fires.  Return the result in another 'Event'.  Note that the output 'Event'
   -- will generally occur later than the input 'Event', since most 'Performable'

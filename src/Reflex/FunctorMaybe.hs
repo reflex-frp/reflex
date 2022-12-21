@@ -16,7 +16,7 @@ module Reflex.FunctorMaybe
 
 import Data.IntMap (IntMap)
 import Data.Map (Map)
-#if MIN_VERSION_base(4,9,0)
+#if !MIN_VERSION_base(4,16,0)
 import Data.Semigroup (Option(..))
 #endif
 import Data.Witherable
@@ -33,7 +33,7 @@ class FunctorMaybe f where
 instance FunctorMaybe Maybe where
   fmapMaybe = mapMaybe
 
-#if MIN_VERSION_base(4,9,0)
+#if !MIN_VERSION_base(4,16,0)
 deriving instance FunctorMaybe Option
 #endif
 
