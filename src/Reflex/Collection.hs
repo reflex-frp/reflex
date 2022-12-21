@@ -74,7 +74,7 @@ listHoldWithKey m0 m' f = do
 --where the Events carry diffs, not the whole value
 listWithKey
   :: forall t k v m a
-   . (Ord k, Adjustable t m, PostBuild t m, MonadFix m, MonadHold t m)
+   . (Ord k, Adjustable t m, PostBuild t m, MonadFix m, MonadHold t m, Eq v)
   => Dynamic t (Map k v)
   -> (k -> Dynamic t v -> m a)
   -> m (Dynamic t (Map k a))
@@ -106,7 +106,7 @@ listWithKey vals mkChild = do
               , tag (current vals) postBuild
               ]
   listHoldWithKey Map.empty changeVals $ \k v ->
-    mkChild k =<< holdDyn v (select childValChangedSelector $ Const2 k)
+    mkChild k =<< holdUniqDyn =<< holdDyn v (select childValChangedSelector $ Const2 k)
 
 -- | Display the given map of items (in key order) using the builder
 -- function provided, and update it with the given event.  'Nothing'

@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## 0.9.0.0
+
+* Breaking Change: Filter updates to `listWithKey` child widgets so that changes to the input Map don't cause spurious updates to unaffected children. This imposes an `Eq` constraint on the child values.
+
 ## 0.8.2.2
 
 * Require witherable >= 0.4 and, hence, a newer monoidal-containers
