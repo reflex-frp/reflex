@@ -12,9 +12,4 @@
     ver = "0.0.8.1";
     sha256 = "0q5rxnyilhbnfph48fnxbclggsbbhs0pkn0kfiadm0hmfr440cgk";
   } {};
-  hlint = self.callHackageDirect {
-    pkg = "hlint";
-    ver = "3.5";
-    sha256 = "1np43k54918v54saqqgnd82ccd6225njwxpg2031asi70jam80x9";
-  } {};
 }

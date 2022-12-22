@@ -10,7 +10,13 @@ let
   haskellLib = pkgs.haskell.lib;
   system = builtins.currentSystem;
   nixpkgsGhc = ((import ./nixpkgs {}).haskell.packages.${compiler}).override {
-    overrides = self: super: import ./overlay.nix { inherit self super haskellLib; };
+    overrides = self: super: import ./overlay.nix { inherit self super haskellLib; } // {
+      hlint = self.callHackageDirect {
+        pkg = "hlint";
+        ver = "3.5";
+        sha256 = "1np43k54918v54saqqgnd82ccd6225njwxpg2031asi70jam80x9";
+      } {};
+    };
   };
   reflexEnv = if compiler == "reflex-platform"
     then (import ./release.nix {}).${system}.ghc.reflex.env
