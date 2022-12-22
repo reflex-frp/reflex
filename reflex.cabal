@@ -28,8 +28,8 @@ extra-source-files:
   ChangeLog.md
 
 tested-with:
-  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.2 || ==9.0.1 || ==9.2.2,
-  GHCJS ==8.6
+  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.7 || ==9.0.1 || ==9.2.5 || ==9.4.3,
+  GHCJS ==8.6 || ==8.10
 
 flag use-reflex-optimizer
   description: Use the GHC plugin Reflex.Optimizer on some of the modules in the package.  This is still experimental.
@@ -71,7 +71,7 @@ library
   hs-source-dirs: src
   build-depends:
     MemoTrie == 0.6.*,
-    base >= 4.11 && < 4.17,
+    base >= 4.11 && < 4.18,
     bifunctors >= 5.2 && < 5.6,
     comonad >= 5.0.4 && < 5.1,
     commutative-semigroups >= 0.1 && <0.2,
@@ -81,7 +81,7 @@ library
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.3 && < 0.5,
     exception-transformers == 0.4.*,
-    lens >= 4.7 && < 5.2,
+    lens >= 4.7 && < 5.3,
     mmorph >= 1.0 && < 1.2,
     monad-control >= 1.0.1 && < 1.1,
     mtl >= 2.1 && < 2.3,
@@ -95,7 +95,7 @@ library
     semigroupoids >= 4.0 && < 6,
     stm >= 2.4 && < 2.6,
     syb >= 0.5 && < 0.8,
-    time >= 1.4 && < 1.12,
+    time >= 1.4 && < 1.13,
     transformers >= 0.5.6.0 && < 0.6,
     unbounded-delays >= 0.1.0.0 && < 0.2,
     witherable >= 0.4 && < 0.5
@@ -188,7 +188,7 @@ library
       dependent-sum >= 0.6 && < 0.8,
       haskell-src-exts >= 1.16 && < 1.24,
       haskell-src-meta >= 0.6 && < 0.9,
-      template-haskell >= 2.9 && < 2.19
+      template-haskell >= 2.9 && < 2.20
     exposed-modules:
       Reflex.Dynamic.TH
     other-extensions: TemplateHaskell
@@ -260,10 +260,10 @@ test-suite hlint
                , directory
                , filepath
                , filemanip
-  if impl(ghc >= 8.8)
-    build-depends: hlint >= 3 && < 4
+  if impl(ghc < 9.2)
+    build-depends: hlint (< 2.1 || >= 2.2.2) && < 3.5
   else
-    build-depends: hlint (< 2.1 || >= 2.2.2) && < 4
+    build-depends: hlint >= 3.5 && < 3.6
   if impl(ghcjs)
     buildable: False
 
