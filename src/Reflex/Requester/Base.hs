@@ -29,6 +29,8 @@ module Reflex.Requester.Base
   , traverseRequesterData
   , requesterDataToList
   , singletonRequesterData
+  , emptyRequesterData
+  , mergeRequesterData
   ) where
 
 import Reflex.Class
