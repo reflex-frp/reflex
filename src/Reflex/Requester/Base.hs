@@ -37,6 +37,8 @@ module Reflex.Requester.Base
   , multiEntry
   , unMultiEntry
   , requesting'
+  , emptyRequesterData
+  , mergeRequesterData
   ) where
 
 import Reflex.Class
