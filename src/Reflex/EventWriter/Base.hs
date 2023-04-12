@@ -35,6 +35,7 @@ import Reflex.TriggerEvent.Class
 
 import Control.Monad.Exception
 import Control.Monad.Identity
+import Control.Monad.Fix
 import Control.Monad.Morph
 import Control.Monad.Primitive
 import Control.Monad.Reader

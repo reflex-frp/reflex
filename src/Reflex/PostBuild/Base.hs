@@ -30,6 +30,7 @@ import Reflex.TriggerEvent.Class
 
 import Control.Applicative (liftA2)
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader

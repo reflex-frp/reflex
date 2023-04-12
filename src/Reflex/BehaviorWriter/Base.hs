@@ -21,7 +21,9 @@ module Reflex.BehaviorWriter.Base
   , withBehaviorWriterT
   ) where
 
+import Control.Monad
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.IO.Class
 import Control.Monad.Morph

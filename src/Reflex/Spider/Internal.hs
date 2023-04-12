@@ -36,6 +36,7 @@ import Control.Concurrent
 import Control.Exception
 import Control.Monad hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Primitive
 import Control.Monad.Reader.Class

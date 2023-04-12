@@ -20,6 +20,7 @@ module Reflex.PerformEvent.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Maybe (MaybeT (..))
 
+import Data.Functor
 import Data.Kind (Type)
 
 import Reflex.Class

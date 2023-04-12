@@ -16,6 +16,7 @@ module Reflex.TriggerEvent.Base
 import Control.Applicative (liftA2)
 import Control.Concurrent
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
