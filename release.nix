@@ -5,7 +5,6 @@
 let
   native-reflex-platform = reflex-platform-fun { __useNewerCompiler = true; };
   inherit (native-reflex-platform.nixpkgs) lib;
-
   perPlatform = lib.genAttrs supportedSystems (system: let
     reflex-platform = reflex-platform-fun { inherit system;  __useNewerCompiler = true; };
     compilers = [
@@ -21,6 +20,63 @@ let
       "-dontUseTemplateHaskell"
       ""
     ];
+    pkgs = import ./nixpkgs { inherit system; };
+    sharedOverrides = self: super: {
+      exception-transformers = pkgs.haskell.lib.dontCheck super.exception-transformers;
+    };
+    nixpkgsGhcs =
+      let
+        nixGhc902 = pkgs.haskell.packages.ghc902.override { overrides = sharedOverrides; };
+        nixGhc945 = pkgs.haskell.packages.ghc945.override { overrides = sharedOverrides; };
+        nixGhc961 = pkgs.haskell.packages.ghc961.override {
+          overrides = self: super: sharedOverrides self super // {
+            these-lens = self.callHackageDirect {
+              pkg = "these-lens";
+              ver = "1.0.1.3";
+              sha256 = "0n1vkr57jz5yvy4jm15v5cs42rp342ni0gisib7aqyhibpicqs5c";
+            } {};
+            these = self.callHackageDirect {
+              pkg = "these";
+              ver = "1.2";
+              sha256 = "1iaaq1fsvg8c3l0czcicshkmbbr00hnwkdamjbkljsa1qvlilaf0";
+            } {};
+            lens = self.callHackageDirect {
+              pkg = "lens";
+              ver = "5.2.2";
+              sha256 = "0c4a421sxfjm1cj3nvgwkr4glll23mqnsvs2iv5qh85931h2f3cy";
+            } {};
+
+            assoc = self.callHackageDirect {
+              pkg = "assoc";
+              ver = "1.1";
+              sha256 = "1krvcafrbj98z5hv55gq4zb1in5yd71nmz9zdiqgnywjzbrvpf75";
+            } {};
+
+            strict = self.callHackageDirect {
+              pkg = "strict";
+              ver = "0.5";
+              sha256 = "02iyvrr7nd7fnivz78lzdchy8zw1cghqj1qx2yzbbb9869h1mny7";
+            } {};
+
+            hlint = self.callHackageDirect {
+              pkg = "hlint";
+              ver = "3.5";
+              sha256 = "1np43k54918v54saqqgnd82ccd6225njwxpg2031asi70jam80x9";
+            } {};
+
+            patch = self.callHackageDirect {
+              pkg = "patch";
+              ver = "0.0.8.2";
+              sha256 = "160zqqhjg48fr3a33gffd82qm3728c8hwf8sn37pbpv82fw71rzg";
+            } {};
+          };
+        };
+      in
+      {
+        ghc902 = nixGhc902.callCabal2nix "reflex" (import ./src.nix) {};
+        ghc945 = nixGhc945.callCabal2nix "reflex" (import ./src.nix) {};
+        ghc961 = nixGhc961.callCabal2nix "reflex" (import ./src.nix) {};
+      };
     compilerPkgs = lib.genAttrs compilers (ghc: let
       variationPkgs = lib.genAttrs variations (variation: let
         reflex-platform = reflex-platform-fun {
@@ -40,7 +96,7 @@ let
       cache = reflex-platform.pinBuildInputs "reflex-${system}-${ghc}"
         (builtins.attrValues variationPkgs);
     });
-  in compilerPkgs // {
+  in compilerPkgs // nixpkgsGhcs // {
     cache = reflex-platform.pinBuildInputs "reflex-${system}"
       (map (a: a.cache) (builtins.attrValues compilerPkgs));
   });

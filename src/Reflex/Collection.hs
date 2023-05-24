@@ -34,6 +34,8 @@ import Data.Zip (Zip (..))
 #endif
 #endif
 
+import Control.Monad
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Data.Align
 import Data.Functor.Misc

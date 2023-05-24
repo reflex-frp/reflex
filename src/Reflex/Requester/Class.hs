@@ -18,6 +18,7 @@ module Reflex.Requester.Class
  , requestingIdentity
  ) where
 
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Reader
 import qualified Control.Monad.State.Lazy as Lazy

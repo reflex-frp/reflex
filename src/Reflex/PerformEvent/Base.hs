@@ -33,6 +33,7 @@ import Reflex.Requester.Class
 
 import Control.Lens
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader

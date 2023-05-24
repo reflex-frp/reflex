@@ -34,6 +34,7 @@ import Reflex.TestPlan
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.State.Strict
 
