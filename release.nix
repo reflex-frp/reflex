@@ -20,14 +20,16 @@ let
       "-dontUseTemplateHaskell"
       ""
     ];
+    pkgs = import ./nixpkgs { inherit system; };
+    sharedOverrides = self: super: {
+      exception-transformers = pkgs.haskell.lib.dontCheck super.exception-transformers;
+    };
     nixpkgsGhcs =
       let
-        pkgs = import ./nixpkgs { inherit system; };
-        nixGhc902 = pkgs.haskell.packages.ghc902.override { };
-        nixGhc945 = pkgs.haskell.packages.ghc945.override { };
+        nixGhc902 = pkgs.haskell.packages.ghc902.override { overrides = sharedOverrides; };
+        nixGhc945 = pkgs.haskell.packages.ghc945.override { overrides = sharedOverrides; };
         nixGhc961 = pkgs.haskell.packages.ghc961.override {
-          overrides = self: super: {
-            exception-transformers = pkgs.haskell.lib.doJailbreak super.exception-transformers;
+          overrides = self: super: sharedOverrides self super // {
             these-lens = self.callHackageDirect {
               pkg = "these-lens";
               ver = "1.0.1.3";
