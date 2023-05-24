@@ -23,8 +23,8 @@ let
     nixpkgsGhcs =
       let
         pkgs = import ./nixpkgs { inherit system; };
-        nixGhc945 = pkgs.haskell.packages.ghc945.override {
-        };
+        nixGhc902 = pkgs.haskell.packages.ghc902.override { };
+        nixGhc945 = pkgs.haskell.packages.ghc945.override { };
         nixGhc961 = pkgs.haskell.packages.ghc961.override {
           overrides = self: super: {
             exception-transformers = pkgs.haskell.lib.doJailbreak super.exception-transformers;
@@ -71,6 +71,7 @@ let
         };
       in
       {
+        ghc902 = nixGhc902.callCabal2nix "reflex" (import ./src.nix) {};
         ghc945 = nixGhc945.callCabal2nix "reflex" (import ./src.nix) {};
         ghc961 = nixGhc961.callCabal2nix "reflex" (import ./src.nix) {};
       };
