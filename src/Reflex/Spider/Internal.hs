@@ -156,38 +156,47 @@ debugInvalidate = False
 #endif
 
 class HasNodeId a where
-  getNodeId :: a -> Int
+  type NodeIdX a :: *
+  getNodeId :: a -> NodeId (NodeIdX a)
 
 instance HasNodeId (CacheSubscribed x a) where
+  type NodeIdX (CacheSubscribed x a) = x
   getNodeId = _cacheSubscribed_nodeId
 
 instance HasNodeId (FanInt x a) where
+  type NodeIdX (FanInt x a) = x
   getNodeId = _fanInt_nodeId
 
 instance HasNodeId (Hold x p) where
+  type NodeIdX (Hold x p) = x
   getNodeId = holdNodeId
 
 instance HasNodeId (SwitchSubscribed x a) where
+  type NodeIdX (SwitchSubscribed x a) = x
   getNodeId = switchSubscribedNodeId
 
 instance HasNodeId (FanSubscribed x v a) where
+  type NodeIdX (FanSubscribed x v a) = x
   getNodeId = fanSubscribedNodeId
 
 instance HasNodeId (CoincidenceSubscribed x a) where
+  type NodeIdX (CoincidenceSubscribed x a) = x
   getNodeId = coincidenceSubscribedNodeId
 
 instance HasNodeId (RootSubscribed x a) where
+  type NodeIdX (RootSubscribed x a) = x
   getNodeId = rootSubscribedNodeId
 
 instance HasNodeId (Pull x a) where
+  type NodeIdX (Pull x a) = x
   getNodeId = pullNodeId
 
 {-# INLINE showNodeId #-}
 showNodeId :: HasNodeId a => a -> String
 showNodeId = showNodeId' . getNodeId
 
-showNodeId' :: Int -> String
-showNodeId' = ("#"<>) . show
+showNodeId' :: NodeId x -> String
+showNodeId' = ("#"<>) . show . unNodeId
 
 
 #else
@@ -208,12 +217,12 @@ showNodeId' _ = ""
 #endif
 
 #ifdef DEBUG_NODEIDS
-{-# NOINLINE nextNodeIdRef #-}
-nextNodeIdRef :: IORef Int
-nextNodeIdRef = unsafePerformIO $ newIORef 1
+newtype NodeId (x :: *) = NodeId { unNodeId :: Int }
+  deriving (Show, Eq, Ord, Enum)
 
-newNodeId :: IO Int
-newNodeId = atomicModifyIORef' nextNodeIdRef $ \n -> (succ n, n)
+{-# INLINE newNodeId #-}
+newNodeId :: forall m x. (HasSpiderTimeline x, MonadIO m) => m (NodeId x)
+newNodeId = liftIO $ atomicModifyIORef' (_spiderTimeline_nextNodeId $ unSTE (spiderTimeline :: SpiderTimelineEnv x)) $ \n -> (succ n, n)
 #endif
 
 --------------------------------------------------------------------------------
@@ -265,7 +274,7 @@ data CacheSubscribed x a
                      , _cacheSubscribed_parent :: {-# UNPACK #-} !(EventSubscription x)
                      , _cacheSubscribed_occurrence :: {-# UNPACK #-} !(IORef (Maybe a))
 #ifdef DEBUG_NODEIDS
-                     , _cacheSubscribed_nodeId :: {-# UNPACK #-} !Int
+                     , _cacheSubscribed_nodeId :: {-# UNPACK #-} !(NodeId x)
 #endif
                      }
 
@@ -308,7 +317,7 @@ cacheEvent e =
             Just subscribedTicket -> return subscribedTicket
             Nothing -> do
 #ifdef DEBUG_NODEIDS
-              nodeId <- liftIO newNodeId
+              nodeId <- newNodeId
 #endif
               subscribers <- liftIO FastWeakBag.empty
               occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
@@ -685,7 +694,7 @@ behaviorPull !p = Behavior $ do
         askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some (BehaviorSubscribedPull subscribed)) :))
         return a
 
-behaviorDyn :: Patch p => Dyn x p -> Behavior x (PatchTarget p)
+behaviorDyn :: (Patch p, HasSpiderTimeline x) => Dyn x p -> Behavior x (PatchTarget p)
 behaviorDyn !d = Behavior $ readHoldTracked =<< getDynHold d
 
 {-# INLINE readHoldTracked #-}
@@ -754,7 +763,7 @@ data Hold x p
           , holdEvent :: Event x p -- This must be lazy, or holds cannot be defined before their input Events
           , holdParent :: !(IORef (Maybe (EventSubscription x))) -- Keeps its parent alive (will be undefined until the hold is initialized) --TODO: Probably shouldn't be an IORef
 #ifdef DEBUG_NODEIDS
-          , holdNodeId :: Int
+          , holdNodeId :: {-# UNPACK #-} !(NodeId x)
 #endif
           }
 
@@ -777,6 +786,7 @@ data SpiderTimelineEnv' x = SpiderTimelineEnv
   , _spiderTimeline_eventEnv :: {-# UNPACK #-} !(EventEnv x)
 #ifdef DEBUG
   , _spiderTimeline_depth :: {-# UNPACK #-} !(IORef Int)
+  , _spiderTimeline_nextNodeId :: {-# UNPACK #-} !(IORef (NodeId x))
 #endif
   }
 type role SpiderTimelineEnv' phantom
@@ -899,13 +909,13 @@ instance HasSpiderTimeline x => Defer (SomeResetCoincidence x) (EventM x) where
 
 -- Note: hold cannot examine its event until after the phase is over
 {-# INLINE [1] hold #-}
-hold :: (Patch p, Defer (SomeHoldInit x) m) => PatchTarget p -> Event x p -> m (Hold x p)
+hold :: (Patch p, Defer (SomeHoldInit x) m, HasSpiderTimeline x) => PatchTarget p -> Event x p -> m (Hold x p)
 hold v0 e = do
   valRef <- liftIO $ newIORef v0
   invsRef <- liftIO $ newIORef []
   parentRef <- liftIO $ newIORef Nothing
 #ifdef DEBUG_NODEIDS
-  nodeId <- liftIO newNodeId
+  nodeId <- newNodeId
 #endif
   let h = Hold
         { holdValue = valRef
@@ -981,7 +991,7 @@ data Pull x a
    = Pull { pullValue :: !(IORef (Maybe (PullSubscribed x a)))
           , pullCompute :: !(BehaviorM x a)
 #ifdef DEBUG_NODEIDS
-          , pullNodeId :: Int
+          , pullNodeId :: {-# UNPACK #-} !(NodeId x)
 #endif
           }
 
@@ -997,7 +1007,7 @@ data RootSubscribed x a = forall k. GCompare k => RootSubscribed
   , rootSubscribedUninit :: IO ()
   , rootSubscribedWeakSelf :: !(IORef (Weak (RootSubscribed x a))) --TODO: Can we make this a lazy non-IORef and then force it manually to avoid an indirection each time we use it?
 #ifdef DEBUG_NODEIDS
-  , rootSubscribedNodeId :: Int
+  , rootSubscribedNodeId :: {-# UNPACK #-} !(NodeId x)
 #endif
   }
 
@@ -1084,7 +1094,7 @@ data FanSubscribed x k v
                    , fanSubscribedSubscribers :: !(IORef (DMap k (FanSubscribedChildren x k v))) -- This DMap should never be empty
                    , fanSubscribedParent :: !(EventSubscription x)
 #ifdef DEBUG_NODEIDS
-                   , fanSubscribedNodeId :: Int
+                   , fanSubscribedNodeId :: {-# UNPACK #-} !(NodeId x)
 #endif
                    }
 
@@ -1105,7 +1115,7 @@ data SwitchSubscribed x a
                       , switchSubscribedCurrentParent :: !(IORef (EventSubscription x))
                       , switchSubscribedWeakSelf :: !(IORef (Weak (SwitchSubscribed x a)))
 #ifdef DEBUG_NODEIDS
-                      , switchSubscribedNodeId :: Int
+                      , switchSubscribedNodeId :: {-# UNPACK #-} !(NodeId x)
 #endif
                       }
 
@@ -1127,7 +1137,7 @@ data CoincidenceSubscribed x a
                            , coincidenceSubscribedInnerParent :: !(IORef (Maybe (EventSubscribed x)))
                            , coincidenceSubscribedWeakSelf :: !(IORef (Weak (CoincidenceSubscribed x a)))
 #ifdef DEBUG_NODEIDS
-                           , coincidenceSubscribedNodeId :: Int
+                           , coincidenceSubscribedNodeId :: (NodeId x)
 #endif
                            }
 
@@ -1204,7 +1214,7 @@ type ResultM = EventM
 instance HasSpiderTimeline x => Functor (Event x) where
   fmap f = push $ return . Just . f
 
-instance Functor (Behavior x) where
+instance HasSpiderTimeline x => Functor (Behavior x) where
   fmap f = pull . fmap f . readBehaviorTracked
 
 {-# INLINE push #-}
@@ -1212,7 +1222,7 @@ push :: HasSpiderTimeline x => (a -> EventM x (Maybe b)) -> Event x a -> Event x
 push f e = cacheEvent (pushCheap f e)
 
 {-# INLINABLE pull #-}
-pull :: BehaviorM x a -> Behavior x a
+pull :: forall x a. HasSpiderTimeline x => BehaviorM x a -> Behavior x a
 pull a = unsafePerformIO $ do
   ref <- newIORef Nothing
 #ifdef DEBUG_NODEIDS
@@ -1493,7 +1503,7 @@ askBehaviorHoldInits = do
   return his
 
 {-# INLINE getDynHold #-}
-getDynHold :: (Defer (SomeHoldInit x) m, Patch p) => Dyn x p -> m (Hold x p)
+getDynHold :: (Defer (SomeHoldInit x) m, Patch p, HasSpiderTimeline x) => Dyn x p -> m (Hold x p)
 getDynHold d = do
   mh <- liftIO $ readIORef $ unDyn d
   case mh of
@@ -1584,11 +1594,11 @@ data FanInt x a = FanInt
   , _fanInt_subscriptionRef :: {-# UNPACK #-} !(IORef (EventSubscription x)) -- This should have a valid subscription iff subscribers is non-empty
   , _fanInt_occRef :: {-# UNPACK #-} !(IORef (IntMap a))
 #ifdef DEBUG_NODEIDS
-  , _fanInt_nodeId :: {-# UNPACK #-} !Int
+  , _fanInt_nodeId :: {-# UNPACK #-} !(NodeId x)
 #endif
   }
 
-newFanInt :: IO (FanInt x a)
+newFanInt :: HasSpiderTimeline x => IO (FanInt x a)
 newFanInt = do
   subscribers <- FastMutableIntMap.newEmpty --TODO: Clean up the keys in here when their child weak bags get empty --TODO: Remove our own subscription when the subscribers list is completely empty
   subscriptionRef <- newIORef $ error "fanInt: no subscription"
@@ -2673,12 +2683,14 @@ unsafeNewSpiderTimelineEnv = do
   env <- newEventEnv
 #ifdef DEBUG
   depthRef <- newIORef 0
+  nextNodeIdRef <- newIORef $ NodeId 0
 #endif
   return $ STE $ SpiderTimelineEnv
     { _spiderTimeline_lock = lock
     , _spiderTimeline_eventEnv = env
 #ifdef DEBUG
     , _spiderTimeline_depth = depthRef
+    , _spiderTimeline_nextNodeId = nextNodeIdRef
 #endif
     }
 
