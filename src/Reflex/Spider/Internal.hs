@@ -91,7 +91,6 @@ import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Tree (Forest, Tree (..), drawForest)
-import Data.List (isPrefixOf)
 
 import Data.FastWeakBag (FastWeakBag, FastWeakBagTicket)
 import qualified Data.FastWeakBag as FastWeakBag
@@ -261,43 +260,6 @@ pushCheap !f e = Event $ \sub -> do
   occ' <- join <$> mapM f occ
   return (subscription, occ')
 
--- | A subscriber that never triggers other 'Event's
-{-# INLINE terminalSubscriber #-}
-terminalSubscriber :: (a -> EventM x ()) -> Subscriber x a
-terminalSubscriber p = Subscriber
-  { subscriberPropagate = p
-  , subscriberInvalidateHeight = \_ -> return ()
-  , subscriberRecalculateHeight = \_ -> return ()
-  }
-
--- | Subscribe to an Event only for the duration of one occurrence
-{-# INLINE subscribeAndReadHead #-}
-subscribeAndReadHead :: HasSpiderTimeline x => Event x a -> Subscriber x a -> EventM x (EventSubscription x, Maybe a)
-subscribeAndReadHead e sub = do
-  subscriptionRef <- liftIO $ newIORef $ error "subscribeAndReadHead: not initialized"
-  (subscription, occ) <- subscribeAndRead e $ debugSubscriber' "head" $ sub
-    { subscriberPropagate = \a -> do
-        liftIO $ unsubscribe =<< readIORef subscriptionRef
-        subscriberPropagate sub a
-    }
-  liftIO $ case occ of
-    Nothing -> writeIORef subscriptionRef $! subscription
-    Just _ -> unsubscribe subscription
-  return (subscription, occ)
-
---TODO: Make this lazy in its input event
-headE :: (MonadIO m, Defer (SomeMergeInit x) m, HasSpiderTimeline x) => Event x a -> m (Event x a)
-headE originalE = do
-  parent <- liftIO $ newIORef $ Just originalE
-  defer $ SomeMergeInit $ do --TODO: Rename SomeMergeInit appropriately
-    let clearParent = liftIO $ writeIORef parent Nothing
-    (_, occ) <- subscribeAndReadHead originalE $ terminalSubscriber $ const clearParent
-    when (isJust occ) clearParent
-  return $ Event $ \sub ->
-    liftIO (readIORef parent) >>= \case
-      Nothing -> subscribeAndReadNever
-      Just e -> subscribeAndReadHead e sub
-
 data CacheSubscribed x a
    = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
                      , _cacheSubscribed_parent :: {-# UNPACK #-} !(EventSubscription x)
@@ -311,8 +273,7 @@ nowSpiderEventM :: (HasSpiderTimeline x) => EventM x (R.Event (SpiderTimeline x)
 nowSpiderEventM =
   SpiderEvent <$> now
 
-now :: (MonadIO m, Defer (Some Clear) m, HasSpiderTimeline x
-       ) => m (Event x ())
+now :: (MonadIO m, Defer (Some Clear) m) => m (Event x ())
 now = do
   nowOrNot <- liftIO $ newIORef $ Just ()
   scheduleClear nowOrNot
@@ -521,7 +482,9 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
           when (innerHeight > outerHeight) $ liftIO $ do -- If the event fires, it will fire at a later height
             writeIORef (coincidenceSubscribedHeight subscribed) $! innerHeight
             WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ invalidateSubscriberHeight outerHeight
+            putStrLn $ "newSubscriberCoincidenceOuter: done invalidating"
             WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight innerHeight
+            putStrLn $ "newSubscriberCoincidenceOuter: done recalculating"
         Just o -> do -- Since it's already firing, no need to adjust height
           liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) occ
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
@@ -1092,13 +1055,6 @@ heightBagRemove (Height h) b@(HeightBag s c) = heightBagVerify $ case IntMap.loo
     0 -> IntMap.delete h c
     _ -> IntMap.insert h (pred old) c
 
-heightBagRemoveMaybe :: Height -> HeightBag -> Maybe HeightBag
-heightBagRemoveMaybe (Height h) b@(HeightBag s c) = heightBagVerify . removed <$> IntMap.lookup h c where
-  removed old = HeightBag (pred s) $ case old of
-    0 -> IntMap.delete h c
-    _ -> IntMap.insert h (pred old) c
-
-
 heightBagMax :: HeightBag -> Height
 heightBagMax (HeightBag _ c) = case IntMap.maxViewWithKey c of
   Just ((h, _), _) -> Height h
@@ -1470,7 +1426,7 @@ filterStack :: String -> [String] -> [String]
 #ifdef DEBUG_HIDE_INTERNALS
 filterStack prefix = filter (not . (prefix `isPrefixOf`))
 #else
-filterStack prefix = id
+filterStack _ = id
 #endif
 
 #ifdef DEBUG_CYCLES
@@ -1963,6 +1919,7 @@ mergeCheapWithMove nt = mergeGCheap' _mergeSubscribedParentWithMove_subscription
                 oldHeight <- liftIO $ getEventSubscribedHeight $ _eventSubscription_subscribed $
                   _mergeSubscribedParentWithMove_subscription parent
 
+                liftIO $ putStrLn $ "Merge removing old height: " <> show oldHeight
                 liftIO $ modifyIORef heightBagRef $ heightBagRemove oldHeight
                 return $ Just $ _mergeSubscribedParentWithMove_subscription parent
               Just toKey -> do
@@ -2052,7 +2009,7 @@ scheduleMergeSelf m height = scheduleMerge' height (_merge_heightRef m) $ do
   --TODO: Assert that m is not empty
   subscriberPropagate (_merge_sub m) vals
 
-checkCycle :: HasSpiderTimeline x => EventSubscribed x -> EventM x ()
+checkCycle :: EventSubscribed x -> EventM x ()
 checkCycle subscribed = liftIO $ do
     height <- readIORef (eventSubscribedHeightRef subscribed)
 
