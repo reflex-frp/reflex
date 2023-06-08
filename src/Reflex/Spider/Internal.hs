@@ -250,7 +250,7 @@ subscribeAndRead = unEvent
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
 {-# INLINE [1] pushCheap #-}
-pushCheap :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
+pushCheap :: HasSpiderTimeline x => (a -> EventM x (Maybe b)) -> Event x a -> Event x b
 pushCheap !f e = Event $ \sub -> do
   (subscription, occ) <- subscribeAndRead e $ debugSubscriber' "push" $ sub
     { subscriberPropagate = \a -> do
@@ -1208,7 +1208,7 @@ instance Functor (Behavior x) where
   fmap f = pull . fmap f . readBehaviorTracked
 
 {-# INLINE push #-}
-push :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
+push :: HasSpiderTimeline x => (a -> EventM x (Maybe b)) -> Event x a -> Event x b
 push f e = cacheEvent (pushCheap f e)
 
 {-# INLINABLE pull #-}
@@ -2706,9 +2706,7 @@ withSpiderTimeline k = do
 
 newtype SpiderPullM (x :: Type) a = SpiderPullM (BehaviorM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
-type ComputeM = EventM
-
-newtype SpiderPushM (x :: Type) a = SpiderPushM (ComputeM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
+newtype SpiderPushM (x :: Type) a = SpiderPushM (EventM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
 instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# SPECIALIZE instance R.Reflex (SpiderTimeline Global) #-}
