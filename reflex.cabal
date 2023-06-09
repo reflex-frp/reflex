@@ -53,12 +53,12 @@ flag fast-weak
 
 flag debug-propagation
   description: Enable debugging of spider internals
-  default: False
+  default: True
   manual: True
 
 flag debug-cycles
   description: Enable debugging of event cycles
-  default: False
+  default: True
   manual: True
 
 flag split-these
@@ -176,7 +176,7 @@ library
     exposed-modules: Reflex.Optimizer
 
   if flag(debug-propagation)
-    cpp-options: -DDEBUG -DDEBUG_TRACE_PROPAGATION -DDEBUG_TRACE_INVALIDATION
+    cpp-options: -DDEBUG -DDEBUG_TRACE_PROPAGATION -DDEBUG_TRACE_INVALIDATION -DDEBUG_TRACE_HEIGHT
 
   if flag(debug-cycles)
     cpp-options: -DDEBUG_CYCLES
@@ -216,6 +216,7 @@ test-suite semantics
     dependent-map,
     dependent-sum,
     mtl,
+    patch,
     ref-tf,
     reflex,
     split,
