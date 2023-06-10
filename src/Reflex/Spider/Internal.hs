@@ -1592,15 +1592,16 @@ groupByHead2 = mconcat . fmap (\(as, b) -> Tree2 as (Just b) mempty)
 indent :: MonadWriter [String] m => m a -> m a
 indent = censor (fmap ("  " <>))
 
-treeToDot :: Tree2 String (Set Int) -> RWS () [String] Int ()
+treeToDot :: Tree2 String (Map Int (Set Int)) -> RWS () [String] Int ()
 treeToDot (Tree2 prefix leaves children) = do
   myId <- get
   put $! succ myId
   tell ["subgraph cluster_" <> show myId <> " {"]
   indent $ do
     tell ["label = " <> show (intercalate "\n" $ reverse $ toList prefix) <> ";"]
-    forM_ (maybe [] Set.toList leaves) $ \nodeId -> do
+    forM_ (maybe [] Map.toList leaves) $ \(nodeId, parents) -> do
       tell ["n" <> show nodeId <> " [label=" <> show (showNodeId' (NodeId nodeId)) <> "];"]
+      tell ["{" <> intercalate ";" (fmap (\parentId -> "n"<> show parentId) $ Set.toList parents) <> "} -> n" <> show nodeId <> ";"]
       --TODO: Connections
     forM_ (Map.toList children) $ \(discriminatorStackFrame, Tree2 childStackFrames childLeaves childChildren) -> do
       treeToDot $ Tree2 (discriminatorStackFrame : childStackFrames) childLeaves childChildren
@@ -1641,17 +1642,21 @@ matchPrefixes a [] = ([], a, [])
 instance (Ord a, Semigroup b) => Monoid (Tree2 a b) where
   mempty = Tree2 [] mempty mempty
 
-showDot :: [([String], Int)] -> String
-showDot nodes = mconcat
+showDot :: [([String], (Int, Set Int))] -> String
+showDot nodes =
+  let includedNodes = Set.fromList $ fmap (\(_, (nodeId, _)) -> nodeId) nodes
+      t = groupByHead2 $ fmap (\(stack, (nodeId, parents)) -> (stack, Map.singleton nodeId $ Set.intersection includedNodes parents)) nodes
+  in mconcat
   [ "digraph {\n  labelloc=b;\n"
-  , unlines $ snd $ execRWS (indent $ treeToDot (groupByHead2 $ fmap (\(stack, nodeId) -> (stack, Set.singleton nodeId)) nodes)) () 1
+  , unlines $ snd $ execRWS (indent $ treeToDot t) () 1
   , "}\n"
   ]
 
-getNodeInfos :: [EventSubscribed x] -> IO [([String], Int)]
+getNodeInfos :: [EventSubscribed x] -> IO [([String], (Int, Set Int))]
 getNodeInfos nodes = forM nodes $ \subd -> do
   stack <- whoCreatedEventSubscribed subd
-  pure (stack, unNodeId $ getNodeId subd)
+  parents <- eventSubscribedGetParents subd
+  pure (stack, (unNodeId $ getNodeId subd, Set.fromList $ fmap (unNodeId . getNodeId) parents))
 
 filterStack :: String -> [String] -> [String]
 #ifdef DEBUG_HIDE_INTERNALS
@@ -1662,7 +1667,7 @@ filterStack _ = id
 
 #ifdef DEBUG_CYCLES
 
-data EventLoopException = EventLoopException [([String], Int)]
+data EventLoopException = EventLoopException [([String], (Int, Set Int))]
 instance Exception EventLoopException
 
 instance Show EventLoopException where
