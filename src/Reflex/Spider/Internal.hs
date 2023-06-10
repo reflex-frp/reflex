@@ -70,6 +70,10 @@ import Data.These
 import Data.Traversable
 import Data.Type.Equality ((:~:)(Refl))
 import Data.Witherable (Filterable, mapMaybe)
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import GHC.Exts hiding (toList)
 import GHC.IORef (IORef (..))
 import GHC.Stack
@@ -77,6 +81,7 @@ import Reflex.FastWeak
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
+import Data.List (intercalate)
 
 #ifdef MIN_VERSION_semialign
 #if MIN_VERSION_these(0,8,0)
@@ -89,6 +94,7 @@ import Data.Zip (Zip (..))
 
 #ifdef DEBUG_CYCLES
 import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
+import Control.Monad.RWS hiding (Any, forM, forM_, mapM, mapM_, sequence)
 #endif
 
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
@@ -161,6 +167,10 @@ debugInvalidate = False
 class HasNodeId a where
   type NodeIdX a :: *
   getNodeId :: a -> NodeId (NodeIdX a)
+
+instance HasNodeId (EventSubscribed x) where
+  type NodeIdX (EventSubscribed x) = x
+  getNodeId = eventSubscribedNodeId
 
 instance HasNodeId (CacheSubscribed x a) where
   type NodeIdX (CacheSubscribed x a) = x
@@ -616,9 +626,8 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
             when (newInnerHeight == invalidHeight) $ do
 #ifdef DEBUG_CYCLES
               nodesInvolvedInCycle <- walkInvalidHeightParents innerSubd
-              print $ eventSubscribedNodeId <$> nodesInvolvedInCycle
-              stacks <- forM nodesInvolvedInCycle whoCreatedEventSubscribed
-              throwIO (EventLoopException stacks)
+              nodeInfos <- getNodeInfos nodesInvolvedInCycle
+              throwIO (EventLoopException nodeInfos)
 #else
               throwIO EventLoopException
 #endif
@@ -1577,12 +1586,72 @@ groupByHead = \case
       | x == y -> (x, xs `NonEmpty.cons` yss) : t'
       | otherwise -> (x, xs :| []) : l
 
+groupByHead2 :: (Ord a, Semigroup b) => [([a], b)] -> Tree2 a b
+groupByHead2 = mconcat . fmap (\(as, b) -> Tree2 as (Just b) mempty)
+
+indent :: MonadWriter [String] m => m a -> m a
+indent = censor (fmap ("  " <>))
+
+treeToDot :: Tree2 String (Set Int) -> RWS () [String] Int ()
+treeToDot (Tree2 prefix leaves children) = do
+  myId <- get
+  put $! succ myId
+  tell ["subgraph cluster_" <> show myId <> " {"]
+  indent $ do
+    tell ["label = " <> show (intercalate "\n" $ reverse $ toList prefix) <> ";"]
+    forM_ (maybe [] Set.toList leaves) $ \nodeId -> do
+      tell ["n" <> show nodeId <> " [label=" <> show (showNodeId' (NodeId nodeId)) <> "];"]
+      --TODO: Connections
+    forM_ (Map.toList children) $ \(discriminatorStackFrame, Tree2 childStackFrames childLeaves childChildren) -> do
+      treeToDot $ Tree2 (discriminatorStackFrame : childStackFrames) childLeaves childChildren
+  tell ["}"]
+
 listsToForest :: Eq a => [[a]] -> Forest a
 listsToForest lists = buildForest <$> groupByHead (mapMaybe nonEmpty lists)
     where buildForest (a, lists') = Node a $ listsToForest $ toList lists'
 
 showStacks :: [[String]] -> String
 showStacks = drawForest . listsToForest . fmap (filterStack "Reflex.Spider.Internal")
+
+data Tree2 a b = Tree2 [a] (Maybe b) (Map a (Tree2 a b))
+
+instance (Ord a, Semigroup b) => Semigroup (Tree2 a b) where
+  Tree2 p1 l1 c1 <> Tree2 p2 l2 c2 =
+    let (p, s1, s2) = matchPrefixes p1 p2
+        l1p = if s1 == [] then l1 else Nothing
+        l2p = if s2 == [] then l2 else Nothing
+        c1p = case s1 of
+          [] -> c1
+          s1h : s1t -> Map.singleton s1h $ Tree2 s1t l1 c1
+        c2p = case s2 of
+          [] -> c2
+          s2h : s2t -> Map.singleton s2h $ Tree2 s2t l2 c2
+    in Tree2 p (l1p <> l2p) $ Map.unionWith (<>) c1p c2p
+
+-- | Given two lists, return their common prefix as well as any remaining suffixes
+matchPrefixes :: Eq a => [a] -> [a] -> ([a], [a], [a])
+matchPrefixes a@(ah : at) b@(bh : bt) =
+  if ah == bh
+  then let (c, as, bs) = matchPrefixes at bt
+       in (ah : c, as, bs)
+  else ([], a, b)
+matchPrefixes [] b = ([], [], b)
+matchPrefixes a [] = ([], a, [])
+
+instance (Ord a, Semigroup b) => Monoid (Tree2 a b) where
+  mempty = Tree2 [] mempty mempty
+
+showDot :: [([String], Int)] -> String
+showDot nodes = mconcat
+  [ "digraph {\n  labelloc=b;\n"
+  , unlines $ snd $ execRWS (indent $ treeToDot (groupByHead2 $ fmap (\(stack, nodeId) -> (stack, Set.singleton nodeId)) nodes)) () 1
+  , "}\n"
+  ]
+
+getNodeInfos :: [EventSubscribed x] -> IO [([String], Int)]
+getNodeInfos nodes = forM nodes $ \subd -> do
+  stack <- whoCreatedEventSubscribed subd
+  pure (stack, unNodeId $ getNodeId subd)
 
 filterStack :: String -> [String] -> [String]
 #ifdef DEBUG_HIDE_INTERNALS
@@ -1593,13 +1662,17 @@ filterStack _ = id
 
 #ifdef DEBUG_CYCLES
 
-data EventLoopException = EventLoopException [[String]]
+data EventLoopException = EventLoopException [([String], Int)]
 instance Exception EventLoopException
 
 instance Show EventLoopException where
-  show (EventLoopException stacks) = "causality loop detected:\n" <> if all null stacks
-    then "no location information, compile with profiling enabled for stack tree"
-    else showStacks stacks
+  show (EventLoopException nodes) = unlines
+    [ "causality loop detected:\n"
+    , if all null nodes
+      then "no location information, compile with profiling enabled for stack tree"
+      else ""
+    , showDot nodes
+    ]
 
 #else
 
@@ -2179,8 +2252,8 @@ checkCycle subscribed = liftIO $ do
 #ifdef DEBUG_CYCLES
           do
             nodesInvolvedInCycle <- walkInvalidHeightParents subscribed
-            stacks <- forM nodesInvolvedInCycle whoCreatedEventSubscribed
-            throwIO (EventLoopException stacks)
+            nodeInfos <- getNodeInfos nodesInvolvedInCycle
+            throwIO (EventLoopException nodeInfos)
 #else
           throwIO EventLoopException
 #endif
