@@ -41,11 +41,6 @@ flag use-template-haskell
   default: True
   manual: True
 
-flag debug-trace-events
-  description: Add instrumentation that outputs the stack trace of the definition of an event whenever it is subscribed to. Warning: It is very slow!
-  default: False
-  manual: True
-
 flag fast-weak
   description: Use the primitive implementation of FastWeak in GHCJS; note that this requires GHCJS to be built with FastWeak and FastWeakBag present in the RTS, which is not the default
   default: False
@@ -115,6 +110,13 @@ library
     Data.FastWeakBag,
     Data.Map.Misc,
     Data.WeakBag,
+    Data.Trie,
+    Reflex.Spider.Ref,
+    Reflex.Spider.Ref.Debug,
+    Reflex.Spider.Ref.Normal,
+    Reflex.Spider.NodeInfo,
+    Reflex.Spider.NodeInfo.Debug,
+    Reflex.Spider.NodeInfo.Normal,
     Reflex,
     Reflex.Class,
     Reflex.Adjustable.Class,
@@ -165,18 +167,13 @@ library
 
   ghc-options: -Wall -fwarn-redundant-constraints -fwarn-tabs -funbox-strict-fields -O2 -fspecialise-aggressively
 
-  if flag(debug-trace-events)
-    cpp-options: -DDEBUG_TRACE_EVENTS
-    build-depends:
-      bytestring >= 0.10.8 && < 0.11
-
   if flag(use-reflex-optimizer)
     cpp-options: -DUSE_REFLEX_OPTIMIZER
     build-depends: ghc
     exposed-modules: Reflex.Optimizer
 
   if flag(debug-propagation)
-    cpp-options: -DDEBUG -DDEBUG_TRACE_PROPAGATION -DDEBUG_TRACE_INVALIDATION -DDEBUG_TRACE_HEIGHT
+    cpp-options: -DDEBUG -DDEBUG_NODEIDS -DDEBUG_TRACE_PROPAGATION -DDEBUG_TRACE_INVALIDATION -DDEBUG_TRACE_HEIGHT
 
   if flag(debug-cycles)
     cpp-options: -DDEBUG_CYCLES
@@ -208,6 +205,7 @@ test-suite semantics
   main-is: semantics.hs
   hs-source-dirs: test
   ghc-options: -O2 -Wall -rtsopts
+  ghc-prof-options: -fprof-auto-calls
   build-depends:
     base,
     bifunctors,

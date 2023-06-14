@@ -21,6 +21,10 @@ import Data.Foldable
 import Data.Functor.Misc
 import qualified Data.Map as Map
 import Data.Monoid
+import Data.Functor.Const
+import Data.Patch.DMapWithMove
+import qualified Data.Dependent.Map as DMap
+import Data.Dependent.Sum (DSum (..))
 
 import Prelude
 
@@ -213,6 +217,13 @@ testCases =
   , testE "coincidence-7" $ do
       e <- events1
       return $ coincidence (deep e <$ e)
+
+{-
+  , testE "coincidence-cycle" $ do
+      e <- plan [(1, ()), (2, ())]
+      let c = coincidence (leftmost ["x" <$ c, "y" <$ c] <$ e)
+      return $ void c
+-}
 
   , testB "holdWhileFiring" $ do
       e <- events1
