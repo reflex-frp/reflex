@@ -49,4 +49,3 @@ testE name test = (name, TestE test)
 
 testB :: (Eq a, Show a, NFData a) => String -> TestB a -> (String, TestCase)
 testB name test = (name, TestB test)
-
