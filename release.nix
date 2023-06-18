@@ -25,6 +25,7 @@ let
       variationPkgs = lib.genAttrs variations (variation: let
         reflex-platform = reflex-platform-fun {
           inherit system;
+          enableLibraryProfiling = true;
           __useTemplateHaskell = variation == "reflex"; # TODO hack
           haskellOverlays = [
             (self: super: {

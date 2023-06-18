@@ -76,7 +76,6 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.Exts hiding (toList)
 import GHC.IORef (IORef (..))
-import GHC.Stack
 import Reflex.FastWeak
 import System.IO.Unsafe
 import System.Mem.Weak
@@ -95,11 +94,6 @@ import Reflex.Spider.Ref.Normal
 #endif
 
 import Reflex.Spider.NodeInfo
-#ifdef DEBUG_NODEIDS
-import Reflex.Spider.NodeInfo.Debug
-#else
-import Reflex.Spider.NodeInfo.Normal
-#endif
 
 #ifdef MIN_VERSION_semialign
 #if MIN_VERSION_these(0,8,0)
@@ -220,34 +214,9 @@ showNodeId' _ = ""
 
 #endif
 
-#ifdef DEBUG_NODEIDS
-
-{-# INLINE withCcs #-}
-withCcs :: dummy -> (Ptr CostCentreStack -> a) -> a
-withCcs dummy k = unsafePerformIO $ do
-  ccs <- getCurrentCCS dummy
-  pure $ k ccs
-#else
-
-#endif
-
 {-# INLINE newRefI #-}
 newRefI :: NodeId x -> String -> a -> IO (Ref x a)
 newRefI nodeId name = newRefN (RefName (showNodeId' nodeId <> ":" <> name))
-
-#ifdef DEBUG_NODEIDS
-
-{-# INLINE newNodeId #-}
-newNodeId :: forall x m. (HasSpiderTimeline x, MonadIO m) => m (NodeId x)
-newNodeId = liftIO $ atomicModifyIORef' (_spiderTimeline_nextNodeId $ unSTE (spiderTimeline :: SpiderTimelineEnv x)) $ \n -> (succ n, n)
-
-#else
-
-{-# INLINE newNodeId #-}
-newNodeId :: forall x m. (HasSpiderTimeline x, MonadIO m) => m (NodeId x)
-newNodeId = pure $ NodeId ()
-
-#endif
 
 --------------------------------------------------------------------------------
 -- EventSubscription
@@ -297,10 +266,8 @@ data CacheSubscribed x a
    = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
                      , _cacheSubscribed_parent :: {-# UNPACK #-} !(EventSubscription x)
                      , _cacheSubscribed_occurrence :: {-# UNPACK #-} !(Ref x (Maybe a))
-#ifdef DEBUG_NODEIDS
                      , _cacheSubscribed_nodeId :: {-# UNPACK #-} !(NodeId x)
-                     , _cacheSubscribed_ccs :: {-# UNPACK #-} !(Ptr CostCentreStack)
-#endif
+                     , _cacheSubscribed_stackInfo :: {-# UNPACK #-} !StackInfo
                      }
 
 nowSpiderEventM :: (HasSpiderTimeline x) => EventM x (R.Event (SpiderTimeline x) ())
@@ -326,9 +293,8 @@ now = do
 --subscriber joins
 {-# NOINLINE [0] cacheEvent #-}
 cacheEvent :: forall x a. HasSpiderTimeline x => Event x a -> Event x a
-cacheEvent e = Event $
+cacheEvent e = withStackInfo e $ \stackInfo -> Event $
   unsafePerformIO $ do
-    ccs <- getCurrentCCS e
     nodeId <- newNodeId @x
     mSubscribedRef :: Ref x (FastWeak (CacheSubscribed x a))
         <- newRefI nodeId "mSubscribedRef" emptyFastWeak
@@ -338,11 +304,7 @@ cacheEvent e = Event $
             Nothing -> do
               subscribers <- liftIO FastWeakBag.empty
               occRef <- liftIO $ newRefI nodeId "occRef" Nothing -- This should never be read prior to being set below
-#ifdef DEBUG_NODEIDS
               (parentSub, occ) <- subscribeAndRead e $ debugSubscriber' ("cacheEvent" <> showNodeId' nodeId) $ Subscriber
-#else
-              (parentSub, occ) <- subscribeAndRead e $ Subscriber
-#endif
                   { subscriberPropagate = \a -> frame @x ("cacheEvent" <> showNodeId' nodeId <> ": subscriberPropagate") $ do
                       liftIO $ writeRef @x occRef (Just a)
                       scheduleClear occRef
@@ -359,10 +321,8 @@ cacheEvent e = Event $
                     { _cacheSubscribed_subscribers = subscribers
                     , _cacheSubscribed_parent = parentSub
                     , _cacheSubscribed_occurrence = occRef
-#ifdef DEBUG_NODEIDS
                     , _cacheSubscribed_nodeId = nodeId
-                    , _cacheSubscribed_ccs = ccs
-#endif
+                    , _cacheSubscribed_stackInfo = stackInfo
                     }
               subscribedTicket <- liftIO $ mkFastWeakTicket subscribed
               liftIO $ writeRef @x mSubscribedRef =<< getFastWeakTicketWeak subscribedTicket
@@ -399,7 +359,7 @@ cacheSubscription sub mSubscribedRef subscribedTicket = do
           , eventSubscribedNodeId = getNodeId subscribed
           , eventSubscribedGetParents = return [_eventSubscription_subscribed parentSub]
           , eventSubscribedHasOwnHeightRef = False
-          , eventSubscribedWhoCreated = ccsToStrings $ _cacheSubscribed_ccs subscribed
+          , eventSubscribedWhoCreated = stackInfoToStrings $ _cacheSubscribed_stackInfo subscribed
 #endif
           }
         }
@@ -432,7 +392,7 @@ eventSwitch :: HasSpiderTimeline x => Switch x a -> Event x a
 eventSwitch !s = Event $ wrap eventSubscribedSwitch $ getSwitchSubscribed s
 
 eventCoincidence :: HasSpiderTimeline x => Coincidence x a -> Event x a
-eventCoincidence !c = withCcs c $ \ccs -> Event $ wrap eventSubscribedCoincidence $ getCoincidenceSubscribed ccs c
+eventCoincidence !c = Event $ wrap eventSubscribedCoincidence $ getCoincidenceSubscribed c
 
 eventHold :: Hold x p -> Event x p
 eventHold !h = Event $ subscribeHoldEvent h
@@ -519,9 +479,9 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
 #ifdef DEBUG_CYCLES
               nodesInvolvedInCycle <- walkInvalidHeightParents innerSubd
               nodeInfos <- getNodeInfos nodesInvolvedInCycle
-              throwIO (EventLoopException nodeInfos)
+              throwIO (CausalityLoopException nodeInfos)
 #else
-              throwIO EventLoopException
+              throwIO CausalityLoopException
 #endif
             writeRef @x (coincidenceSubscribedHeight subscribed) $! innerHeight
             WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight innerHeight
@@ -608,7 +568,7 @@ eventSubscribedNever = EventSubscribed
   { eventSubscribedHeightRef = zeroRef
   , eventSubscribedRetained = toAny ()
 #ifdef DEBUG_CYCLES
-  , eventSubscribedNodeId = NodeId 0
+  , eventSubscribedNodeId = neverNodeId
   , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = return ["never"]
@@ -619,7 +579,7 @@ eventSubscribedNow = EventSubscribed
   { eventSubscribedHeightRef = zeroRef
   , eventSubscribedRetained = toAny ()
 #ifdef DEBUG_CYCLES
-  , eventSubscribedNodeId = NodeId 1
+  , eventSubscribedNodeId = nowNodeId
   , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = return ["now"]
@@ -634,7 +594,7 @@ eventSubscribedFan !subscribed = EventSubscribed
   , eventSubscribedNodeId = getNodeId subscribed
   , eventSubscribedGetParents = return [_eventSubscription_subscribed $ fanSubscribedParent subscribed]
   , eventSubscribedHasOwnHeightRef = False
-  , eventSubscribedWhoCreated = ccsToStrings $ fanSubscribedCcs subscribed
+  , eventSubscribedWhoCreated = stackInfoToStrings $ fanSubscribedCcs subscribed
 #endif
   }
 
@@ -648,7 +608,7 @@ eventSubscribedSwitch !subscribed = EventSubscribed
       s <- readRef $ switchSubscribedCurrentParent subscribed
       return [_eventSubscription_subscribed s]
   , eventSubscribedHasOwnHeightRef = True
-  , eventSubscribedWhoCreated = ccsToStrings $ switchSubscribedCcs subscribed
+  , eventSubscribedWhoCreated = stackInfoToStrings $ switchSubscribedCcs subscribed
 #endif
   }
 
@@ -664,7 +624,7 @@ eventSubscribedCoincidence !subscribed = EventSubscribed
           innerParents = maybeToList $ innerSubscription
       return $ outerParent : innerParents
   , eventSubscribedHasOwnHeightRef = True
-  , eventSubscribedWhoCreated = ccsToStrings $ coincidenceSubscribedCcs subscribed
+  , eventSubscribedWhoCreated = stackInfoToStrings $ coincidenceSubscribedCcs subscribed
 #endif
   }
 
@@ -802,9 +762,7 @@ data Hold x p
           , holdInvalidators :: !(Ref x [Weak (Invalidator x)])
           , holdEvent :: Event x p -- This must be lazy, or holds cannot be defined before their input Events
           , holdParent :: !(Ref x (Maybe (EventSubscription x))) -- Keeps its parent alive (will be undefined until the hold is initialized) --TODO: Probably shouldn't be an Ref
-#ifdef DEBUG_NODEIDS
           , holdNodeId :: {-# UNPACK #-} !(NodeId x)
-#endif
           }
 
 -- | A statically allocated 'SpiderTimeline'
@@ -826,7 +784,7 @@ data SpiderTimelineEnv' x = SpiderTimelineEnv
   , _spiderTimeline_eventEnv :: {-# UNPACK #-} !(EventEnv x)
 #ifdef DEBUG
   , _spiderTimeline_stack :: {-# UNPACK #-} !(IORef (Int, [String]))
-  , _spiderTimeline_nextNodeId :: {-# UNPACK #-} !(IORef (NodeId x))
+  , _spiderTimeline_nodeIdAllocator :: {-# UNPACK #-} !(NodeIdAllocator x)
 #endif
   }
 
@@ -959,9 +917,7 @@ hold v0 e = do
         , holdInvalidators = invsRef
         , holdEvent = e
         , holdParent = parentRef
-#ifdef DEBUG_NODEIDS
         , holdNodeId = nodeId
-#endif
         }
   defer $ SomeHoldInit h
   return h
@@ -1027,9 +983,7 @@ data PullSubscribed x a
 data Pull x a
    = Pull { pullValue :: !(Ref x (Maybe (PullSubscribed x a)))
           , pullCompute :: !(BehaviorM x a)
-#ifdef DEBUG_NODEIDS
           , pullNodeId :: {-# UNPACK #-} !(NodeId x)
-#endif
           }
 
 data Invalidator x
@@ -1043,18 +997,14 @@ data RootSubscribed x a = forall k. GCompare k => RootSubscribed
   , rootSubscribedOccurrence :: !(IO (Maybe a)) -- Lookup from rootOccurrence
   , rootSubscribedUninit :: IO ()
   , rootSubscribedWeakSelf :: !(Ref x (Weak (RootSubscribed x a))) --TODO: Can we make this a lazy non-Ref and then force it manually to avoid an indirection each time we use it?
-#ifdef DEBUG_NODEIDS
   , rootSubscribedNodeId :: {-# UNPACK #-} !(NodeId x)
-#endif
   }
 
 data Root x k
    = Root { rootOccurrence :: !(Ref x (DMap k Identity)) -- The currently-firing occurrence of this event
           , rootSubscribed :: !(Ref x (DMap k (RootSubscribed x)))
           , rootInit :: !(forall a. k a -> RootTrigger x a -> IO (IO ()))
-#ifdef DEBUG_NODEIDS
           , rootNodeId :: {-# UNPACK #-} !(NodeId x)
-#endif
           }
 
 data SomeHoldInit x = forall p. Patch p => SomeHoldInit !(Hold x p)
@@ -1133,19 +1083,15 @@ data FanSubscribed x k v
                    , fanSubscribedOccurrence :: !(Ref x (Maybe (DMap k v)))
                    , fanSubscribedSubscribers :: !(Ref x (DMap k (FanSubscribedChildren x k v))) -- This DMap should never be empty
                    , fanSubscribedParent :: !(EventSubscription x)
-#ifdef DEBUG_NODEIDS
                    , fanSubscribedNodeId :: {-# UNPACK #-} !(NodeId x)
-                   , fanSubscribedCcs :: {-# UNPACK #-} !(Ptr CostCentreStack)
-#endif
+                   , fanSubscribedCcs :: {-# UNPACK #-} !StackInfo
                    }
 
 data Fan x k v
    = Fan { fanParent :: !(Event x (DMap k v))
          , fanSubscribed :: !(Ref x (Maybe (FanSubscribed x k v)))
-#ifdef DEBUG_NODEIDS
          , fanNodeId :: {-# UNPACK #-} !(NodeId x)
-         , fanCcs :: {-# UNPACK #-} !(Ptr CostCentreStack)
-#endif
+         , fanCcs :: {-# UNPACK #-} !StackInfo
          }
 
 data SwitchSubscribed x a
@@ -1159,19 +1105,15 @@ data SwitchSubscribed x a
                       , switchSubscribedParent :: !(Behavior x (Event x a))
                       , switchSubscribedCurrentParent :: !(Ref x (EventSubscription x))
                       , switchSubscribedWeakSelf :: !(Ref x (Weak (SwitchSubscribed x a)))
-#ifdef DEBUG_NODEIDS
                       , switchSubscribedNodeId :: {-# UNPACK #-} !(NodeId x)
-                      , switchSubscribedCcs :: {-# UNPACK #-} !(Ptr CostCentreStack)
-#endif
+                      , switchSubscribedCcs :: {-# UNPACK #-} !StackInfo
                       }
 
 data Switch x a
    = Switch { switchParent :: !(Behavior x (Event x a))
             , switchSubscribed :: !(Ref x (Maybe (SwitchSubscribed x a)))
-#ifdef DEBUG_NODEIDS
             , switchNodeId :: {-# UNPACK #-} !(NodeId x)
-            , switchCcs :: {-# UNPACK #-} !(Ptr CostCentreStack)
-#endif
+            , switchCcs :: {-# UNPACK #-} !StackInfo
             }
 
 #ifdef USE_TEMPLATE_HASKELL
@@ -1186,18 +1128,15 @@ data CoincidenceSubscribed x a
                            , coincidenceSubscribedOuterParent :: !(EventSubscription x)
                            , coincidenceSubscribedInnerParent :: !(Ref x (Maybe (EventSubscribed x)))
                            , coincidenceSubscribedWeakSelf :: !(Ref x (Weak (CoincidenceSubscribed x a)))
-#ifdef DEBUG_NODEIDS
                            , coincidenceSubscribedNodeId :: {-# UNPACK #-} !(NodeId x)
-                           , coincidenceSubscribedCcs :: {-# UNPACK #-} !(Ptr CostCentreStack)
-#endif
+                           , coincidenceSubscribedCcs :: {-# UNPACK #-} !StackInfo
                            }
 
 data Coincidence x a
    = Coincidence { coincidenceParent :: !(Event x (Event x a))
                  , coincidenceSubscribed :: !(Ref x (Maybe (CoincidenceSubscribed x a)))
-#ifdef DEBUG_NODEIDS
                  , coincidenceNodeId :: {-# UNPACK #-} !(NodeId x)
-#endif
+                 , coincidenceCcs :: {-# UNPACK #-} !StackInfo
                  }
 
 {-# NOINLINE newInvalidatorSwitch #-}
@@ -1285,36 +1224,30 @@ pull a = unsafePerformIO $ do
   pure $ behaviorPull $ Pull
     { pullCompute = a
     , pullValue = ref
-#ifdef DEBUG_NODEIDS
     , pullNodeId = nodeId
-#endif
     }
 
 {-# INLINABLE switch #-}
 switch :: forall x a. HasSpiderTimeline x => Behavior x (Event x a) -> Event x a
-switch a = unsafePerformIO $ do
+switch a = withStackInfo a $ \stackInfo -> unsafePerformIO $ do
   nodeId <- newNodeId @x
-  ccs <- getCurrentCCS a
   ref <- newRefI nodeId "ref" Nothing
   pure $ eventSwitch $ Switch
     { switchParent = a
     , switchSubscribed = ref
-#ifdef DEBUG_NODEIDS
     , switchNodeId = nodeId
-    , switchCcs = ccs
-#endif
+    , switchCcs = stackInfo
     }
 
 coincidence :: forall x a. HasSpiderTimeline x => Event x (Event x a) -> Event x a
-coincidence a = unsafePerformIO $ do
+coincidence a = withStackInfo a $ \stackInfo -> unsafePerformIO $ do
   nodeId <- newNodeId @x
   ref <- newRefI nodeId "ref" Nothing
   pure $ eventCoincidence $ Coincidence
     { coincidenceParent = a
     , coincidenceSubscribed = ref
-#ifdef DEBUG_NODEIDS
     , coincidenceNodeId = nodeId
-#endif
+    , coincidenceCcs = stackInfo
     }
 
 -- Propagate the given event occurrence; before cleaning up, run the given action, which may read the state of events and behaviors
@@ -1470,7 +1403,6 @@ showDot nodes = unlines $ snd $ execRWS graph () 1
     t = Trie.fromList $ (\(stack, (nodeId, parents)) -> (Seq.fromList stack, Map.singleton nodeId $ Set.intersection includedNodes parents)) <$> filter (\(_, (nodeId, _)) -> nodeId `Set.member` includedNodes) nodes
     edges = fmap (Set.intersection includedNodes) $ Map.fromList $ fmap snd nodes
     graph = do
-      tell ["// " <> show includedNodes]
       tell ["digraph {"]
       indent $ do
         tell ["labelloc=b;"]
@@ -1488,26 +1420,27 @@ getNodeInfos nodes = forM nodes $ \subd -> do
   parents <- eventSubscribedGetParents subd
   pure (stack, (unNodeId $ getNodeId subd, Set.fromList $ fmap (unNodeId . getNodeId) parents))
 
-data EventLoopException = EventLoopException [([String], (Int, Set Int))]
-instance Exception EventLoopException
+data CausalityLoopException = CausalityLoopException [([String], (Int, Set Int))]
+instance Exception CausalityLoopException
 
-instance Show EventLoopException where
-  show (EventLoopException nodes) = unlines
+instance Show CausalityLoopException where
+  show (CausalityLoopException nodes) = unlines
     [ "causality loop detected:\n"
-    , if all null nodes
-      then "no location information, compile with profiling enabled for stack tree"
-      else ""
-    , showDot nodes
+    , if all (\(stack, _) -> null stack) nodes
+      then "  no location information; enable profiling for more info"
+      else showDot nodes
     ]
 
 #else
 
-data EventLoopException = EventLoopException
-instance Exception EventLoopException
+data CausalityLoopException = CausalityLoopException
+instance Exception CausalityLoopException
 
-instance Show EventLoopException where
-  show EventLoopException = "causality loop detected: \n" <>
-    "compile reflex with flag 'debug-cycles' and compile with profiling enabled for stack tree"
+instance Show CausalityLoopException where
+  show CausalityLoopException = unlines
+    [ "causality loop detected:"
+    , "  compile reflex with flag 'debug-cycles' and enable profiling for more info"
+    ]
 
 #endif
 
@@ -1597,9 +1530,7 @@ getRootSubscribed k r sub = do
             , rootSubscribedSubscribers = subs
             , rootSubscribedUninit = uninit
             , rootSubscribedWeakSelf = weakSelf
-#ifdef DEBUG_NODEIDS
             , rootSubscribedNodeId = nodeId
-#endif
             }
           -- If we die at the same moment that all our children die, they will
           -- try to clean us up but will fail because their Weak reference to us
@@ -1634,14 +1565,12 @@ data FanInt x a = FanInt
   { _fanInt_subscribers :: {-# UNPACK #-} !(FastMutableIntMap (FastWeakBag (Subscriber x a))) --TODO: Clean up the keys in here when their child weak bags get empty --TODO: Remove our own subscription when the subscribers list is completely empty
   , _fanInt_subscriptionRef :: {-# UNPACK #-} !(Ref x (EventSubscription x)) -- This should have a valid subscription iff subscribers is non-empty
   , _fanInt_occRef :: {-# UNPACK #-} !(Ref x (IntMap a))
-#ifdef DEBUG_NODEIDS
   , _fanInt_nodeId :: {-# UNPACK #-} !(NodeId x)
-  , _fanInt_ccs :: {-# UNPACK #-} !(Ptr CostCentreStack)
-#endif
+  , _fanInt_stackInfo :: {-# UNPACK #-} !StackInfo
   }
 
-newFanInt :: forall x a. HasSpiderTimeline x => Ptr CostCentreStack -> IO (FanInt x a)
-newFanInt ccs = do
+newFanInt :: forall x a. HasSpiderTimeline x => StackInfo -> IO (FanInt x a)
+newFanInt stackInfo = do
   nodeId <- newNodeId @x
   subscribers <- FastMutableIntMap.newEmpty --TODO: Clean up the keys in here when their child weak bags get empty --TODO: Remove our own subscription when the subscribers list is completely empty
   subscriptionRef <- newRefI nodeId "subscriptionRef" $ error "fanInt: no subscription"
@@ -1650,16 +1579,13 @@ newFanInt ccs = do
     { _fanInt_subscribers = subscribers
     , _fanInt_subscriptionRef = subscriptionRef
     , _fanInt_occRef = occRef
-#ifdef DEBUG_NODEIDS
     , _fanInt_nodeId = nodeId
-    , _fanInt_ccs = ccs
-#endif
+    , _fanInt_stackInfo = stackInfo
     }
 
 fanInt :: forall x a. HasSpiderTimeline x => Event x (IntMap a) -> EventSelectorInt x a
-fanInt p = unsafePerformIO $ do
-  ccs <- getCurrentCCS p
-  self <- newFanInt ccs
+fanInt p = withStackInfo p $ \stackInfo -> unsafePerformIO $ do
+  self <- newFanInt stackInfo
   pure $ EventSelectorInt $ \k -> Event $ \sub -> do
     isEmpty <- liftIO $ FastMutableIntMap.isEmpty (_fanInt_subscribers self)
     when isEmpty $ do -- This is the first subscriber, so we need to subscribe to our input
@@ -1707,7 +1633,7 @@ fanIntSubscribed ticket self = do
     , eventSubscribedNodeId = getNodeId self
     , eventSubscribedGetParents = return [subscribedParent]
     , eventSubscribedHasOwnHeightRef = False
-    , eventSubscribedWhoCreated = ccsToStrings $ _fanInt_ccs self
+    , eventSubscribedWhoCreated = stackInfoToStrings $ _fanInt_stackInfo self
 #endif
     }
 
@@ -1737,10 +1663,8 @@ getFanSubscribed k f sub = do
             , fanSubscribedOccurrence = occRef
             , fanSubscribedParent = subscription
             , fanSubscribedSubscribers = subscribersRef
-#ifdef DEBUG_NODEIDS
             , fanSubscribedNodeId = nodeId
             , fanSubscribedCcs = fanCcs f
-#endif
             }
       let !self = (k, subscribed)
       liftIO $ writeRef @x subscribersRef $! DMap.singleton k $ FanSubscribedChildren subsForK self weakSelf
@@ -1812,10 +1736,8 @@ getSwitchSubscribed s sub = do
             , switchSubscribedParent = switchParent s
             , switchSubscribedCurrentParent = subscriptionRef
             , switchSubscribedWeakSelf = weakSelf
-#ifdef DEBUG_NODEIDS
             , switchSubscribedNodeId = nodeId
             , switchSubscribedCcs = switchCcs s
-#endif
             }
       liftIO $ writeRef @x weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "switchSubscribedWeakSelf"
       liftIO $ writeRef @x subscribedRef $! subscribed
@@ -1833,8 +1755,8 @@ subscribeSwitchSubscribed :: HasSpiderTimeline x => SwitchSubscribed x a -> Subs
 subscribeSwitchSubscribed subscribed sub = WeakBag.insert sub (switchSubscribedSubscribers subscribed) (toIORef $ switchSubscribedWeakSelf subscribed) cleanupSwitchSubscribed
 
 {-# INLINABLE getCoincidenceSubscribed #-}
-getCoincidenceSubscribed :: forall x a. HasSpiderTimeline x => Ptr CostCentreStack -> Coincidence x a -> Subscriber x a -> EventM x (WeakBagTicket, CoincidenceSubscribed x a, Maybe a)
-getCoincidenceSubscribed ccs c sub = do
+getCoincidenceSubscribed :: forall x a. HasSpiderTimeline x => Coincidence x a -> Subscriber x a -> EventM x (WeakBagTicket, CoincidenceSubscribed x a, Maybe a)
+getCoincidenceSubscribed c sub = do
   let nodeId = getNodeId c
   mSubscribed <- liftIO $ readRef $ coincidenceSubscribed c
   case mSubscribed of
@@ -1869,10 +1791,8 @@ getCoincidenceSubscribed ccs c sub = do
             , coincidenceSubscribedOuterParent = outerSubscription
             , coincidenceSubscribedInnerParent = innerSubdRef
             , coincidenceSubscribedWeakSelf = weakSelf
-#ifdef DEBUG_NODEIDS
             , coincidenceSubscribedNodeId = nodeId
-            , coincidenceSubscribedCcs = ccs
-#endif
+            , coincidenceSubscribedCcs = coincidenceCcs c
             }
       liftIO $ writeRef @x weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "CoincidenceSubscribed"
       liftIO $ writeRef @x subscribedRef $! subscribed
@@ -2066,20 +1986,13 @@ checkCycle :: HasSpiderTimeline x => EventSubscribed x -> EventM x ()
 checkCycle subscribed = liftIO $ do
     height <- readRef (eventSubscribedHeightRef subscribed)
 
-    -- currentHeight <- getCurrentHeight
-    -- when (height <= currentHeight) $ if height /= invalidHeight
-    --     then do
-    --       myStack <- liftIO $ whoCreatedRef undefined --TODO
-    --       error $ "Height (" ++ show height ++ ") is not greater than current height (" ++ show currentHeight ++ ")\n" ++ unlines (reverse myStack)
-    --     else liftIO $
-    when (height == invalidHeight) $
+    when (height == invalidHeight) $ do
 #ifdef DEBUG_CYCLES
-          do
-            nodesInvolvedInCycle <- walkInvalidHeightParents subscribed
-            nodeInfos <- getNodeInfos nodesInvolvedInCycle
-            throwIO (EventLoopException nodeInfos)
+      nodesInvolvedInCycle <- walkInvalidHeightParents subscribed
+      nodeInfos <- getNodeInfos nodesInvolvedInCycle
+      throwIO (CausalityLoopException nodeInfos)
 #else
-          throwIO EventLoopException
+      throwIO CausalityLoopException
 #endif
 
 
@@ -2115,7 +2028,7 @@ updateMerge subscribed m updateFunc p = SomeMergeUpdate updateMe (invalidateMerg
 {-# INLINE mergeGCheap' #-}
 mergeGCheap' :: forall k v x p s q. (HasSpiderTimeline x, GCompare k, PatchTarget p ~ DMap k q)
   => MergeGetSubscription x s -> MergeInitFunc k v q x s -> MergeUpdateFunc k v x p s -> MergeDestroyFunc k s -> DynamicS x p -> Event x (DMap k v)
-mergeGCheap' getParent getInitialSubscribers updateFunc destroy d = withCcs d $ \ccs -> Event $ \sub -> do --TODO: is `d` enough of a dummy here for withCcs?
+mergeGCheap' getParent getInitialSubscribers updateFunc destroy d = withStackInfo d $ \stackInfo -> Event $ \sub -> do --TODO: is `d` enough of a dummy here for withStackInfo?
   nodeId <- newNodeId @x
   initialParents <- readBehaviorUntracked $ dynamicCurrent d
   accumRef <- liftIO $ newRefI nodeId "accumRef" $ error "merge: accumRef not yet initialized"
@@ -2133,7 +2046,7 @@ mergeGCheap' getParent getInitialSubscribers updateFunc destroy d = withCcs d $ 
           let getParent' (_ :=> v) = _eventSubscription_subscribed (getParent v)
           fmap getParent' . DMap.toList  <$> readRef parentsRef
       , eventSubscribedHasOwnHeightRef = False
-      , eventSubscribedWhoCreated = ccsToStrings ccs
+      , eventSubscribedWhoCreated = stackInfoToStrings stackInfo
 #endif
       }
 
@@ -2182,7 +2095,7 @@ mergeInt = cacheEvent . mergeIntCheap
 
 {-# INLINABLE mergeIntCheap #-}
 mergeIntCheap :: forall x a. (HasSpiderTimeline x) => DynamicS x (PatchIntMap (Event x a)) -> Event x (IntMap a)
-mergeIntCheap d = withCcs d $ \ccs -> Event $ \sub -> do
+mergeIntCheap d = withStackInfo d $ \stackInfo -> Event $ \sub -> do
   nodeId <- newNodeId @x
   initialParents <- readBehaviorUntracked $ dynamicCurrent d
   accum <- liftIO $ FastMutableIntMap.newEmpty
@@ -2197,7 +2110,7 @@ mergeIntCheap d = withCcs d $ \ccs -> Event $ \sub -> do
         , eventSubscribedNodeId = nodeId
         , eventSubscribedGetParents = fmap (_eventSubscription_subscribed . snd) <$> FastMutableIntMap.toList parents
         , eventSubscribedHasOwnHeightRef = False
-        , eventSubscribedWhoCreated = ccsToStrings ccs
+        , eventSubscribedWhoCreated = stackInfoToStrings stackInfo
 #endif
         }
   let scheduleSelf = do
@@ -2293,17 +2206,14 @@ newtype EventSelector x k = EventSelector { select :: forall a. k a -> Event x a
 newtype EventSelectorG x k v = EventSelectorG { selectG :: forall a. k a -> Event x (v a) }
 
 fanG :: forall x k v. (HasSpiderTimeline x, GCompare k) => Event x (DMap k v) -> EventSelectorG x k v
-fanG e = unsafePerformIO $ do
-  ccs <- getCurrentCCS e
+fanG e = withStackInfo e $ \stackInfo -> unsafePerformIO $ do
   nodeId <- newNodeId @x
   ref <- newRefI nodeId "ref" Nothing
   let f = Fan
         { fanParent = e
         , fanSubscribed = ref
-#ifdef DEBUG_NODEIDS
         , fanNodeId = nodeId
-        , fanCcs = ccs
-#endif
+        , fanCcs = stackInfo
         }
   pure $ EventSelectorG $ \k -> eventFan k f
 
@@ -2731,18 +2641,21 @@ unsafeNewSpiderTimelineEnv :: forall x. IO (SpiderTimelineEnv x)
 unsafeNewSpiderTimelineEnv = do
   lock <- newMVar ()
   env <- newEventEnv
+  nodeIdAllocator <- newNodeIdAllocator
 #ifdef DEBUG
   stackRef <- newIORef (0, [])
-  nextNodeIdRef <- newIORef $ NodeId 2 -- There are two special NodeIds: 0 (never) and 1 (now)
 #endif
   return $ STE $ SpiderTimelineEnv
     { _spiderTimeline_lock = lock
     , _spiderTimeline_eventEnv = env
 #ifdef DEBUG
     , _spiderTimeline_stack = stackRef
-    , _spiderTimeline_nextNodeId = nextNodeIdRef
+    , _spiderTimeline_nodeIdAllocator = nodeIdAllocator
 #endif
     }
+
+instance HasSpiderTimeline x => HasNodeIds x where
+  getNodeIdAllocator = _spiderTimeline_nodeIdAllocator $ unSTE (spiderTimeline :: SpiderTimelineEnv x)
 
 instance HasSpiderTimeline x => RefCtx x where
   newtype RefName x = RefName String
@@ -2916,9 +2829,7 @@ newFanEventWithTriggerIO f = do
         { rootOccurrence = occRef
         , rootSubscribed = subscribedRef
         , rootInit = f
-#ifdef DEBUG_NODEIDS
         , rootNodeId = nodeId
-#endif
         }
   return $ EventSelector $ \k -> eventRoot k r
 
