@@ -766,10 +766,16 @@ data Hold x p
           }
 
 -- | A statically allocated 'SpiderTimeline'
-data Global
+data GlobalS
+data GlobalX
+
+type Global = LocalSpiderTimeline GlobalX GlobalS
+
+instance Reifies GlobalS (SpiderTimelineEnv GlobalX) where
+  reflect _ = globalSpiderTimelineEnv
 
 {-# NOINLINE globalSpiderTimelineEnv #-}
-globalSpiderTimelineEnv :: SpiderTimelineEnv Global
+globalSpiderTimelineEnv :: SpiderTimelineEnv GlobalX
 globalSpiderTimelineEnv = unsafePerformIO unsafeNewSpiderTimelineEnv
 
 -- | Stores all global data relevant to a particular Spider timeline; only one
@@ -867,9 +873,6 @@ instance HasSpiderTimeline x => HasCurrentHeight x (EventM x) where
 class HasSpiderTimeline x where
   -- | Retrieve the current SpiderTimelineEnv
   spiderTimeline :: SpiderTimelineEnv x
-
-instance HasSpiderTimeline Global where
-  spiderTimeline = globalSpiderTimelineEnv
 
 putCurrentHeight :: forall x. HasSpiderTimeline x => Height -> EventM x ()
 putCurrentHeight h = do
