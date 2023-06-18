@@ -65,7 +65,6 @@ import Data.IORef
 import Data.Kind (Type)
 import Data.Maybe hiding (mapMaybe)
 import Data.Monoid (mempty, (<>))
-import Data.Proxy
 import Data.These
 import Data.Traversable
 import Data.Type.Equality ((:~:)(Refl))
@@ -766,40 +765,32 @@ data Hold x p
           }
 
 -- | A statically allocated 'SpiderTimeline'
-data GlobalS
-data GlobalX
+data Global
 
-type Global = LocalSpiderTimeline GlobalX GlobalS
+instance Given (SpiderTimeline Global) where
+  given = globalSpiderTimeline
 
-instance Reifies GlobalS (SpiderTimelineEnv GlobalX) where
-  reflect _ = globalSpiderTimelineEnv
-
-{-# NOINLINE globalSpiderTimelineEnv #-}
-globalSpiderTimelineEnv :: SpiderTimelineEnv GlobalX
-globalSpiderTimelineEnv = unsafePerformIO unsafeNewSpiderTimelineEnv
+{-# NOINLINE globalSpiderTimeline #-}
+globalSpiderTimeline :: SpiderTimeline Global
+globalSpiderTimeline = unsafePerformIO unsafeNewSpiderTimeline
 
 -- | Stores all global data relevant to a particular Spider timeline; only one
 -- value should exist for each type @x@
-newtype SpiderTimelineEnv x = STE {unSTE :: SpiderTimelineEnv' x}
--- We implement SpiderTimelineEnv with a newtype wrapper so
--- we can get the coercions we want safely.
-type role SpiderTimelineEnv nominal
-
-data SpiderTimelineEnv' x = SpiderTimelineEnv
+data SpiderTimeline x = SpiderTimeline
   { _spiderTimeline_lock :: {-# UNPACK #-} !(MVar ())
   , _spiderTimeline_eventEnv :: {-# UNPACK #-} !(EventEnv x)
+  , _spiderTimeline_nodeIdAllocator :: {-# UNPACK #-} !(NodeIdAllocator x)
 #ifdef DEBUG
   , _spiderTimeline_stack :: {-# UNPACK #-} !(IORef (Int, [String]))
-  , _spiderTimeline_nodeIdAllocator :: {-# UNPACK #-} !(NodeIdAllocator x)
 #endif
   }
 
-instance Eq (SpiderTimelineEnv x) where
+instance Eq (SpiderTimeline x) where
   _ == _ = True -- Since only one exists of each type
 
-instance GEq SpiderTimelineEnv where
-  a `geq` b = if _spiderTimeline_lock (unSTE a) == _spiderTimeline_lock (unSTE b)
-              then Just $ unsafeCoerce Refl -- This unsafeCoerce is safe because the same SpiderTimelineEnv can't have two different 'x' arguments
+instance GEq SpiderTimeline where
+  a `geq` b = if _spiderTimeline_lock a == _spiderTimeline_lock b
+              then Just $ unsafeCoerce Refl -- This unsafeCoerce is safe because the same SpiderTimeline can't have two different 'x' arguments
               else Nothing
 
 data EventEnv x
@@ -821,7 +812,7 @@ runEventM :: EventM x a -> IO a
 runEventM = unEventM
 
 asksEventEnv :: forall x a. HasSpiderTimeline x => (EventEnv x -> a) -> EventM x a
-asksEventEnv f = return $ f $ _spiderTimeline_eventEnv (unSTE (spiderTimeline :: SpiderTimelineEnv x))
+asksEventEnv f = return $ f $ _spiderTimeline_eventEnv $ spiderTimeline @x
 
 class MonadIO m => Defer a m where
   getDeferralQueue :: m (IORef [a])
@@ -870,9 +861,11 @@ instance HasSpiderTimeline x => HasCurrentHeight x (EventM x) where
     delayedRef <- asksEventEnv eventEnvDelayedMerges
     liftIO $ modifyIORef' delayedRef $ IntMap.insertWith (++) (unHeight height) [subscribed]
 
-class HasSpiderTimeline x where
-  -- | Retrieve the current SpiderTimelineEnv
-  spiderTimeline :: SpiderTimelineEnv x
+type HasSpiderTimeline x = Given (SpiderTimeline x)
+
+{-# INLINE spiderTimeline #-}
+spiderTimeline :: Given (SpiderTimeline x) => SpiderTimeline x
+spiderTimeline = given
 
 putCurrentHeight :: forall x. HasSpiderTimeline x => Height -> EventM x ()
 putCurrentHeight h = do
@@ -1256,8 +1249,8 @@ coincidence a = withStackInfo a $ \stackInfo -> unsafePerformIO $ do
 -- Propagate the given event occurrence; before cleaning up, run the given action, which may read the state of events and behaviors
 run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> SpiderHost x b
 run roots after = do
-  let t = spiderTimeline :: SpiderTimelineEnv x
-  SpiderHost $ withMVar (_spiderTimeline_lock (unSTE t)) $ \_ -> unSpiderHost $ runFrame $ do
+  let t = spiderTimeline :: SpiderTimeline x
+  SpiderHost $ withMVar (_spiderTimeline_lock t) $ \_ -> unSpiderHost $ runFrame $ do
     rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readRef occRef
@@ -1342,19 +1335,19 @@ trace message = traceM @x $ return message
 traceM :: forall x m. CanTrace x m => m String -> m ()
 traceM getMessage = do
   message <- getMessage
-  (d, _) <- liftIO $ readIORef $ _spiderTimeline_stack $ unSTE (spiderTimeline :: SpiderTimelineEnv x)
+  (d, _) <- liftIO $ readIORef $ _spiderTimeline_stack $ spiderTimeline @x
   liftIO $ putStrLn $ replicate d ' ' <> message
 
 {-# INLINE frame #-}
 frame :: forall x m a. CanTrace x m => String -> m a -> m a
 frame name k = do
   trace @x $ "> " <> name
-  liftIO $ atomicModifyIORef' (_spiderTimeline_stack $ unSTE (spiderTimeline :: SpiderTimelineEnv x)) $ \(oldDepth, oldStack) ->
+  liftIO $ atomicModifyIORef' (_spiderTimeline_stack $ spiderTimeline @x) $ \(oldDepth, oldStack) ->
     let !newDepth = succ oldDepth
         !newStack = name : oldStack
     in ((newDepth, newStack), ())
   result <- k
-  liftIO $ atomicModifyIORef' (_spiderTimeline_stack $ unSTE (spiderTimeline :: SpiderTimelineEnv x)) $ \(oldDepth, oldStack) ->
+  liftIO $ atomicModifyIORef' (_spiderTimeline_stack $ spiderTimeline @x) $ \(oldDepth, oldStack) ->
     let !newDepth = pred oldDepth
         !newStack = drop 1 oldStack
     in ((newDepth, newStack), ())
@@ -2272,7 +2265,7 @@ clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeI
 -- | Run an event action outside of a frame
 runFrame :: forall x a. HasSpiderTimeline x => EventM x a -> SpiderHost x a --TODO: This function also needs to hold the mutex
 runFrame a = SpiderHost $ do
-  let env = _spiderTimeline_eventEnv $ unSTE (spiderTimeline :: SpiderTimelineEnv x)
+  let env = _spiderTimeline_eventEnv $ spiderTimeline @x
   let go = do
         result <- a
         runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) -- This must happen before doing the assignments, in case subscribing a Hold causes existing Holds to be read by the newly-propagated events
@@ -2425,10 +2418,6 @@ invalidate toReconnectRef wis = do
 --------------------------------------------------------------------------------
 -- Reflex integration
 --------------------------------------------------------------------------------
-
--- | Designates the default, global Spider timeline
-data SpiderTimeline x
-type role SpiderTimeline nominal
 
 -- | The default, global Spider environment
 type Spider = SpiderTimeline Global
@@ -2587,7 +2576,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
 --------------------------------------------------------------------------------
 
 -- | 'SpiderEnv' is the old name for 'SpiderTimeline'
-{-# DEPRECATED SpiderEnv "Use 'SpiderTimelineEnv' instead" #-}
+{-# DEPRECATED SpiderEnv "Use 'SpiderTimeline' instead" #-}
 type SpiderEnv = SpiderTimeline
 instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTimeline x) (SpiderHostFrame x) where
   {-# INLINABLE subscribeEvent #-}
@@ -2640,15 +2629,15 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexHost (SpiderTimelin
   fireEventsAndRead es (Reflex.Spider.Internal.ReadPhase a) = run es a
   runHostFrame = runFrame . runSpiderHostFrame
 
-unsafeNewSpiderTimelineEnv :: forall x. IO (SpiderTimelineEnv x)
-unsafeNewSpiderTimelineEnv = do
+unsafeNewSpiderTimeline :: forall x. IO (SpiderTimeline x)
+unsafeNewSpiderTimeline = do
   lock <- newMVar ()
   env <- newEventEnv
   nodeIdAllocator <- newNodeIdAllocator
 #ifdef DEBUG
   stackRef <- newIORef (0, [])
 #endif
-  return $ STE $ SpiderTimelineEnv
+  return $ SpiderTimeline
     { _spiderTimeline_lock = lock
     , _spiderTimeline_eventEnv = env
 #ifdef DEBUG
@@ -2658,33 +2647,21 @@ unsafeNewSpiderTimelineEnv = do
     }
 
 instance HasSpiderTimeline x => HasNodeIds x where
-  getNodeIdAllocator = _spiderTimeline_nodeIdAllocator $ unSTE (spiderTimeline :: SpiderTimelineEnv x)
+  getNodeIdAllocator = _spiderTimeline_nodeIdAllocator $ spiderTimeline @x
 
 instance HasSpiderTimeline x => RefCtx x where
   newtype RefName x = RefName String
   traceRef (RefName name) action = trace @x $ show action <> " " <> name
 
--- | Create a new SpiderTimelineEnv
-newSpiderTimeline :: IO (Some SpiderTimelineEnv)
+-- | Create a new SpiderTimeline
+newSpiderTimeline :: IO (Some SpiderTimeline)
 newSpiderTimeline = withSpiderTimeline (pure . Some)
 
-data LocalSpiderTimeline (x :: Type) s
-
-instance Reifies s (SpiderTimelineEnv x) =>
-         HasSpiderTimeline (LocalSpiderTimeline x s) where
-  spiderTimeline = localSpiderTimeline Proxy $ reflect (Proxy :: Proxy s)
-
-localSpiderTimeline
-  :: proxy s
-  -> SpiderTimelineEnv x
-  -> SpiderTimelineEnv (LocalSpiderTimeline x s)
-localSpiderTimeline _ = unsafeCoerce
-
 -- | Pass a new timeline to the given function.
-withSpiderTimeline :: (forall x. HasSpiderTimeline x => SpiderTimelineEnv x -> IO r) -> IO r
+withSpiderTimeline :: (forall x. HasSpiderTimeline x => SpiderTimeline x -> IO r) -> IO r
 withSpiderTimeline k = do
-  env <- unsafeNewSpiderTimelineEnv
-  reify env $ \s -> k $ localSpiderTimeline s env
+  env <- unsafeNewSpiderTimeline
+  give env $ k env
 
 newtype SpiderPullM (x :: Type) a = SpiderPullM (BehaviorM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
@@ -2796,7 +2773,7 @@ runSpiderHost (SpiderHost a) = a
 
 -- | Run an action affecting a given Spider timeline; this will be guarded by a
 -- mutex for that timeline
-runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimelineEnv x -> IO a
+runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimeline x -> IO a
 runSpiderHostForTimeline (SpiderHost a) _ = a
 
 newtype SpiderHostFrame (x :: Type) a = SpiderHostFrame { runSpiderHostFrame :: EventM x a }
