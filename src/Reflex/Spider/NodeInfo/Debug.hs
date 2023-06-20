@@ -38,6 +38,9 @@ nowNodeId = NodeId 1
 newNodeId :: forall x m. (HasNodeIds x, MonadIO m) => m (NodeId x)
 newNodeId = liftIO $ atomicModifyIORef' (unNodeIdAllocator (getNodeIdAllocator @x)) $ \n -> (succ n, n)
 
+showNodeId' :: NodeId x -> String
+showNodeId' = ("#"<>) . show . unNodeId
+
 newtype StackInfo = StackInfo { unStackInfo :: Ptr CostCentreStack }
 
 {-# INLINE withStackInfo #-}

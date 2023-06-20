@@ -32,6 +32,10 @@ nowNodeId = NodeId ()
 newNodeId :: forall x m. (HasNodeIds x, MonadIO m) => m (NodeId x)
 newNodeId = pure $ NodeId ()
 
+{-# INLINE showNodeId' #-}
+showNodeId' :: NodeId x -> String
+showNodeId' _ = ""
+
 newtype StackInfo = StackInfo ()
 
 {-# INLINE withStackInfo #-}
