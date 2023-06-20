@@ -17,11 +17,6 @@ newtype NodeIdAllocator x = NodeIdAllocator { unNodeIdAllocator :: IORef (NodeId
 class HasNodeIds x where
   getNodeIdAllocator :: NodeIdAllocator x
 
-data NodeInfo x = NodeInfo
-  { _nodeInfo_id :: {-# UNPACK #-} !(NodeId x)
-  , _nodeInfo_ccs :: {-# UNPACK #-} !(Ptr CostCentreStack)
-  }
-
 {-# INLINE newNodeIdAllocator #-}
 newNodeIdAllocator :: IO (NodeIdAllocator x)
 newNodeIdAllocator = NodeIdAllocator <$> newIORef (NodeId 2)

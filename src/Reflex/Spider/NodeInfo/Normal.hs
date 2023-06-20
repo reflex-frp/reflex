@@ -1,6 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-} -- We want to keep constraints here even if they are redundant, to match the Debug version of this module
 module Reflex.Spider.NodeInfo.Normal where
 
@@ -13,8 +12,6 @@ newtype NodeIdAllocator x = NodeIdAllocator ()
 
 class HasNodeIds x where
   getNodeIdAllocator :: NodeIdAllocator x
-
-newtype NodeInfo x = NodeInfo ()
 
 {-# INLINE newNodeIdAllocator #-}
 newNodeIdAllocator :: IO (NodeIdAllocator x)
