@@ -273,7 +273,7 @@ cacheEvent e = withStackInfo e $ \stackInfo -> Event $
             Nothing -> do
               subscribers <- liftIO FastWeakBag.empty
               occRef <- liftIO $ newRefI nodeId "occRef" Nothing -- This should never be read prior to being set below
-              (parentSub, occ) <- subscribeAndRead e $ debugSubscriber' ("cacheEvent" <> showNodeId' nodeId) $ Subscriber
+              (parentSub, occ) <- subscribeAndRead e $ debugSubscriber ("cacheEvent" <> showNodeId' nodeId) $ Subscriber
                   { subscriberPropagate = \a -> frame @x ("cacheEvent" <> showNodeId' nodeId <> ": subscriberPropagate") $ do
                       liftIO $ writeRef occRef (Just a)
                       scheduleClear occRef
@@ -390,14 +390,14 @@ data Subscriber x a = Subscriber
   }
 
 newSubscriberHold :: forall x p. (HasSpiderTimeline x, Patch p) => Hold x p -> IO (Subscriber x p)
-newSubscriberHold h = debugSubscriber ("SubscriberHold" <> showNodeId h) $ Subscriber
+newSubscriberHold h = pure $ debugSubscriber ("SubscriberHold" <> showNodeId h) $ Subscriber
   { subscriberPropagate = {-# SCC "traverseHold" #-} propagateSubscriberHold h
   , subscriberInvalidateHeight = \_ -> frame @x ("newSubscriberHold" <> showNodeId h <> ": subscriberPropagate") $ return ()
   , subscriberRecalculateHeight = \_ -> frame @x ("newSubscriberHold" <> showNodeId h <> ": subscriberPropagate") $ return ()
   }
 
 newSubscriberFan :: forall x k v. (HasSpiderTimeline x, GCompare k) => FanSubscribed x k v -> IO (Subscriber x (DMap k v))
-newSubscriberFan subscribed = debugSubscriber ("SubscriberFan " <> showNodeId subscribed) $ Subscriber
+newSubscriberFan subscribed = pure $ debugSubscriber ("SubscriberFan " <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
       subs <- liftIO $ readRef $ fanSubscribedSubscribers subscribed
       liftIO $ writeRef (fanSubscribedOccurrence subscribed) $ Just a
@@ -416,7 +416,7 @@ newSubscriberFan subscribed = debugSubscriber ("SubscriberFan " <> showNodeId su
   }
 
 newSubscriberSwitch :: forall x a. HasSpiderTimeline x => SwitchSubscribed x a -> IO (Subscriber x a)
-newSubscriberSwitch subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
+newSubscriberSwitch subscribed = pure $ debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseSwitch" #-} do
       liftIO $ writeRef (switchSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ switchSubscribedOccurrence subscribed
@@ -430,7 +430,7 @@ newSubscriberSwitch subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <
     }
 
 newSubscriberCoincidenceOuter :: forall x b. HasSpiderTimeline x => CoincidenceSubscribed x b -> IO (Subscriber x (Event x b))
-newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
+newSubscriberCoincidenceOuter subscribed = pure $ debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseCoincidenceOuter" #-} do
       outerHeight <- liftIO $ readRef $ coincidenceSubscribedHeight subscribed
       (occ, innerHeight, innerSubd) <- subscribeCoincidenceInner a outerHeight subscribed
@@ -464,7 +464,7 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
   }
 
 newSubscriberCoincidenceInner :: forall x a. HasSpiderTimeline x => CoincidenceSubscribed x a -> IO (Subscriber x a)
-newSubscriberCoincidenceInner subscribed = debugSubscriber ("SubscriberCoincidenceInner" <> showNodeId subscribed) $ Subscriber
+newSubscriberCoincidenceInner subscribed = pure $ debugSubscriber ("SubscriberCoincidenceInner" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseCoincidenceInner" #-} do
       occ <- liftIO $ readRef $ coincidenceSubscribedOccurrence subscribed
       case occ of
@@ -1283,11 +1283,8 @@ type CanTrace x m = (HasSpiderTimeline x, MonadIO m)
 
 #ifdef DEBUG_NODEIDS
 
-debugSubscriber :: forall x a. HasSpiderTimeline x => String -> Subscriber x a -> IO (Subscriber x a)
-debugSubscriber description = return . debugSubscriber' description
-
-debugSubscriber' :: forall x a. HasSpiderTimeline x => String -> Subscriber x a -> Subscriber x a
-debugSubscriber' description subscribed = Subscriber
+debugSubscriber :: forall x a. HasSpiderTimeline x => String -> Subscriber x a -> Subscriber x a
+debugSubscriber description subscribed = Subscriber
   {
     subscriberPropagate = \m -> frame @x (description <> ": subscriberPropagate") $ do
       subscriberPropagate subscribed m
@@ -1299,12 +1296,7 @@ debugSubscriber' description subscribed = Subscriber
 
 {-# INLINE trace #-}
 trace :: forall x m. CanTrace x m => String -> m ()
-trace message = traceM @x $ return message
-
-{-# INLINE traceM #-}
-traceM :: forall x m. CanTrace x m => m String -> m ()
-traceM getMessage = do
-  message <- getMessage
+trace message = do
   (d, _) <- liftIO $ readIORef $ _spiderTimeline_stack $ spiderTimeline @x
   liftIO $ putStrLn $ replicate d ' ' <> message
 
@@ -1331,22 +1323,14 @@ frame :: forall x m a. CanTrace x m => String -> m a -> m a
 frame _ k = k
 
 {-# INLINE debugSubscriber #-}
-debugSubscriber :: String -> Subscriber x a -> IO (Subscriber x a)
-debugSubscriber _ = return
-
-{-# INLINE debugSubscriber' #-}
-debugSubscriber' :: String -> Subscriber x a -> Subscriber x a
-debugSubscriber' _ = id
+debugSubscriber :: String -> Subscriber x a -> Subscriber x a
+debugSubscriber _ = id
 
 
 
 {-# INLINE trace #-}
 trace :: forall x m. CanTrace x m => String -> m ()
 trace _ = return ()
-
-{-# INLINE traceM #-}
-traceM :: forall x m. CanTrace x m => m String -> m ()
-traceM _ = return ()
 
 #endif
 
@@ -1529,7 +1513,7 @@ fanInt p = withStackInfo p $ \stackInfo -> unsafePerformIO $ do
     isEmpty <- liftIO $ FastMutableIntMap.isEmpty (_fanInt_subscribers self)
     when isEmpty $ do -- This is the first subscriber, so we need to subscribe to our input
       let desc = "fanInt" <> showNodeId self <> ", k = "  <> show k
-      (subscription, parentOcc) <- subscribeAndRead p $ debugSubscriber' desc $ Subscriber
+      (subscription, parentOcc) <- subscribeAndRead p $ debugSubscriber desc $ Subscriber
         { subscriberPropagate = \m -> do
             liftIO $ writeRef (_fanInt_occRef self) m
             scheduleIntClear $ _fanInt_occRef self
