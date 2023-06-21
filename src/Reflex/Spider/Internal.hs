@@ -69,7 +69,6 @@ import Data.These
 import Data.Traversable
 import Data.Type.Equality ((:~:)(Refl))
 import Data.Witherable (Filterable, mapMaybe)
-import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.Exts hiding (toList)
 import GHC.IORef (IORef (..))
@@ -325,10 +324,10 @@ cacheSubscription sub mSubscribedRef subscribedTicket = do
           { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed parentSub
           , eventSubscribedRetained = toAny subscribedTicket
           , eventSubscribedNodeId = getNodeId subscribed
+          , eventSubscribedWhoCreated = _cacheSubscribed_stackInfo subscribed
 #ifdef DEBUG_CYCLES
           , eventSubscribedGetParents = return [_eventSubscription_subscribed parentSub]
           , eventSubscribedHasOwnHeightRef = False
-          , eventSubscribedWhoCreated = stackInfoToStrings $ _cacheSubscribed_stackInfo subscribed
 #endif
           }
         }
@@ -448,9 +447,9 @@ newSubscriberCoincidenceOuter subscribed = pure $ debugSubscriber ("SubscriberCo
 #ifdef DEBUG_CYCLES
               nodesInvolvedInCycle <- walkInvalidHeightParents innerSubd
               nodeInfos <- getNodeInfos nodesInvolvedInCycle
-              throwIO (CausalityLoopException nodeInfos)
+              throwIO $ CausalityLoopException nodeInfos
 #else
-              throwIO CausalityLoopException
+              throwIO $ CausalityLoopException $ CycleInfo ()
 #endif
             writeRef (coincidenceSubscribedHeight subscribed) $! innerHeight
             WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight innerHeight
@@ -513,10 +512,10 @@ data EventSubscribed x = EventSubscribed
   { eventSubscribedHeightRef :: {-# UNPACK #-} !(Ref (SpiderTimeline x) Height)
   , eventSubscribedRetained :: {-# NOUNPACK #-} !Any
   , eventSubscribedNodeId :: {-# UNPACK #-} !(NodeId (SpiderTimeline x))
+  , eventSubscribedWhoCreated :: {-# UNPACK #-} !StackInfo
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents :: !(IO [EventSubscribed x]) -- For debugging loops
   , eventSubscribedHasOwnHeightRef :: !Bool
-  , eventSubscribedWhoCreated :: !(IO [String])
 #endif
   }
 
@@ -525,33 +524,33 @@ eventSubscribedRoot !r = EventSubscribed
   { eventSubscribedHeightRef = zeroRef
   , eventSubscribedRetained = toAny r
   , eventSubscribedNodeId = getNodeId r
+  , eventSubscribedWhoCreated = rootSubscribedStackInfo r
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
-  , eventSubscribedWhoCreated = return ["root"]
 #endif
   }
 
 eventSubscribedNever :: EventSubscribed x
-eventSubscribedNever = EventSubscribed
+eventSubscribedNever = withStackInfo () $ \stackInfo -> EventSubscribed
   { eventSubscribedHeightRef = zeroRef
   , eventSubscribedRetained = toAny ()
   , eventSubscribedNodeId = neverNodeId
+  , eventSubscribedWhoCreated = stackInfo
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
-  , eventSubscribedWhoCreated = return ["never"]
 #endif
   }
 eventSubscribedNow :: EventSubscribed x
-eventSubscribedNow = EventSubscribed
+eventSubscribedNow = withStackInfo () $ \stackInfo -> EventSubscribed
   { eventSubscribedHeightRef = zeroRef
   , eventSubscribedRetained = toAny ()
   , eventSubscribedNodeId = nowNodeId
+  , eventSubscribedWhoCreated = stackInfo
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
-  , eventSubscribedWhoCreated = return ["now"]
 #endif
   }
 
@@ -560,10 +559,10 @@ eventSubscribedFan !subscribed = EventSubscribed
   { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ fanSubscribedParent subscribed
   , eventSubscribedRetained = toAny subscribed
   , eventSubscribedNodeId = getNodeId subscribed
+  , eventSubscribedWhoCreated = fanSubscribedCcs subscribed
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = return [_eventSubscription_subscribed $ fanSubscribedParent subscribed]
   , eventSubscribedHasOwnHeightRef = False
-  , eventSubscribedWhoCreated = stackInfoToStrings $ fanSubscribedCcs subscribed
 #endif
   }
 
@@ -572,12 +571,12 @@ eventSubscribedSwitch !subscribed = EventSubscribed
   { eventSubscribedHeightRef = switchSubscribedHeight subscribed
   , eventSubscribedRetained = toAny subscribed
   , eventSubscribedNodeId = getNodeId subscribed
+  , eventSubscribedWhoCreated = switchSubscribedCcs subscribed
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = do
       s <- readRef $ switchSubscribedCurrentParent subscribed
       return [_eventSubscription_subscribed s]
   , eventSubscribedHasOwnHeightRef = True
-  , eventSubscribedWhoCreated = stackInfoToStrings $ switchSubscribedCcs subscribed
 #endif
   }
 
@@ -586,6 +585,7 @@ eventSubscribedCoincidence !subscribed = EventSubscribed
   { eventSubscribedHeightRef = coincidenceSubscribedHeight subscribed
   , eventSubscribedRetained = toAny subscribed
   , eventSubscribedNodeId = getNodeId subscribed
+  , eventSubscribedWhoCreated = coincidenceSubscribedCcs subscribed
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = do
       innerSubscription <- readRef $ coincidenceSubscribedInnerParent subscribed
@@ -593,7 +593,6 @@ eventSubscribedCoincidence !subscribed = EventSubscribed
           innerParents = maybeToList $ innerSubscription
       return $ outerParent : innerParents
   , eventSubscribedHasOwnHeightRef = True
-  , eventSubscribedWhoCreated = stackInfoToStrings $ coincidenceSubscribedCcs subscribed
 #endif
   }
 
@@ -601,9 +600,6 @@ getEventSubscribedHeight :: EventSubscribed x -> IO Height
 getEventSubscribedHeight es = readRef $ eventSubscribedHeightRef es
 
 #ifdef DEBUG_CYCLES
-whoCreatedEventSubscribed :: EventSubscribed x -> IO [String]
-whoCreatedEventSubscribed = eventSubscribedWhoCreated
-
 walkInvalidHeightParents :: forall x. HasSpiderTimeline x => EventSubscribed x -> IO [EventSubscribed x]
 walkInvalidHeightParents s0 = do
   subscribers <- flip execStateT mempty $ ($ s0) $ fix $ \loop s -> do
@@ -964,6 +960,7 @@ data RootSubscribed x a = forall k. GCompare k => RootSubscribed
   , rootSubscribedUninit :: IO ()
   , rootSubscribedWeakSelf :: !(Ref (SpiderTimeline x) (Weak (RootSubscribed x a))) --TODO: Can we make this a lazy non-Ref and then force it manually to avoid an indirection each time we use it?
   , rootSubscribedNodeId :: {-# UNPACK #-} !(NodeId (SpiderTimeline x))
+  , rootSubscribedStackInfo :: {-# UNPACK #-} !StackInfo
   }
 
 data Root x k
@@ -1334,33 +1331,29 @@ trace _ = return ()
 
 #endif
 
+data CausalityLoopException = forall x. CausalityLoopException (CycleInfo x)
+instance Exception CausalityLoopException
 
 #ifdef DEBUG_NODEIDS
 
-getNodeInfos :: [EventSubscribed x] -> IO [([String], (Int, Set Int))]
-getNodeInfos nodes = forM nodes $ \subd -> do
-  stack <- whoCreatedEventSubscribed subd
+getNodeInfos :: [EventSubscribed x] -> IO (CycleInfo x)
+getNodeInfos nodes = fmap CycleInfo $ forM nodes $ \subd -> do
+  stack <- stackInfoToStrings $ eventSubscribedWhoCreated subd
   parents <- eventSubscribedGetParents subd
   pure (stack, (unNodeId $ getNodeId subd, Set.fromList $ fmap (unNodeId . getNodeId) parents))
-
-data CausalityLoopException = CausalityLoopException [([String], (Int, Set Int))]
-instance Exception CausalityLoopException
 
 instance Show CausalityLoopException where
   show (CausalityLoopException nodes) = unlines
     [ "causality loop detected:\n"
-    , if all (\(stack, _) -> null stack) nodes
+    , if all (\(stack, _) -> null stack) $ unCycleInfo nodes
       then "  no location information; enable profiling for more info"
-      else showDot nodes
+      else showDot $ unCycleInfo nodes
     ]
 
 #else
 
-data CausalityLoopException = CausalityLoopException
-instance Exception CausalityLoopException
-
 instance Show CausalityLoopException where
-  show CausalityLoopException = unlines
+  show (CausalityLoopException _) = unlines
     [ "causality loop detected:"
     , "  compile reflex with flag 'debug-cycles' and enable profiling for more info"
     ]
@@ -1429,7 +1422,7 @@ zeroRef :: Ref (SpiderTimeline x) Height
 zeroRef = unsafePerformIO $ newRefN (RefName "zeroRef") zeroHeight
 
 getRootSubscribed :: forall k x a. (GCompare k, HasSpiderTimeline x) => k a -> Root x k -> Subscriber x a -> IO (WeakBagTicket, RootSubscribed x a, Maybe a)
-getRootSubscribed k r sub = do
+getRootSubscribed k r sub = withStackInfo r $ \stackInfo -> do
   let nodeId = getNodeId r
   mSubscribed <- readRef $ rootSubscribed r
   let getOcc = fmap (coerce . DMap.lookup k) $ readRef $ rootOccurrence r
@@ -1454,6 +1447,7 @@ getRootSubscribed k r sub = do
             , rootSubscribedUninit = uninit
             , rootSubscribedWeakSelf = weakSelf
             , rootSubscribedNodeId = nodeId
+            , rootSubscribedStackInfo = stackInfo
             }
           -- If we die at the same moment that all our children die, they will
           -- try to clean us up but will fail because their Weak reference to us
@@ -1553,10 +1547,10 @@ fanIntSubscribed ticket self = do
     { eventSubscribedHeightRef = eventSubscribedHeightRef subscribedParent
     , eventSubscribedRetained = toAny (_fanInt_subscriptionRef self, ticket)
     , eventSubscribedNodeId = getNodeId self
+    , eventSubscribedWhoCreated = _fanInt_stackInfo self
 #ifdef DEBUG_CYCLES
     , eventSubscribedGetParents = return [subscribedParent]
     , eventSubscribedHasOwnHeightRef = False
-    , eventSubscribedWhoCreated = stackInfoToStrings $ _fanInt_stackInfo self
 #endif
     }
 
@@ -1913,9 +1907,9 @@ checkCycle subscribed = liftIO $ do
 #ifdef DEBUG_CYCLES
       nodesInvolvedInCycle <- walkInvalidHeightParents subscribed
       nodeInfos <- getNodeInfos nodesInvolvedInCycle
-      throwIO (CausalityLoopException nodeInfos)
+      throwIO $ CausalityLoopException nodeInfos
 #else
-      throwIO CausalityLoopException
+      throwIO $ CausalityLoopException $ CycleInfo ()
 #endif
 
 
@@ -1964,12 +1958,12 @@ mergeGCheap' getParent getInitialSubscribers updateFunc destroy d = withStackInf
         { eventSubscribedHeightRef = heightRef
         , eventSubscribedRetained = toAny (parentsRef, changeSubdRef)
         , eventSubscribedNodeId = nodeId
+        , eventSubscribedWhoCreated = stackInfo
 #ifdef DEBUG_CYCLES
         , eventSubscribedGetParents = do
             let getParent' (_ :=> v) = _eventSubscription_subscribed (getParent v)
             fmap getParent' . DMap.toList  <$> readRef parentsRef
         , eventSubscribedHasOwnHeightRef = False
-        , eventSubscribedWhoCreated = stackInfoToStrings stackInfo
 #endif
         }
 
@@ -2030,10 +2024,10 @@ mergeIntCheap d = withStackInfo d $ \stackInfo -> Event $ \sub -> do
         { eventSubscribedHeightRef = heightRef
         , eventSubscribedRetained = toAny (parents, changeSubdRef)
         , eventSubscribedNodeId = nodeId
+        , eventSubscribedWhoCreated = stackInfo
 #ifdef DEBUG_CYCLES
         , eventSubscribedGetParents = fmap (_eventSubscription_subscribed . snd) <$> FastMutableIntMap.toList parents
         , eventSubscribedHasOwnHeightRef = False
-        , eventSubscribedWhoCreated = stackInfoToStrings stackInfo
 #endif
         }
   let scheduleSelf = do

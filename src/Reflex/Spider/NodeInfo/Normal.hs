@@ -13,6 +13,8 @@ newtype NodeIdAllocator x = NodeIdAllocator ()
 class HasNodeIds x where
   getNodeIdAllocator :: NodeIdAllocator x
 
+newtype CycleInfo x = CycleInfo ()
+
 {-# INLINE newNodeIdAllocator #-}
 newNodeIdAllocator :: IO (NodeIdAllocator x)
 newNodeIdAllocator = pure $ NodeIdAllocator ()

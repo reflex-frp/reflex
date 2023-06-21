@@ -8,6 +8,7 @@ import Data.IORef
 import GHC.Stack
 import GHC.Exts (Ptr)
 import System.IO.Unsafe
+import Data.Set (Set)
 
 newtype NodeId x = NodeId { unNodeId :: Int }
   deriving (Show, Eq, Ord, Enum)
@@ -16,6 +17,8 @@ newtype NodeIdAllocator x = NodeIdAllocator { unNodeIdAllocator :: IORef (NodeId
 
 class HasNodeIds x where
   getNodeIdAllocator :: NodeIdAllocator x
+
+newtype CycleInfo x = CycleInfo { unCycleInfo :: [([String], (Int, Set Int))] }
 
 {-# INLINE newNodeIdAllocator #-}
 newNodeIdAllocator :: IO (NodeIdAllocator x)
