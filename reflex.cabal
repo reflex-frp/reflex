@@ -114,6 +114,7 @@ library
     Reflex.Spider.Ref,
     Reflex.Spider.Ref.Debug,
     Reflex.Spider.Ref.Normal,
+    Reflex.Spider.Ref.Types,
     Reflex.Spider.NodeInfo,
     Reflex.Spider.NodeInfo.Debug,
     Reflex.Spider.NodeInfo.Normal,

@@ -1,12 +1,12 @@
-{-# LANGUAGE TypeFamilies #-}
-module Reflex.Spider.Ref where
+{-# LANGUAGE CPP #-}
+module Reflex.Spider.Ref
+  ( module X
+  ) where
 
-class RefCtx ctx where
-  data RefName ctx :: *
-  traceRef :: RefName ctx -> RefAction -> IO ()
+import Reflex.Spider.Ref.Types as X
 
-data RefAction
-   = RefAction_Write
-   | RefAction_Modify
-   | RefAction_Modify'
-   deriving (Show)
+#ifdef DEBUG_TRACE_REFS
+import Reflex.Spider.Ref.Debug as X
+#else
+import Reflex.Spider.Ref.Normal as X
+#endif

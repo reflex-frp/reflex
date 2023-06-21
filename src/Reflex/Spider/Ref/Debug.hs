@@ -2,7 +2,7 @@ module Reflex.Spider.Ref.Debug where
 
 import Data.IORef
 
-import Reflex.Spider.Ref
+import Reflex.Spider.Ref.Types
 
 data Ref ctx a = Ref
   { _ref_name :: RefName ctx
