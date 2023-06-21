@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wno-redundant-constraints #-} -- We need the redundant constraints in this module to stay consistent with the debug version
 module Reflex.Spider.Ref.Normal where
 
-import Reflex.Spider.Ref
+import Reflex.Spider.Ref.Types
 
 import Data.IORef
 

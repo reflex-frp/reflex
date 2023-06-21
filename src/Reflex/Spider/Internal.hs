@@ -78,11 +78,6 @@ import System.Mem.Weak
 import Unsafe.Coerce
 
 import Reflex.Spider.Ref
-#ifdef DEBUG_TRACE_REFS
-import Reflex.Spider.Ref.Debug
-#else
-import Reflex.Spider.Ref.Normal
-#endif
 
 import Reflex.Spider.Debugger
 
