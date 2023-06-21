@@ -559,7 +559,7 @@ eventSubscribedFan !subscribed = EventSubscribed
   { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed $ fanSubscribedParent subscribed
   , eventSubscribedRetained = toAny subscribed
   , eventSubscribedNodeId = getNodeId subscribed
-  , eventSubscribedWhoCreated = fanSubscribedCcs subscribed
+  , eventSubscribedWhoCreated = fanSubscribedStackInfo subscribed
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = return [_eventSubscription_subscribed $ fanSubscribedParent subscribed]
   , eventSubscribedHasOwnHeightRef = False
@@ -571,7 +571,7 @@ eventSubscribedSwitch !subscribed = EventSubscribed
   { eventSubscribedHeightRef = switchSubscribedHeight subscribed
   , eventSubscribedRetained = toAny subscribed
   , eventSubscribedNodeId = getNodeId subscribed
-  , eventSubscribedWhoCreated = switchSubscribedCcs subscribed
+  , eventSubscribedWhoCreated = switchSubscribedStackInfo subscribed
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = do
       s <- readRef $ switchSubscribedCurrentParent subscribed
@@ -585,7 +585,7 @@ eventSubscribedCoincidence !subscribed = EventSubscribed
   { eventSubscribedHeightRef = coincidenceSubscribedHeight subscribed
   , eventSubscribedRetained = toAny subscribed
   , eventSubscribedNodeId = getNodeId subscribed
-  , eventSubscribedWhoCreated = coincidenceSubscribedCcs subscribed
+  , eventSubscribedWhoCreated = coincidenceSubscribedStackInfo subscribed
 #ifdef DEBUG_CYCLES
   , eventSubscribedGetParents = do
       innerSubscription <- readRef $ coincidenceSubscribedInnerParent subscribed
@@ -1047,14 +1047,14 @@ data FanSubscribed x k v
                    , fanSubscribedSubscribers :: !(Ref (SpiderTimeline x) (DMap k (FanSubscribedChildren x k v))) -- This DMap should never be empty
                    , fanSubscribedParent :: !(EventSubscription x)
                    , fanSubscribedNodeId :: {-# UNPACK #-} !(NodeId (SpiderTimeline x))
-                   , fanSubscribedCcs :: {-# UNPACK #-} !StackInfo
+                   , fanSubscribedStackInfo :: {-# UNPACK #-} !StackInfo
                    }
 
 data Fan x k v
    = Fan { fanParent :: !(Event x (DMap k v))
          , fanSubscribed :: !(Ref (SpiderTimeline x) (Maybe (FanSubscribed x k v)))
          , fanNodeId :: {-# UNPACK #-} !(NodeId (SpiderTimeline x))
-         , fanCcs :: {-# UNPACK #-} !StackInfo
+         , fanStackInfo :: {-# UNPACK #-} !StackInfo
          }
 
 data SwitchSubscribed x a
@@ -1069,14 +1069,14 @@ data SwitchSubscribed x a
                       , switchSubscribedCurrentParent :: !(Ref (SpiderTimeline x) (EventSubscription x))
                       , switchSubscribedWeakSelf :: !(Ref (SpiderTimeline x) (Weak (SwitchSubscribed x a)))
                       , switchSubscribedNodeId :: {-# UNPACK #-} !(NodeId (SpiderTimeline x))
-                      , switchSubscribedCcs :: {-# UNPACK #-} !StackInfo
+                      , switchSubscribedStackInfo :: {-# UNPACK #-} !StackInfo
                       }
 
 data Switch x a
    = Switch { switchParent :: !(Behavior x (Event x a))
             , switchSubscribed :: !(Ref (SpiderTimeline x) (Maybe (SwitchSubscribed x a)))
             , switchNodeId :: {-# UNPACK #-} !(NodeId (SpiderTimeline x))
-            , switchCcs :: {-# UNPACK #-} !StackInfo
+            , switchStackInfo :: {-# UNPACK #-} !StackInfo
             }
 
 #ifdef USE_TEMPLATE_HASKELL
@@ -1092,14 +1092,14 @@ data CoincidenceSubscribed x a
                            , coincidenceSubscribedInnerParent :: !(Ref (SpiderTimeline x) (Maybe (EventSubscribed x)))
                            , coincidenceSubscribedWeakSelf :: !(Ref (SpiderTimeline x) (Weak (CoincidenceSubscribed x a)))
                            , coincidenceSubscribedNodeId :: {-# UNPACK #-} !(NodeId (SpiderTimeline x))
-                           , coincidenceSubscribedCcs :: {-# UNPACK #-} !StackInfo
+                           , coincidenceSubscribedStackInfo :: {-# UNPACK #-} !StackInfo
                            }
 
 data Coincidence x a
    = Coincidence { coincidenceParent :: !(Event x (Event x a))
                  , coincidenceSubscribed :: !(Ref (SpiderTimeline x) (Maybe (CoincidenceSubscribed x a)))
                  , coincidenceNodeId :: {-# UNPACK #-} !(NodeId (SpiderTimeline x))
-                 , coincidenceCcs :: {-# UNPACK #-} !StackInfo
+                 , coincidenceStackInfo :: {-# UNPACK #-} !StackInfo
                  }
 
 {-# NOINLINE newInvalidatorSwitch #-}
@@ -1199,7 +1199,7 @@ switch a = withStackInfo a $ \stackInfo -> unsafePerformIO $ do
     { switchParent = a
     , switchSubscribed = ref
     , switchNodeId = nodeId
-    , switchCcs = stackInfo
+    , switchStackInfo = stackInfo
     }
 
 coincidence :: forall x a. HasSpiderTimeline x => Event x (Event x a) -> Event x a
@@ -1210,7 +1210,7 @@ coincidence a = withStackInfo a $ \stackInfo -> unsafePerformIO $ do
     { coincidenceParent = a
     , coincidenceSubscribed = ref
     , coincidenceNodeId = nodeId
-    , coincidenceCcs = stackInfo
+    , coincidenceStackInfo = stackInfo
     }
 
 -- Propagate the given event occurrence; before cleaning up, run the given action, which may read the state of events and behaviors
@@ -1581,7 +1581,7 @@ getFanSubscribed k f sub = do
             , fanSubscribedParent = subscription
             , fanSubscribedSubscribers = subscribersRef
             , fanSubscribedNodeId = nodeId
-            , fanSubscribedCcs = fanCcs f
+            , fanSubscribedStackInfo = fanStackInfo f
             }
       let !self = (k, subscribed)
       liftIO $ writeRef subscribersRef $! DMap.singleton k $ FanSubscribedChildren subsForK self weakSelf
@@ -1654,7 +1654,7 @@ getSwitchSubscribed s sub = do
             , switchSubscribedCurrentParent = subscriptionRef
             , switchSubscribedWeakSelf = weakSelf
             , switchSubscribedNodeId = nodeId
-            , switchSubscribedCcs = switchCcs s
+            , switchSubscribedStackInfo = switchStackInfo s
             }
       liftIO $ writeRef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "switchSubscribedWeakSelf"
       liftIO $ writeRef subscribedRef $! subscribed
@@ -1709,7 +1709,7 @@ getCoincidenceSubscribed c sub = do
             , coincidenceSubscribedInnerParent = innerSubdRef
             , coincidenceSubscribedWeakSelf = weakSelf
             , coincidenceSubscribedNodeId = nodeId
-            , coincidenceSubscribedCcs = coincidenceCcs c
+            , coincidenceSubscribedStackInfo = coincidenceStackInfo c
             }
       liftIO $ writeRef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "CoincidenceSubscribed"
       liftIO $ writeRef subscribedRef $! subscribed
@@ -2130,7 +2130,7 @@ fanG e = withStackInfo e $ \stackInfo -> unsafePerformIO $ do
         { fanParent = e
         , fanSubscribed = ref
         , fanNodeId = nodeId
-        , fanCcs = stackInfo
+        , fanStackInfo = stackInfo
         }
   pure $ EventSelectorG $ \k -> eventFan k f
 
