@@ -2682,13 +2682,11 @@ instance MonadFail (SpiderHost x) where
   {-# INLINABLE fail #-}
   fail s = SpiderHost $ MonadFail.fail s
 
--- | Run an action affecting the global Spider timeline; this will be guarded by
--- a mutex for that timeline
+-- | Run an action affecting the global Spider timeline
 runSpiderHost :: SpiderHost Global a -> IO a
 runSpiderHost (SpiderHost a) = a
 
--- | Run an action affecting a given Spider timeline; this will be guarded by a
--- mutex for that timeline
+-- | Run an action affecting a given Spider timeline
 runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimeline x -> IO a
 runSpiderHostForTimeline (SpiderHost a) _ = a
 
