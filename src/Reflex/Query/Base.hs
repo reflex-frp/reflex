@@ -45,6 +45,7 @@ import qualified Data.Semigroup as S
 import Data.Semigroup.Commutative
 import Data.Some (Some(Some))
 import Data.These
+import Data.Semigroup.Additive
 
 import Reflex.Class
 import Reflex.Adjustable.Class
