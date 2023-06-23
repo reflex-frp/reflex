@@ -2684,7 +2684,7 @@ instance MonadFail (SpiderHost x) where
 
 -- | Run an action affecting the global Spider timeline
 runSpiderHost :: SpiderHost Global a -> IO a
-runSpiderHost (SpiderHost a) = a
+runSpiderHost a = runSpiderHostForTimeline a globalSpiderTimeline
 
 -- | Run an action affecting a given Spider timeline
 runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimeline x -> IO a
