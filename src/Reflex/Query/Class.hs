@@ -38,6 +38,10 @@ import qualified Data.Map.Monoidal as MonoidalMap
 import Data.Semigroup (Semigroup(..))
 import Foreign.Storable
 import Data.Void
+#if MIN_VERSION_patch(0,0,7)
+import Data.Semigroup.Additive
+import Data.Semigroup.Commutative
+#endif
 import Data.Monoid hiding ((<>))
 import Control.Applicative
 
@@ -123,7 +127,11 @@ instance Monoid SelectedCount where
 instance Group SelectedCount where
   negateG (SelectedCount a) = SelectedCount (negate a)
 
+#if MIN_VERSION_patch(0,0,7)
+instance Commutative SelectedCount
+#else
 instance Additive SelectedCount
+#endif
 
 -- | The Semigroup\/Monoid\/Group instances for a Query containing 'SelectedCount's should use
 -- this function which returns Nothing if the result is 0. This allows the pruning of leaves
