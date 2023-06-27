@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## 0.9.1.0
+
+* Headless Host: Add some MonadSample, MonadHold, and MonadFix instances
+
 ## 0.9.0.1
 
 * Add support for ghc-9.6

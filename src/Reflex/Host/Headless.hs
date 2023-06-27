@@ -39,6 +39,10 @@ type MonadHeadlessApp t m =
   , Reflex t
   , ReflexHost t
   , TriggerEvent t m
+  , MonadSample t (Performable m)
+  , MonadSample t m
+  , MonadFix (Performable m)
+  , MonadHold t (Performable m)
   )
 
 -- | Run a headless FRP network. Inside the action, you will most probably use
