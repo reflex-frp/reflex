@@ -29,6 +29,7 @@ import Reflex.PostBuild.Class
 import Reflex.TriggerEvent.Class
 
 import Control.Applicative (liftA2)
+import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Identity
@@ -44,7 +45,20 @@ import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Semigroup as S
 
 -- | Provides a basic implementation of 'PostBuild'.
-newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event t ()) m a } deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans, MonadException, MonadAsyncException)
+newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event t ()) m a }
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadFix
+    , MonadIO
+    , MonadTrans
+    , MonadException
+    , MonadAsyncException
+    , MonadMask
+    , MonadThrow
+    , MonadCatch
+    )
 
 -- | Run a 'PostBuildT' action.  An 'Event' should be provided that fires
 -- immediately after the action is finished running; no other 'Event's should

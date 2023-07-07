@@ -20,6 +20,7 @@ module Reflex.DynamicWriter.Base
   ) where
 
 import Control.Monad
+import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Identity
@@ -101,6 +102,9 @@ newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dy
     , MonadFix
     , MonadAsyncException
     , MonadException
+    , MonadCatch
+    , MonadThrow
+    , MonadMask
     )
 
 deriving instance MonadHold t m => MonadHold t (DynamicWriterT t w m)
