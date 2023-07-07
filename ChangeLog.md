@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## 0.9.2.0
+
+* Add MonadMask, MonadCatch, MonadThrow instances
+
 ## 0.9.1.0
 
 * Headless Host: Add some MonadSample, MonadHold, and MonadFix instances

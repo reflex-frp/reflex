@@ -33,6 +33,7 @@ import Reflex.Query.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
+import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Identity
@@ -109,6 +110,9 @@ newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT (EventWri
     , MonadIO
     , MonadException
     , MonadAsyncException
+    , MonadMask
+    , MonadCatch
+    , MonadThrow
     )
 
 -- | Run a 'EventWriterT' action.
