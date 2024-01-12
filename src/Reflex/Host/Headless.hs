@@ -71,7 +71,7 @@ runHeadlessApp guest =
     -- Run the "guest" application, providing the appropriate context. We'll
     -- pure the result of the action, and a 'FireCommand' that will be used to
     -- trigger events.
-    (result :: Event t a, fc@(FireCommand fire)) <- do
+    (result, fc@(FireCommand fire)) <- do
       hostPerformEventT $                 -- Allows the guest app to run
                                           -- 'performEvent', so that actions
                                           -- (e.g., IO actions) can be run when
