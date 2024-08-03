@@ -265,7 +265,7 @@ test-suite hlint
     build-depends: hlint (< 2.1 || >= 2.2.2) && < 3.5
   else
     build-depends: hlint >= 3.5 && < 3.6
-  if impl(ghcjs)
+  if impl(ghcjs) || arch(javascript)
     buildable: False
 
 test-suite EventWriterT
@@ -468,6 +468,8 @@ benchmark spider-bench
     Reflex.TestPlan
     Reflex.Plan.Reflex
     Reflex.Bench.Focused
+  if arch(javascript)
+    buildable: False
 
 benchmark saulzar-bench
   default-language: Haskell2010
@@ -497,6 +499,8 @@ benchmark saulzar-bench
     Reflex.TestPlan
     Reflex.Plan.Reflex
     Reflex.Bench.Focused
+  if arch(javascript)
+    buildable: False
 
 source-repository head
   type: git
