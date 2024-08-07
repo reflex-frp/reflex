@@ -79,6 +79,7 @@ library
     constraints-extras >= 0.3 && < 0.5,
     containers >= 0.6 && < 0.7,
     data-default >= 0.5 && < 0.8,
+    dependent-sum >= 0.6 && < 0.8,
     dependent-map >= 0.3 && < 0.5,
     exceptions >= 0.10 && < 0.11,
     exception-transformers >= 0.4 && < 0.5,
@@ -186,16 +187,12 @@ library
   if flag(use-template-haskell)
     cpp-options: -DUSE_TEMPLATE_HASKELL
     build-depends:
-      dependent-sum >= 0.6 && < 0.8,
       haskell-src-exts >= 1.16 && < 1.24,
       haskell-src-meta >= 0.6 && < 0.9,
       template-haskell >= 2.9 && < 2.21
     exposed-modules:
       Reflex.Dynamic.TH
     other-extensions: TemplateHaskell
-  else
-    build-depends:
-      dependent-sum >= 0.6 && < 0.8
 
   if flag(fast-weak) && impl(ghcjs)
     cpp-options: -DGHCJS_FAST_WEAK
