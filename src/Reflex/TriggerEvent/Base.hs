@@ -1,11 +1,13 @@
 -- | This module defines 'TriggerEventT', the standard implementation of
 -- 'TriggerEvent'.
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+
 module Reflex.TriggerEvent.Base
   ( TriggerEventT (..)
   , runTriggerEventT
@@ -14,7 +16,6 @@ module Reflex.TriggerEvent.Base
   , EventTriggerRef (..)
   ) where
 
-import Control.Applicative (liftA2)
 import Control.Concurrent
 import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
@@ -26,6 +27,12 @@ import Data.Coerce
 import Data.Dependent.Sum
 import Data.IORef
 import qualified Data.Semigroup as S
+
+#if !MIN_VERSION_base(4,18,0)
+import Control.Applicative (liftA2)
+import Data.Monoid ((<>))
+#endif
+
 import Reflex.Class
 import Reflex.Adjustable.Class
 import Reflex.Host.Class

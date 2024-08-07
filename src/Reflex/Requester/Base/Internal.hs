@@ -16,22 +16,9 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
+
 module Reflex.Requester.Base.Internal where
 
-import Reflex.Class
-import Reflex.Adjustable.Class
-import Reflex.Dynamic
-import Reflex.EventWriter.Class
-import Reflex.Host.Class
-import Reflex.PerformEvent.Class
-import Reflex.PostBuild.Class
-import Reflex.Requester.Class
-import Reflex.TriggerEvent.Class
-
-import Control.Applicative (liftA2)
 import Control.Monad
 import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
@@ -62,6 +49,21 @@ import Data.Unique.Tag
 
 import GHC.Exts (Any)
 import Unsafe.Coerce
+
+#if !MIN_VERSION_base(4,18,0)
+import Control.Applicative (liftA2)
+import Data.Monoid ((<>))
+#endif
+
+import Reflex.Class
+import Reflex.Adjustable.Class
+import Reflex.Dynamic
+import Reflex.EventWriter.Class
+import Reflex.Host.Class
+import Reflex.PerformEvent.Class
+import Reflex.PostBuild.Class
+import Reflex.Requester.Class
+import Reflex.TriggerEvent.Class
 
 --TODO: Make this module type-safe
 
