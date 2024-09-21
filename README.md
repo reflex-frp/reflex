@@ -17,6 +17,7 @@ Reflex is a fully-deterministic, higher-order Functional Reactive Programming in
 * [Get started with Reflex](https://github.com/reflex-frp/reflex-platform)
 * [/r/reflexfrp](https://www.reddit.com/r/reflexfrp)
 * [irc.freenode.net #reflex-frp](http://webchat.freenode.net?channels=%23reflex-frp&uio=d4)
+* [Discord](https://discord.gg/6Fxn4GQjSv)
 
 ## Hacking
 
