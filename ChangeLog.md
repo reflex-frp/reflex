@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## Unreleased
+
+* Add support for GHC 9.8
+
 ## 0.9.3.0
 
 * Headless Host: Generalize to allow returning arbitrary types

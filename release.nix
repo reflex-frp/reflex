@@ -66,8 +66,8 @@ let
 
             patch = self.callHackageDirect {
               pkg = "patch";
-              ver = "0.0.8.2";
-              sha256 = "160zqqhjg48fr3a33gffd82qm3728c8hwf8sn37pbpv82fw71rzg";
+              ver = "0.0.8.3";
+              sha256 = "054slcrlsdcs6azwph6v3vgsgk939ax7ax9xw76whywkrim20n1w";
             } {};
           };
         };
