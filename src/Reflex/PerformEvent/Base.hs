@@ -73,7 +73,7 @@ instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m
   type PrimState (PerformEventT t m) = PrimState (HostFrame t)
   primitive = PerformEventT . lift . primitive
 
-instance (ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
+instance (Monad (HostFrame t), ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
   type Performable (PerformEventT t m) = HostFrame t
   {-# INLINABLE performEvent_ #-}
   performEvent_ = PerformEventT . requesting_
