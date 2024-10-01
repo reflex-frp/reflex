@@ -24,6 +24,8 @@ import qualified Reflex.Spider.Internal as S
 import qualified Reflex.Profiled as Prof
 
 import Control.Arrow (second, (&&&))
+import Control.Monad
+import Control.Monad.Fix
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Data.Dependent.Sum (DSum (..))

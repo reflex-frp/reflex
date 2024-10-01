@@ -35,7 +35,9 @@ import Control.Applicative (liftA2)
 import Control.Concurrent
 import Control.Exception
 import Control.Monad hiding (forM, forM_, mapM, mapM_)
+import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Primitive
 import Control.Monad.Reader.Class
@@ -1061,7 +1063,8 @@ data SomeMergeUpdate x = SomeMergeUpdate
 newtype SomeMergeInit x = SomeMergeInit { unSomeMergeInit :: EventM x () }
 
 -- EventM can do everything BehaviorM can, plus create holds
-newtype EventM x a = EventM { unEventM :: IO a } deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadException, MonadAsyncException)
+newtype EventM x a = EventM { unEventM :: IO a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadFix, MonadException, MonadAsyncException, MonadCatch, MonadThrow, MonadMask)
 
 newtype MergeSubscribedParent x a = MergeSubscribedParent { unMergeSubscribedParent :: EventSubscription x }
 
@@ -2860,7 +2863,7 @@ runSpiderHostForTimeline :: SpiderHost x a -> SpiderTimelineEnv x -> IO a
 runSpiderHostForTimeline (SpiderHost a) _ = a
 
 newtype SpiderHostFrame (x :: Type) a = SpiderHostFrame { runSpiderHostFrame :: EventM x a }
-  deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
+  deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException, MonadMask, MonadThrow, MonadCatch)
 
 instance Monad (SpiderHostFrame x) where
   {-# INLINABLE (>>=) #-}

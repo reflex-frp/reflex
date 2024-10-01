@@ -15,7 +15,9 @@ module Reflex.TriggerEvent.Base
 
 import Control.Applicative (liftA2)
 import Control.Concurrent
+import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
@@ -39,7 +41,7 @@ newtype EventTriggerRef t a = EventTriggerRef { unEventTriggerRef :: IORef (Mayb
 
 -- | A basic implementation of 'TriggerEvent'.
 newtype TriggerEventT t m a = TriggerEventT { unTriggerEventT :: ReaderT (Chan [DSum (EventTriggerRef t) TriggerInvocation]) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException, MonadCatch, MonadThrow, MonadMask)
 
 -- | Run a 'TriggerEventT' action.  The argument should be a 'Chan' into which
 -- 'TriggerInvocation's can be passed; it is expected that some other thread

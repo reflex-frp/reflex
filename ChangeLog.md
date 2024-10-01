@@ -2,7 +2,39 @@
 
 ## Unreleased
 
-Fix build for GHC 9.2
+* Add support for GHC 9.8
+
+## 0.9.3.0
+
+* Headless Host: Generalize to allow returning arbitrary types
+
+## 0.9.2.0
+
+* Add MonadMask, MonadCatch, MonadThrow instances
+
+## 0.9.1.0
+
+* Headless Host: Add some MonadSample, MonadHold, and MonadFix instances
+
+## 0.9.0.1
+
+* Add support for ghc-9.6
+
+## 0.9.0.0
+
+* Breaking Change: Filter updates to `listWithKey` child widgets so that changes to the input Map don't cause spurious updates to unaffected children. This imposes an `Eq` constraint on the child values.
+* Expose all Requester internals in Reflex.Requester.Base.Internal
+* [Add EventWriter instance for RequesterT #469](https://github.com/reflex-frp/reflex/pull/469)
+
+## 0.8.2.2
+
+* Require witherable >= 0.4 and, hence, a newer monoidal-containers
+* Support newer constraints-extras (0.4)
+
+## 0.8.2.1
+
+* Fix build for GHC 9.2
+* Require patch >= 0.0.7.0
 
 ## 0.8.2.0
 

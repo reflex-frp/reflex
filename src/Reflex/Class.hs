@@ -185,6 +185,8 @@ import Data.Zip (Zip (..), Unzip (..))
 #endif
 
 import Control.Applicative
+import Control.Monad
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State.Strict

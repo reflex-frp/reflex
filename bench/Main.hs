@@ -12,6 +12,7 @@ module Main where
 import Control.Concurrent.STM
 import Control.DeepSeq
 import Control.Exception (evaluate)
+import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.IO.Class
 import Criterion.Main

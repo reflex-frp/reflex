@@ -17,6 +17,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Map.Monoidal (MonoidalMap)
 import Data.Semigroup
+import Data.Semigroup.Commutative
 import Data.These
 
 #if defined(MIN_VERSION_these_lens) || (MIN_VERSION_these(0,8,0) && !MIN_VERSION_these(0,9,0))
@@ -28,7 +29,7 @@ import Data.Patch.MapWithMove
 import Test.Run
 
 newtype MyQuery = MyQuery SelectedCount
-  deriving (Show, Read, Eq, Ord, Monoid, Semigroup, Additive, Group)
+  deriving (Show, Read, Eq, Ord, Monoid, Semigroup, Commutative, Group)
 
 instance Query MyQuery where
   type QueryResult MyQuery = ()
@@ -62,7 +63,7 @@ instance (Ord k, Eq a, Monoid a, Align (MonoidalMap k)) => Monoid (Selector k a)
 instance (Eq a, Ord k, Group a, Align (MonoidalMap k)) => Group (Selector k a) where
   negateG = fmap negateG
 
-instance (Eq a, Ord k, Group a, Align (MonoidalMap k)) => Additive (Selector k a)
+instance (Eq a, Ord k, Group a, Align (MonoidalMap k)) => Commutative (Selector k a)
 
 main :: IO ()
 main = do
