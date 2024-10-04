@@ -11,7 +11,6 @@ module Reflex.EventWriter.Class
   ) where
 
 import Control.Monad.Reader (ReaderT, lift)
-import Data.Semigroup (Semigroup)
 
 import Reflex.Class (Event)
 

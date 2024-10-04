@@ -44,14 +44,16 @@ import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
 import Control.Monad.ReaderIO
 import Control.Monad.Ref
+#if !MIN_VERSION_base(4,13,0)
 import Control.Monad.Fail (MonadFail)
+#endif
 import qualified Control.Monad.Fail as MonadFail
 import Data.Align
 import Data.Coerce
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
-import Data.FastMutableIntMap (FastMutableIntMap, PatchIntMap (..))
+import Data.FastMutableIntMap (FastMutableIntMap)
 import qualified Data.FastMutableIntMap as FastMutableIntMap
 import Data.Foldable hiding (concat, elem, sequence_)
 import Data.Functor.Constant
@@ -63,12 +65,15 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.IORef
 import Data.Kind (Type)
 import Data.Maybe hiding (mapMaybe)
-import Data.Monoid (mempty, (<>))
 import Data.Proxy
 import Data.These
 import Data.Traversable
 import Data.Type.Equality ((:~:)(Refl))
+#if MIN_VERSION_witherable(0,4,0)
+import Witherable (Filterable, mapMaybe)
+#else
 import Data.Witherable (Filterable, mapMaybe)
+#endif
 import GHC.Exts hiding (toList)
 import GHC.IORef (IORef (..))
 import GHC.Stack
@@ -93,7 +98,10 @@ import Control.Monad.State hiding (forM, forM_, mapM, mapM_, sequence)
 import Data.List.NonEmpty (NonEmpty (..), nonEmpty)
 import qualified Data.List.NonEmpty as NonEmpty
 import Data.Tree (Forest, Tree (..), drawForest)
+
+#ifdef DEBUG_HIDE_INTERNALS
 import Data.List (isPrefixOf)
+#endif
 
 import Data.FastWeakBag (FastWeakBag, FastWeakBagTicket)
 import qualified Data.FastWeakBag as FastWeakBag
@@ -992,10 +1000,6 @@ newtype BehaviorM x a = BehaviorM { unBehaviorM :: ReaderIO (BehaviorEnv x) a }
 instance Monad (BehaviorM x) where
   {-# INLINE (>>=) #-}
   BehaviorM x >>= f = BehaviorM $ x >>= unBehaviorM . f
-  {-# INLINE (>>) #-}
-  BehaviorM x >> BehaviorM y = BehaviorM $ x >> y
-  {-# INLINE return #-}
-  return x = BehaviorM $ return x
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINE fail #-}
   fail s = BehaviorM $ fail s
@@ -1096,7 +1100,7 @@ heightBagRemove (Height h) b@(HeightBag s c) = heightBagVerify $ case IntMap.loo
     _ -> IntMap.insert h (pred old) c
 
 heightBagRemoveMaybe :: Height -> HeightBag -> Maybe HeightBag
-heightBagRemoveMaybe (Height h) b@(HeightBag s c) = heightBagVerify . removed <$> IntMap.lookup h c where
+heightBagRemoveMaybe (Height h) (HeightBag s c) = heightBagVerify . removed <$> IntMap.lookup h c where
   removed old = HeightBag (pred s) $ case old of
     0 -> IntMap.delete h c
     _ -> IntMap.insert h (pred old) c
@@ -1473,7 +1477,7 @@ filterStack :: String -> [String] -> [String]
 #ifdef DEBUG_HIDE_INTERNALS
 filterStack prefix = filter (not . (prefix `isPrefixOf`))
 #else
-filterStack prefix = id
+filterStack _prefix = id
 #endif
 
 #ifdef DEBUG_CYCLES
@@ -2551,12 +2555,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
 
 
 instance HasSpiderTimeline x => Monad (Reflex.Class.Dynamic (SpiderTimeline x)) where
-  {-# INLINE return #-}
-  return = pure
   {-# INLINE (>>=) #-}
   x >>= f = SpiderDynamic $ dynamicDynIdentity $ newJoinDyn $ newMapDyn (unSpiderDynamic . f) $ unSpiderDynamic x
-  {-# INLINE (>>) #-}
-  (>>) = (*>)
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINE fail #-}
   fail _ = error "Dynamic does not support 'fail'"
@@ -2837,15 +2837,12 @@ instance MonadAtomicRef (EventM x) where
   atomicModifyRef r f = liftIO $ atomicModifyRef r f
 
 -- | The monad for actions that manipulate a Spider timeline identified by @x@
-newtype SpiderHost (x :: Type) a = SpiderHost { unSpiderHost :: IO a } deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
+newtype SpiderHost (x :: Type) a = SpiderHost { unSpiderHost :: IO a }
+  deriving (Functor, Applicative, MonadFix, MonadIO, MonadException, MonadAsyncException)
 
 instance Monad (SpiderHost x) where
   {-# INLINABLE (>>=) #-}
   SpiderHost x >>= f = SpiderHost $ x >>= unSpiderHost . f
-  {-# INLINABLE (>>) #-}
-  SpiderHost x >> SpiderHost y = SpiderHost $ x >> y
-  {-# INLINABLE return #-}
-  return x = SpiderHost $ return x
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINABLE fail #-}
   fail = MonadFail.fail
@@ -2871,10 +2868,6 @@ newtype SpiderHostFrame (x :: Type) a = SpiderHostFrame { runSpiderHostFrame :: 
 instance Monad (SpiderHostFrame x) where
   {-# INLINABLE (>>=) #-}
   SpiderHostFrame x >>= f = SpiderHostFrame $ x >>= runSpiderHostFrame . f
-  {-# INLINABLE (>>) #-}
-  SpiderHostFrame x >> SpiderHostFrame y = SpiderHostFrame $ x >> y
-  {-# INLINABLE return #-}
-  return x = SpiderHostFrame $ return x
 #if !MIN_VERSION_base(4,13,0)
   {-# INLINABLE fail #-}
   fail s = SpiderHostFrame $ fail s

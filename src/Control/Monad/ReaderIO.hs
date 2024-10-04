@@ -38,8 +38,6 @@ instance Applicative (ReaderIO e) where
   liftA2 = liftM2
   {-# INLINE liftA2 #-}
 #endif
-  (*>) = (>>)
-  {-# INLINE (*>) #-}
 
 instance Monad (ReaderIO e) where
   ReaderIO q >>= f = ReaderIO $ \e -> q e >>= \a -> runReaderIO (f a) e
