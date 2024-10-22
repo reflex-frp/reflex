@@ -32,7 +32,9 @@ import Reflex.Requester.Base
 import Reflex.Requester.Class
 
 import Control.Lens
+import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader
@@ -63,12 +65,15 @@ deriving instance (ReflexHost t, MonadIO (HostFrame t)) => MonadIO (PerformEvent
 deriving instance (ReflexHost t, MonadException (HostFrame t)) => MonadException (PerformEventT t m)
 deriving instance (ReflexHost t, Monoid a) => Monoid (PerformEventT t m a)
 deriving instance (ReflexHost t, S.Semigroup a) => S.Semigroup (PerformEventT t m a)
+deriving instance (ReflexHost t, MonadCatch (HostFrame t)) => MonadCatch (PerformEventT t m)
+deriving instance (ReflexHost t, MonadThrow (HostFrame t)) => MonadThrow (PerformEventT t m)
+deriving instance (ReflexHost t, MonadMask (HostFrame t)) => MonadMask (PerformEventT t m)
 
 instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m) where
   type PrimState (PerformEventT t m) = PrimState (HostFrame t)
   primitive = PerformEventT . lift . primitive
 
-instance (ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
+instance (Monad (HostFrame t), ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
   type Performable (PerformEventT t m) = HostFrame t
   {-# INLINABLE performEvent_ #-}
   performEvent_ = PerformEventT . requesting_

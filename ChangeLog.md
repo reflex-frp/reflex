@@ -1,7 +1,73 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.9.3.1
+
+* Add support for GHC 9.8 and 9.10
+
+## 0.9.3.0
+
+* Headless Host: Generalize to allow returning arbitrary types
+
+## 0.9.2.0
+
+* Add MonadMask, MonadCatch, MonadThrow instances
+
+## 0.9.1.0
+
+* Headless Host: Add some MonadSample, MonadHold, and MonadFix instances
+
+## 0.9.0.1
+
+* Add support for ghc-9.6
+
+## 0.9.0.0
+
+* Breaking Change: Filter updates to `listWithKey` child widgets so that changes to the input Map don't cause spurious updates to unaffected children. This imposes an `Eq` constraint on the child values.
+* Expose all Requester internals in Reflex.Requester.Base.Internal
+* [Add EventWriter instance for RequesterT #469](https://github.com/reflex-frp/reflex/pull/469)
+
+## 0.8.2.2
+
+* Require witherable >= 0.4 and, hence, a newer monoidal-containers
+* Support newer constraints-extras (0.4)
+
+## 0.8.2.1
+
+* Fix build for GHC 9.2
+* Require patch >= 0.0.7.0
+
+## 0.8.2.0
+
+* Add `matchResponseMapWithRequests`, which it similar to `matchResponsesWithRequests` but allows processing of multiple responses at once.
+
+## 0.8.1.1
+
+* Allow newer hlint for older GHCs, and add upper bound for newer GHCs
+
+## 0.8.1.0
+
+* Add support for GHC 8.10
+* Drop support for GHC < 8.4
+
+## 0.8.0.0
+
+* Replace 0.7.2.0 with 0.8.0.0 to reflect the `MonadHold` interface change. Deprecates 0.7.2.0.
+
+## 0.7.2.0 -- *Deprecated*
+
 * ([#416](https://github.com/reflex-frp/reflex/pull/416)) Add `now :: m (Event t ())` to `MonadHold`.
+* Extend some dependency version bounds
+* Fix HLint 3 test
+
+## 0.7.1.1
+
+*Backport release*.
+Changes do not carry forward to 0.7.2.0.
+
+* Add support for GHC 8.10
+* Drop support for GHC < 8.4
+* Extend some dependency version bounds
+* Fix HLint 3 test
 
 ## 0.7.1.0
 

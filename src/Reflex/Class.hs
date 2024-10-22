@@ -185,6 +185,8 @@ import Data.Zip (Zip (..), Unzip (..))
 #endif
 
 import Control.Applicative
+import Control.Monad
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State.Strict
@@ -209,6 +211,7 @@ import Data.Functor.Misc
 import Data.Functor.Plus
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Semigroup (Semigroup (..))
@@ -240,25 +243,25 @@ class ( MonadHold t (PushM t)
       ) => Reflex t where
   -- | A container for a value that can change over time.  'Behavior's can be
   -- sampled at will, but it is not possible to be notified when they change
-  data Behavior t :: * -> *
+  data Behavior t :: Type -> Type
   -- | A stream of occurrences.  During any given frame, an 'Event' is either
   -- occurring or not occurring; if it is occurring, it will contain a value of
   -- the given type (its "occurrence type")
-  data Event t :: * -> *
+  data Event t :: Type -> Type
   -- | A container for a value that can change over time and allows
   -- notifications on changes.  Basically a combination of a 'Behavior' and an
   -- 'Event', with a rule that the 'Behavior' will change if and only if the
   -- 'Event' fires.
-  data Dynamic t :: * -> *
+  data Dynamic t :: Type -> Type
   -- | An 'Incremental' is a more general form of  a 'Dynamic'.
   -- Instead of always fully replacing the value, only parts of it can be patched.
   -- This is only needed for performance critical code via `mergeIncremental` to make small
   -- changes to large values.
-  data Incremental t :: * -> *
+  data Incremental t :: Type -> Type
   -- | A monad for doing complex push-based calculations efficiently
-  type PushM t :: * -> *
+  type PushM t :: Type -> Type
   -- | A monad for doing complex pull-based calculations efficiently
-  type PullM t :: * -> *
+  type PullM t :: Type -> Type
   -- | An 'Event' with no occurrences
   never :: Event t a
   -- | Create a 'Behavior' that always has the given value

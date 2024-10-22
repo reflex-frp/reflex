@@ -1,7 +1,7 @@
 module Main where
 
 import Control.Monad
-import Language.Haskell.HLint3 (hlint)
+import Language.Haskell.HLint (hlint)
 import System.Directory
 import System.Exit (exitFailure, exitSuccess)
 import System.FilePath
@@ -21,7 +21,9 @@ main = do
         , "--ignore=Use ."
         , "--ignore=Use unless"
         , "--ignore=Reduce duplication"
+        , "--ignore=Replace case with maybe"
         , "--cpp-define=USE_TEMPLATE_HASKELL"
+        , "--cpp-define=DEBUG"
         , "--ignore=Use tuple-section"
         ]
       recurseInto = and <$> sequence

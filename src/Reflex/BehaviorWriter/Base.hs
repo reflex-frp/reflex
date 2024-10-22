@@ -21,7 +21,10 @@ module Reflex.BehaviorWriter.Base
   , withBehaviorWriterT
   ) where
 
+import Control.Monad
+import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.IO.Class
 import Control.Monad.Morph
@@ -60,6 +63,9 @@ newtype BehaviorWriterT t w m a = BehaviorWriterT { unBehaviorWriterT :: StateT 
     , MonadFix
     , MonadAsyncException
     , MonadException
+    , MonadCatch
+    , MonadThrow
+    , MonadMask
     )
 
 -- | Run a 'BehaviorWriterT' action.  The behavior writer output will be provided
