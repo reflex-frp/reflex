@@ -1,6 +1,6 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.9.3.1
 
 * Add support for GHC 9.8 and 9.10
 
