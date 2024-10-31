@@ -56,10 +56,8 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.Kind (Type)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid ((<>))
 import Data.Proxy
-import qualified Data.Semigroup as S
-import Data.Some (Some (Some))
+import Data.Some (Some(Some))
 import Data.These
 import Data.Type.Equality
 import Data.Unique.Tag
@@ -300,10 +298,9 @@ instance PrimMonad m => PrimMonad (RequesterT t request response m) where
 -- TODO: Monoid and Semigroup can likely be derived once StateT has them.
 instance (Monoid a, Monad m) => Monoid (RequesterT t request response m a) where
   mempty = pure mempty
-  mappend = liftA2 mappend
 
-instance (S.Semigroup a, Monad m) => S.Semigroup (RequesterT t request response m a) where
-  (<>) = liftA2 (S.<>)
+instance (Semigroup a, Monad m) => Semigroup (RequesterT t request response m a) where
+  (<>) = liftA2 (<>)
 
 
 -- | Run a 'RequesterT' action.  The resulting 'Event' will fire whenever

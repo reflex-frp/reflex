@@ -20,7 +20,6 @@ import Reflex.Dynamic
 import Control.Monad.State
 import Data.Data
 import Data.Generics
-import Data.Monoid ((<>))
 import qualified Language.Haskell.Exts as Hs
 import qualified Language.Haskell.Meta.Syntax.Translate as Hs
 import Language.Haskell.TH
