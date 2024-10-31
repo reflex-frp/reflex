@@ -22,8 +22,8 @@
 #endif
 module Reflex.Requester.Base.Internal where
 
-import Reflex.Class
 import Reflex.Adjustable.Class
+import Reflex.Class
 import Reflex.Dynamic
 import Reflex.EventWriter.Class
 import Reflex.Host.Class
@@ -34,7 +34,7 @@ import Reflex.TriggerEvent.Class
 
 import Control.Applicative (liftA2)
 import Control.Monad
-import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Identity
@@ -59,7 +59,7 @@ import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Proxy
 import qualified Data.Semigroup as S
-import Data.Some (Some(Some))
+import Data.Some (Some (Some))
 import Data.These
 import Data.Type.Equality
 import Data.Unique.Tag
@@ -550,14 +550,8 @@ matchResponseMapWithRequests f send recv = do
   rec nextId <- hold 1 $ fmap (\(next, _, _) -> next) outgoing
       waitingFor :: Incremental t (PatchMap Int (Decoder rawResponse response)) <-
         holdIncremental mempty $
-          alignEventWithMaybe
-            ( Just . \case
-                These x y -> y <> x
-                This x -> x
-                That x -> x
-            )
-            outstanding
-            (snd <$> incoming)
+          (snd <$> incoming) <> outstanding
+
       let outgoing = processOutgoing nextId send
           incoming = processIncoming waitingFor outstanding recv
           outstanding = fmap (\(_, outstanding, _) -> outstanding) outgoing
@@ -594,7 +588,7 @@ matchResponseMapWithRequests f send recv = do
     -- decoders and returns the decoded response and a patch that can
     -- be used to clear the ID of the consumed response out of the queue
     -- of expected responses.
-    processIncoming 
+    processIncoming
       :: Incremental t (PatchMap Int (Decoder rawResponse response))
       -- A map of outstanding expected responses
       -> Event t (PatchMap Int (Decoder rawResponse response))
