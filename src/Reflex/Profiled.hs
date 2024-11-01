@@ -36,7 +36,6 @@ import Data.List
 import Data.Kind (Type)
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import Data.Monoid ((<>))
 import Data.Ord
 import Data.Profunctor.Unsafe ((#.))
 import qualified Data.Semigroup as S

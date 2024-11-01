@@ -14,7 +14,6 @@ module Reflex.Dynamic.Uniq
   , alreadyUniqDynamic
   ) where
 
-import Control.Applicative (Applicative (..))
 import GHC.Exts
 import Reflex.Class
 
@@ -101,5 +100,3 @@ instance Reflex t => Applicative (UniqDynamic t) where
 
 instance Reflex t => Monad (UniqDynamic t) where
   UniqDynamic x >>= f = uniqDynamic $ x >>= unUniqDynamic . f
-  _ >> b = b
-  return = pure
