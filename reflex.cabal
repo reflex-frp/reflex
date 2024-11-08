@@ -310,7 +310,6 @@ test-suite DebugCycles
                , reflex
                , ref-tf
                , witherable
-               , proctest
 
 
   if flag(split-these)
