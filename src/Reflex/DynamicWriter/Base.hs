@@ -125,7 +125,7 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (DynamicWrit
 
 -- | Run a 'DynamicWriterT' action.  The dynamic writer output will be provided
 -- along with the result of the action.
-runDynamicWriterT :: (MonadFix m, Reflex t, Monoid w) => DynamicWriterT t w m a -> m (a, Dynamic t w)
+runDynamicWriterT :: (Monad m, Reflex t, Monoid w) => DynamicWriterT t w m a -> m (a, Dynamic t w)
 runDynamicWriterT (DynamicWriterT a) = do
   (result, ws) <- runStateT a []
   return (result, mconcat $ reverse ws)
@@ -164,7 +164,7 @@ newtype DynamicWriterTLoweredResult t w v a = DynamicWriterTLoweredResult (v a, 
 -- | When the execution of a 'DynamicWriterT' action is adjusted using
 -- 'Adjustable', the 'Dynamic' output of that action will also be updated to
 -- match.
-instance (Adjustable t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => Adjustable t (DynamicWriterT t w m) where
+instance (Adjustable t m, Monoid w, MonadHold t m, Reflex t) => Adjustable t (DynamicWriterT t w m) where
   runWithReplace a0 a' = do
     (result0, result') <- lift $ runWithReplace (runDynamicWriterT a0) $ runDynamicWriterT <$> a'
     tellDyn . join =<< holdDyn (snd result0) (snd <$> result')
@@ -173,7 +173,7 @@ instance (Adjustable t m, MonadFix m, Monoid w, MonadHold t m, Reflex t) => Adju
   traverseDMapWithKeyWithAdjust = traverseDMapWithKeyWithAdjustImpl traverseDMapWithKeyWithAdjust mapPatchDMap weakenPatchDMapWith mergeDynIncremental
   traverseDMapWithKeyWithAdjustWithMove = traverseDMapWithKeyWithAdjustImpl traverseDMapWithKeyWithAdjustWithMove mapPatchDMapWithMove weakenPatchDMapWithMoveWith mergeDynIncrementalWithMove
 
-traverseDMapWithKeyWithAdjustImpl :: forall t w k v' p p' v m. (PatchTarget (p' (Some k) (Dynamic t w)) ~ Map (Some k) (Dynamic t w), PatchTarget (p' (Some k) w) ~ Map (Some k) w, Patch (p' (Some k) w), Patch (p' (Some k) (Dynamic t w)), MonadFix m, Monoid w, Reflex t, MonadHold t m)
+traverseDMapWithKeyWithAdjustImpl :: forall t w k v' p p' v m. (PatchTarget (p' (Some k) (Dynamic t w)) ~ Map (Some k) (Dynamic t w), PatchTarget (p' (Some k) w) ~ Map (Some k) w, Patch (p' (Some k) w), Patch (p' (Some k) (Dynamic t w)), Monoid w, Reflex t, MonadHold t m)
   => (   (forall a. k a -> v a -> m (DynamicWriterTLoweredResult t w v' a))
       -> DMap k v
       -> Event t (p k v)
@@ -200,7 +200,7 @@ traverseDMapWithKeyWithAdjustImpl base mapPatch weakenPatchWith mergeMyDynIncrem
   tellDyn $ fmap (mconcat . Map.elems) $ incrementalToDynamic $ mergeMyDynIncremental i
   return (liftedResult0, liftedResult')
 
-traverseIntMapWithKeyWithAdjustImpl :: forall t w v' p p' v m. (PatchTarget (p' (Dynamic t w)) ~ IntMap (Dynamic t w), PatchTarget (p' w) ~ IntMap w, Patch (p' w), Patch (p' (Dynamic t w)), MonadFix m, Monoid w, Reflex t, MonadHold t m, Functor p, p ~ p')
+traverseIntMapWithKeyWithAdjustImpl :: forall t w v' p p' v m. (PatchTarget (p' (Dynamic t w)) ~ IntMap (Dynamic t w), PatchTarget (p' w) ~ IntMap w, Patch (p' w), Patch (p' (Dynamic t w)), Monoid w, Reflex t, MonadHold t m, Functor p, p ~ p')
   => (   (IntMap.Key -> v -> m (v', Dynamic t w))
       -> IntMap v
       -> Event t (p v)
@@ -224,7 +224,7 @@ traverseIntMapWithKeyWithAdjustImpl base mergeMyDynIncremental f (dm0 :: IntMap 
   return (liftedResult0, liftedResult')
 
 -- | Map a function over the output of a 'DynamicWriterT'.
-withDynamicWriterT :: (Monoid w, Monoid w', Reflex t, MonadHold t m, MonadFix m)
+withDynamicWriterT :: (Monoid w, Monoid w', Reflex t, MonadHold t m)
                    => (w -> w')
                    -> DynamicWriterT t w m a
                    -> DynamicWriterT t w' m a
