@@ -261,7 +261,7 @@ subscribeAndRead = unEvent
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
 {-# INLINE [1] pushCheap #-}
-pushCheap :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
+pushCheap :: (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 pushCheap !f e = Event $ \sub -> do
   (subscription, occ) <- subscribeAndRead e $ debugSubscriber' "push" $ sub
     { subscriberPropagate = \a -> do
@@ -282,7 +282,7 @@ terminalSubscriber p = Subscriber
 
 -- | Subscribe to an Event only for the duration of one occurrence
 {-# INLINE subscribeAndReadHead #-}
-subscribeAndReadHead :: HasSpiderTimeline x => Event x a -> Subscriber x a -> EventM x (EventSubscription x, Maybe a)
+subscribeAndReadHead :: Event x a -> Subscriber x a -> EventM x (EventSubscription x, Maybe a)
 subscribeAndReadHead e sub = do
   subscriptionRef <- liftIO $ newIORef $ error "subscribeAndReadHead: not initialized"
   (subscription, occ) <- subscribeAndRead e $ debugSubscriber' "head" $ sub
@@ -296,7 +296,7 @@ subscribeAndReadHead e sub = do
   return (subscription, occ)
 
 --TODO: Make this lazy in its input event
-headE :: (MonadIO m, Defer (SomeMergeInit x) m, HasSpiderTimeline x) => Event x a -> m (Event x a)
+headE :: (MonadIO m, Defer (SomeMergeInit x) m) => Event x a -> m (Event x a)
 headE originalE = do
   parent <- liftIO $ newIORef $ Just originalE
   defer $ SomeMergeInit $ do --TODO: Rename SomeMergeInit appropriately
@@ -321,8 +321,7 @@ nowSpiderEventM :: (HasSpiderTimeline x) => EventM x (R.Event (SpiderTimeline x)
 nowSpiderEventM =
   SpiderEvent <$> now
 
-now :: (MonadIO m, Defer (Some Clear) m, HasSpiderTimeline x
-       ) => m (Event x ())
+now :: (MonadIO m, Defer (Some Clear) m) => m (Event x ())
 now = do
   nowOrNot <- liftIO $ newIORef $ Just ()
   scheduleClear nowOrNot
@@ -561,14 +560,14 @@ recalculateSubscriberHeight :: Height -> Subscriber x a -> IO ()
 recalculateSubscriberHeight = flip subscriberRecalculateHeight
 
 -- | Propagate everything at the current height
-propagate :: forall x a. HasSpiderTimeline x => a -> WeakBag (Subscriber x a) -> EventM x ()
+propagate :: forall x a. a -> WeakBag (Subscriber x a) -> EventM x ()
 propagate a subscribers = withIncreasedDepth (Proxy::Proxy x) $
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
   WeakBag.traverse_ subscribers $ \s -> subscriberPropagate s a
 
 -- | Propagate everything at the current height
-propagateFast :: forall x a. HasSpiderTimeline x => a -> FastWeakBag (Subscriber x a) -> EventM x ()
+propagateFast :: forall x a. a -> FastWeakBag (Subscriber x a) -> EventM x ()
 propagateFast a subscribers = withIncreasedDepth (Proxy::Proxy x) $
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
@@ -2059,7 +2058,7 @@ scheduleMergeSelf m height = scheduleMerge' height (_merge_heightRef m) $ do
   --TODO: Assert that m is not empty
   subscriberPropagate (_merge_sub m) vals
 
-checkCycle :: HasSpiderTimeline x => EventSubscribed x -> EventM x ()
+checkCycle :: EventSubscribed x -> EventM x ()
 checkCycle subscribed = liftIO $ do
     height <- readIORef (eventSubscribedHeightRef subscribed)
 
@@ -2614,7 +2613,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   headE e = runFrame . runSpiderHostFrame $ Reflex.Class.headE e
   {-# INLINABLE now #-}
   now = runFrame . runSpiderHostFrame $ Reflex.Class.now
-  
+
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
   sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
