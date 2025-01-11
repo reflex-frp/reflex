@@ -100,7 +100,7 @@ library
     time >= 1.4 && < 1.13,
     transformers >= 0.5 && < 0.7,
     unbounded-delays >= 0.1.0.0 && < 0.2,
-    witherable >= 0.4 && < 0.5
+    witherable >= 0.4 && < 0.6
 
   if flag(split-these)
     build-depends:     these >= 1 && <1.3,
