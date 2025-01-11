@@ -219,17 +219,12 @@ import Data.String
 import Data.These
 import Data.Type.Coercion
 import Data.Type.Equality ((:~:) (..))
-#if MIN_VERSION_witherable(0,4,0)
-import Witherable (Filterable(..))
-import qualified Witherable as W
-#else
-import Data.Witherable (Filterable(..))
-import qualified Data.Witherable as W
-#endif
 import Reflex.FunctorMaybe (FunctorMaybe)
 import qualified Reflex.FunctorMaybe
 import Data.Patch
 import qualified Data.Patch.MapWithMove as PatchMapWithMove
+import Witherable (Filterable(..))
+import qualified Witherable as W
 
 import Debug.Trace (trace)
 
