@@ -69,11 +69,6 @@ import Data.Proxy
 import Data.These
 import Data.Traversable
 import Data.Type.Equality ((:~:)(Refl))
-#if MIN_VERSION_witherable(0,4,0)
-import Witherable (Filterable, mapMaybe)
-#else
-import Data.Witherable (Filterable, mapMaybe)
-#endif
 import GHC.Exts hiding (toList)
 import GHC.IORef (IORef (..))
 import GHC.Stack
@@ -81,6 +76,7 @@ import Reflex.FastWeak
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
+import Witherable (Filterable, mapMaybe)
 
 #ifdef MIN_VERSION_semialign
 #if MIN_VERSION_these(0,8,0)
