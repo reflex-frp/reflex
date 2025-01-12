@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## 0.9.3.2
+
+* Add support for witherable 0.5
+
 ## 0.9.3.1
 
 * Add support for GHC 9.8 and 9.10
