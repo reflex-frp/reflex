@@ -258,6 +258,7 @@ test-suite hlint
                , directory
                , filepath
                , filemanip
+               , reflex
   if impl(ghc >= 9.6)
     buildable: False
   if impl(ghc < 9.2)
