@@ -28,7 +28,7 @@ extra-source-files:
   ChangeLog.md
 
 tested-with:
-  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.7 || ==9.0.1 || ==9.2.5 || ==9.4.5 || ==9.6.1 || ==9.8.2 || ==9.10.1,
+  GHC  ==8.4.4 || ==8.6.5 || ==8.8.1 || ==8.10.7 || ==9.0.1 || ==9.2.5 || ==9.4.5 || ==9.6.1 || ==9.8.2 || ==9.10.1 || ==9.12.1,
   GHCJS ==8.6 || ==8.10
 
 flag use-reflex-optimizer
@@ -71,14 +71,14 @@ library
   hs-source-dirs: src
   build-depends:
     MemoTrie == 0.6.*,
-    base >= 4.11 && < 4.21,
+    base >= 4.11 && < 4.22,
     bifunctors >= 5.2 && < 5.7,
     comonad >= 5.0.4 && < 5.1,
     commutative-semigroups >= 0.1 && <0.3,
     constraints >= 0.10 && <0.15,
     constraints-extras >= 0.3 && < 0.5,
     containers >= 0.6 && < 0.8,
-    data-default >= 0.5 && < 0.8,
+    data-default >= 0.5 && < 0.9,
     dependent-map >= 0.3 && < 0.5,
     dependent-sum >= 0.6 && < 0.8,
     exceptions >= 0.10 && < 0.11,
@@ -97,7 +97,7 @@ library
     semigroupoids >= 4.0 && < 7,
     stm >= 2.4 && < 2.6,
     syb >= 0.5 && < 0.8,
-    time >= 1.4 && < 1.13,
+    time >= 1.4 && < 1.15,
     transformers >= 0.5 && < 0.7,
     unbounded-delays >= 0.1.0.0 && < 0.2,
     witherable >= 0.4 && < 0.6
@@ -189,7 +189,7 @@ library
     build-depends:
       haskell-src-exts >= 1.16 && < 1.24,
       haskell-src-meta >= 0.6 && < 0.9,
-      template-haskell >= 2.9 && < 2.23
+      template-haskell >= 2.9 && < 2.24
     exposed-modules:
       Reflex.Dynamic.TH
     other-extensions: TemplateHaskell
