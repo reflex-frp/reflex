@@ -80,6 +80,7 @@ library
     containers >= 0.6 && < 0.7,
     data-default >= 0.5 && < 0.8,
     dependent-map >= 0.3 && < 0.5,
+    exceptions,
     exception-transformers == 0.4.*,
     lens >= 4.7 && < 5.2,
     mmorph >= 1.0 && < 1.2,

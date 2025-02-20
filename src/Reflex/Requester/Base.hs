@@ -49,6 +49,7 @@ import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
 import Control.Applicative (liftA2)
+import Control.Monad.Catch (MonadMask, MonadCatch, MonadThrow)
 import Control.Monad.Exception
 import Control.Monad.Identity
 import Control.Monad.Morph
@@ -287,7 +288,7 @@ data RequesterState t (request :: Type -> Type) = RequesterState
 
 -- | A basic implementation of 'Requester'.
 newtype RequesterT t request (response :: Type -> Type) m a = RequesterT { unRequesterT :: StateT (RequesterState t request) (ReaderT (EventSelectorInt t Any) m) a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadMask, MonadCatch, MonadThrow
 -- MonadAsyncException can't be derived on ghc-8.0.1; we use base-4.9.1 as a proxy for ghc-8.0.2
 #if MIN_VERSION_base(4,9,1)
            , MonadAsyncException

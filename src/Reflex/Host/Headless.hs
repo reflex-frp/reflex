@@ -7,6 +7,7 @@
 module Reflex.Host.Headless where
 
 import Control.Concurrent.Chan (newChan, readChan)
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad (unless)
 import Control.Monad.Fix (MonadFix, fix)
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -23,20 +24,28 @@ import Reflex
 import Reflex.Host.Class
 
 type MonadHeadlessApp t m =
-  ( Adjustable t m
+  ( Reflex t
+  , Adjustable t m
+  , MonadCatch m
+  , MonadFix (Performable m)
   , MonadFix m
+  , MonadHold t (Performable m)
   , MonadHold t m
   , MonadIO (HostFrame t)
   , MonadIO (Performable m)
   , MonadIO m
+  , MonadMask m
   , MonadRef (HostFrame t)
+  , MonadSample t (Performable m)
+  , MonadSample t m
+  , MonadThrow m
+  , MonadThrow (Performable m)
   , NotReady t m
   , PerformEvent t m
   , PostBuild t m
   , PrimMonad (HostFrame t)
   , Ref (HostFrame t) ~ IORef
   , Ref m ~ IORef
-  , Reflex t
   , ReflexHost t
   , TriggerEvent t m
   )

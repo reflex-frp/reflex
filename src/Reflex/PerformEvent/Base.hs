@@ -32,7 +32,9 @@ import Reflex.Requester.Base
 import Reflex.Requester.Class
 
 import Control.Lens
+import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader
@@ -63,19 +65,22 @@ deriving instance (ReflexHost t, MonadIO (HostFrame t)) => MonadIO (PerformEvent
 deriving instance (ReflexHost t, MonadException (HostFrame t)) => MonadException (PerformEventT t m)
 deriving instance (ReflexHost t, Monoid a) => Monoid (PerformEventT t m a)
 deriving instance (ReflexHost t, S.Semigroup a) => S.Semigroup (PerformEventT t m a)
+deriving instance (ReflexHost t, MonadCatch (HostFrame t)) => MonadCatch (PerformEventT t m)
+deriving instance (ReflexHost t, MonadThrow (HostFrame t)) => MonadThrow (PerformEventT t m)
+deriving instance (ReflexHost t, MonadMask (HostFrame t)) => MonadMask (PerformEventT t m)
 
 instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m) where
   type PrimState (PerformEventT t m) = PrimState (HostFrame t)
   primitive = PerformEventT . lift . primitive
 
-instance (ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
+instance (Monad (HostFrame t), ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
   type Performable (PerformEventT t m) = HostFrame t
   {-# INLINABLE performEvent_ #-}
   performEvent_ = PerformEventT . requesting_
   {-# INLINABLE performEvent #-}
   performEvent = PerformEventT . requestingIdentity
 
-instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT t m) where
+instance ReflexHost t => Adjustable t (PerformEventT t m) where
   runWithReplace outerA0 outerA' = PerformEventT $ runWithReplaceRequesterTWith f (coerce outerA0) (coerceEvent outerA')
     where f :: HostFrame t a -> Event t (HostFrame t b) -> RequesterT t (HostFrame t) Identity (HostFrame t) (a, Event t b)
           f a0 a' = do
@@ -86,7 +91,7 @@ instance (ReflexHost t, PrimMonad (HostFrame t)) => Adjustable t (PerformEventT 
   traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
   traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
 
-defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
+defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), Reflex t)
   => ((forall a. k' a -> v a -> HostFrame t (v2 a)) -> p k' v -> HostFrame t (p k' v2))
   -> (forall a. k' a -> v a -> HostFrame t (v2 a))
   -> DMap k' v
@@ -97,7 +102,7 @@ defaultAdjustBase traversePatchWithKey f' dm0 dm' = do
   result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
   return (result0, result')
 
-defaultAdjustIntBase :: forall t v v2 p. (Monad (HostFrame t), PrimMonad (HostFrame t), Reflex t)
+defaultAdjustIntBase :: forall t v v2 p. (Monad (HostFrame t), Reflex t)
   => ((IntMap.Key -> v -> HostFrame t v2) -> p v -> HostFrame t (p v2))
   -> (IntMap.Key -> v -> HostFrame t v2)
   -> IntMap v
