@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## 0.9.3.4
+
+* Support random 1.3
+
 ## 0.9.3.3
 
 * Add support for GHC 9.12
