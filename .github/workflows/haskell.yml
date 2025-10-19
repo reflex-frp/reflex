@@ -35,18 +35,44 @@ jobs:
           ${{ runner.os }}-${{ matrix.ghc }}-
           ${{ runner.os }}
 
+    - name: macos sdk seup
+      if: runner.os == 'macOS'
+      run: |
+        sudo xcode-select -s /Applications/Xcode.app
+        echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+        echo "MAC_LD_OPTS=-optl-Wl,-syslibroot,${SDKROOT} -optl-F${SDKROOT}/System/Library/Frameworks" >> "$GITHUB_ENV"
+
     - name: Install dependencies
       run: |
         cabal update
-        cabal build --only-dependencies --enable-tests --enable-benchmarks
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          cabal build --only-dependencies --enable-tests --enable-benchmarks --ghc-options="${MAC_LD_OPTS}"
+        else
+          cabal build --only-dependencies --enable-tests --enable-benchmarks
+        fi
 
     - name: Build
-      run: cabal build --enable-tests --enable-benchmarks all
+      run: |
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          cabal build --enable-tests --enable-benchmarks all --ghc-options="${MAC_LD_OPTS}"
+        else
+          cabal build --enable-tests --enable-benchmarks all
+        fi
 
     - name: Run tests
-      run: cabal test --enable-tests all
+      run: |
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          cabal test --enable-tests all --ghc-options="${MAC_LD_OPTS}"
+        else
+          cabal test --enable-tests all
+        fi
 
     - if: matrix.ghc != '8.4.4'
       # docs aren't built on ghc 8.4.4 because some dependency docs don't build on older GHCs
       name: Build Docs
-      run: cabal haddock
+      run: |
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          cabal haddock --ghc-options="${MAC_LD_OPTS}"
+        else
+          cabal haddock
+        fi
