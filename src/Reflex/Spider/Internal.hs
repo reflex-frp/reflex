@@ -29,16 +29,14 @@
 -- a graph traversal algorithm to propagate 'Event's and 'Behavior's.
 module Reflex.Spider.Internal (module Reflex.Spider.Internal) where
 
-#if MIN_VERSION_base(4,10,0)
 import Control.Applicative (liftA2)
-#endif
 import Control.Concurrent
 import Control.Exception
 import Control.Monad hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
 import Control.Monad.Fix
-import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_)
+import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
@@ -69,11 +67,6 @@ import Data.Proxy
 import Data.These
 import Data.Traversable
 import Data.Type.Equality ((:~:)(Refl))
-#if MIN_VERSION_witherable(0,4,0)
-import Witherable (Filterable, mapMaybe)
-#else
-import Data.Witherable (Filterable, mapMaybe)
-#endif
 import GHC.Exts hiding (toList)
 import GHC.IORef (IORef (..))
 import GHC.Stack
@@ -81,6 +74,7 @@ import Reflex.FastWeak
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
+import Witherable (Filterable, mapMaybe)
 
 #ifdef MIN_VERSION_semialign
 #if MIN_VERSION_these(0,8,0)
@@ -261,7 +255,7 @@ subscribeAndRead = unEvent
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
 {-# INLINE [1] pushCheap #-}
-pushCheap :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
+pushCheap :: (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 pushCheap !f e = Event $ \sub -> do
   (subscription, occ) <- subscribeAndRead e $ debugSubscriber' "push" $ sub
     { subscriberPropagate = \a -> do
@@ -282,7 +276,7 @@ terminalSubscriber p = Subscriber
 
 -- | Subscribe to an Event only for the duration of one occurrence
 {-# INLINE subscribeAndReadHead #-}
-subscribeAndReadHead :: HasSpiderTimeline x => Event x a -> Subscriber x a -> EventM x (EventSubscription x, Maybe a)
+subscribeAndReadHead :: Event x a -> Subscriber x a -> EventM x (EventSubscription x, Maybe a)
 subscribeAndReadHead e sub = do
   subscriptionRef <- liftIO $ newIORef $ error "subscribeAndReadHead: not initialized"
   (subscription, occ) <- subscribeAndRead e $ debugSubscriber' "head" $ sub
@@ -296,7 +290,7 @@ subscribeAndReadHead e sub = do
   return (subscription, occ)
 
 --TODO: Make this lazy in its input event
-headE :: (MonadIO m, Defer (SomeMergeInit x) m, HasSpiderTimeline x) => Event x a -> m (Event x a)
+headE :: (Defer (SomeMergeInit x) m) => Event x a -> m (Event x a)
 headE originalE = do
   parent <- liftIO $ newIORef $ Just originalE
   defer $ SomeMergeInit $ do --TODO: Rename SomeMergeInit appropriately
@@ -321,8 +315,7 @@ nowSpiderEventM :: (HasSpiderTimeline x) => EventM x (R.Event (SpiderTimeline x)
 nowSpiderEventM =
   SpiderEvent <$> now
 
-now :: (MonadIO m, Defer (Some Clear) m, HasSpiderTimeline x
-       ) => m (Event x ())
+now :: (Defer (Some Clear) m) => m (Event x ())
 now = do
   nowOrNot <- liftIO $ newIORef $ Just ()
   scheduleClear nowOrNot
@@ -561,14 +554,14 @@ recalculateSubscriberHeight :: Height -> Subscriber x a -> IO ()
 recalculateSubscriberHeight = flip subscriberRecalculateHeight
 
 -- | Propagate everything at the current height
-propagate :: forall x a. HasSpiderTimeline x => a -> WeakBag (Subscriber x a) -> EventM x ()
+propagate :: forall x a. a -> WeakBag (Subscriber x a) -> EventM x ()
 propagate a subscribers = withIncreasedDepth (Proxy::Proxy x) $
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
   WeakBag.traverse_ subscribers $ \s -> subscriberPropagate s a
 
 -- | Propagate everything at the current height
-propagateFast :: forall x a. HasSpiderTimeline x => a -> FastWeakBag (Subscriber x a) -> EventM x ()
+propagateFast :: forall x a. a -> FastWeakBag (Subscriber x a) -> EventM x ()
 propagateFast a subscribers = withIncreasedDepth (Proxy::Proxy x) $
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
@@ -2055,7 +2048,7 @@ scheduleMergeSelf m height = scheduleMerge' height (_merge_heightRef m) $ do
   --TODO: Assert that m is not empty
   subscriberPropagate (_merge_sub m) vals
 
-checkCycle :: HasSpiderTimeline x => EventSubscribed x -> EventM x ()
+checkCycle :: EventSubscribed x -> EventM x ()
 checkCycle subscribed = liftIO $ do
     height <- readIORef (eventSubscribedHeightRef subscribed)
 
@@ -2578,9 +2571,7 @@ mapDynamicSpider f = SpiderDynamic . newMapDyn f . unSpiderDynamic
 
 instance HasSpiderTimeline x => Applicative (Reflex.Class.Dynamic (SpiderTimeline x)) where
   pure = SpiderDynamic . dynamicConst
-#if MIN_VERSION_base(4,10,0)
   liftA2 f a b = SpiderDynamic $ Reflex.Spider.Internal.zipDynWith f (unSpiderDynamic a) (unSpiderDynamic b)
-#endif
   SpiderDynamic a <*> SpiderDynamic b = SpiderDynamic $ Reflex.Spider.Internal.zipDynWith ($) a b
   a *> b = R.unsafeBuildDynamic (R.sample $ R.current b) $ R.leftmost [R.updated b, R.tag (R.current b) $ R.updated a]
   (<*) = flip (*>) -- There are no effects, so order doesn't matter
