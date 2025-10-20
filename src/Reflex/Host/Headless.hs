@@ -39,6 +39,7 @@ type MonadHeadlessApp t m =
   , MonadSample t (Performable m)
   , MonadSample t m
   , MonadThrow m
+  , MonadThrow (Performable m)
   , NotReady t m
   , PerformEvent t m
   , PostBuild t m
