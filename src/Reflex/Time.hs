@@ -8,7 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TemplateHaskell #-}
+
 -- |
 -- Module:
 --   Reflex.Time
@@ -24,7 +24,6 @@ import Reflex.TriggerEvent.Class
 
 import Control.Concurrent
 import qualified Control.Concurrent.Thread.Delay as Concurrent
-import Control.Lens hiding ((|>))
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.IO.Class
@@ -363,4 +362,14 @@ throttleBatchWithLag lag e = do
       delayed <- lag (void outE)
   return outE
 
-makeLensesWith (lensRules & simpleLenses .~ True) ''TickInfo
+tickInfo_lastUTC :: Functor f => (UTCTime -> f UTCTime) -> TickInfo -> f TickInfo
+tickInfo_lastUTC f (TickInfo x1 x2 x3) = (\y -> TickInfo y x2 x3) <$> f x1
+{-# INLINE tickInfo_lastUTC #-}
+
+tickInfo_n :: Functor f => (Integer  -> f Integer ) -> TickInfo -> f TickInfo
+tickInfo_n f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 y x3) <$> f x2
+{-# INLINE tickInfo_n #-}
+
+tickInfo_alreadyElapsed :: Functor f => (NominalDiffTime -> f NominalDiffTime) -> TickInfo -> f TickInfo
+tickInfo_alreadyElapsed f (TickInfo x1 x2 x3) = TickInfo x1 x2 <$> f x3
+{-# INLINE tickInfo_alreadyElapsed #-}
