@@ -10,9 +10,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
+
 module Reflex.PostBuild.Base
   ( PostBuildT (..)
   , runPostBuildT
@@ -21,14 +19,6 @@ module Reflex.PostBuild.Base
   , mapDMapWithAdjustImpl
   ) where
 
-import Reflex.Class
-import Reflex.Adjustable.Class
-import Reflex.Host.Class
-import Reflex.PerformEvent.Class
-import Reflex.PostBuild.Class
-import Reflex.TriggerEvent.Class
-
-import Control.Applicative (liftA2)
 import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
 import Control.Monad.Fix
@@ -42,6 +32,18 @@ import Data.Functor.Compose
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Semigroup as S
+
+#if !MIN_VERSION_base(4,18,0)
+import Control.Applicative (liftA2)
+import Control.Monad.Identity
+#endif
+
+import Reflex.Class
+import Reflex.Adjustable.Class
+import Reflex.Host.Class
+import Reflex.PerformEvent.Class
+import Reflex.PostBuild.Class
+import Reflex.TriggerEvent.Class
 
 -- | Provides a basic implementation of 'PostBuild'.
 newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event t ()) m a }
