@@ -209,7 +209,7 @@ test-suite semantics
     default-language: Haskell2010
     ghc-options:      -O2 -Wall -rtsopts
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , bifunctors
       , containers
       , deepseq
@@ -234,7 +234,7 @@ test-suite CrossImpl
     default-language: Haskell2010
     ghc-options:      -O2 -Wall -rtsopts
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , containers
       , dependent-map
       , dependent-sum
@@ -250,7 +250,7 @@ test-suite hlint
     hs-source-dirs:   test
     default-language: Haskell2010
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , directory
       , filepath
       , filemanip
@@ -274,7 +274,7 @@ test-suite EventWriterT
     other-modules:    Test.Run
     default-language: Haskell2010
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , containers
       , deepseq
       , dependent-map
@@ -297,7 +297,7 @@ test-suite DebugCycles
     default-language: Haskell2010
     ghc-options:      -threaded
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , containers
       , deepseq
       , dependent-map
@@ -327,7 +327,7 @@ test-suite RequesterT
 
     default-language: Haskell2010
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , constraints
       , constraints-extras
       , containers
@@ -351,7 +351,7 @@ test-suite Headless
     hs-source-dirs:   test
     default-language: Haskell2010
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , reflex
 
 test-suite Adjustable
@@ -361,7 +361,7 @@ test-suite Adjustable
     other-modules:    Test.Run
     default-language: Haskell2010
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , containers
       , dependent-sum
       , reflex
@@ -380,7 +380,7 @@ test-suite QueryT
 
     default-language: Haskell2010
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , commutative-semigroups
       , containers
       , dependent-map
@@ -412,7 +412,7 @@ test-suite GC-Semantics
 
     default-language: Haskell2010
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , containers
       , dependent-sum
       , dependent-map
@@ -438,7 +438,7 @@ test-suite rootCleanup
 
     default-language: Haskell2010
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , containers
       , deepseq
       , dependent-sum
@@ -459,7 +459,7 @@ benchmark spider-bench
     default-language: Haskell2010
     ghc-options:      -Wall -O2 -rtsopts
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , containers
       , criterion
       , deepseq
@@ -489,7 +489,7 @@ benchmark saulzar-bench
     default-language: Haskell2010
     ghc-options:      -Wall -O2 -rtsopts -threaded
     build-depends:
-        base
+        base >= 4.11 && < 4.22
       , containers
       , criterion
       , deepseq
