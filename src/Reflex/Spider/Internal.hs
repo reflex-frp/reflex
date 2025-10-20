@@ -20,33 +20,25 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiWayIf #-}
-
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
 {-# OPTIONS_GHC -Wunused-binds #-}
+
 -- | This module is the implementation of the 'Spider' 'Reflex' engine.  It uses
 -- a graph traversal algorithm to propagate 'Event's and 'Behavior's.
-module Reflex.Spider.Internal (module Reflex.Spider.Internal) where
+module Reflex.Spider.Internal
+  ( module Reflex.Spider.Internal
+  ) where
 
-#if MIN_VERSION_base(4,10,0)
-import Control.Applicative (liftA2)
-#endif
 import Control.Concurrent
 import Control.Exception
 import Control.Monad hiding (forM, forM_, mapM, mapM_)
 import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
 import Control.Monad.Fix
-import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
 import Control.Monad.ReaderIO
 import Control.Monad.Ref
-#if !MIN_VERSION_base(4,13,0)
-import Control.Monad.Fail (MonadFail)
-#endif
 import qualified Control.Monad.Fail as MonadFail
 import Data.Align
 import Data.Coerce
@@ -77,6 +69,16 @@ import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
 import Witherable (Filterable, mapMaybe)
+
+#if !MIN_VERSION_base(4,18,0)
+import Control.Applicative (liftA2)
+import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_)
+import Control.Monad.Fail (MonadFail)
+import Data.List (isPrefixOf)
+import Data.Monoid (mempty, (<>))
+#else
+import Control.Monad.Identity
+#endif
 
 #ifdef MIN_VERSION_semialign
 #if MIN_VERSION_these(0,8,0)
@@ -292,7 +294,7 @@ subscribeAndReadHead e sub = do
   return (subscription, occ)
 
 --TODO: Make this lazy in its input event
-headE :: (Defer (SomeMergeInit x) m) => Event x a -> m (Event x a)
+headE :: Defer (SomeMergeInit x) m => Event x a -> m (Event x a)
 headE originalE = do
   parent <- liftIO $ newIORef $ Just originalE
   defer $ SomeMergeInit $ do --TODO: Rename SomeMergeInit appropriately
@@ -313,11 +315,10 @@ data CacheSubscribed x a
 #endif
                      }
 
-nowSpiderEventM :: (HasSpiderTimeline x) => EventM x (R.Event (SpiderTimeline x) ())
-nowSpiderEventM =
-  SpiderEvent <$> now
+nowSpiderEventM :: HasSpiderTimeline x => EventM x (R.Event (SpiderTimeline x) ())
+nowSpiderEventM = SpiderEvent <$> now
 
-now :: (Defer (Some Clear) m) => m (Event x ())
+now :: Defer (Some Clear) m => m (Event x ())
 now = do
   nowOrNot <- liftIO $ newIORef $ Just ()
   scheduleClear nowOrNot
@@ -2108,7 +2109,7 @@ updateMerge subscribed m updateFunc p = SomeMergeUpdate updateMe (invalidateMerg
 {-# INLINE mergeGCheap' #-}
 mergeGCheap' :: forall k v x p s q. (HasSpiderTimeline x, GCompare k, PatchTarget p ~ DMap k q)
   => MergeGetSubscription x s -> MergeInitFunc k v q x s -> MergeUpdateFunc k v x p s -> MergeDestroyFunc k s -> DynamicS x p -> Event x (DMap k v)
-mergeGCheap' getParent getInitialSubscribers updateFunc destroy d = Event $ \sub -> do
+mergeGCheap' _ getInitialSubscribers updateFunc destroy d = Event $ \sub -> do
   initialParents <- readBehaviorUntracked $ dynamicCurrent d
   accumRef <- liftIO $ newIORef $ error "merge: accumRef not yet initialized"
   heightRef <- liftIO $ newIORef $ error "merge: heightRef not yet initialized"
@@ -2577,9 +2578,7 @@ mapDynamicSpider f = SpiderDynamic . newMapDyn f . unSpiderDynamic
 
 instance HasSpiderTimeline x => Applicative (Reflex.Class.Dynamic (SpiderTimeline x)) where
   pure = SpiderDynamic . dynamicConst
-#if MIN_VERSION_base(4,10,0)
   liftA2 f a b = SpiderDynamic $ Reflex.Spider.Internal.zipDynWith f (unSpiderDynamic a) (unSpiderDynamic b)
-#endif
   SpiderDynamic a <*> SpiderDynamic b = SpiderDynamic $ Reflex.Spider.Internal.zipDynWith ($) a b
   a *> b = R.unsafeBuildDynamic (R.sample $ R.current b) $ R.leftmost [R.updated b, R.tag (R.current b) $ R.updated a]
   (<*) = flip (*>) -- There are no effects, so order doesn't matter

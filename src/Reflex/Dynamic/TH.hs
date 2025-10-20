@@ -5,17 +5,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
+
 -- | Template Haskell helper functions for building complex 'Dynamic' values.
 module Reflex.Dynamic.TH
   ( qDynPure
   , unqDyn
   , mkDynPure
   ) where
-
-import Reflex.Dynamic
 
 import Control.Monad.State
 import Data.Data
@@ -25,6 +21,12 @@ import qualified Language.Haskell.Meta.Syntax.Translate as Hs
 import Language.Haskell.TH
 import Language.Haskell.TH.Quote
 import qualified Language.Haskell.TH.Syntax as TH
+
+#if !MIN_VERSION_base(4,18,0)
+import Data.Monoid ((<>))
+#endif
+
+import Reflex.Dynamic
 
 -- | Quote a 'Dynamic' expression.  Within the quoted expression, you can use
 -- @$(unqDyn [| x |])@ to refer to any expression @x@ of type @Dynamic t a@; the
@@ -90,7 +92,6 @@ mkDynExp s = case Hs.parseExpWithMode Hs.defaultParseMode { Hs.extensions = [ Hs
   Hs.ParseFailed (Hs.SrcLoc _ l c) err -> fail $ "mkDyn:" <> show l <> ":" <> show c <> ": " <> err
   Hs.ParseOk e -> qDynPure $ return $ everywhere (id `extT` reinstateUnqDyn) $ Hs.toExp $ everywhere (id `extT` antiE) e
     where TH.Name (TH.OccName occName) (TH.NameG _ _ (TH.ModName modName)) = 'unqMarker
-#if MIN_VERSION_haskell_src_exts(1,18,0)
           antiE :: Hs.Exp Hs.SrcSpanInfo -> Hs.Exp Hs.SrcSpanInfo
           antiE x = case x of
             Hs.SpliceExp l se ->
@@ -98,14 +99,6 @@ mkDynExp s = case Hs.parseExpWithMode Hs.defaultParseMode { Hs.extensions = [ Hs
                 Hs.IdSplice l2 v -> Hs.Var l2 $ Hs.UnQual l2 $ Hs.Ident l2 v
                 Hs.ParenSplice _ ps -> ps
             _ -> x
-#else
-          antiE x = case x of
-            Hs.SpliceExp se ->
-              Hs.App (Hs.Var $ Hs.Qual (Hs.ModuleName modName) (Hs.Ident occName)) $ case se of
-                Hs.IdSplice v -> Hs.Var $ Hs.UnQual $ Hs.Ident v
-                Hs.ParenSplice ps -> ps
-            _ -> x
-#endif
           reinstateUnqDyn (TH.Name (TH.OccName occName') (TH.NameQ (TH.ModName modName')))
             | modName == modName' && occName == occName' = 'unqMarker
           reinstateUnqDyn x = x

@@ -5,9 +5,18 @@ on: [push, pull_request]
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
-        ghc: ['8.4.4', '8.6.5', '8.8.4', '8.10.7', '9.0.2', '9.2.5', '9.4.5', '9.6.1', '9.8.2', '9.10.1', '9.12.1']
-        os: ['ubuntu-latest', 'macos-latest']
+        ghc: ['8.4', '8.6', '8.8', '8.10', '9.0', '9.2', '9.4', '9.6', '9.8', '9.10', '9.12']
+        os: ['ubuntu-latest', 'macos-13']
+        exclude:
+          - os: 'macos-13'
+            ghc: '8.4'
+          - os: 'macos-13'
+            ghc: '8.6'
+          - os: 'macos-13'
+            ghc: '8.8'
+
     runs-on: ${{ matrix.os }}
 
     name: GHC ${{ matrix.ghc }} on ${{ matrix.os }}
@@ -15,7 +24,7 @@ jobs:
 
     - uses: actions/checkout@v3
 
-    - uses: haskell/actions/setup@v2
+    - uses: haskell-actions/setup@v2
       with:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: '3.10.3.0'
@@ -33,18 +42,44 @@ jobs:
           ${{ runner.os }}-${{ matrix.ghc }}-
           ${{ runner.os }}
 
+    - name: macos sdk seup
+      if: runner.os == 'macOS'
+      run: |
+        sudo xcode-select -s /Applications/Xcode.app
+        echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+        echo "MAC_LD_OPTS=-optl-Wl,-syslibroot,${SDKROOT} -optl-F${SDKROOT}/System/Library/Frameworks" >> "$GITHUB_ENV"
+
     - name: Install dependencies
       run: |
         cabal update
-        cabal build --only-dependencies --enable-tests --enable-benchmarks
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          cabal build --only-dependencies --enable-tests --enable-benchmarks --ghc-options="${MAC_LD_OPTS}"
+        else
+          cabal build --only-dependencies --enable-tests --enable-benchmarks
+        fi
 
     - name: Build
-      run: cabal build --enable-tests --enable-benchmarks all
+      run: |
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          cabal build --enable-tests --enable-benchmarks all --ghc-options="${MAC_LD_OPTS}"
+        else
+          cabal build --enable-tests --enable-benchmarks all
+        fi
 
     - name: Run tests
-      run: cabal test --enable-tests all
+      run: |
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          cabal test --enable-tests all --ghc-options="${MAC_LD_OPTS}"
+        else
+          cabal test --enable-tests all
+        fi
 
     - if: matrix.ghc != '8.4.4'
       # docs aren't built on ghc 8.4.4 because some dependency docs don't build on older GHCs
       name: Build Docs
-      run: cabal haddock
+      run: |
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          cabal haddock --ghc-options="${MAC_LD_OPTS}"
+        else
+          cabal haddock
+        fi

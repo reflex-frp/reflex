@@ -9,8 +9,9 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 #ifdef USE_TEMPLATE_HASKELL
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE RankNTypes #-}
 #endif
+
 -- |
 -- Module:
 --   Reflex.Time
@@ -18,15 +19,8 @@
 --   Clocks, timers, and other time-related functions.
 module Reflex.Time where
 
-import Reflex.Class
-import Reflex.Dynamic
-import Reflex.PerformEvent.Class
-import Reflex.PostBuild.Class
-import Reflex.TriggerEvent.Class
-
 import Control.Concurrent
 import qualified Control.Concurrent.Thread.Delay as Concurrent
-import Control.Lens hiding ((|>))
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.IO.Class
@@ -39,6 +33,16 @@ import Data.These
 import Data.Time.Clock
 import GHC.Generics (Generic)
 import System.Random
+
+#if !MIN_VERSION_base(4,18,0)
+import Data.Semigroup (Semigroup(..))
+#endif
+
+import Reflex.Class
+import Reflex.Dynamic
+import Reflex.PerformEvent.Class
+import Reflex.PostBuild.Class
+import Reflex.TriggerEvent.Class
 
 -- | Metadata associated with a timer "tick"
 data TickInfo
@@ -365,18 +369,14 @@ throttleBatchWithLag lag e = do
       delayed <- lag (void outE)
   return outE
 
-#ifdef USE_TEMPLATE_HASKELL
-makeLensesWith (lensRules & simpleLenses .~ True) ''TickInfo
-#else
-tickInfo_lastUTC :: Lens' TickInfo UTCTime
+tickInfo_lastUTC :: Functor f => (UTCTime -> f UTCTime) -> TickInfo -> f TickInfo
 tickInfo_lastUTC f (TickInfo x1 x2 x3) = (\y -> TickInfo y x2 x3) <$> f x1
 {-# INLINE tickInfo_lastUTC #-}
 
-tickInfo_n :: Lens' TickInfo Integer
+tickInfo_n :: Functor f => (Integer  -> f Integer ) -> TickInfo -> f TickInfo
 tickInfo_n f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 y x3) <$> f x2
 {-# INLINE tickInfo_n #-}
 
-tickInfo_alreadyElapsed :: Lens' TickInfo NominalDiffTime
-tickInfo_alreadyElapsed f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 x2 y) <$> f x3
+tickInfo_alreadyElapsed :: Functor f => (NominalDiffTime -> f NominalDiffTime) -> TickInfo -> f TickInfo
+tickInfo_alreadyElapsed f (TickInfo x1 x2 x3) = TickInfo x1 x2 <$> f x3
 {-# INLINE tickInfo_alreadyElapsed #-}
-#endif

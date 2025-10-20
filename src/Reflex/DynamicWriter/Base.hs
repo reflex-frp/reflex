@@ -11,9 +11,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
+
 module Reflex.DynamicWriter.Base
   ( DynamicWriterT (..)
   , runDynamicWriterT
@@ -41,6 +39,11 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Some (Some)
 import Data.These
+
+#if !MIN_VERSION_base(4,18,0)
+import Control.Monad.Identity
+import Data.Semigroup (Semigroup(..))
+#endif
 
 import Reflex.Adjustable.Class
 import Reflex.Class
