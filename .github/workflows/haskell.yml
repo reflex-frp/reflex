@@ -42,11 +42,17 @@ jobs:
         echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
         echo "MAC_LD_OPTS=-optl-Wl,-syslibroot,${SDKROOT} -optl-F${SDKROOT}/System/Library/Frameworks" >> "$GITHUB_ENV"
 
+      # Disable split-sections on macOS + GHC 8.4 (prevents dead-stripped symbols at dlopen)
+      - name: Workarounds for old GHC on macOS
+        if: runner.os == 'macOS' && startsWith(matrix.ghc, '8.4')
+        run: |
+          echo "CABAL_ARGS_EXTRA=--disable-split-sections" >> "$GITHUB_ENV"
+
     - name: Install dependencies
       run: |
         cabal update
         if [[ "$RUNNER_OS" == "macOS" ]]; then
-          cabal build --only-dependencies --enable-tests --enable-benchmarks --ghc-options="${MAC_LD_OPTS}"
+          cabal build --only-dependencies --enable-tests --enable-benchmarks ${CABAL_ARGS_EXTRA} --ghc-options="${MAC_LD_OPTS}"
         else
           cabal build --only-dependencies --enable-tests --enable-benchmarks
         fi
@@ -54,7 +60,7 @@ jobs:
     - name: Build
       run: |
         if [[ "$RUNNER_OS" == "macOS" ]]; then
-          cabal build --enable-tests --enable-benchmarks all --ghc-options="${MAC_LD_OPTS}"
+          cabal build --enable-tests --enable-benchmarks all ${CABAL_ARGS_EXTRA} --ghc-options="${MAC_LD_OPTS}"
         else
           cabal build --enable-tests --enable-benchmarks all
         fi
@@ -62,7 +68,7 @@ jobs:
     - name: Run tests
       run: |
         if [[ "$RUNNER_OS" == "macOS" ]]; then
-          cabal test --enable-tests all --ghc-options="${MAC_LD_OPTS}"
+          cabal test --enable-tests all ${CABAL_ARGS_EXTRA} --ghc-options="${MAC_LD_OPTS}"
         else
           cabal test --enable-tests all
         fi
@@ -72,7 +78,7 @@ jobs:
       name: Build Docs
       run: |
         if [[ "$RUNNER_OS" == "macOS" ]]; then
-          cabal haddock --ghc-options="${MAC_LD_OPTS}"
+          cabal haddock ${CABAL_ARGS_EXTRA} --ghc-options="${MAC_LD_OPTS}"
         else
           cabal haddock
         fi
