@@ -15,6 +15,7 @@ Reflex is a fully-deterministic, higher-order Functional Reactive Programming in
 * [Reflex-DOM](https://github.com/reflex-frp/reflex-dom): A framework built on Reflex that facilitates the development of web pages, including highly-interactive single-page apps.
 * [Obelisk](https://github.com/obsidiansystems/obelisk#obelisk): A framework built on Reflex and Reflex-DOM for functional reactive web and mobile applications, with batteries included.
 * [Get started with Reflex](https://github.com/reflex-frp/reflex-platform)
+* [#reflex-frp:matrix.org](https://matrix.to/#/#reflex-frp:matrix.org): Official Matrix room
 * [/r/reflexfrp](https://www.reddit.com/r/reflexfrp)
 * [irc.freenode.net #reflex-frp](http://webchat.freenode.net?channels=%23reflex-frp&uio=d4)
 

@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 module Reflex.TriggerEvent.Base
   ( TriggerEventT (..)
   , runTriggerEventT
@@ -24,7 +25,6 @@ import Control.Monad.Ref
 import Data.Coerce
 import Data.Dependent.Sum
 import Data.IORef
-import Data.Monoid ((<>))
 import qualified Data.Semigroup as S
 import Reflex.Class
 import Reflex.Adjustable.Class

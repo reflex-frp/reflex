@@ -1,23 +1,23 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Reflex.Host.Headless where
 
 import Control.Concurrent.Chan (newChan, readChan)
-import Control.Monad (unless)
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Fix (MonadFix, fix)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Primitive (PrimMonad)
 import Control.Monad.Ref (MonadRef, Ref, readRef)
 import Data.Dependent.Sum (DSum (..), (==>))
-import Data.Foldable (for_)
+import Data.Foldable (for_, asum)
 import Data.Functor.Identity (Identity(..))
 import Data.IORef (IORef, readIORef)
-import Data.Maybe (catMaybes, fromMaybe)
+import Data.Maybe (catMaybes)
 import Data.Traversable (for)
 
 import Reflex
@@ -54,10 +54,11 @@ type MonadHeadlessApp t m =
 -- classes to interface the FRP network with the outside world. Useful for
 -- testing. Each headless network runs on its own spider timeline.
 runHeadlessApp
-  :: (forall t m. MonadHeadlessApp t m => m (Event t ()))
+  :: forall a
+  .  (forall t m. MonadHeadlessApp t m => m (Event t a))
   -- ^ The action to be run in the headless FRP network. The FRP network is
   -- closed at the first occurrence of the resulting 'Event'.
-  -> IO ()
+  -> IO a
 runHeadlessApp guest =
   -- We are using the 'Spider' implementation of reflex. Running the host
   -- allows us to take actions on the FRP timeline.
@@ -97,35 +98,46 @@ runHeadlessApp guest =
     shutdown <- subscribeEvent result
 
     -- When there is a subscriber to the post-build event, fire the event.
-    soa <- for mPostBuildTrigger $ \postBuildTrigger ->
-      fire [postBuildTrigger :=> Identity ()] $ isFiring shutdown
+    initialShutdownEventFirings :: Maybe [Maybe a] <- for mPostBuildTrigger $ \postBuildTrigger ->
+      fire [postBuildTrigger :=> Identity ()] $ sequence =<< readEvent shutdown
+    let shutdownImmediately = case initialShutdownEventFirings of
+          -- We didn't even fire postBuild because it wasn't subscribed
+          Nothing -> Nothing
+          -- Take the first Just, if there is one. Ideally, we should cut off
+          -- the event loop as soon as the firing happens, but Performable
+          -- doesn't currently give us an easy way to do that
+          Just firings -> asum firings
 
-    -- The main application loop. We wait for new events and fire those that
-    -- have subscribers. If we detect a shutdown request, the application
-    -- terminates.
-    unless (or (fromMaybe [] soa)) $ fix $ \loop -> do
-      -- Read the next event (blocking).
-      ers <- liftIO $ readChan events
-      stop <- do
-        -- Fire events that have subscribers.
-        fireEventTriggerRefs fc ers $
-          -- Check if the shutdown 'Event' is firing.
-          isFiring shutdown
-      if or stop
-        then pure ()
-        else loop
+    case shutdownImmediately of
+      Just exitResult -> pure exitResult
+      -- The main application loop. We wait for new events and fire those that
+      -- have subscribers. If we detect a shutdown request, the application
+      -- terminates.
+      Nothing -> fix $ \loop -> do
+        -- Read the next event (blocking).
+        ers <- liftIO $ readChan events
+        shutdownEventFirings :: [Maybe a] <- do
+          -- Fire events that have subscribers.
+          fireEventTriggerRefs fc ers $
+            -- Check if the shutdown 'Event' is firing.
+            sequence =<< readEvent shutdown
+        let -- If the shutdown event fires multiple times, take the first one.
+            -- Ideally, we should cut off the event loop as soon as this fires,
+            -- but Performable doesn't currently give us an easy way to do that.
+            shutdownNow = asum shutdownEventFirings
+        case shutdownNow of
+          Just exitResult -> pure exitResult
+          Nothing -> loop
   where
-    isFiring ev = readEvent ev >>= \case
-      Nothing -> pure False
-      Just _ -> pure True
     -- Use the given 'FireCommand' to fire events that have subscribers
     -- and call the callback for the 'TriggerInvocation' of each.
     fireEventTriggerRefs
-      :: MonadIO m
+      :: forall b m t
+      .  MonadIO m
       => FireCommand t m
       -> [DSum (EventTriggerRef t) TriggerInvocation]
-      -> ReadPhase m a
-      -> m [a]
+      -> ReadPhase m b
+      -> m [b]
     fireEventTriggerRefs (FireCommand fire) ers rcb = do
       mes <- liftIO $
         for ers $ \(EventTriggerRef er :=> TriggerInvocation a _) -> do

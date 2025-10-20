@@ -32,7 +32,6 @@ import Control.Applicative (liftA2)
 import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
 import Control.Monad.Fix
-import Control.Monad.Identity
 import Control.Monad.Primitive
 import Control.Monad.Reader
 import Control.Monad.Ref
@@ -70,7 +69,6 @@ runPostBuildT (PostBuildT a) = runReaderT a
 -- TODO: Monoid and Semigroup can likely be derived once ReaderT has them.
 instance (Monoid a, Applicative m) => Monoid (PostBuildT t m a) where
   mempty = pure mempty
-  mappend = liftA2 mappend
 
 instance (S.Semigroup a, Applicative m) => S.Semigroup (PostBuildT t m a) where
   (<>) = liftA2 (S.<>)

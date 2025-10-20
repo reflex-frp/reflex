@@ -5,18 +5,22 @@ on: [push, pull_request]
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
-        ghc: ['8.4.4', '8.6.5', '8.8.4', '8.10.7', '9.0.2', '9.2.5', '9.4.5', '9.6.1']
+        ghc: ['8.4.4', '8.6.5', '8.8.4', '8.10.7', '9.0.2', '9.2.5', '9.4.5', '9.6.1', '9.8.2', '9.10.1', '9.12.1']
         os: ['ubuntu-latest', 'macos-latest']
     runs-on: ${{ matrix.os }}
 
     name: GHC ${{ matrix.ghc }} on ${{ matrix.os }}
     steps:
+
     - uses: actions/checkout@v3
+
     - uses: haskell/actions/setup@v2
       with:
         ghc-version: ${{ matrix.ghc }}
-        cabal-version: '3.10.1.0'
+        cabal-version: '3.10.3.0'
+
     - name: Cache
       uses: actions/cache@v3
       env:
@@ -31,11 +35,16 @@ jobs:
           ${{ runner.os }}
 
     - name: Install dependencies
-      run: cabal build --only-dependencies --enable-tests --enable-benchmarks
+      run: |
+        cabal update
+        cabal build --only-dependencies --enable-tests --enable-benchmarks
+
     - name: Build
       run: cabal build --enable-tests --enable-benchmarks all
+
     - name: Run tests
       run: cabal test --enable-tests all
+
     - if: matrix.ghc != '8.4.4'
       # docs aren't built on ghc 8.4.4 because some dependency docs don't build on older GHCs
       name: Build Docs
