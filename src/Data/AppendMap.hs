@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+
 -- |
 -- Module:
 --   Data.AppendMap
@@ -26,7 +27,6 @@ import Data.Coerce
 import Data.Default
 import Data.Map (Map)
 import qualified Data.Map.Internal.Debug as Map (showTree, showTreeWith)
-
 import Data.Map.Monoidal
 
 

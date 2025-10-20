@@ -14,9 +14,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
+
 -- |
 -- Module:
 --   Reflex.Dynamic
@@ -78,16 +76,14 @@ module Reflex.Dynamic
   , unsafeDynamic
   ) where
 
-import Data.Functor.Compose
-import Data.Functor.Misc
-import Reflex.Class
-
 import Control.Monad.Fix
 import Control.Monad.Identity
 import Data.Align
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
+import Data.Functor.Compose
+import Data.Functor.Misc
 import Data.GADT.Compare (GCompare (..), GEq (..), GOrdering (..))
 import Data.IntMap (IntMap)
 import Data.Kind (Type)
@@ -97,6 +93,13 @@ import Data.These
 import Data.Type.Equality ((:~:) (..))
 
 import Debug.Trace (trace)
+
+#if !MIN_VERSION_base(4,18,0)
+import Control.Monad
+import Data.Monoid ((<>))
+#endif
+
+import Reflex.Class
 
 -- | Map a sampling function over a 'Dynamic'.
 mapDynM :: forall t m a b. (Reflex t, MonadHold t m) => (forall m'. MonadSample t m' => a -> m' b) -> Dynamic t a -> m (Dynamic t b)

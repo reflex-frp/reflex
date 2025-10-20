@@ -3,14 +3,16 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
+
 module Reflex.EventWriter.Class
   ( EventWriter (..)
   ) where
 
 import Control.Monad.Reader (ReaderT, lift)
+
+#if !MIN_VERSION_base(4,18,0)
+import Data.Semigroup (Semigroup)
+#endif
 
 import Reflex.Class (Event)
 

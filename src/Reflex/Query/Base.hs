@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
@@ -19,7 +20,6 @@ module Reflex.Query.Base
   , mapQueryT
   ) where
 
-import Control.Applicative (liftA2)
 import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
 import Control.Monad.Fix
@@ -45,6 +45,11 @@ import qualified Data.Semigroup as S
 import Data.Semigroup.Commutative
 import Data.Some (Some(Some))
 import Data.These
+
+#if !MIN_VERSION_base(4,18,0)
+import Control.Applicative (liftA2)
+import Data.Monoid ((<>))
+#endif
 
 import Reflex.Class
 import Reflex.Adjustable.Class
