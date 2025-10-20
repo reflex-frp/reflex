@@ -42,11 +42,11 @@ jobs:
         echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
         echo "MAC_LD_OPTS=-optl-Wl,-syslibroot,${SDKROOT} -optl-F${SDKROOT}/System/Library/Frameworks" >> "$GITHUB_ENV"
 
-      # Disable split-sections on macOS + GHC 8.4 (prevents dead-stripped symbols at dlopen)
-      - name: Workarounds for old GHC on macOS
-        if: runner.os == 'macOS' && startsWith(matrix.ghc, '8.4')
-        run: |
-          echo "CABAL_ARGS_EXTRA=--disable-split-sections" >> "$GITHUB_ENV"
+    # Disable split-sections on macOS + GHC 8.4 (prevents dead-stripped symbols at dlopen)
+    - name: Workarounds for old GHC on macOS
+      if: runner.os == 'macOS' && startsWith(matrix.ghc, '8.4')
+      run: |
+        echo "CABAL_ARGS_EXTRA=--disable-split-sections" >> "$GITHUB_ENV"
 
     - name: Install dependencies
       run: |
