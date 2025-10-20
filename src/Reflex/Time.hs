@@ -4,14 +4,11 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
-#ifdef USE_TEMPLATE_HASKELL
-{-# LANGUAGE RankNTypes #-}
-#endif
-
 -- |
 -- Module:
 --   Reflex.Time

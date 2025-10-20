@@ -74,7 +74,7 @@ jobs:
           cabal test --enable-tests all
         fi
 
-    - if: matrix.ghc != '8.4.4'
+    - if: matrix.ghc != '8.4'
       # docs aren't built on ghc 8.4.4 because some dependency docs don't build on older GHCs
       name: Build Docs
       run: |

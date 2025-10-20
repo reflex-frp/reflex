@@ -35,11 +35,6 @@ source-repository head
     type:     git
     location: https://github.com/reflex-frp/reflex
 
-flag use-template-haskell
-    description: Use template haskell to generate lenses
-    default:     True
-    manual:      True
-
 flag debug-trace-events
     description:
         Add instrumentation that outputs the stack trace of the definition of an event whenever it is subscribed to. Warning: It is very slow!
@@ -84,6 +79,7 @@ library
         Reflex.BehaviorWriter.Class
         Reflex.Collection
         Reflex.Dynamic
+        Reflex.Dynamic.TH
         Reflex.Dynamic.Uniq
         Reflex.DynamicWriter
         Reflex.DynamicWriter.Base
@@ -163,6 +159,12 @@ library
       , transformers >= 0.5 && < 0.7
       , unbounded-delays >= 0.1.0.0 && < 0.2
       , witherable >= 0.4 && < 0.6
+      , haskell-src-exts >= 1.16 && < 1.24
+      , haskell-src-meta >= 0.6 && < 0.9
+      , template-haskell >= 2.9 && < 2.24
+
+    other-extensions:
+      TemplateHaskell
 
     if flag(split-these)
         build-depends:
@@ -185,15 +187,6 @@ library
 
     if flag(debug-cycles)
         cpp-options: -DDEBUG_CYCLES
-
-    if flag(use-template-haskell)
-        exposed-modules:  Reflex.Dynamic.TH
-        cpp-options:      -DUSE_TEMPLATE_HASKELL
-        other-extensions: TemplateHaskell
-        build-depends:
-            haskell-src-exts >= 1.16 && < 1.24
-          , haskell-src-meta >= 0.6 && < 0.9
-          , template-haskell >= 2.9 && < 2.24
 
     if flag(fast-weak) && impl(ghcjs >=0)
         cpp-options: -DGHCJS_FAST_WEAK

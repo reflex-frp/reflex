@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## 0.9.4.0
+
+* Get rid of the `use-template-haskell` flag. Template Haskell is now always used.
+
 ## 0.9.3.4
 
 * Support random 1.3
