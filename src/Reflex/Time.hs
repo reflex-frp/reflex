@@ -4,23 +4,17 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
-
 -- |
 -- Module:
 --   Reflex.Time
 -- Description:
 --   Clocks, timers, and other time-related functions.
 module Reflex.Time where
-
-import Reflex.Class
-import Reflex.Dynamic
-import Reflex.PerformEvent.Class
-import Reflex.PostBuild.Class
-import Reflex.TriggerEvent.Class
 
 import Control.Concurrent
 import qualified Control.Concurrent.Thread.Delay as Concurrent
@@ -36,6 +30,16 @@ import Data.These
 import Data.Time.Clock
 import GHC.Generics (Generic)
 import System.Random
+
+#if !MIN_VERSION_base(4,18,0)
+import Data.Semigroup (Semigroup(..))
+#endif
+
+import Reflex.Class
+import Reflex.Dynamic
+import Reflex.PerformEvent.Class
+import Reflex.PostBuild.Class
+import Reflex.TriggerEvent.Class
 
 -- | Metadata associated with a timer "tick"
 data TickInfo

@@ -2,9 +2,6 @@
 {-# LANGUAGE ExplicitForAll #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecursiveDo #-}
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
 
 module Reflex.Widget.Basic where
 

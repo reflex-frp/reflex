@@ -7,9 +7,7 @@ Description: This module defines the 'BehaviorWriter' class
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
+
 module Reflex.BehaviorWriter.Class
   ( MonadBehaviorWriter
   , BehaviorWriter(..)

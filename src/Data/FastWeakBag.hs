@@ -1,12 +1,10 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
 #ifdef GHCJS_FAST_WEAK
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE JavaScriptFFI #-}
 #endif
+
 -- | This module defines the 'FastWeakBag' type, which represents a mutable
 -- collection of items that does not cause the items to be retained in memory.
 -- This is useful for situations where a value needs to be inspected or modified

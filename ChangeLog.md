@@ -1,5 +1,9 @@
 # Revision history for reflex
 
+## 0.9.4.0
+
+* Get rid of the `use-template-haskell` flag. Template Haskell is now always used.
+
 ## 0.9.3.4
 
 * Support random 1.3
@@ -16,9 +20,6 @@
 ## 0.9.3.1
 
 * Add support for GHC 9.8 and 9.10
-
-* Get rid of the `use-template-haskell` flag.
-  Template Haskell is now always used.
 
 ## 0.9.3.0
 

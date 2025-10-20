@@ -8,15 +8,11 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE PolyKinds #-}
-
-#ifdef USE_REFLEX_OPTIMIZER
-{-# OPTIONS_GHC -fplugin=Reflex.Optimizer #-}
-#endif
-
 -- There are two expected orphan instances in this module:
 --   * MonadSample (Pure t) ((->) t)
 --   * MonadHold (Pure t) ((->) t)
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+
 -- |
 -- Module: Reflex.Pure
 -- Description:

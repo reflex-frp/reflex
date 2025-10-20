@@ -1,5 +1,6 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+
 -- |
 -- Module:
 --   Reflex.Workflow
@@ -7,8 +8,8 @@
 --   Provides a convenient way to describe a series of interrelated widgets that
 --   can send data to, invoke, and replace one another. Useful for modeling user interface
 --   "workflows."
-module Reflex.Workflow (
-    Workflow (..)
+module Reflex.Workflow
+  ( Workflow (..)
   , workflow
   , workflowView
   , mapWorkflow
