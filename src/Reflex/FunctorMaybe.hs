@@ -1,8 +1,6 @@
 {-# LANGUAGE CPP #-}
-#if MIN_VERSION_base(4,9,0)
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE StandaloneDeriving #-}
-#endif
 
 -- |
 -- Module:
@@ -19,7 +17,7 @@ import Data.Map (Map)
 #if !MIN_VERSION_base(4,16,0)
 import Data.Semigroup (Option(..))
 #endif
-import Data.Witherable
+import Witherable
 
 --TODO: See if there's a better class in the standard libraries already
 

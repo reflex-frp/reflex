@@ -82,7 +82,6 @@ import Data.Functor.Compose
 import Data.Functor.Misc
 import Reflex.Class
 
-import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity
 import Data.Align
@@ -91,15 +90,13 @@ import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare (GCompare (..), GEq (..), GOrdering (..))
 import Data.IntMap (IntMap)
-import qualified Data.IntMap as IntMap
 import Data.Kind (Type)
 import Data.Map (Map)
 import Data.Maybe
-import Data.Monoid ((<>))
 import Data.These
 import Data.Type.Equality ((:~:) (..))
 
-import Debug.Trace
+import Debug.Trace (trace)
 
 -- | Map a sampling function over a 'Dynamic'.
 mapDynM :: forall t m a b. (Reflex t, MonadHold t m) => (forall m'. MonadSample t m' => a -> m' b) -> Dynamic t a -> m (Dynamic t b)

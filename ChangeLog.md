@@ -1,7 +1,41 @@
 # Revision history for reflex
 
-## Unreleased
+## 0.9.3.4
 
+* Support random 1.3
+
+## 0.9.3.3
+
+* Add support for GHC 9.12
+* Loosen version bounds
+
+## 0.9.3.2
+
+* Add support for witherable 0.5
+
+## 0.9.3.1
+
+* Add support for GHC 9.8 and 9.10
+
+## 0.9.3.0
+
+* Headless Host: Generalize to allow returning arbitrary types
+
+## 0.9.2.0
+
+* Add MonadMask, MonadCatch, MonadThrow instances
+
+## 0.9.1.0
+
+* Headless Host: Add some MonadSample, MonadHold, and MonadFix instances
+
+## 0.9.0.1
+
+* Add support for ghc-9.6
+
+## 0.9.0.0
+
+* Breaking Change: Filter updates to `listWithKey` child widgets so that changes to the input Map don't cause spurious updates to unaffected children. This imposes an `Eq` constraint on the child values.
 * Expose all Requester internals in Reflex.Requester.Base.Internal
 * [Add EventWriter instance for RequesterT #469](https://github.com/reflex-frp/reflex/pull/469)
 

@@ -32,7 +32,10 @@ import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
 import Control.Applicative (liftA2)
+import Control.Monad
+import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
+import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Morph
 import Control.Monad.Primitive
@@ -52,9 +55,7 @@ import qualified Data.IntMap.Strict as IntMap
 import Data.Kind (Type)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid ((<>))
 import Data.Proxy
-import qualified Data.Semigroup as S
 import Data.Some (Some(Some))
 import Data.Type.Equality
 import Data.Unique.Tag
@@ -271,10 +272,10 @@ data RequesterState t (request :: Type -> Type) = RequesterState
 -- | A basic implementation of 'Requester'.
 newtype RequesterT t request (response :: Type -> Type) m a = RequesterT { unRequesterT :: StateT (RequesterState t request) (ReaderT (EventSelectorInt t Any) m) a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException
--- MonadAsyncException can't be derived on ghc-8.0.1; we use base-4.9.1 as a proxy for ghc-8.0.2
-#if MIN_VERSION_base(4,9,1)
            , MonadAsyncException
-#endif
+           , MonadCatch
+           , MonadThrow
+           , MonadMask
            )
 
 deriving instance MonadSample t m => MonadSample t (RequesterT t request response m)
@@ -292,10 +293,9 @@ instance PrimMonad m => PrimMonad (RequesterT t request response m) where
 -- TODO: Monoid and Semigroup can likely be derived once StateT has them.
 instance (Monoid a, Monad m) => Monoid (RequesterT t request response m a) where
   mempty = pure mempty
-  mappend = liftA2 mappend
 
-instance (S.Semigroup a, Monad m) => S.Semigroup (RequesterT t request response m a) where
-  (<>) = liftA2 (S.<>)
+instance (Semigroup a, Monad m) => Semigroup (RequesterT t request response m a) where
+  (<>) = liftA2 (<>)
 
 
 -- | Run a 'RequesterT' action.  The resulting 'Event' will fire whenever

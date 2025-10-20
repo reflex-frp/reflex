@@ -25,14 +25,9 @@ import Prelude hiding (null)
 import Data.Coerce
 import Data.Default
 import Data.Map (Map)
-#if MIN_VERSION_containers(0,5,11)
 import qualified Data.Map.Internal.Debug as Map (showTree, showTreeWith)
-#else
-import qualified Data.Map as Map (showTree, showTreeWith)
-#endif
-import qualified Data.Witherable as W
+
 import Data.Map.Monoidal
-import qualified Data.Map.Monoidal as MonoidalMap
 
 
 {-# DEPRECATED AppendMap "Use 'MonoidalMap' instead" #-}
@@ -47,11 +42,6 @@ _unAppendMap = getMonoidalMap
 -- | Pattern synonym for 'MonoidalMap'
 pattern AppendMap :: Map k v -> MonoidalMap k v
 pattern AppendMap m = MonoidalMap m
-
-#if !MIN_VERSION_witherable(0,3,2)
-instance W.Filterable (MonoidalMap k) where
-  mapMaybe = MonoidalMap.mapMaybe
-#endif
 
 -- | Deletes a key, returning 'Nothing' if the result is empty.
 nonEmptyDelete :: Ord k => k -> MonoidalMap k a -> Maybe (MonoidalMap k a)

@@ -17,6 +17,7 @@ module Reflex.PerformEvent.Class
   , performEventAsync
   ) where
 
+import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.Trans.Maybe (MaybeT (..))
 

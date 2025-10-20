@@ -20,6 +20,7 @@ module Reflex.Query.Base
   ) where
 
 import Control.Applicative (liftA2)
+import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Morph
@@ -40,7 +41,6 @@ import qualified Data.IntMap as IntMap
 import Data.Kind (Type)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid ((<>))
 import qualified Data.Semigroup as S
 import Data.Semigroup.Commutative
 import Data.Some (Some(Some))
@@ -60,7 +60,7 @@ import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
 newtype QueryT t q m a = QueryT { unQueryT :: StateT [Behavior t q] (EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m)) a }
-  deriving (Functor, Applicative, Monad, MonadException, MonadFix, MonadIO, MonadAtomicRef)
+  deriving (Functor, Applicative, Monad, MonadException, MonadFix, MonadIO, MonadAtomicRef, MonadCatch, MonadThrow, MonadMask)
 
 deriving instance MonadHold t m => MonadHold t (QueryT t q m)
 deriving instance MonadSample t m => MonadSample t (QueryT t q m)

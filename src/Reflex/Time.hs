@@ -32,12 +32,10 @@ import Control.Monad.IO.Class
 import Data.Align
 import Data.Data (Data)
 import Data.Fixed
-import Data.Semigroup (Semigroup(..))
 import Data.Sequence (Seq, (|>))
 import qualified Data.Sequence as Seq
 import Data.These
 import Data.Time.Clock
-import Data.Typeable
 import GHC.Generics (Generic)
 import System.Random
 
@@ -50,7 +48,7 @@ data TickInfo
              , _tickInfo_alreadyElapsed :: NominalDiffTime
              -- ^ Amount of time that has elapsed in the current tick period.
              }
-  deriving (Eq, Ord, Show, Typeable)
+  deriving (Eq, Ord, Show)
 
 -- | Fires an 'Event' once every time provided interval elapses, approximately.
 -- The provided 'UTCTime' is used bootstrap the determination of how much time has elapsed with each tick.
@@ -283,13 +281,13 @@ throttle t e = do
 data ThrottleState b
   = ThrottleState_Immediate
   | ThrottleState_Buffered (ThrottleBuffer b)
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data, Typeable)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data)
 
 data ThrottleBuffer b
   = ThrottleBuffer_Empty -- Empty conflicts with lens, and hiding it would require turning
                          -- on PatternSynonyms
   | ThrottleBuffer_Full b
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data, Typeable)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data)
 
 instance Semigroup b => Semigroup (ThrottleBuffer b) where
   x <> y = case x of
