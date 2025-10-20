@@ -2,7 +2,12 @@
 
 ## 0.9.4.0
 
-* Get rid of the `use-template-haskell` flag. Template Haskell is now always used.
+* Add note about `requesting` semantics by @LightAndLight in https://github.com/reflex-frp/reflex/pull/508
+* Dropped lens by @ilyakooo0 in https://github.com/reflex-frp/reflex/pull/463
+* Build with ghc(js) 9.8.2 + 9.10.1 + 9.12.2 by @ymeister in https://github.com/reflex-frp/reflex/pull/502
+* headless: Add MonadThrow (Performable m) by @ali-abrar in https://github.com/reflex-frp/reflex/pull/523
+* Don't check in newSubscriberCoincidenceInner whether occRef is already set by @parenthetical in https://github.com/reflex-frp/reflex/pull/496
+* Always enable Template Haskell by @Ericson2314 in https://github.com/reflex-frp/reflex/pull/484
 
 ## 0.9.3.4
 
