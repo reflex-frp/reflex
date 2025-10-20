@@ -1,6 +1,6 @@
 cabal-version:      1.22
 name:               reflex
-version:            0.9.3.4
+version:            0.9.4.0
 license:            BSD3
 license-file:       LICENSE
 maintainer:         ryan.trinkle@gmail.com
