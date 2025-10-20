@@ -22,7 +22,13 @@ module Reflex.PerformEvent.Base
   , hostPerformEventT
   ) where
 
-import Control.Lens
+import Reflex.Class
+import Reflex.Adjustable.Class
+import Reflex.Host.Class
+import Reflex.PerformEvent.Class
+import Reflex.Requester.Base
+import Reflex.Requester.Class
+
 import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
 import Control.Monad.Exception
 import Control.Monad.Fix
