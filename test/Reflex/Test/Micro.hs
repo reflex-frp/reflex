@@ -330,6 +330,20 @@ testCases =
       let e = pushAlways (\a -> if a == "a" then now else return never) e1
       x <- accumDyn (<>) never e 
       return . coincidence $ updated x
+  , testB "sampling-monadfix" $ do
+      rec
+        x <- sample b
+        b <- hold "0" never
+      _ <- sample b
+      return (x <$ b)
+  , testB "sampling-monadfix-twice-removed" $ do
+      rec
+        e1 <- events1
+        x <- sample b
+        b' <- hold x e1
+        b <- hold "0" e1
+      _ <- sample b'
+      return b'
   ] where
 
     events1, events2, events3 ::  TestPlan t m => m (Event t String)
