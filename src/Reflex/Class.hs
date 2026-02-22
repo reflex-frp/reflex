@@ -156,6 +156,7 @@ module Reflex.Class
     -- * Deprecated functions
   , switchPromptly
   , switchPromptOnly
+  , buildDynamic
   -- * "Cheap" functions
   , fmapMaybeCheap
   , mapMaybeCheap
@@ -388,6 +389,11 @@ instance (Reflex t, Default a) => Default (Dynamic t a) where
 class (Applicative m, Monad m) => MonadSample t m | m -> t where
   -- | Get the current value in the 'Behavior'
   sample :: Behavior t a -> m a
+  {-# INLINABLE sample #-}
+  default sample :: (m ~ f m', MonadTrans f, MonadSample t m') => Behavior t a -> m a
+  sample = lift . sample
+
+{-# DEPRECATED buildDynamic "Sample directly and use 'liftPusmM'" #-}
 
 -- | 'MonadHold' designates monads that can create new 'Behavior's based on
 -- 'Event's; usually this will be 'PushM' or a monad based on it.  'MonadHold'
@@ -400,33 +406,50 @@ class MonadSample t m => MonadHold t m where
   -- the 'Behavior', it will see the __old__ value of the 'Behavior', not the new
   -- one.
   hold :: a -> Event t a -> m (Behavior t a)
+  {-# INLINABLE hold #-}
   default hold :: (m ~ f m', MonadTrans f, MonadHold t m') => a -> Event t a -> m (Behavior t a)
   hold v0 = lift . hold v0
   -- | Create a 'Dynamic' value using the given initial value that changes every
   -- time the 'Event' occurs.
   holdDyn :: a -> Event t a -> m (Dynamic t a)
+  {-# INLINABLE holdDyn #-}
   default holdDyn :: (m ~ f m', MonadTrans f, MonadHold t m') => a -> Event t a -> m (Dynamic t a)
   holdDyn v0 = lift . holdDyn v0
   -- | Create an 'Incremental' value using the given initial value that changes
   -- every time the 'Event' occurs.
   holdIncremental :: Patch p => PatchTarget p -> Event t p -> m (Incremental t p)
+  {-# INLINABLE holdIncremental #-}
   default holdIncremental :: (Patch p, m ~ f m', MonadTrans f, MonadHold t m') => PatchTarget p -> Event t p -> m (Incremental t p)
   holdIncremental v0 = lift . holdIncremental v0
+  -- | DEPRECATED. This function allowed for extra laziness when sampling
+  -- behaviors, but is no longer needed. When implementing MonadHold use the new
+  -- 'liftPushM' instead.
   buildDynamic :: PushM t a -> Event t a -> m (Dynamic t a)
-  {-
-  default buildDynamic :: (m ~ f m', MonadTrans f, MonadHold t m') => PullM t a -> Event t a -> m (Dynamic t a)
-  buildDynamic getV0 = lift . buildDynamic getV0
-  -}
+  buildDynamic initialValue e = do
+    iv <- liftPushM initialValue
+    holdDyn iv e
   -- | Create a new 'Event' that only occurs only once, on the first occurrence of
   -- the supplied 'Event'.
   headE :: Event t a -> m (Event t a)
+  {-# INLINABLE headE #-}
+  default headE :: (m ~ f m', MonadTrans f, MonadHold t m') => Event t a -> m (Event t a)
+  headE = lift . headE
   -- | An event which only occurs at the current moment in time, such that:
   --
   -- > coincidence (pushAlways (\a -> (a <$) <$> now) e) = e
   --
   now :: m (Event t ())
+  {-# INLINABLE now #-}
   default now :: (m ~ f m', MonadTrans f, MonadHold t m') => m (Event t ())
   now = lift now
+  {-# INLINABLE liftPushM #-}
+  liftPushM :: PushM t a -> m a
+  {- -- When buildDynamic has been removed this can be the new default:
+  default liftPushM :: (m ~ f m', MonadTrans f, MonadHold t m') => PushM t a -> m a
+  liftPushM = lift . liftPushM
+  -}
+  default liftPushM :: (Reflex t) => PushM t a -> m a
+  liftPushM m = sample . current =<< buildDynamic m never
 
 -- | Accumulate an 'Incremental' with the supplied initial value and the firings of the provided 'Event',
 -- using the combining function to produce a patch.
@@ -570,9 +593,9 @@ instance MonadHold t m => MonadHold t (ReaderT r m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
-  buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  liftPushM = lift . liftPushM
 
 instance (MonadSample t m, Monoid r) => MonadSample t (WriterT r m) where
   sample = lift . sample
@@ -581,9 +604,9 @@ instance (MonadHold t m, Monoid r) => MonadHold t (WriterT r m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
-  buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  liftPushM = lift . liftPushM
 
 instance MonadSample t m => MonadSample t (StateT s m) where
   sample = lift . sample
@@ -592,9 +615,9 @@ instance MonadHold t m => MonadHold t (StateT s m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
-  buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  liftPushM = lift . liftPushM
 
 instance MonadSample t m => MonadSample t (ExceptT e m) where
   sample = lift . sample
@@ -603,9 +626,9 @@ instance MonadHold t m => MonadHold t (ExceptT e m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
-  buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  liftPushM = lift . liftPushM
 
 instance (MonadSample t m, Monoid w) => MonadSample t (RWST r w s m) where
   sample = lift . sample
@@ -614,9 +637,9 @@ instance (MonadHold t m, Monoid w) => MonadHold t (RWST r w s m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
-  buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  liftPushM = lift . liftPushM
 
 instance MonadSample t m => MonadSample t (ContT r m) where
   sample = lift . sample
@@ -625,9 +648,9 @@ instance MonadHold t m => MonadHold t (ContT r m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0
-  buildDynamic a0 = lift . buildDynamic a0
   headE = lift . headE
   now = lift now
+  liftPushM = lift . liftPushM
 
 --------------------------------------------------------------------------------
 -- Convenience functions

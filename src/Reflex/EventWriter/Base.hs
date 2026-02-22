@@ -141,12 +141,12 @@ instance MonadHold t m => MonadHold t (EventWriterT t w m) where
   holdDyn v0 = lift . holdDyn v0
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 = lift . holdIncremental v0
-  {-# INLINABLE buildDynamic #-}
-  buildDynamic a0 = lift . buildDynamic a0
   {-# INLINABLE headE #-}
   headE = lift . headE
   {-# INLINABLE now #-}
   now = lift now
+  {-# INLINABLE liftPushM #-}
+  liftPushM = lift . liftPushM
 
 instance (Reflex t, Adjustable t m, MonadHold t m, Semigroup w) => Adjustable t (EventWriterT t w m) where
   runWithReplace = runWithReplaceEventWriterTWith $ \dm0 dm' -> lift $ runWithReplace dm0 dm'
