@@ -293,14 +293,28 @@ subscribeAndReadHead e sub = do
     Just _ -> unsubscribe subscription
   return (subscription, occ)
 
-headE :: Defer (SomeMergeInit x) m => Event x a -> m (Event x a)
+headE :: (HasSpiderTimeline x, Defer (SomeMergeInit x) m) => Event x a -> m (Event x a)
 headE originalE = do
   parent <- liftIO $ newIORef $ Just originalE
-  defer $ SomeMergeInit $ do --TODO: Rename SomeMergeInit appropriately
-    let clearParent = liftIO $ writeIORef parent Nothing
-    (_, occ) <- subscribeAndReadHead originalE $ terminalSubscriber $ const clearParent
-    when (isJust occ) clearParent
-  return $ Event $ \sub ->
+  -- guardRef retains the merge-init subscription so GC cannot collect it
+  -- before the original event fires. Without this, the terminalSubscriber's
+  -- callback might never run, breaking headE's "at most once" semantics.
+  guardRef <- liftIO $ newIORef (Nothing :: Maybe (EventSubscription x))
+  defer $ SomeMergeInit $ do
+    -- Use scheduleClear instead of writing parent directly: the clear is
+    -- deferred to the end of runFrame, so same-frame subscribers still see
+    -- the current occurrence (matching slowHeadE's hold/switch semantics).
+    (subscription, occ) <- subscribeAndReadHead originalE $
+      terminalSubscriber $ \_ -> do
+        scheduleClear parent
+        liftIO $ writeIORef guardRef Nothing
+    if isJust occ
+      then do
+        scheduleClear parent
+        liftIO $ writeIORef guardRef Nothing
+      else liftIO $ writeIORef guardRef $ Just subscription
+  return $ Event $ \sub -> do
+    liftIO $ touch guardRef
     liftIO (readIORef parent) >>= \case
       Nothing -> subscribeAndReadNever
       Just e -> subscribeAndReadHead e sub
