@@ -293,7 +293,6 @@ subscribeAndReadHead e sub = do
     Just _ -> unsubscribe subscription
   return (subscription, occ)
 
---TODO: Make this lazy in its input event
 headE :: Defer (SomeMergeInit x) m => Event x a -> m (Event x a)
 headE originalE = do
   parent <- liftIO $ newIORef $ Just originalE
@@ -2515,8 +2514,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
   {-# INLINABLE holdIncremental #-}
   holdIncremental = holdIncrementalSpiderEventM
   {-# INLINABLE headE #-}
-  headE = R.slowHeadE
---  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
+  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = nowSpiderEventM
   {-# INLINABLE liftPushM #-}
@@ -2538,8 +2536,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 (SpiderEvent e) = SpiderPushM $ SpiderIncremental . dynamicHold <$> Reflex.Spider.Internal.hold v0 e
   {-# INLINABLE headE #-}
-  headE = R.slowHeadE
---  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = SpiderPushM nowSpiderEventM
   {-# INLINABLE liftPushM #-}
@@ -2614,8 +2611,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 e = SpiderHostFrame $ fmap (SpiderIncremental . dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
   {-# INLINABLE headE #-}
-  headE = R.slowHeadE
---  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = SpiderHostFrame Reflex.Class.now
   {-# INLINABLE liftPushM #-}
