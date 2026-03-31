@@ -78,7 +78,7 @@ main = do
       [ That (), This (), That () ]
   return ()
 
-testQueryT :: (Reflex t, MonadFix m)
+testQueryT :: (Reflex t, MonadFix m, MonadHold t m)
            => (Event t () -> Event t () -> QueryT t (Selector Int MyQuery) m ())
            -> AppIn t () (These () ())
            -> m (AppOut t Int Int)
