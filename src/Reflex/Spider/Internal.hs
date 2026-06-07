@@ -2257,8 +2257,6 @@ mergeIntCheap d = Event $ \sub -> do
               oldParents <- liftIO $ FastMutableIntMap.applyPatch parents newSubscriptions
               liftIO $ for_ oldParents $ \oldParent -> do
                 oldParentHeight <- getEventSubscribedHeight $ _eventSubscription_subscribed oldParent
-
-                print ("updateMe", oldParentHeight)
                 modifyIORef' heightBagRef $ heightBagRemove oldParentHeight
               return $ IntMap.elems oldParents
     let changeSubscriber = Subscriber
