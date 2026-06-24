@@ -70,10 +70,12 @@ newtype QueryT t q m a = QueryT { unQueryT :: StateT [Behavior t q] (EventWriter
 deriving instance MonadHold t m => MonadHold t (QueryT t q m)
 deriving instance MonadSample t m => MonadSample t (QueryT t q m)
 
-runQueryT :: (MonadFix m, Commutative q, Group q, Reflex t) => QueryT t q m a -> Dynamic t (QueryResult q) -> m (a, Incremental t (AdditivePatch q))
+runQueryT :: (MonadHold t m, Commutative q, Group q, Reflex t) => QueryT t q m a -> Dynamic t (QueryResult q) -> m (a, Incremental t (AdditivePatch q))
 runQueryT (QueryT a) qr = do
   ((r, bs), es) <- runReaderT (runEventWriterT (runStateT a mempty)) qr
-  return (r, unsafeBuildIncremental (foldlM (\b c -> (b <>) <$> sample c) mempty bs) (fmapCheap AdditivePatch es))
+  v0 <- foldlM (\b c -> (b <>) <$> sample c) mempty bs
+  inc <- holdIncremental v0 (fmapCheap AdditivePatch es)
+  return (r, inc)
 
 newtype QueryTLoweredResult t q v = QueryTLoweredResult (v, [Behavior t q])
 
@@ -289,7 +291,7 @@ instance (S.Semigroup a, Monad m) => S.Semigroup (QueryT t q m a) where
   (<>) = liftA2 (S.<>)
 
 -- | withQueryT's QueryMorphism argument needs to be a group homomorphism in order to behave correctly
-withQueryT :: (MonadFix m, PostBuild t m, Group q, Group q', Commutative q, Commutative q', Query q')
+withQueryT :: (MonadHold t m, PostBuild t m, Group q, Group q', Commutative q, Commutative q', Query q')
            => QueryMorphism q q'
            -> QueryT t q m a
            -> QueryT t q' m a
@@ -306,7 +308,7 @@ mapQueryT :: (forall b. m b -> n b) -> QueryT t q m a -> QueryT t q n a
 mapQueryT f (QueryT a) = QueryT $ mapStateT (mapEventWriterT (mapReaderT f)) a
 
 -- | dynWithQueryT's (Dynamic t QueryMorphism) argument needs to be a group homomorphism at all times in order to behave correctly
-dynWithQueryT :: (MonadFix m, PostBuild t m, Group q, Commutative q, Group q', Commutative q', Query q')
+dynWithQueryT :: (MonadHold t m, PostBuild t m, Group q, Commutative q, Group q', Commutative q', Query q')
            => Dynamic t (QueryMorphism q q')
            -> QueryT t q m a
            -> QueryT t q' m a
