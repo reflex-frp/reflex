@@ -127,12 +127,12 @@ instance MonadHold t m => MonadHold t (TriggerEventT t m) where
   holdDyn v0 v' = lift $ holdDyn v0 v'
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 v' = lift $ holdIncremental v0 v'
-  {-# INLINABLE buildDynamic #-}
-  buildDynamic a0 = lift . buildDynamic a0
   {-# INLINABLE headE #-}
   headE = lift . headE
   {-# INLINABLE now #-}
   now = lift now
+  {-# INLINABLE liftPushM #-}
+  liftPushM = lift . liftPushM
 
 instance Adjustable t m => Adjustable t (TriggerEventT t m) where
   {-# INLINABLE runWithReplace #-}

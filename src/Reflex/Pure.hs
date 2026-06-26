@@ -186,12 +186,9 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
             else let lastTime = pred sampleTime
                  in fromMaybe (f lastTime) $ unEvent e lastTime
 
-  holdDyn v0 = buildDynamic (return v0)
-
-  buildDynamic :: (t -> a) -> Event (Pure t) a -> t -> Dynamic (Pure t) a
-  buildDynamic initialValue e initialTime =
-    let Behavior f = hold (initialValue initialTime) e initialTime
-    in Dynamic $ \t -> (f t, unEvent e t)
+  holdDyn v0 e = do
+    b <- hold v0 e
+    pure $ unsafeDynamic b e
 
   holdIncremental :: Patch p => PatchTarget p -> Event (Pure t) p -> t -> Incremental (Pure t) p
   holdIncremental initialValue e initialTime = Incremental $ \t -> (f t, unEvent e t)
@@ -209,3 +206,4 @@ instance (Enum t, HasTrie t, Ord t) => MonadHold (Pure t) ((->) t) where
 
   headE = slowHeadE
   now t = Event $ guard . (t ==)
+  liftPushM = id
