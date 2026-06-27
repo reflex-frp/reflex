@@ -20,7 +20,9 @@ import Data.Char
 import Data.Foldable
 import Data.Functor.Misc
 import qualified Data.Map as Map
+import qualified Data.IntMap as IntMap
 import Data.Monoid
+import Reflex.Patch.MapWithMove (moveMapKey, insertMapKey, deleteMapKey)
 
 import Prelude
 
@@ -214,6 +216,41 @@ testCases =
       e <- events1
       return $ coincidence (deep e <$ e)
 
+  , testE "coincidence-incremental-height" $ do
+      tick <- ticks
+      e2 <- mergeMapIncremental
+              <$> holdIncremental mempty ((mempty :: PatchMap Int (Event t ())) <$ tick)
+      pure (leftmost [ void $ coincidence (e2 <$ leftmost [tick, tick])
+                     , tick])
+
+  , testE "coincidence-int-incremental-height" $ do
+      tick <- ticks
+      h <- mergeIntIncremental
+             <$> holdIncremental
+                   (IntMap.singleton 1 (void tick))
+                   (PatchIntMap (IntMap.singleton 1 (Just (void tick))) <$ tick)
+      pure (leftmost [ void $ coincidence (void h <$ leftmost [tick, tick])
+                     , tick])
+
+  , testE "coincidence-switch-reconnect-height" $ do
+      tick <- ticks
+      flag <- foldDyn (\_ b -> not b) False tick
+      let hi = leftmost [tick, tick]
+      pure (leftmost [void (coincidence (switch (current $ (\b -> if b then hi else tick) <$> flag) <$ hi)), tick])
+
+  , testE "mergeWithMove-height" $ do
+      tick <- ticks
+      let lo = tick
+          hi = leftmost [tick, tick]
+      patches <- plan
+        [ (1, insertMapKey 1 hi)
+        , (2, deleteMapKey 0)
+        , (3, insertMapKey 0 lo)
+        , (4, moveMapKey 1 2)
+        , (5, deleteMapKey 2) ]
+      mergeMapIncrementalWithMove
+        <$> holdIncremental (Map.singleton (0 :: Int) lo) patches
+
   , testB "holdWhileFiring" $ do
       e <- events1
       eo <- headE e
@@ -336,6 +373,11 @@ testCases =
     events1 = plan [(1, "a"), (2, "b"), (5, "c"), (7, "d"), (8, "e")]
     events2 = plan [(1, "e"), (3, "d"), (4, "c"), (6, "b"), (7, "a")]
     events3 = liftA2 mappend events1 events2
+
+    -- Unit-valued event occurrences on consecutive frames, for the height/teardown
+    -- regression tests below (which need occurrences but not their values).
+    ticks :: TestPlan t m => m (Event t ())
+    ticks = plan [(1, ()), (2, ()), (3, ()), (4, ()), (5, ()), (6, ())]
 
     eithers ::  TestPlan t m => m (Event t (Either String String))
     eithers = plan [(1, Left "e"), (3, Left "d"), (4, Right "c"), (6, Right "b"), (7, Left "a")]
