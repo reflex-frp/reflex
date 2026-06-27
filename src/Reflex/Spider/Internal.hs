@@ -845,6 +845,7 @@ data EventEnv x
               , eventEnvRootClears :: !(IORef [Some RootClear])
               , eventEnvCurrentHeight :: !(IORef Height) -- Needed for Subscribe
               , eventEnvResetCoincidences :: !(IORef [SomeResetCoincidence x]) -- Needed for Subscribe
+              , eventEnvInvalidatedCoincidences :: !(IORef [SomeCoincidenceSubscribed x]) -- Coincidences whose height was set to 'invalidHeight' this frame and must be recalculated; populated by 'invalidateCoincidenceHeight'
               , eventEnvDelayedMerges :: !(IORef (IntMap [EventM x ()]))
               }
 
@@ -1515,7 +1516,9 @@ propagateSubscriberHold h a = do
       iRef <- {-# SCC "iRef" #-} liftIO $ evaluate $ holdInvalidators h
       defer $ {-# SCC "assignment" #-} SomeAssignment vRef iRef v'
 
-data SomeResetCoincidence x = forall a. SomeResetCoincidence !(EventSubscription x) !(Maybe (CoincidenceSubscribed x a)) -- The CoincidenceSubscriber will be present only if heights need to be reset
+-- | 'CoincidenceSubscribed' is present only when the coincidence raised its height while subscribing to the inner event.
+data SomeResetCoincidence x = forall a. SomeResetCoincidence !(EventSubscription x) !(Maybe (CoincidenceSubscribed x a))
+data SomeCoincidenceSubscribed x = forall a. SomeCoincidenceSubscribed !(CoincidenceSubscribed x a)
 
 runBehaviorM :: BehaviorM x a -> Maybe (Weak (Invalidator x), IORef [SomeBehaviorSubscribed x]) -> IORef [SomeHoldInit x] -> IO a
 runBehaviorM a mwi holdInits = runReaderIO (unBehaviorM a) (mwi, holdInits)
@@ -2272,7 +2275,7 @@ mergeIntCheap d = Event $ \sub -> do
     -- If we don't do this, there are certain cases where mergeCheap will fail to properly retain
     -- its subscription.
     liftIO $ writeIORef changeSubdRef (changeSubscriber, changeSubscription)
-  let unsubscribeAll = traverse_ unsubscribe =<< FastMutableIntMap.getFrozenAndClear parents
+  let unsubscribeAll = traverse_ (unsubscribe . snd) =<< FastMutableIntMap.toList parents
 
 
   return (EventSubscription unsubscribeAll subscribed, occ)
@@ -2321,11 +2324,12 @@ newEventEnv = do
   toClearIntRef <- newIORef []
   toClearRootRef <- newIORef []
   coincidenceInfosRef <- newIORef []
+  invalidatedCoincidencesRef <- newIORef []
   delayedRef <- newIORef IntMap.empty
-  return $ EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeInitRef toClearRef toClearIntRef toClearRootRef heightRef coincidenceInfosRef delayedRef
+  return $ EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeInitRef toClearRef toClearIntRef toClearRootRef heightRef coincidenceInfosRef invalidatedCoincidencesRef delayedRef
 
 clearEventEnv :: EventEnv x -> IO ()
-clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeInitRef toClearRef toClearIntRef toClearRootRef heightRef coincidenceInfosRef delayedRef) = do
+clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeInitRef toClearRef toClearIntRef toClearRootRef heightRef coincidenceInfosRef invalidatedCoincidencesRef delayedRef) = do
   writeIORef toAssignRef []
   writeIORef holdInitRef []
   writeIORef dynInitRef []
@@ -2336,6 +2340,7 @@ clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeI
   writeIORef toClearIntRef []
   writeIORef toClearRootRef []
   writeIORef coincidenceInfosRef []
+  writeIORef invalidatedCoincidencesRef []
   writeIORef delayedRef IntMap.empty
 
 -- | Run an event action outside of a frame
@@ -2401,10 +2406,12 @@ runFrame a = SpiderHost $ do
       writeIORef (switchSubscribedHeight subscribed) $! invalidHeight
       WeakBag.traverse_ (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight myHeight
   mapM_ _someMergeUpdate_invalidateHeight mergeUpdates --TODO: In addition to when the patch is completely empty, we should also not run this if it has some Nothing values, but none of them have actually had any effect; potentially, we could even check for Just values with no effect (e.g. by comparing their IORefs and ignoring them if they are unchanged); actually, we could just check if the new height is different
-  forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mcs) -> do
+  forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mInvalidate) -> do
     unsubscribe subscription
-    mapM_ invalidateCoincidenceHeight mcs
-  forM_ coincidenceInfos $ \(SomeResetCoincidence _ mcs) -> mapM_ recalculateCoincidenceHeight mcs
+    mapM_ invalidateCoincidenceHeight mInvalidate
+  invalidatedCoincidences <- readIORef $ eventEnvInvalidatedCoincidences env
+  writeIORef (eventEnvInvalidatedCoincidences env) []
+  forM_ invalidatedCoincidences $ \(SomeCoincidenceSubscribed subscribed) -> recalculateCoincidenceHeight subscribed
   mapM_ _someMergeUpdate_recalculateHeight mergeUpdates
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> do
     height <- calculateSwitchHeight subscribed
@@ -2435,11 +2442,13 @@ succHeight h@(Height a) =
   then invalidHeight
   else Height $ succ a
 
-invalidateCoincidenceHeight :: CoincidenceSubscribed x a -> IO ()
+invalidateCoincidenceHeight :: forall x a. HasSpiderTimeline x => CoincidenceSubscribed x a -> IO ()
 invalidateCoincidenceHeight subscribed = do
   oldHeight <- readIORef $ coincidenceSubscribedHeight subscribed
   when (oldHeight /= invalidHeight) $ do
     writeIORef (coincidenceSubscribedHeight subscribed) $! invalidHeight
+    let env = _spiderTimeline_eventEnv (unSTE (spiderTimeline :: SpiderTimelineEnv x))
+    modifyIORef' (eventEnvInvalidatedCoincidences env) (SomeCoincidenceSubscribed subscribed :)
     WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ invalidateSubscriberHeight oldHeight
 
 updateSwitchHeight :: Height -> SwitchSubscribed x a -> IO ()
