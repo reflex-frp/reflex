@@ -709,7 +709,7 @@ behaviorPull !p = Behavior $ do
     case val of
       Just subscribed -> do
         askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some (BehaviorSubscribedPull subscribed)) :))
-        askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (pullSubscribedInvalidators subscribed) (wi:))
+        askInvalidator >>= mapM_ (liftIO . addInvalidatorAmortized (pullSubscribedInvalidators subscribed))
         liftIO $ touch $ pullSubscribedOwnInvalidator subscribed
         return $ pullSubscribedValue subscribed
       Nothing -> do
@@ -718,7 +718,8 @@ behaviorPull !p = Behavior $ do
         parentsRef <- liftIO $ newIORef []
         holdInits <- askBehaviorHoldInits
         a <- liftIO $ runReaderIO (unBehaviorM $ pullCompute p) (Just (wi, parentsRef), holdInits)
-        invsRef <- liftIO . newIORef . maybeToList =<< askInvalidator
+        inv0 <- maybeToList <$> askInvalidator
+        invsRef <- liftIO $ newIORef $ InvalidatorList (length inv0) invalidatorPruneThreshold inv0
         parents <- liftIO $ readIORef parentsRef
         let subscribed = PullSubscribed
               { pullSubscribedValue = a
@@ -737,10 +738,48 @@ behaviorDyn !d = Behavior $ readHoldTracked =<< getDynHold d
 readHoldTracked :: Hold x p -> BehaviorM x (PatchTarget p)
 readHoldTracked h = do
   result <- liftIO $ readIORef $ holdValue h
-  askInvalidator >>= mapM_ (\wi -> liftIO $ modifyIORef' (holdInvalidators h) (wi:))
+  askInvalidator >>= mapM_ (liftIO . addInvalidatorAmortized (holdInvalidators h))
   askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some (BehaviorSubscribedHold h)) :))
   liftIO $ touch h -- Otherwise, if this gets inlined enough, the hold's parent reference may get collected
   return result
+
+data InvalidatorList x = InvalidatorList
+  { invalidatorListSize :: !Int
+  , invalidatorListPruneAt :: !Int
+  , invalidatorListElems :: ![Weak (Invalidator x)]
+  }
+
+emptyInvalidatorList :: InvalidatorList x
+emptyInvalidatorList = InvalidatorList
+  { invalidatorListSize = 0
+  , invalidatorListPruneAt = invalidatorPruneThreshold
+  , invalidatorListElems = []
+  }
+
+-- | Add invalidator weak ref to invalidator list, pruning finalized entries
+-- once the list grows to its "prune at" size.
+{-# INLINE addInvalidatorAmortized #-}
+addInvalidatorAmortized :: IORef (InvalidatorList x) -> Weak (Invalidator x) -> IO ()
+addInvalidatorAmortized ref weakInvalidator = do
+  InvalidatorList listSize pruneAt weakInvalidators <- readIORef ref
+  if listSize < pruneAt
+    then writeIORef ref $! InvalidatorList (listSize + 1) pruneAt (weakInvalidator : weakInvalidators)
+    else do
+      (liveCount, liveInvalidators) <-
+        foldrM
+        (\weakInvalidator' (!liveCount, liveInvalidators) ->
+            (\case Just _ -> (liveCount + 1, weakInvalidator' : liveInvalidators)
+                   Nothing -> (liveCount, liveInvalidators))
+            <$> deRefWeak weakInvalidator')
+        (0, [])
+        weakInvalidators
+      writeIORef ref $! InvalidatorList
+        (liveCount + 1)
+        (max invalidatorPruneThreshold (2 * liveCount))
+        (weakInvalidator : liveInvalidators)
+
+invalidatorPruneThreshold :: Int
+invalidatorPruneThreshold = 100
 
 {-# INLINABLE readBehaviorUntracked #-}
 readBehaviorUntracked :: Defer (SomeHoldInit x) m => Behavior x a -> m a
@@ -795,7 +834,7 @@ dynamicDynIdentity = dynamicDyn
 --type role Hold representational
 data Hold x p
    = Hold { holdValue :: !(IORef (PatchTarget p))
-          , holdInvalidators :: !(IORef [Weak (Invalidator x)])
+          , holdInvalidators :: !(IORef (InvalidatorList x))
           , holdEvent :: Event x p -- This must be lazy, or holds cannot be defined before their input Events
           , holdParent :: !(IORef (Maybe (EventSubscription x))) -- Keeps its parent alive (will be undefined until the hold is initialized) --TODO: Probably shouldn't be an IORef
 #ifdef DEBUG_NODEIDS
@@ -948,7 +987,7 @@ instance HasSpiderTimeline x => Defer (SomeResetCoincidence x) (EventM x) where
 hold :: (Patch p, Defer (SomeHoldInit x) m) => PatchTarget p -> Event x p -> m (Hold x p)
 hold v0 e = do
   valRef <- liftIO $ newIORef v0
-  invsRef <- liftIO $ newIORef []
+  invsRef <- liftIO $ newIORef emptyInvalidatorList
   parentRef <- liftIO $ newIORef Nothing
 #ifdef DEBUG_NODEIDS
   nodeId <- liftIO newNodeId
@@ -1013,7 +1052,7 @@ newtype SomeBehaviorSubscribed x = SomeBehaviorSubscribed (Some (BehaviorSubscri
 --type role PullSubscribed representational
 data PullSubscribed x a
    = PullSubscribed { pullSubscribedValue :: !a
-                    , pullSubscribedInvalidators :: !(IORef [Weak (Invalidator x)])
+                    , pullSubscribedInvalidators :: !(IORef (InvalidatorList x))
                     , pullSubscribedOwnInvalidator :: !(Invalidator x)
                     , pullSubscribedParents :: ![SomeBehaviorSubscribed x] -- Need to keep parent behaviors alive, or they won't let us know when they're invalidated
                     }
@@ -1340,7 +1379,7 @@ newtype IntClear a = IntClear (IORef (IntMap a))
 
 newtype RootClear k = RootClear (IORef (DMap k Identity))
 
-data SomeAssignment x = forall a. SomeAssignment {-# UNPACK #-} !(IORef a) {-# UNPACK #-} !(IORef [Weak (Invalidator x)]) a
+data SomeAssignment x = forall a. SomeAssignment {-# UNPACK #-} !(IORef a) {-# UNPACK #-} !(IORef (InvalidatorList x)) a
 
 debugFinalize :: Bool
 debugFinalize = False
@@ -1352,8 +1391,6 @@ mkWeakPtrWithDebug x debugNote = do
     if debugFinalize
     then Just $ debugStrLn $ "finalizing: " ++ debugNote
     else Nothing
-
-type WeakList a = [Weak a]
 
 type CanTrace x m = (HasSpiderTimeline x, MonadIO m)
 
@@ -1503,8 +1540,8 @@ instance Show EventLoopException where
 propagateSubscriberHold :: forall x p. (HasSpiderTimeline x, Patch p) => Hold x p -> p -> EventM x ()
 propagateSubscriberHold h a = do
   {-# SCC "trace" #-} when debugPropagate $ traceM (Proxy :: Proxy x) $ liftIO $ do
-    invalidators <- liftIO $ readIORef $ holdInvalidators h
-    return $ "SubscriberHold" <> showNodeId h <> ": " ++ show (length invalidators)
+    InvalidatorList n _ _ <- liftIO $ readIORef $ holdInvalidators h
+    return $ "SubscriberHold" <> showNodeId h <> ": " ++ show n
 
   v <- {-# SCC "read" #-} liftIO $ readIORef $ holdValue h
   case {-# SCC "apply" #-} apply a v of
@@ -2479,8 +2516,8 @@ calculateCoincidenceHeight subscribed = do
 
 data SomeSwitchSubscribed x = forall a. SomeSwitchSubscribed {-# NOUNPACK #-} (SwitchSubscribed x a)
 
-invalidate :: IORef [SomeSwitchSubscribed x] -> WeakList (Invalidator x) -> IO (WeakList (Invalidator x))
-invalidate toReconnectRef wis = do
+invalidate :: IORef [SomeSwitchSubscribed x] -> InvalidatorList x -> IO (InvalidatorList x)
+invalidate toReconnectRef (InvalidatorList _ _ wis) = do
   forM_ wis $ \wi -> do
     mi <- deRefWeak wi
     case mi of
@@ -2499,7 +2536,7 @@ invalidate toReconnectRef wis = do
           InvalidatorSwitch subscribed -> do
             traceInvalidate $ "invalidate: Switch" <> showNodeId subscribed
             modifyIORef' toReconnectRef (SomeSwitchSubscribed subscribed :)
-  return [] -- Since we always finalize everything, always return an empty list --TODO: There are some things that will need to be re-subscribed every time; we should try to avoid finalizing them
+  return emptyInvalidatorList -- Since we always finalize everything, always return an empty list --TODO: There are some things that will need to be re-subscribed every time; we should try to avoid finalizing them
 
 --------------------------------------------------------------------------------
 -- Reflex integration

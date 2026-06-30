@@ -8,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Reflex.Bench.Focused where
 
@@ -376,6 +377,12 @@ firing n =
       counters = countMany =<< sparse
 
 
-
-
-
+-- Stress-test sampling a single behavior through a large, shared set of pulls,
+-- exercising the invalidator-list pruning path.
+sharedInvalidators :: Word -> [(String, TestCase)]
+sharedInvalidators width =
+  [ testB "sumPulls" $ do
+      b <- current <$> (count @_ @_ @Int =<< events 10)
+      let ps = [ (+ fromIntegral i) <$> b | i <- [1 .. width] ]
+      return $ pull $ sum <$> traverse sample ps
+  ]

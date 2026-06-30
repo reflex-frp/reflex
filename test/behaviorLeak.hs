@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies #-}
 
 -- | Test whether Applicative combination of Behaviors leaks memory when one of
--- the Behaviors' source events doesn't update.
+-- the Behaviors' source events never occurs.
 -- (https://github.com/reflex-frp/reflex/issues/490)
 
 import Control.Monad
@@ -20,9 +20,16 @@ import System.Exit
 import System.Mem (performMajorGC)
 import Text.Printf
 
-warmupN, measureN :: Int
-warmupN  = 200000
-measureN = 2000000
+warmupTicks :: Int
+warmupTicks = 200000
+windowTicks :: Int
+windowTicks = 200000
+samplesPerWindow :: Int
+samplesPerWindow = 20
+ticksBetweenWindows :: Int
+ticksBetweenWindows = 9 * windowTicks
+allowedGrowthBytes :: Integer
+allowedGrowthBytes = 512 * 1024
 
 testCase :: (Reflex t, MonadHold t m) => Event t b -> m (Behavior t (Int, Int))
 testCase tickE = do
@@ -44,24 +51,29 @@ main = do
     let fireOnce = void $ fireEventsAndRead [trigger :=> Identity ()] $ do
           v <- sample b
           v `seq` pure ()
-    let liveBytes = liftIO $ do
+        liveBytes = liftIO $ do
           performMajorGC
-          gcdetails_live_bytes . gc <$> getRTSStats
-    replicateM_ warmupN fireOnce
-    liftIO performMajorGC
-    before <- liveBytes
-    replicateM_ measureN fireOnce
-    after <- liveBytes
+          fromIntegral . gcdetails_live_bytes . gc <$> getRTSStats :: IO Integer
+        measureWindow = do
+          let chunk = windowTicks `div` samplesPerWindow
+          samples <- replicateM samplesPerWindow $ do
+            replicateM_ chunk fireOnce
+            liveBytes
+          pure $ sum samples `div` fromIntegral samplesPerWindow
+
+    replicateM_ warmupTicks fireOnce
+    firstWindowAvg <- measureWindow
+    replicateM_ ticksBetweenWindows fireOnce
+    secondWindowAvg <- measureWindow
     liftIO $ touch b
     liftIO $ do
-      let liveBytesDifference = after - before
-      let liveBytesRatio :: Double =
-            fromIntegral (toInteger after - toInteger before)
-            / fromIntegral (measureN - warmupN)
-      if liveBytesRatio < 0.1
+      let growth = secondWindowAvg - firstWindowAvg
+      if growth <= allowedGrowthBytes
         then putStrLn "Succeeded"
         else do
           printf "Failed: Behavior Applicative space leak\n"
-          printf "    absolute difference: %d live bytes\n" liveBytesDifference
-          printf "    approx. avg. leaked bytes per tick: %.3f\n" liveBytesRatio
-          -- exitFailure -- Ignore until fixed.
+          printf "    first-window avg live bytes:  %d\n" firstWindowAvg
+          printf "    second-window avg live bytes: %d\n" secondWindowAvg
+          printf "    growth over %d intervening ticks: %d bytes (allowed %d)\n"
+            ticksBetweenWindows growth allowedGrowthBytes
+          exitFailure
