@@ -1,5 +1,11 @@
 # Revision history for reflex
 
+## 0.9.4.1
+
+* Bug fix for `CausalityLoopException`s caused by incorrect coincidence and merge height invalidation by @parenthetical in [#536](https://github.com/reflex-frp/reflex/pull/536).
+* Space leak fixed: Applicative combination of Behaviors, with at least one never changing, no longer causes unbounded memory growth by @parenthetical in [#535](https://github.com/reflex-frp/reflex/pull/535).
+* Stray debug print removed from non-debug builds.
+
 ## 0.9.4.0
 
 * Add note about `requesting` semantics by @LightAndLight in https://github.com/reflex-frp/reflex/pull/508
