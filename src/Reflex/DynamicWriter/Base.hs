@@ -65,9 +65,9 @@ mergeDynIncremental a = unsafeBuildIncremental (mapM (sample . current) =<< samp
   where changedValues = fmap (PatchMap . fmap Just) $ mergeMapIncremental $ mapIncrementalMapValues updated a
         addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ \(PatchMap m) -> PatchMap <$> mapM (mapM (sample . current)) m
 
-mergeIntMapDynIncremental :: Reflex t => Incremental t (PatchIntMap (Dynamic t v)) -> Incremental t (PatchIntMap v)
-mergeIntMapDynIncremental a = unsafeBuildIncremental (mapM (sample . current) =<< sample (currentIncremental a)) $ addedAndRemovedValues <> changedValues
-  where changedValues = fmap (PatchIntMap . fmap Just) $ mergeIntMapIncremental $ mapIncrementalMapValues updated a
+mergeIntDynIncremental :: Reflex t => Incremental t (PatchIntMap (Dynamic t v)) -> Incremental t (PatchIntMap v)
+mergeIntDynIncremental a = unsafeBuildIncremental (mapM (sample . current) =<< sample (currentIncremental a)) $ addedAndRemovedValues <> changedValues
+  where changedValues = fmap (PatchIntMap . fmap Just) $ mergeIntIncremental $ mapIncrementalMapValues updated a
         addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ \(PatchIntMap m) -> PatchIntMap <$> mapM (mapM (sample . current)) m
 
 mergeDynIncrementalWithMove :: forall t k v. (Reflex t, Ord k) => Incremental t (PatchMapWithMove k (Dynamic t v)) -> Incremental t (PatchMapWithMove k v)
@@ -172,7 +172,7 @@ instance (Adjustable t m, Monoid w, MonadHold t m, Reflex t) => Adjustable t (Dy
     (result0, result') <- lift $ runWithReplace (runDynamicWriterT a0) $ runDynamicWriterT <$> a'
     tellDyn . join =<< holdDyn (snd result0) (snd <$> result')
     return (fst result0, fst <$> result')
-  traverseIntMapWithKeyWithAdjust = traverseIntMapWithKeyWithAdjustImpl traverseIntMapWithKeyWithAdjust mergeIntMapDynIncremental
+  traverseIntMapWithKeyWithAdjust = traverseIntMapWithKeyWithAdjustImpl traverseIntMapWithKeyWithAdjust mergeIntDynIncremental
   traverseDMapWithKeyWithAdjust = traverseDMapWithKeyWithAdjustImpl traverseDMapWithKeyWithAdjust mapPatchDMap weakenPatchDMapWith mergeDynIncremental
   traverseDMapWithKeyWithAdjustWithMove = traverseDMapWithKeyWithAdjustImpl traverseDMapWithKeyWithAdjustWithMove mapPatchDMapWithMove weakenPatchDMapWithMoveWith mergeDynIncrementalWithMove
 
