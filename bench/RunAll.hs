@@ -122,6 +122,7 @@ benchmarks = implGroup "spider" runSpiderHost cases
     merging n    = group ("merging "   <> show n) $ Focused.merging n
     dynamics n   = group ("dynamics "  <> show n) $ Focused.dynamics n
     shared w     = group ("sharedInvalidators " <> show w) $ Focused.sharedInvalidators w
+    eventWriter w = group ("eventWriter " <> show w) $ Focused.eventWriters w
     cases = concat
       [ sub 100 40
       , dynamics 100
@@ -136,6 +137,8 @@ benchmarks = implGroup "spider" runSpiderHost cases
       , shared 100
       , shared 300
       , shared 1000
+      , eventWriter 100
+      , eventWriter 1000
       ]
 
 pattern RunTestCaseFlag = "--run-test-case"
