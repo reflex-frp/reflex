@@ -956,6 +956,7 @@ mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
 
 -- | Alias for 'mergeInt'.
+{-# DEPRECATED mergeIntMap "Use 'mergeInt' instead" #-}
 mergeIntMap :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
 mergeIntMap = mergeInt
 
@@ -964,6 +965,7 @@ mergeMapIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Event t a
 mergeMapIncremental = fmap dmapToMap . mergeIncremental . unsafeMapIncremental mapWithFunctorToDMap (const2PatchDMapWith id)
 
 -- | Alias for 'mergeIntIncremental'.
+{-# DEPRECATED mergeIntMapIncremental "Use 'mergeIntIncremental' instead" #-}
 mergeIntMapIncremental :: Reflex t => Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
 mergeIntMapIncremental = mergeIntIncremental
 
