@@ -955,19 +955,19 @@ unsafeMapIncremental f g a = unsafeBuildIncremental (fmap f $ sample $ currentIn
 mergeMap :: (Reflex t, Ord k) => Map k (Event t a) -> Event t (Map k a)
 mergeMap = fmap dmapToMap . merge . mapWithFunctorToDMap
 
--- | Like 'mergeMap' but for 'IntMap'.
+-- | Alias for 'mergeInt'.
 mergeIntMap :: Reflex t => IntMap (Event t a) -> Event t (IntMap a)
-mergeIntMap = fmap dmapToIntMap . merge . intMapWithFunctorToDMap
+mergeIntMap = mergeInt
 
--- | Create a merge whose parents can change over time
+-- | Create a merge whose parents can change over time.
 mergeMapIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Event t a)) -> Event t (Map k a)
 mergeMapIncremental = fmap dmapToMap . mergeIncremental . unsafeMapIncremental mapWithFunctorToDMap (const2PatchDMapWith id)
 
--- | Create a merge whose parents can change over time
+-- | Alias for 'mergeIntIncremental'.
 mergeIntMapIncremental :: Reflex t => Incremental t (PatchIntMap (Event t a)) -> Event t (IntMap a)
-mergeIntMapIncremental = fmap dmapToIntMap . mergeIncremental . unsafeMapIncremental intMapWithFunctorToDMap (const2IntPatchDMapWith id)
+mergeIntMapIncremental = mergeIntIncremental
 
--- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental
+-- | Experimental: Create a merge whose parents can change over time; changing the key of an Event is more efficient than with mergeIncremental.
 mergeMapIncrementalWithMove :: (Reflex t, Ord k) => Incremental t (PatchMapWithMove k (Event t a)) -> Event t (Map k a)
 mergeMapIncrementalWithMove = fmap dmapToMap . mergeIncrementalWithMove . unsafeMapIncremental mapWithFunctorToDMap (const2PatchDMapWithMoveWith id)
 
