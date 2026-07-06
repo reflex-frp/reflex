@@ -19,6 +19,7 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity
+import Control.Monad.Trans.Class (lift)
 import Data.Traversable (for, traverse)
 
 import qualified Data.Dependent.Map as DMap
@@ -294,6 +295,15 @@ merging n =
     counters :: TestPlan t m => m [Behavior t Int]
     counters = countMany =<< sparse
 
+
+eventWriters :: Word -> [(String, TestCase)]
+eventWriters n =
+  [ testE "firing"      $ fmapCheap sum <$> (tellMany =<< events 10)
+  , testE "subscribing" $ switches 10 (fmap (fmapCheap sum) . tellMany)
+  ]
+  where
+    tellMany :: (Reflex t, Monad m) => Event t Word -> m (Event t [Word])
+    tellMany e = fmap snd $ runEventWriterT $ forM_ [1 .. n] $ \i -> tellEvent $ fmapCheap ((: []) . (+ i)) e
 
 
 fans :: Word -> [(String, TestCase)]
