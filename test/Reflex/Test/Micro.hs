@@ -121,6 +121,12 @@ testCases =
       b <- hold never (e <$ e)
       headE $ switch b
 
+  , testE' "headE-rec" [(1,"a")] $ do
+      e <- events1
+      rec !eHeadOfLater <- headE eLater
+          eLater <- headE e
+      return eHeadOfLater
+
   , testE' "switch-1" [(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       b <- hold never (e <$ e)
@@ -366,8 +372,98 @@ testCases =
   , testE' "now-2" [(1,())] $ do
       e1 <- events1
       let e = pushAlways (\a -> if a == "a" then now else return never) e1
-      x <- accumDyn (<>) never e 
+      x <- accumDyn (<>) never e
       return . coincidence $ updated x
+
+  , testE' "dynamic-bind-lazy-function" [(3,"a")] $ do
+      e <- plan [(1, "a")]
+      eLater <- plan [(3, ())]
+      dReady <- holdDyn False (True <$ e)
+      dPayload <- holdDyn "payload" e
+      let dJoined = dReady >>= \ready ->
+            if ready then dPayload else error "dynamic-bind: function applied to unobserved value"
+      return $ tag (current dJoined) eLater
+
+  , testE' "dynamic-bind-forced-at-build" [(3,"a")] $ do
+      e <- plan [(1, "a")]
+      eLater <- plan [(3, ())]
+      dReady <- holdDyn False (True <$ e)
+      dPayload <- holdDyn "payload" e
+      let dJoined = dReady >>= \ready ->
+            if ready then dPayload else error "dynamic-bind: function applied to unobserved value"
+      dJoined `seq` return (tag (current dJoined) eLater)
+
+  -- An fmap'd Dynamic that is forced but never sampled or subscribed must not
+  -- sample the Dynamic it maps over.
+  , testB' "dynamic-fmap-dead" [(0,"ok"),(1,"ok"),(2,"x")] $ do
+      e <- plan [(1, "x")]
+      let divergingBehavior :: forall t. Reflex t => Event t () -> Behavior t String
+          divergingBehavior _timelinePin = fix $ \bLoop -> fmap ('!':) bLoop
+      let dDead = fmap (map toUpper) (unsafeDynamic (divergingBehavior (void e)) never)
+      dDead `seq` hold "ok" e
+
+  -- A joined Dynamic that is forced but never sampled or subscribed must not
+  -- sample its outer or inner Dynamics.
+  , testB' "dynamic-join-dead" [(0,"ok"),(1,"ok"),(2,"x")] $ do
+      e <- plan [(1, "x")]
+      -- A dynamic that refers to itself through 'join': a bottom placeholder
+      -- that must stay inert while unobserved. The event argument only pins the
+      -- timeline type.
+      let selfReferentialDynamic :: forall t. Reflex t => Event t () -> Dynamic t String
+          selfReferentialDynamic _timelinePin = fix $ \dLoop -> join (pure dLoop)
+      selfReferentialDynamic (void e) `seq` hold "ok" e
+
+  -- unsafeBuildDynamic's initial-value computation runs no earlier than the
+  -- first observation of the Dynamic.
+  , testE' "unsafeBuildDynamic-seed-timing" [(3,"b")] $ do
+      e <- plan [(1, "a"), (2, "b")]
+      eLater <- plan [(3, ())]
+      b <- hold "0" e
+      let d = unsafeBuildDynamic (sample b) never
+      d `seq` return (tag (current d) eLater)
+
+  -- buildDynamic's initial-value computation runs during the frame that
+  -- builds it.
+  , testE' "buildDynamic-seed-timing" [(3,"0")] $ do
+      e <- plan [(1, "a"), (2, "b")]
+      eLater <- plan [(3, ())]
+      b <- hold "0" e
+      d <- buildDynamic (sample b) never
+      return (tag (current d) eLater)
+
+  -- buildDynamic inside a recursive knot, whose initial-value computation
+  -- scrutinizes a value sampled from a Dynamic bound later in the same knot.
+  , testB' "buildDynamic-rec-scrutinize" [(0,5),(1,5)] $ do
+      rec dScrutinized <- buildDynamic
+            (do seed <- sample (current dLater)
+                if seed > (0 :: Int) then return seed else return 0)
+            never
+          dLater <- holdDyn 5 never
+      return (current dScrutinized)
+
+  -- The lazy-hold knot with an fmap between the hold and the switch.
+  , testE' "lazy-hold-fmap" [(1,()),(2,())] $ do
+      let lazyHoldFmap :: forall t m. (Reflex t, MonadHold t m, MonadFix m) => m (Event t ())
+          lazyHoldFmap = do
+            rec !b <- hold never e
+                let e = never <$ switch (fmap id b)
+            return $ void e
+      e0 <- plan [(1, ()), (2, ())]
+      tickle <- lazyHoldFmap
+      return $ leftmost [tickle, e0]
+
+  , testE' "switch-fmap-behavior" [(1,"hia"),(2,"lob"),(3,"hic"),(4,"lod")] $ do
+      e1 <- plan [(1, "a"), (2, "b"), (3, "c"), (4, "d")]
+      rec bFlag <- hold True (not <$> tag bFlag e1)
+      let bE = (\f -> if f then ("hi" ++) <$> e1 else ("lo" ++) <$> e1) <$> bFlag
+      return (switch bE)
+
+  , testE' "coincidence-pull-switch-height" [(1,()),(2,()),(3,()),(4,())] $ do
+      tick <- plan [(1, ()), (2, ()), (3, ()), (4, ())]
+      rec bFlag <- hold False (not <$> tag bFlag tick)
+      let hi = leftmost [tick, tick]
+          bE = (\f -> if f then hi else tick) <$> bFlag
+      return $ leftmost [void (coincidence (switch bE <$ hi)), tick]
   ] where
 
     events1, events2, events3 ::  TestPlan t m => m (Event t String)

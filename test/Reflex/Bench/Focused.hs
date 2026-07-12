@@ -170,9 +170,28 @@ switchPromptlyChain :: (Reflex t, MonadHold t m) => Word -> Event t Word -> m (E
 switchPromptlyChain = iterM $ \e ->
     switchPromptlyDyn <$> holdDyn e (e <$ e)
 
+-- Like switchPromptlyChain, but each level alternates between two distinct
+-- events instead of re-assigning the one it already holds: the two chains
+-- bracket implementations that reuse the current subscription when the
+-- switched-to event is unchanged (switchPromptlyChain rewards such reuse
+-- maximally; this chain never allows it).
+switchPromptlyChain2 :: (Reflex t, MonadHold t m, MonadFix m) => Word -> Event t Word -> m (Event t Word)
+switchPromptlyChain2 = iterM $ \e -> do
+    d <- foldDyn (const swap) (e, (+1) <$> e) e
+    return $ switchPromptlyDyn (fst <$> d)
+
 
 coinChain :: Reflex t => Word -> Event t Word -> Event t Word
 coinChain = iter $ \e -> coincidence (e <$ e)
+
+headEChain :: (Reflex t, MonadHold t m) => Word -> Event t Word -> m (Event t Word)
+headEChain = iterM headE
+
+headEFan :: (Reflex t, MonadHold t m) => Word -> Event t Word -> m (Event t Word)
+headEFan n e = mergeTree 8 <$> traverse headE (fmapFan n e)
+
+headEShared :: (Reflex t, MonadHold t m) => Word -> Event t Word -> m (Event t Word)
+headEShared n e = mergeTree 8 . fmapFan n <$> headE e
 
 fanMergeChain :: Reflex t => Word -> Word -> Event t Word -> Event t Word
 fanMergeChain width = iter $ fanMerge width
@@ -260,10 +279,24 @@ subscribing n frames =
   , testSub "fmapChain"           $ return . fmapChain n
   , testSub "switchChain"         $ switchChain n
   , testSub "switchPromptlyChain" $ switchPromptlyChain n
+  , testSub "switchPromptlyChain2" $ switchPromptlyChain2 n
   , testSub "switchFactors"       $ switchFactors n
   , testSub "coincidenceChain"    $ return . coinChain n
   ]
 
+  where
+    testSub :: (Eq a, Show a, NFData a) => String -> (forall t n. (Reflex t, MonadHold t n, MonadFix n) => Event t Word -> n (Event t a)) -> (String, TestCase)
+    testSub name test = testE name (switches frames test)
+
+-- Set of benchmarks to compare headE implementations. The networks are
+-- rebuilt (and their input fires, spending every headE) on each frame, so
+-- creation, frame-end init, subscription and spend/teardown are all measured.
+headEs :: Word -> Word -> [(String, TestCase)]
+headEs n frames =
+  [ testSub "headEChain"  $ headEChain n
+  , testSub "headEFan"    $ headEFan n
+  , testSub "headEShared" $ headEShared n
+  ]
   where
     testSub :: (Eq a, Show a, NFData a) => String -> (forall t n. (Reflex t, MonadHold t n, MonadFix n) => Event t Word -> n (Event t a)) -> (String, TestCase)
     testSub name test = testE name (switches frames test)
@@ -350,6 +383,7 @@ firing n =
   [ testE "fmapChain"           $ fmapChain n <$> e
   , testE "switchChain2"        $ switchChain2 n =<< e
   , testE "switchPromptlyChain" $ switchPromptlyChain n =<< e
+  , testE "switchPromptlyChain2" $ switchPromptlyChain2 n =<< e
   , testE "switchFactors"       $  switchFactors n =<< e
   , testE "coincidenceChain"    $ coinChain n <$> e
 

@@ -85,6 +85,8 @@ micros =
         fireEvents [key :=> Identity (42 :: Int)])
   , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev, _) -> hold (42 :: Int) ev
   , withSetupWHNF "sample" (newEventWithTriggerRef >>= hold (42 :: Int) . fst) sample
+  , withSetupWHNF "headE" newEventWithTriggerRef $ \(ev, _) -> runHostFrame (headE ev)
+  , withSetupWHNF "subscribeHeadE" (newEventWithTriggerRef >>= runHostFrame . headE . fst) subscribeEvent
   ]
 
 setupMerge :: Int
