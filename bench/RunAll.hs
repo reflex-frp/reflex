@@ -91,10 +91,10 @@ benchFiring runHost tc n = runHost $ do
         result <- test
         liftIO $ evaluate result
   case tc of
-    TestE p -> do
+    TestE _ p -> do
       (h, s) <- setupFiring p
       runIterations $ readSchedule_ s $ readEvent' h
-    TestB p -> do
+    TestB _ p -> do
       (b, s) <- runPlan p
       runIterations $ readSchedule_ (makeDense s) $ sample b
 

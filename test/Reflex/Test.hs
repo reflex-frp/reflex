@@ -1,13 +1,10 @@
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes #-}
 
 module Reflex.Test
-  ( testAgreement
-  , compareResult
+  ( toTestTree
+  , dumpExpected
+  , warnMissingExpected
   , runTests
 
   , module Reflex.TestPlan
@@ -21,46 +18,78 @@ import Reflex.TestPlan
 import Reflex.Plan.Pure
 import Reflex.Plan.Reflex
 
-import Control.Monad
-import Data.Monoid
+import Data.Maybe
+import qualified Data.IntMap as IntMap
 
-import Data.IntMap (IntMap)
+import System.IO (hPutStr, stderr)
 
---import Data.Foldable
-import System.Exit
+import Test.Tasty
+import Test.Tasty.HUnit
+import Test.Tasty.ExpectedFailure (expectFailBecause)
 
 import Prelude
 
 
-testAgreement :: TestCase -> IO Bool
-testAgreement (TestE p) = do
-  spider <- runSpiderHost $ runTestE p
-  let results = [("spider", spider)]
+toTestTree :: (String, TestCase) -> TestTree
+toTestTree (name, tc) = testGroup name (implementationLeaves tc)
 
-  compareResult results (testEvent $ runPure p)
+implementationLeaves :: TestCase -> [TestTree]
+implementationLeaves (TestE meta p) =
+  [ leaf reference "pure"   (return (firings pure'))
+  , leaf reference "spider" (firings <$> runSpiderHost (runTestE p))
+  ]
+  where
+    firings   = IntMap.mapMaybe id
+    pure'     = testEvent (runPure p)
+    reference = firings (fromMaybe pure' (expectedOutput meta))
+    leaf      = implementationLeaf (expectedFailures meta)
+implementationLeaves (TestB meta p) =
+  [ leaf reference "pure"   (return pure')
+  , leaf reference "spider" (runSpiderHost (runTestB p))
+  ]
+  where
+    pure'     = testBehavior (runPure p)
+    reference = fromMaybe pure' (expectedOutput meta)
+    leaf      = implementationLeaf (expectedFailures meta)
 
-testAgreement (TestB p) = do
-  spider <- runSpiderHost $ runTestB p
-  let results = [("spider", spider)]
+implementationLeaf :: (Eq a, Show a) => [String] -> a -> String -> IO a -> TestTree
+implementationLeaf failures reference name getResult =
+  markExpectedFailure $ testCase name $ do
+    result <- getResult
+    result @?= reference
+  where
+    markExpectedFailure
+      | name `elem` failures =
+          expectFailBecause (name <> " is expected to diverge from the reference")
+      | otherwise = id
 
-  compareResult results (testBehavior $ runPure p)
 
+-- | Print a paste-ready 'testE''/'testB'' declaration using Pure as a reference.
+dumpExpected :: (String, TestCase) -> IO ()
+dumpExpected (name, TestE _ p) =
+  putStrLn $ "  , testE' " <> show name <> " "
+    <> show (IntMap.toList (IntMap.mapMaybe id (testEvent (runPure p))))
+dumpExpected (name, TestB _ p) =
+  putStrLn $ "  , testB' " <> show name <> " "
+    <> show (IntMap.toList (testBehavior (runPure p)))
 
-compareResult :: (Show a, Eq a) => [(String, IntMap a)] -> IntMap a -> IO Bool
-compareResult results expected = fmap and $ forM results $ \(name, r) -> do
-
-  when (r /= expected) $ do
-    putStrLn ("Got: " ++ show (name, r))
-    putStrLn ("Expected: " ++ show expected)
-  return (r == expected)
-
+warnMissingExpected :: [(String, TestCase)] -> IO ()
+warnMissingExpected tests = case length (filter (missingExpected . snd) tests) of
+  0 -> return ()
+  n -> hPutStr stderr $ unlines
+    [ ""
+    , "WARNING: " <> show n <> " test case(s) pin no expected output and are only"
+    , "checked for agreement against the Pure implementation. To pin a fixed"
+    , "expected output, generate the testE'/testB' declarations with"
+    , ""
+    , "    cabal run semantics -- --dump-expected [name-prefix]"
+    , ""
+    , "and paste the relevant lines into the test list."
+    , ""
+    ]
+  where
+    missingExpected (TestE meta _) = isNothing (expectedOutput meta)
+    missingExpected (TestB meta _) = isNothing (expectedOutput meta)
 
 runTests :: [(String, TestCase)] -> IO ()
-runTests testCases = do
-   results <- forM testCases $ \(name, test) -> do
-     putStrLn $ "Test: " <> name
-     testAgreement test
-   exitWith $ if and results
-              then ExitSuccess
-              else ExitFailure 1
-
+runTests = defaultMain . testGroup "semantics" . map toTestTree
