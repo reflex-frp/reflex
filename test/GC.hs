@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE LambdaCase #-}
 module Main where
 
 import Control.Monad
@@ -23,6 +24,7 @@ import Data.Type.Equality ((:~:)(Refl))
 import Data.Functor.Misc
 import Data.Patch
 
+import qualified Reflex.Class as R
 import qualified Reflex.Host.Class as Host
 import qualified Reflex.Spider.Internal as S
 
@@ -35,6 +37,29 @@ main = do
   ref <- newIORef Nothing
   hostPerf ref
   readIORef ref >>= maybe exitFailure (putStrLn . ("Result " <>) . show)
+  headEAtMostOnce <- checkHeadEAtMostOnce
+  if headEAtMostOnce
+    then putStrLn "headE at-most-once holds under GC"
+    else do
+      putStrLn "headE fired for a subscriber that subscribed after its first occurrence"
+      exitFailure
+
+checkHeadEAtMostOnce :: IO Bool
+checkHeadEAtMostOnce = S.runSpiderHost $ do
+  (inputEvent, inputTriggerRef) <- Host.newEventWithTriggerRef
+  -- fmap goes through push/cacheEvent, whose subscribers live in a weak bag;
+  -- a plain root event may retain its subscribers strongly and mask the bug.
+  headOfInput <- Host.runHostFrame $ R.headE (fmap id (inputEvent :: R.Event S.Spider String))
+  liftIO performMajorGC
+  Just trigger <- liftIO $ readIORef inputTriggerRef
+  Host.fireEvents [trigger :=> Identity "first"]
+  liftIO performMajorGC
+  lateHandle <- Host.subscribeEvent headOfInput
+  lateOccurrence <- Host.fireEventsAndRead [trigger :=> Identity "second"] $
+    Host.readEvent lateHandle >>= \case
+      Nothing -> return Nothing
+      Just getValue -> Just <$> getValue
+  return $ lateOccurrence == Nothing
 
 hostPerf :: IORef (Maybe Int) -> IO ()
 hostPerf ref = S.runSpiderHost $ do

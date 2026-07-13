@@ -118,6 +118,7 @@ benchmarks = implGroup "spider" runSpiderHost cases
     implGroup name runHost = group name . fmap (second (benchFiring runHost))
     group name = fmap $ first ((name <> "/") <>)
     sub n frames = group ("subscribing " ++ show (n, frames)) $ Focused.subscribing n frames
+    headEs n frames = group ("headE " ++ show (n, frames)) $ Focused.headEs n frames
     firing n     = group ("firing "    <> show n) $ Focused.firing n
     merging n    = group ("merging "   <> show n) $ Focused.merging n
     dynamics n   = group ("dynamics "  <> show n) $ Focused.dynamics n
@@ -125,6 +126,7 @@ benchmarks = implGroup "spider" runSpiderHost cases
     eventWriter w = group ("eventWriter " <> show w) $ Focused.eventWriters w
     cases = concat
       [ sub 100 40
+      , headEs 100 40
       , dynamics 100
       , dynamics 1000
       , firing 1000
