@@ -219,17 +219,15 @@ test-suite semantics
       , ref-tf
       , reflex
       , split
+      , tasty
+      , tasty-expected-failure
+      , tasty-hunit
       , transformers
 
 test-suite CrossImpl
     type:             exitcode-stdio-1.0
     main-is:          Reflex/Test/CrossImpl.hs
     hs-source-dirs:   test
-    other-modules:
-        Reflex.Test
-        Reflex.TestPlan
-        Reflex.Plan.Reflex
-        Reflex.Plan.Pure
 
     default-language: Haskell2010
     ghc-options:      -O2 -Wall -rtsopts

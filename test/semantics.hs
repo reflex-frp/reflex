@@ -10,13 +10,11 @@ module Main (main) where
 import Reflex.Test
 
 import Data.Bifunctor
-import Data.Functor
 import Data.List
 import qualified Reflex.Bench.Focused as Focused
 import qualified Reflex.Test.Micro as Micro
 
 import System.Environment
-import System.Exit
 
 import Prelude
 
@@ -30,14 +28,14 @@ main = do
   args <- getArgs
 
   case args of
-    ["--list"] -> mapM_ putStrLn (fst <$> allTests) >> exitWith (ExitFailure 1)
-    _          -> case filter (matchPrefixes args . fst) allTests of
-                    []    -> putStrLn "filter did not match any tests" >> exitWith (ExitFailure 1)
-                    tests -> runTests tests
+    ("--dump-expected":prefixes) -> mapM_ dumpExpected (filter (matchPrefixes prefixes . fst) allTests)
+    _                            -> warnMissingExpected microTests >> runTests allTests
 
   where
+    microTests = makeGroup "micro" Micro.testCases
+
     allTests = concat
-     [ makeGroup "micro" Micro.testCases
+     [ microTests
      , makeGroup "subscribing (100,40)" (Focused.subscribing 100 40)
      , makeGroup "firing 1000" (Focused.firing 1000)
      , makeGroup "merge 100" (Focused.merging 100)

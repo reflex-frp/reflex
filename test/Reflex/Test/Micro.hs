@@ -19,6 +19,7 @@ import Control.Monad.Fix
 import Data.Char
 import Data.Foldable
 import Data.Functor.Misc
+import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as Map
 import qualified Data.IntMap as IntMap
 import Data.Monoid
@@ -47,183 +48,183 @@ scanInnerDyns d = do
 {-# ANN testCases "HLint: ignore Functor law" #-}
 testCases :: [(String, TestCase)]
 testCases =
-  [ testB "hold"  $ hold "0" =<< events1
+  [ testB' "hold" [(0,"0"),(1,"0"),(2,"a"),(3,"b"),(4,"b"),(5,"b"),(6,"c"),(7,"c"),(8,"d"),(9,"e")] $ hold "0" =<< events1
 
-  , testB "count" $ do
+  , testB' "count" [(0,0),(1,0),(2,1),(3,1),(4,2),(5,3),(6,3),(7,4),(8,5)] $ do
       b <- current <$> (count =<< events2)
       return $ (+ (0::Int)) <$> b
 
-  , testB "pull-1"  $ do
+  , testB' "pull-1" [(0,"0"),(1,"0"),(2,"a"),(3,"b"),(4,"b"),(5,"b"),(6,"c"),(7,"c"),(8,"d"),(9,"e")] $ do
       b <- hold "0" =<< events1
       return (pull $ sample $ pull $ sample b)
 
-  , testB "pull-2" $ do
+  , testB' "pull-2" [(0,"11"),(1,"11"),(2,"aa"),(3,"bb"),(4,"bb"),(5,"bb"),(6,"cc"),(7,"cc"),(8,"dd"),(9,"ee")] $ do
       b1 <- behavior1
       return (pull $ liftA2 (<>) (sample b1) (sample b1))
 
-  , testB "pull-3" $ do
+  , testB' "pull-3" [(0,"12"),(1,"12"),(2,"ae"),(3,"be"),(4,"bd"),(5,"bc"),(6,"cc"),(7,"cb"),(8,"da"),(9,"ea")] $ do
       b1 <- behavior1
       b2 <- behavior2
       return (pull $ liftA2 (<>) (sample b1) (sample b2))
 
-  , testB "pull-4" $ do
+  , testB' "pull-4" [(0,""),(1,"z"),(2,"a"),(3,"b"),(4,"c")] $ do
       es <- planList ["a", "b", "c"]
       e <- plan [(0, ())]
       b <- hold (constant "") $
         pushAlways (const $ hold "z" es) e
       return (join b)
 
-  , testE "id" $ do
+  , testE' "id" [(1,"e"),(3,"d"),(4,"c"),(6,"b"),(7,"a")] $ do
       events2
 
-  , testE "fmap-id" $ do
+  , testE' "fmap-id" [(1,"e"),(3,"d"),(4,"c"),(6,"b"),(7,"a")] $ do
       e <- events2
       return $ fmap id e
 
-  , testE "tag-1" $ do
+  , testE' "tag-1" [(1,"1"),(3,"b"),(4,"b"),(6,"c"),(7,"c")] $ do
       b1 <- behavior1
       e <- events2
       return (tag b1 e)
 
-  , testE "tag-2" $ do
+  , testE' "tag-2" [(1,"1"),(3,"B"),(4,"B"),(6,"C"),(7,"C")] $ do
       b1 <- behavior1
       e <- events2
       return (tag (map toUpper <$>  b1) e)
 
-  , testE "attach-1" $ do
+  , testE' "attach-1" [(1,"1e"),(3,"Bd"),(4,"Bc"),(6,"Cb"),(7,"Ca")] $ do
       b1 <- behavior1
       e <- events2
       return (attachWith (++) (map toUpper <$> b1) e)
 
-  , testE "leftmost" $ liftA2 leftmost2 events1 events2
+  , testE' "leftmost" [(1,"a"),(2,"b"),(3,"d"),(4,"c"),(5,"c"),(6,"b"),(7,"d"),(8,"e")] $ liftA2 leftmost2 events1 events2
 
-  , testE "appendEvents-1" $ liftA2 mappend events1 events2
+  , testE' "appendEvents-1" [(1,"ae"),(2,"b"),(3,"d"),(4,"c"),(5,"c"),(6,"b"),(7,"da"),(8,"e")] $ liftA2 mappend events1 events2
 
-  , testE "appendEvents-2" $ liftA2 mappend events3 events2
+  , testE' "appendEvents-2" [(1,"aee"),(2,"b"),(3,"dd"),(4,"cc"),(5,"c"),(6,"bb"),(7,"daa"),(8,"e")] $ liftA2 mappend events3 events2
 
-  , testE "merge-1" $ do
+  , testE' "merge-1" [(1,"x"),(2,"x"),(5,"x"),(7,"x"),(8,"x")] $ do
       e <- events1
       return $ leftmost ["x" <$ e, "y" <$ e]
 
-  , testE "merge-2" $ do
+  , testE' "merge-2" [(1,Map.fromList [(1,"y"),(2,"z")]),(2,Map.fromList [(1,"y"),(2,"z")]),(5,Map.fromList [(1,"y"),(2,"z")]),(7,Map.fromList [(1,"y"),(2,"z")]),(8,Map.fromList [(1,"y"),(2,"z")])] $ do
       e <- events1
       let m = mergeMap $ Map.fromList [(1::Int, "y" <$ e), (2, "z" <$ e)]
       let ee = flip pushAlways e $ const $ return m
       return $ coincidence ee
 
-  , testE "headE-1" $ do
+  , testE' "headE-1" [(1,"a")] $ do
       e <- events1
       headE $ leftmost [e, e]
 
-  , testE "headE-2" $ do
+  , testE' "headE-2" [(2,"b")] $ do
       e <- events1
       b <- hold never (e <$ e)
       headE $ switch b
 
-  , testE "switch-1" $ do
+  , testE' "switch-1" [(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       b <- hold never (e <$ e)
       return $ switch b
 
-  , testE "switch-2" $ do
+  , testE' "switch-2" [(1,"x"),(2,"x"),(5,"x"),(7,"x"),(8,"x")] $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $ const $ do
             switch <$> hold (leftmost ["x" <$ e, "y" <$ e, "z" <$ e]) (e <$ e)
 
-  , testE "switch-3" $ do
+  , testE' "switch-3" [(1,"x"),(2,"x"),(5,"x"),(7,"x"),(8,"x")] $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $ const $ do
           switch <$> hold (leftmost ["x" <$ e, "y" <$ e, "z" <$ e]) never
 
-  , testE "switch-4" $ do
+  , testE' "switch-4" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       switch <$> hold (deep e) (e <$ e)
 
-  , testE "switch-5" $ do
+  , testE' "switch-5" [(1,"x"),(2,"x"),(5,"x"),(7,"x"),(8,"x")] $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $ const $
         return $ leftmost ["x" <$ e, "y" <$ e, "z" <$ e]
 
-  , testE "switch-6" $ do
+  , testE' "switch-6" [(1,"x"),(2,"x"),(5,"x"),(7,"x"),(8,"x")] $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $ const $ do
             switch <$> hold ("x" <$ e) (e <$ e)
 
-  , testE "switchHoldPromptly-1" $ do
+  , testE' "switchHoldPromptly-1" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       let e' = e <$ e
       switchHoldPromptly never $ e <$ e'
 
-  , testE "switchHoldPromptly-2" $ do
+  , testE' "switchHoldPromptly-2" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       switchHoldPromptly never $ deep (e <$ e)
 
-  , testE "switchHoldPromptly-3" $ do
+  , testE' "switchHoldPromptly-3" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       switchHoldPromptly never $ (e <$ deep e)
 
-  , testE "switchHoldPromptly-4" $ do
+  , testE' "switchHoldPromptly-4" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       switchHoldPromptly never $ (deep e <$ e)
 
-  , testE "switch-5" $ do
+  , testE' "switch-7" [(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       switch <$> hold never (deep e <$ e)
 
-  , testE "switchHoldPromptly-5" $ do
+  , testE' "switchHoldPromptly-5" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
     e <- events1
     switchHoldPromptly never $ flip push e $
       const (Just <$> headE e)
 
-  , testE "switchHoldPromptly-6" $ do
+  , testE' "switchHoldPromptly-6" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       switchHoldPromptly never $ flip pushAlways e $
         const (switchHoldPromptly e never)
 
-  , testE "coincidence-1" $ do
+  , testE' "coincidence-1" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $
         const $ return e
 
-  , testE "coincidence-2" $ do
+  , testE' "coincidence-2" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $
         const $ return (deep e)
 
-  , testE "coincidence-3" $ do
+  , testE' "coincidence-3" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $
         const $ return (coincidence (e <$ e))
 
-  , testE "coincidence-4" $ do
+  , testE' "coincidence-4" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $
         const (headE e)
 
-  , testE "coincidence-5" $ do
+  , testE' "coincidence-5" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $ const $ do
         let e' = deep e
         return (coincidence (e' <$ e'))
 
-  , testE "coincidence-6" $ do
+  , testE' "coincidence-6" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       return $ coincidence $ flip pushAlways e $ const $ do
         let e' = coincidence (e <$ e)
         return $ deep e'
 
-  , testE "coincidence-7" $ do
+  , testE' "coincidence-7" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       return $ coincidence (deep e <$ e)
 
-  , testE "coincidence-incremental-height" $ do
+  , testE' "coincidence-incremental-height" [(1,()),(2,()),(3,()),(4,()),(5,()),(6,())] $ do
       tick <- ticks
       e2 <- mergeMapIncremental
               <$> holdIncremental mempty ((mempty :: PatchMap Int (Event t ())) <$ tick)
       pure (leftmost [ void $ coincidence (e2 <$ leftmost [tick, tick])
                      , tick])
 
-  , testE "coincidence-int-incremental-height" $ do
+  , testE' "coincidence-int-incremental-height" [(1,()),(2,()),(3,()),(4,()),(5,()),(6,())] $ do
       tick <- ticks
       h <- mergeIntIncremental
              <$> holdIncremental
@@ -232,13 +233,13 @@ testCases =
       pure (leftmost [ void $ coincidence (void h <$ leftmost [tick, tick])
                      , tick])
 
-  , testE "coincidence-switch-reconnect-height" $ do
+  , testE' "coincidence-switch-reconnect-height" [(1,()),(2,()),(3,()),(4,()),(5,()),(6,())] $ do
       tick <- ticks
       flag <- foldDyn (\_ b -> not b) False tick
       let hi = leftmost [tick, tick]
       pure (leftmost [void (coincidence (switch (current $ (\b -> if b then hi else tick) <$> flag) <$ hi)), tick])
 
-  , testE "mergeWithMove-height" $ do
+  , testE' "mergeWithMove-height" [(1,Map.fromList [(0,())]),(2,Map.fromList [(0,()),(1,())]),(3,Map.fromList [(1,())]),(4,Map.fromList [(0,()),(1,())]),(5,Map.fromList [(0,()),(2,())]),(6,Map.fromList [(0,())])] $ do
       tick <- ticks
       let lo = tick
           hi = leftmost [tick, tick]
@@ -251,21 +252,21 @@ testCases =
       mergeMapIncrementalWithMove
         <$> holdIncremental (Map.singleton (0 :: Int) lo) patches
 
-  , testB "holdWhileFiring" $ do
+  , testB' "holdWhileFiring" [(0,"x"),(1,"x"),(2,"a"),(3,"a"),(4,"a"),(5,"a"),(6,"a"),(7,"a"),(8,"a"),(9,"a")] $ do
       e <- events1
       eo <- headE e
       bb <- hold (constant "x") $ pushAlways (const $ hold "a" eo) eo
       return $ pull $ sample =<< sample bb
 
 
-  , testB "foldDynWhileFiring"  $ do
+  , testB' "foldDynWhileFiring" [(0,[]),(1,[]),(2,[["a","a"]]),(3,[["b","b"],["b","a","a"]]),(4,[["b","b"],["b","a","a"]]),(5,[["b","b"],["b","a","a"]]),(6,[["c","c"],["c","b","b"],["c","b","a","a"]]),(7,[["c","c"],["c","b","b"],["c","b","a","a"]]),(8,[["d","d"],["d","c","c"],["d","c","b","b"],["d","c","b","a","a"]]),(9,[["e","e"],["e","d","d"],["e","d","c","c"],["e","d","c","b","b"],["e","d","c","b","a","a"]])] $ do
     e <- events1
     d <- foldDyn (:) [] $
       pushAlways (\a -> foldDyn (:) [a] e) e
 
     return $ current (join (fmap distributeListOverDynPure d))
 
-  , testE "joinDyn" $ do
+  , testE' "joinDyn" [(1,"b"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       bb <- hold "b" e
       bd <- hold never . fmap (const e) =<< headE e
@@ -274,21 +275,21 @@ testCases =
       let eInner = switch bd
       return $ leftmost [eOuter, eInner]
 
-  , testB "foldDyn"  $ do
+  , testB' "foldDyn" [(0,"0"),(1,"0"),(2,"a0"),(3,"ba0"),(4,"ba0"),(5,"ba0"),(6,"cba0"),(7,"cba0"),(8,"dcba0"),(9,"edcba0")] $ do
       d <- foldDyn (++) "0" =<< events1
       return (current d)
 
-  , testB "mapDyn"  $ do
+  , testB' "mapDyn" [(0,"0"),(1,"0"),(2,"A0"),(3,"BA0"),(4,"BA0"),(5,"BA0"),(6,"CBA0"),(7,"CBA0"),(8,"DCBA0"),(9,"EDCBA0")] $ do
       d <- foldDyn (++) "0" =<< events1
       return $ current $ fmap (map toUpper) d
 
-  , testB "combineDyn"  $ do
+  , testB' "combineDyn" [(0,"00"),(1,"00"),(2,"a0E0"),(3,"ba0E0"),(4,"ba0DE0"),(5,"ba0CDE0"),(6,"cba0CDE0"),(7,"cba0BCDE0"),(8,"dcba0ABCDE0"),(9,"edcba0ABCDE0")] $ do
       d1 <- foldDyn (++) "0" =<< events1
       d2 <- fmap (fmap (map toUpper)) $ foldDyn (++) "0" =<< events2
 
       return $ current $ zipDynWith (<>) d1 d2
 
-  , testB "buildDynamicStrictness"  $ do
+  , testB' "buildDynamicStrictness" [(0,"0"),(1,"0"),(2,"a"),(3,"b"),(4,"b"),(5,"b"),(6,"c"),(7,"c"),(8,"d"),(9,"e")] $ do
       rec
         d'' <- pushDyn return d'
         d' <- pushDyn return d
@@ -297,14 +298,14 @@ testCases =
       _ <- sample (current d'')
       return (current d'')
 
-  , testB "factorDyn"  $ do
+  , testB' "factorDyn" [(0,"a"),(1,"a"),(2,"e"),(3,"e"),(4,"d"),(5,"c"),(6,"c"),(7,"b"),(8,"a")] $ do
       d <- holdDyn (Left "a") =<< eithers
 
       eithers' <- eitherDyn d
       let unFactor = either id id
       return $ current (join (fmap unFactor eithers'))
 
-  , testB "pushDynDeep"  $ do
+  , testB' "pushDynDeep" [(0,[["d1d2d1"]]),(1,[["d1d2d1"]]),(2,[["d1d2a","d1ea"],["ad2a","aea"]]),(3,[["d1d2b","d1eb"],["ad2b","aeb"],["beb"]]),(4,[["d1d2b","d1eb","d1db"],["ad2b","aeb","adb"],["beb","bdb"]]),(5,[["d1d2b","d1eb","d1db","d1cb"],["ad2b","aeb","adb","acb"],["beb","bdb","bcb"]]),(6,[["d1d2c","d1ec","d1dc","d1cc"],["ad2c","aec","adc","acc"],["bec","bdc","bcc"],["ccc"]]),(7,[["d1d2c","d1ec","d1dc","d1cc","d1bc"],["ad2c","aec","adc","acc","abc"],["bec","bdc","bcc","bbc"],["ccc","cbc"]]),(8,[["d1d2d","d1ed","d1dd","d1cd","d1bd","d1ad"],["ad2d","aed","add","acd","abd","aad"],["bed","bdd","bcd","bbd","bad"],["ccd","cbd","cad"],["dbd","dad"]]),(9,[["d1d2e","d1ee","d1de","d1ce","d1be","d1ae"],["ad2e","aee","ade","ace","abe","aae"],["bee","bde","bce","bbe","bae"],["cce","cbe","cae"],["dbe","dae"],["eae"]])] $ do
       _ <- events1
       _ <- events2
 
@@ -319,50 +320,50 @@ testCases =
       d' <- pushDyn scanInnerDyns d >>= scanInnerDyns
       return $ current d'
 
-  , testE "fan-1" $ do
+  , testE' "fan-1" [(1,'a' :| ""),(2,'b' :| ""),(5,'c' :| ""),(7,'d' :| ""),(8,'e' :| "")] $ do
       e <- fmap toMap <$> events1
       let es = select (fanMap e) . Const2 <$> values
 
       return (mergeList es)
 
-  , testE "fan-2" $ do
+  , testE' "fan-2" [(1,'a' :| "e"),(2,'b' :| ""),(3,'d' :| ""),(4,'c' :| ""),(5,'c' :| ""),(6,'b' :| ""),(7,'a' :| "d"),(8,'e' :| "")] $ do
       e <- fmap toMap <$> events3
       let es = select (fanMap e) . Const2 <$> values
 
       return (mergeList es)
 
-  , testE "fan-3" $ do
+  , testE' "fan-3" [(4,'c'),(5,'c')] $ do
       f <- fanMap . fmap toMap <$> events3
       return $  select f (Const2 'c')
 
-  , testE "fan-4" $ do
+  , testE' "fan-4" [(1,'A')] $ do
       e <- fmap toMap <$> events1
       return $ toUpper <$> select (fanMap e) (Const2 'a')
 
-  , testE "fan-5" $ do
+  , testE' "fan-5" [(4,'C')] $ do
       e <- fmap toMap <$> events2
       return $ toUpper <$> select (fanMap e) (Const2 'c')
 
-  , testE "fan-6" $ do
+  , testE' "fan-6" [(2,"bb"),(8,"ee")] $ do
       f <- fanMap . fmap toMap <$> events1
       return $ toList <$> mergeList [ select f (Const2 'b'), select f (Const2 'b'), select f (Const2 'e'), select f (Const2 'e') ]
 
-  , testE "difference" $ do
+  , testE' "difference" [(2,"b"),(5,"c"),(8,"e")] $ do
       e1 <- events1
       e2 <- events2
       return $ e1 `difference ` e2
 
-  , testE "lazy-hold" $ do
+  , testE' "lazy-hold" [] $ do
       let lazyHold :: forall t m. (Reflex t, MonadHold t m, MonadFix m) => m (Event t ())
           lazyHold = do
             rec !b <- hold never e
                 let e = never <$ switch b
             return $ void e
       lazyHold
-  , testE "now-1" $ do
+  , testE' "now-1" [(1,"a"),(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e1 <- events1
       switchHoldPromptly never . pushAlways (\a -> fmap (a <$) now) $ e1
-  , testE "now-2" $ do
+  , testE' "now-2" [(1,())] $ do
       e1 <- events1
       let e = pushAlways (\a -> if a == "a" then now else return never) e1
       x <- accumDyn (<>) never e 
