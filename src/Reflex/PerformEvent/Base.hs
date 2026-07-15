@@ -157,7 +157,7 @@ instance ReflexHost t => MonadSample t (PerformEventT t m) where
   {-# INLINABLE sample #-}
   sample = PerformEventT . lift . sample
 
-instance (ReflexHost t, MonadHold t m) => MonadHold t (PerformEventT t m) where
+instance ReflexHost t => MonadHold t (PerformEventT t m) where
   {-# INLINABLE hold #-}
   hold v0 v' = PerformEventT $ lift $ hold v0 v'
   {-# INLINABLE holdDyn #-}

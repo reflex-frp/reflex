@@ -84,7 +84,7 @@ instance NFData (Firing t) where
   rnf !_ = ()
 
 -- Measure the running time
-benchFiring :: forall t m. (MonadReflexHost' t m, MonadSample t m) => (forall a. m a -> IO a) -> TestCase -> Int -> IO ()
+benchFiring :: forall t m. (MonadReflexHost' t m) => (forall a. m a -> IO a) -> TestCase -> Int -> IO ()
 benchFiring runHost tc n = runHost $ do
   let runIterations :: m a -> m ()
       runIterations test = replicateM_ (10*n) $ do
@@ -114,7 +114,7 @@ waitForFinalizers = do
 benchmarks :: [(String, Int -> IO ())]
 benchmarks = implGroup "spider" runSpiderHost cases
   where
-    implGroup :: (MonadReflexHost' t m, MonadSample t m) => String -> (forall a. m a -> IO a) -> [(String, TestCase)] -> [(String, Int -> IO ())]
+    implGroup :: (MonadReflexHost' t m) => String -> (forall a. m a -> IO a) -> [(String, TestCase)] -> [(String, Int -> IO ())]
     implGroup name runHost = group name . fmap (second (benchFiring runHost))
     group name = fmap $ first ((name <> "/") <>)
     sub n frames = group ("subscribing " ++ show (n, frames)) $ Focused.subscribing n frames

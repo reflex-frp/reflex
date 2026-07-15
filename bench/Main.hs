@@ -55,7 +55,9 @@ micros =
   , bench "newEventWithTriggerRef" $ whnfIO . void $ runSpiderHost newEventWithTriggerRef
   , withSetupWHNF "subscribeEvent" newEventWithTriggerRef $ subscribeEvent . fst
   , withSetupWHNF "subscribeSwitch"
-    (join $ hold <$> fmap fst newEventWithTriggerRef <*> fmap fst newEventWithTriggerRef)
+    (do iv <- fst <$> newEventWithTriggerRef
+        ev <- fst <$> newEventWithTriggerRef
+        runHostFrame (hold iv ev))
     (subscribeEvent . switch)
   , withSetupWHNF "subscribeMerge(1)" (setupMerge 1) $ \(ev,_) -> subscribeEvent ev
   , withSetupWHNF "subscribeMerge(100)" (setupMerge 100) (subscribeEvent . fst)
@@ -83,8 +85,8 @@ micros =
     (\(_, t:_) -> do
         key <- fromJust <$> liftIO (readIORef t)
         fireEvents [key :=> Identity (42 :: Int)])
-  , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev, _) -> hold (42 :: Int) ev
-  , withSetupWHNF "sample" (newEventWithTriggerRef >>= hold (42 :: Int) . fst) sample
+  , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev, _) -> runHostFrame (hold (42 :: Int) ev)
+  , withSetupWHNF "sample" (newEventWithTriggerRef >>= runHostFrame . hold (42 :: Int) . fst) (runHostFrame . sample)
   , withSetupWHNF "headE" newEventWithTriggerRef $ \(ev, _) -> runHostFrame (headE ev)
   , withSetupWHNF "subscribeHeadE" (newEventWithTriggerRef >>= runHostFrame . headE . fst) subscribeEvent
   ]

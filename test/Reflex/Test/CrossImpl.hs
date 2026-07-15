@@ -77,18 +77,20 @@ instance (MapMSignals a a' t t', MapMSignals b b' t t') => MapMSignals (a, b) (a
 testTimeline
   :: (forall m t. TestCaseConstraint t m => (Behavior t a, Event t b) -> m (Behavior t c, Event t d))
   -> (Map Int a, Map Int b)
-  -> (forall m t. (MonadReflexHost t m, MonadIO m, MonadRef m, Ref m ~ Ref IO, MonadSample t m) => m (Map Int c, Map Int d))
+  -> (forall m t. (MonadReflexHost t m, MonadIO m, MonadRef m, Ref m ~ Ref IO) => m (Map Int c, Map Int d))
 testTimeline builder (bMap, eMap) = do
   (re, reTrigger) <- newEventWithTriggerRef
   (rb, rbTrigger) <- newEventWithTriggerRef
-  b <- runHostFrame $ hold (error "testTimeline: No value for input behavior yet") rb
-  (b', e') <- runHostFrame $ builder (b, re)
+  (b, b', e') <- runHostFrame $ do
+    b <- hold (error "testTimeline: No value for input behavior yet") rb
+    (b', e') <- builder (b, re)
+    pure (b, b', e')
   e'Handle <- subscribeEvent e' --TODO: This should be unnecessary
   let times = relevantTestingTimes (bMap, eMap)
   liftIO performGC
   outputs <- forM times $ \t -> do
     forM_ (Map.lookup t bMap) $ \val -> mapM_ (\ rbt -> fireEvents [rbt :=> Identity val]) =<< readRef rbTrigger
-    bOutput <- sample b'
+    bOutput <- runHostFrame $ sample b'
     eOutput <- fmap join $ forM (Map.lookup t eMap) $ \val -> do
       mret <- readRef reTrigger
       let firing = case mret of
