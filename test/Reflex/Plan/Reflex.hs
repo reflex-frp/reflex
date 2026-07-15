@@ -11,6 +11,7 @@
 module Reflex.Plan.Reflex
   ( TestPlan(..)
   , runPlan
+  , setupFiring
   , Plan (..)
   , Schedule
   , Firing (..)
@@ -91,6 +92,14 @@ firingTrigger (Firing ref a) = fmap (:=> Identity a) <$> readRef ref
 runPlan :: (MonadReflexHost t m) => Plan t a -> m (a, Schedule t)
 runPlan (Plan p) = runHostFrame $ runStateT p mempty
 
+-- | Run a plan producing an event and subscribe to that event in the plan's
+-- build frame.
+setupFiring :: (MonadReflexHost t m) => Plan t (Event t a) -> m (EventHandle t a, Schedule t)
+setupFiring (Plan p) = runHostFrame $ do
+  (e, s) <- runStateT p mempty
+  h <- subscribeEvent e
+  return (h, s)
+
 
 makeDense :: Schedule t -> Schedule t
 makeDense s = fromMaybe (emptyRange 0) $ do
@@ -129,8 +138,7 @@ runTestB p = do
 
 runTestE :: (MonadReflexHost t m, MonadIORef m, NFData a) => Plan t (Event t a) -> m (IntMap (Maybe a))
 runTestE p = do
-  (e, s) <- runPlan p
-  h <- subscribeEvent e
+  (h, s) <- setupFiring p
   testSchedule s (readEvent' h)
 
 

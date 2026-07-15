@@ -95,8 +95,9 @@ runHeadlessApp guest =
 
     -- Subscribe to an 'Event' of that the guest application can use to
     -- request application shutdown. We'll check whether this 'Event' is firing
-    -- to determine whether to terminate.
-    shutdown <- subscribeEvent result
+    -- to determine whether to terminate. Subscribing requires a frame of its
+    -- own here; it precedes the post-build frame below either way.
+    shutdown <- runHostFrame $ subscribeEvent result
 
     -- When there is a subscriber to the post-build event, fire the event.
     initialShutdownEventFirings :: Maybe [Maybe a] <- for mPostBuildTrigger $ \postBuildTrigger ->

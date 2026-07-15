@@ -133,8 +133,10 @@ hostPerformEventT :: forall t m a.
                   -> m (a, FireCommand t m)
 hostPerformEventT a = do
   (response, responseTrigger) <- newEventWithTriggerRef
-  (result, eventToPerform) <- runHostFrame $ runRequesterT (unPerformEventT a) response
-  eventToPerformHandle <- subscribeEvent eventToPerform
+  (result, eventToPerformHandle) <- runHostFrame $ do
+    (result, eventToPerform) <- runRequesterT (unPerformEventT a) response
+    handle <- subscribeEvent eventToPerform
+    pure (result, handle)
   return $ (,) result $ FireCommand $ \triggers (readPhase :: ReadPhase m a') -> do
     let go :: [DSum (EventTrigger t) Identity] -> m [a']
         go ts = do
@@ -157,7 +159,7 @@ instance ReflexHost t => MonadSample t (PerformEventT t m) where
   {-# INLINABLE sample #-}
   sample = PerformEventT . lift . sample
 
-instance (ReflexHost t, MonadHold t m) => MonadHold t (PerformEventT t m) where
+instance ReflexHost t => MonadHold t (PerformEventT t m) where
   {-# INLINABLE hold #-}
   hold v0 v' = PerformEventT $ lift $ hold v0 v'
   {-# INLINABLE holdDyn #-}

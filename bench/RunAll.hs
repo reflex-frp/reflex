@@ -63,12 +63,6 @@ import qualified Data.Map as Map
 type MonadReflexHost' t m = (MonadReflexHost t m, MonadIORef m, MonadIORef (HostFrame t))
 
 
-setupFiring ::   (MonadReflexHost t m, MonadIORef m) => Plan t (Event t a) -> m (EventHandle t a, Schedule t)
-setupFiring p = do
-  (e, s) <- runPlan p
-  h <- subscribeEvent e
-  return (h, s)
-
 -- Hack to avoid the NFData constraint for EventHandle which is a synonym
 newtype Ignore a = Ignore a
 instance NFData (Ignore a) where
@@ -84,7 +78,7 @@ instance NFData (Firing t) where
   rnf !_ = ()
 
 -- Measure the running time
-benchFiring :: forall t m. (MonadReflexHost' t m, MonadSample t m) => (forall a. m a -> IO a) -> TestCase -> Int -> IO ()
+benchFiring :: forall t m. (MonadReflexHost' t m) => (forall a. m a -> IO a) -> TestCase -> Int -> IO ()
 benchFiring runHost tc n = runHost $ do
   let runIterations :: m a -> m ()
       runIterations test = replicateM_ (10*n) $ do
@@ -114,7 +108,7 @@ waitForFinalizers = do
 benchmarks :: [(String, Int -> IO ())]
 benchmarks = implGroup "spider" runSpiderHost cases
   where
-    implGroup :: (MonadReflexHost' t m, MonadSample t m) => String -> (forall a. m a -> IO a) -> [(String, TestCase)] -> [(String, Int -> IO ())]
+    implGroup :: (MonadReflexHost' t m) => String -> (forall a. m a -> IO a) -> [(String, TestCase)] -> [(String, Int -> IO ())]
     implGroup name runHost = group name . fmap (second (benchFiring runHost))
     group name = fmap $ first ((name <> "/") <>)
     sub n frames = group ("subscribing " ++ show (n, frames)) $ Focused.subscribing n frames

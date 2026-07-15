@@ -109,7 +109,6 @@ class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
 -- | 'MonadReflexHost' designates monads that can run reflex frames.
 class ( ReflexHost t
       , MonadReflexCreateTrigger t m
-      , MonadSubscribeEvent t m
       , MonadReadEvent t (ReadPhase m)
       , MonadSample t (ReadPhase m)
       , MonadHold t (ReadPhase m)

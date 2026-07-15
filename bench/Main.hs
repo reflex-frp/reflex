@@ -53,13 +53,15 @@ micros =
   , bench "newEventWithTrigger" $ whnfIO . void $ runSpiderHost $ newEventWithTrigger $
       \trigger -> return () <$ evaluate trigger
   , bench "newEventWithTriggerRef" $ whnfIO . void $ runSpiderHost newEventWithTriggerRef
-  , withSetupWHNF "subscribeEvent" newEventWithTriggerRef $ subscribeEvent . fst
+  , withSetupWHNF "subscribeEvent" newEventWithTriggerRef $ runHostFrame . subscribeEvent . fst
   , withSetupWHNF "subscribeSwitch"
-    (join $ hold <$> fmap fst newEventWithTriggerRef <*> fmap fst newEventWithTriggerRef)
-    (subscribeEvent . switch)
-  , withSetupWHNF "subscribeMerge(1)" (setupMerge 1) $ \(ev,_) -> subscribeEvent ev
-  , withSetupWHNF "subscribeMerge(100)" (setupMerge 100) (subscribeEvent . fst)
-  , withSetupWHNF "subscribeMerge(10000)" (setupMerge 10000) (subscribeEvent . fst)
+    (do iv <- fst <$> newEventWithTriggerRef
+        ev <- fst <$> newEventWithTriggerRef
+        runHostFrame (hold iv ev))
+    (runHostFrame . subscribeEvent . switch)
+  , withSetupWHNF "subscribeMerge(1)" (setupMerge 1) $ \(ev,_) -> runHostFrame $ subscribeEvent ev
+  , withSetupWHNF "subscribeMerge(100)" (setupMerge 100) (runHostFrame . subscribeEvent . fst)
+  , withSetupWHNF "subscribeMerge(10000)" (setupMerge 10000) (runHostFrame . subscribeEvent . fst)
   , bench "runHostFrame" $ whnfIO $ runSpiderHost $ runHostFrame $ return ()
   , withSetupWHNF "fireEventsAndRead(single/single)"
     (newEventWithTriggerRef >>= subscribePair)
@@ -83,10 +85,10 @@ micros =
     (\(_, t:_) -> do
         key <- fromJust <$> liftIO (readIORef t)
         fireEvents [key :=> Identity (42 :: Int)])
-  , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev, _) -> hold (42 :: Int) ev
-  , withSetupWHNF "sample" (newEventWithTriggerRef >>= hold (42 :: Int) . fst) sample
+  , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev, _) -> runHostFrame (hold (42 :: Int) ev)
+  , withSetupWHNF "sample" (newEventWithTriggerRef >>= runHostFrame . hold (42 :: Int) . fst) (runHostFrame . sample)
   , withSetupWHNF "headE" newEventWithTriggerRef $ \(ev, _) -> runHostFrame (headE ev)
-  , withSetupWHNF "subscribeHeadE" (newEventWithTriggerRef >>= runHostFrame . headE . fst) subscribeEvent
+  , withSetupWHNF "subscribeHeadE" (newEventWithTriggerRef >>= runHostFrame . headE . fst) (runHostFrame . subscribeEvent)
   ]
 
 setupMerge :: Int
@@ -99,7 +101,7 @@ setupMerge num = do
   pure (merge m, triggers)
 
 subscribePair :: (Event (SpiderTimeline Global) a, b) -> SpiderHost Global (EventHandle (SpiderTimeline Global) a, b)
-subscribePair (ev, b) = (,b) <$> subscribeEvent ev
+subscribePair (ev, b) = (,b) <$> runHostFrame (subscribeEvent ev)
 
 fireAndRead :: IORef (Maybe (EventTrigger (SpiderTimeline Global) a)) -> a -> EventHandle (SpiderTimeline Global) b
             -> SpiderHost Global (Maybe b)
