@@ -86,20 +86,17 @@ instance (ReflexHost t, MonadRef (HostFrame t), Ref (HostFrame t) ~ Ref IO) => T
       makeFiring ref (t, a) = (fromIntegral t, [Firing ref a])
 
 
-firingTrigger :: (MonadReflexHost t m, MonadIORef m) => Firing t -> m (Maybe (DSum  (EventTrigger t) Identity))
-firingTrigger (Firing ref a) = fmap (:=> Identity a) <$> readRef ref
+firingTrigger :: (ReflexHost t, MonadIO m) => Firing t -> m (Maybe (DSum  (EventTrigger t) Identity))
+firingTrigger (Firing ref a) = liftIO $ fmap (:=> Identity a) <$> readIORef ref
 
 runPlan :: (MonadReflexHost t m) => Plan t a -> m (a, Schedule t)
 runPlan (Plan p) = runHostFrame $ runStateT p mempty
 
--- | Run a plan producing an event and subscribe to that event in the plan's
--- build frame.
 setupFiring :: (MonadReflexHost t m) => Plan t (Event t a) -> m (EventHandle t a, Schedule t)
 setupFiring (Plan p) = runHostFrame $ do
   (e, s) <- runStateT p mempty
   h <- subscribeEvent e
   return (h, s)
-
 
 makeDense :: Schedule t -> Schedule t
 makeDense s = fromMaybe (emptyRange 0) $ do
@@ -131,14 +128,29 @@ readEvent' = readEvent >=> sequenceA
 
 
 -- Convenience functions for running tests producing Events/Behaviors
+
+-- | Iterate the schedule for frames 1..n (frame 0 is handled separately
+-- by 'hostFrameAndRead').  'performGC' runs before each frame to match the
+-- old 'testSchedule' behaviour.
+testScheduleRest :: (MonadReflexHost t m, MonadIORef m, NFData a) => Schedule t -> ReadPhase m a -> m (IntMap a)
+testScheduleRest schedule readResult =
+  IntMap.traverseWithKey (\t occs -> liftIO performGC *> triggerFrame readResult t occs) (IntMap.delete 0 (makeDense schedule))
+
+runTest :: (MonadReflexHost t m, MonadIORef m, NFData b) => HostFrame t (Schedule t, a) -> (a -> ReadPhase m b) -> m (IntMap b)
+runTest build readResult = do
+  liftIO performGC
+  (s, a, frame0) <- hostFrameAndRead
+    build
+    (\(s, _) -> catMaybes <$> traverse firingTrigger (IntMap.findWithDefault [] 0 s))
+    (\(s, a) -> do v <- readResult a; pure (s, a, v))
+  frame0' <- liftIO . evaluate . force $ frame0
+  rest <- testScheduleRest s (readResult a)
+  pure $ IntMap.insert 0 frame0' rest
+
 runTestB :: (MonadReflexHost t m, MonadIORef m, NFData a) => Plan t (Behavior t a) -> m (IntMap a)
-runTestB p = do
-  (b, s) <- runPlan p
-  testSchedule s $ sample b
+runTestB (Plan p) = runTest (do (b, s) <- runStateT p mempty; pure (s, b)) sample
 
 runTestE :: (MonadReflexHost t m, MonadIORef m, NFData a) => Plan t (Event t a) -> m (IntMap (Maybe a))
-runTestE p = do
-  (h, s) <- setupFiring p
-  testSchedule s (readEvent' h)
+runTestE (Plan p) = runTest (do (e, s) <- runStateT p mempty; h <- subscribeEvent e; pure (s, h)) readEvent'
 
 

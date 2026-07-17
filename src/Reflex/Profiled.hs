@@ -280,8 +280,7 @@ instance PrimMonad m => PrimMonad (ProfiledM m) where
 
 instance MonadReflexHost t m => MonadReflexHost (ProfiledTimeline t) (ProfiledM m) where
   type ReadPhase (ProfiledM m) = ProfiledM (ReadPhase m)
-  fireEventsAndRead ts r = lift $ fireEventsAndRead ts $ coerce r
-  runHostFrame = lift . runHostFrame . coerce
+  hostFrameAndRead build getTriggers readPhase = lift $ hostFrameAndRead (coerce build) (runProfiledM . getTriggers) (runProfiledM . readPhase)
 
 instance MonadReadEvent t m => MonadReadEvent (ProfiledTimeline t) (ProfiledM m) where
   readEvent = lift . fmap coerce . readEvent

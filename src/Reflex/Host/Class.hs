@@ -20,6 +20,8 @@ module Reflex.Host.Class
   , MonadReadEvent (..)
   , MonadReflexCreateTrigger (..)
   , MonadReflexHost (..)
+  , fireEventsAndRead
+  , runHostFrame
   , fireEvents
   , newEventWithTriggerRef
   , fireEventRef
@@ -30,6 +32,7 @@ import Reflex.Class
 
 import Control.Monad.Fix
 import Control.Monad.Identity
+import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Ref
 import Control.Monad.Trans
 import Control.Monad.Trans.Cont (ContT)
@@ -50,6 +53,7 @@ class ( Reflex t
       , MonadSample t (HostFrame t)
       , MonadHold t (HostFrame t)
       , MonadFix (HostFrame t)
+      , MonadIO (HostFrame t)
       , MonadSubscribeEvent t (HostFrame t)
       ) => ReflexHost t where
   type EventTrigger t :: Type -> Type
@@ -114,32 +118,54 @@ class ( ReflexHost t
       , MonadHold t (ReadPhase m)
       ) => MonadReflexHost t m | m -> t where
   type ReadPhase m :: Type -> Type
-  -- | Propagate some events firings and read the values of events afterwards.
+  -- | Run a 'HostFrame' action and, in the same instant, fire the triggers
+  -- it produces and observe the results.
   --
-  -- This function will create a new frame to fire the given events. It will
-  -- then update all dependent events and behaviors. After that is done, the
-  -- given callback is executed which allows to read the final values of events
-  -- and check whether they have fired in this frame or not.
+  -- The build action runs first and returns its result. After hold
+  -- initializations are processed (which subscribes holds to their events,
+  -- populating event trigger refs), the trigger extraction action runs and
+  -- returns the triggers to fire in this frame. The triggers are then
+  -- propagated, the read phase observes the settled frame, and only then
+  -- does finalization advance time. This matches the pure reference
+  -- semantics where build and frame 0 are the same instant, so a build-time
+  -- 'now' is observable.
   --
-  -- All events that are given are fired at the same time.
-  --
-  -- This function is typically used in the main loop of a reflex framework
-  -- implementation.  The main loop waits for external events to happen (such as
-  -- keyboard input or a mouse click) and then fires the corresponding events
-  -- using this function. The read callback can be used to read output events
-  -- and perform a corresponding response action to the external event.
-  fireEventsAndRead :: [DSum (EventTrigger t) Identity] -> ReadPhase m a -> m a
+  -- This is the sole primitive of the class: every frame an instance can run
+  -- goes through it, so building, firing, and reading cannot disagree about
+  -- what an instant is. 'fireEventsAndRead' (a frame with no build) and
+  -- 'runHostFrame' (a frame with no external triggers and no observation)
+  -- are derived from it.
+  hostFrameAndRead :: HostFrame t a -> (a -> HostFrame t [DSum (EventTrigger t) Identity]) -> (a -> ReadPhase m b) -> m b
 
-  -- | Run a frame without any events firing.
-  --
-  -- This function should be used when you want to use 'sample' and 'hold' when
-  -- no events are currently firing.  Using this function in that case can
-  -- improve performance, since the implementation can assume that no events are
-  -- firing when 'sample' or 'hold' are called.
-  --
-  -- This function is commonly used to set up the basic event network when the
-  -- application starts up.
-  runHostFrame :: HostFrame t a -> m a
+-- | Propagate some events firings and read the values of events afterwards.
+--
+-- This function will create a new frame to fire the given events. It will
+-- then update all dependent events and behaviors. After that is done, the
+-- given callback is executed which allows to read the final values of events
+-- and check whether they have fired in this frame or not.
+--
+-- All events that are given are fired at the same time.
+--
+-- This function is typically used in the main loop of a reflex framework
+-- implementation.  The main loop waits for external events to happen (such as
+-- keyboard input or a mouse click) and then fires the corresponding events
+-- using this function. The read callback can be used to read output events
+-- and perform a corresponding response action to the external event.
+fireEventsAndRead :: MonadReflexHost t m => [DSum (EventTrigger t) Identity] -> ReadPhase m a -> m a
+fireEventsAndRead inputs readPhase =
+  hostFrameAndRead (pure ()) (const (pure inputs)) (const readPhase)
+{-# INLINE fireEventsAndRead #-}
+
+-- | Run a frame without any events firing and without observing the frame.
+--
+-- This function should be used when you want to use 'sample' and 'hold' when
+-- no events are currently firing.
+--
+-- This function is commonly used to set up the basic event network when the
+-- application starts up.
+runHostFrame :: MonadReflexHost t m => HostFrame t a -> m a
+runHostFrame hostFrame = hostFrameAndRead hostFrame (const (pure [])) pure
+{-# INLINE runHostFrame #-}
 
 -- | Like 'fireEventsAndRead', but without reading any events.
 fireEvents :: MonadReflexHost t m => [DSum (EventTrigger t) Identity] -> m ()
@@ -199,8 +225,7 @@ instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ReaderT r m) where
 
 instance MonadReflexHost t m => MonadReflexHost t (ReaderT r m) where
   type ReadPhase (ReaderT r m) = ReadPhase m
-  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
-  runHostFrame = lift . runHostFrame
+  hostFrameAndRead build getTriggers readPhase = lift $ hostFrameAndRead build getTriggers readPhase
 
 instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (WriterT w m) where
   newEventWithTrigger = lift . newEventWithTrigger
@@ -211,8 +236,7 @@ instance (MonadSubscribeEvent t m, Monoid w) => MonadSubscribeEvent t (WriterT w
 
 instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (WriterT w m) where
   type ReadPhase (WriterT w m) = ReadPhase m
-  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
-  runHostFrame = lift . runHostFrame
+  hostFrameAndRead build getTriggers readPhase = lift $ hostFrameAndRead build getTriggers readPhase
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (StateT s m) where
   newEventWithTrigger = lift . newEventWithTrigger
@@ -223,8 +247,7 @@ instance MonadSubscribeEvent t m => MonadSubscribeEvent t (StateT r m) where
 
 instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
   type ReadPhase (StateT s m) = ReadPhase m
-  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
-  runHostFrame = lift . runHostFrame
+  hostFrameAndRead build getTriggers readPhase = lift $ hostFrameAndRead build getTriggers readPhase
 
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (Strict.StateT s m) where
@@ -236,8 +259,7 @@ instance MonadSubscribeEvent t m => MonadSubscribeEvent t (Strict.StateT r m) wh
 
 instance MonadReflexHost t m => MonadReflexHost t (Strict.StateT s m) where
   type ReadPhase (Strict.StateT s m) = ReadPhase m
-  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
-  runHostFrame = lift . runHostFrame
+  hostFrameAndRead build getTriggers readPhase = lift $ hostFrameAndRead build getTriggers readPhase
 
 
 
@@ -250,8 +272,7 @@ instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ContT r m) where
 
 instance MonadReflexHost t m => MonadReflexHost t (ContT r m) where
   type ReadPhase (ContT r m) = ReadPhase m
-  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
-  runHostFrame = lift . runHostFrame
+  hostFrameAndRead build getTriggers readPhase = lift $ hostFrameAndRead build getTriggers readPhase
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ExceptT e m) where
   newEventWithTrigger = lift . newEventWithTrigger
@@ -262,8 +283,7 @@ instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ExceptT r m) where
 
 instance MonadReflexHost t m => MonadReflexHost t (ExceptT e m) where
   type ReadPhase (ExceptT e m) = ReadPhase m
-  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
-  runHostFrame = lift . runHostFrame
+  hostFrameAndRead build getTriggers readPhase = lift $ hostFrameAndRead build getTriggers readPhase
 
 instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (RWST r w s m) where
   newEventWithTrigger = lift . newEventWithTrigger
@@ -274,5 +294,4 @@ instance (MonadSubscribeEvent t m, Monoid w) => MonadSubscribeEvent t (RWST r w 
 
 instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (RWST r w s m) where
   type ReadPhase (RWST r w s m) = ReadPhase m
-  fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
-  runHostFrame = lift . runHostFrame
+  hostFrameAndRead build getTriggers readPhase = lift $ hostFrameAndRead build getTriggers readPhase

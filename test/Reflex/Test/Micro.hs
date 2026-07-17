@@ -391,7 +391,7 @@ testCases =
       let e = pushAlways (\a -> if a == "a" then now else return never) e1
       x <- accumDyn (<>) never e
       return . coincidence $ updated x
-  , xfail ["spider"] $ testE "now-4" $ do
+  , testE "now-4" $ do
       now
   , testE "now-5" $ do
       e1 <- events1
@@ -400,7 +400,7 @@ testCases =
       e1 <- events1
       n <- now
       pure $ coincidence $ pushAlways (const (pure n)) e1
-  , xfail ["spider"] $ testE "now-7" $ do
+  , testE "now-7" $ do
       e1 <- plan [(0,"a"),(1,"b"),(3,"c")]
       n <- now
       pure $ coincidence $ pushAlways (const (pure n)) e1

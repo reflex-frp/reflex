@@ -61,7 +61,7 @@ import Data.Proxy
 import Data.These
 import Data.Traversable
 import Data.Type.Equality ((:~:)(Refl))
-import GHC.Exts hiding (toList)
+import GHC.Exts hiding (toList, build)
 import GHC.IORef (IORef (..))
 import GHC.Stack
 import Reflex.FastWeak
@@ -1392,12 +1392,11 @@ coincidence a = unsafePerformIO $ do
     , coincidenceSubscribed = ref
     }
 
--- Propagate the given event occurrence; before cleaning up, run the given action, which may read the state of events and behaviors
-run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> SpiderHost x b
-run roots after = do
-  tracePropagate (Proxy :: Proxy x) $ "Running an event frame with " <> show (length roots) <> " events"
-  let t = spiderTimeline :: SpiderTimelineEnv x
-  result <- SpiderHost $ withMVar (_spiderTimeline_lock (unSTE t)) $ \_ -> unSpiderHost $ runFrame $ do
+-- | Propagate root triggers and process delayed merges, then run the
+-- given read action. Runs inside the single 'runFrame' of
+-- 'runHostFrameFireAndRead', after the build and hold-init phases.
+propagateAndRead :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> EventM x b
+propagateAndRead roots after = do
     rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readIORef occRef
@@ -1423,8 +1422,6 @@ run roots after = do
     go
     putCurrentHeight maxBound
     after
-  tracePropagate (Proxy :: Proxy x) "Done running an event frame"
-  return result
 
 scheduleMerge' :: HasSpiderTimeline x => Height -> IORef Height -> EventM x () -> EventM x ()
 scheduleMerge' initialHeight heightRef a = scheduleMerge initialHeight $ do
@@ -2744,13 +2741,11 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTim
   subscribeEvent e = SpiderHostFrame $ do
     --TODO: Unsubscribe eventually (manually and/or with weak ref)
     val <- liftIO $ newIORef Nothing
-    subscription <- subscribe (unSpiderEvent e) $ Subscriber
-      { subscriberPropagate = \a -> do
+    let recordOccurrence a = do
           liftIO $ writeIORef val $ Just a
           scheduleClear val
-      , subscriberInvalidateHeight = \_ -> return ()
-      , subscriberRecalculateHeight = \_ -> return ()
-      }
+    (subscription, occ) <- subscribeAndRead (unSpiderEvent e) $ terminalSubscriber recordOccurrence
+    forM_ occ recordOccurrence
     return $ SpiderEventHandle
       { spiderEventHandleSubscription = subscription
       , spiderEventHandleValue = val
@@ -2782,8 +2777,17 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexCreateTrigger (Spid
 
 instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexHost (SpiderTimeline x) (SpiderHost x) where
   type ReadPhase (SpiderHost x) = Reflex.Spider.Internal.ReadPhase x
-  fireEventsAndRead es (Reflex.Spider.Internal.ReadPhase a) = run es a
-  runHostFrame = runFrame . runSpiderHostFrame
+  hostFrameAndRead build getTriggers readPhase = runHostFrameFireAndRead (runSpiderHostFrame build) (runSpiderHostFrame . getTriggers) (\a -> let Reflex.Spider.Internal.ReadPhase r = readPhase a in r)
+
+runHostFrameFireAndRead :: forall x a b. HasSpiderTimeline x => EventM x a -> (a -> EventM x [DSum (RootTrigger x) Identity]) -> (a -> ResultM x b) -> SpiderHost x b
+runHostFrameFireAndRead build getTriggers readPhase = do
+  let t = spiderTimeline :: SpiderTimelineEnv x
+  SpiderHost $ withMVar (_spiderTimeline_lock (unSTE t)) $ \_ -> unSpiderHost $ runFrame $ do
+    a <- build
+    env <- asksEventEnv id
+    runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env)
+    roots <- getTriggers a
+    propagateAndRead roots (readPhase a)
 
 unsafeNewSpiderTimelineEnv :: forall x. IO (SpiderTimelineEnv x)
 unsafeNewSpiderTimelineEnv = do

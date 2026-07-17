@@ -1,10 +1,11 @@
--- | 'runHostFrame' contains some optimizations which broke Spider when Reflex
--- gained `now`.
+-- | A frame run by 'runHostFrame' is a full instant: a build-time 'now'
+-- occurrence must reach every hold in the built network, including through
+-- combinators (such as merges) whose occurrences are computed by propagation
+-- rather than read directly at subscribe time.
 import qualified Data.IntMap as IntMap
 import Reflex
 import Reflex.Host.Class
 import Test.Tasty
-import Test.Tasty.ExpectedFailure (expectFailBecause)
 import Test.Tasty.HUnit
 
 main :: IO ()
@@ -16,8 +17,7 @@ main = defaultMain $ testGroup "runHostFrame"
           hold "initial" ("fired" <$ buildTime)
         runHostFrame $ sample b
       value @?= "fired"
-  , expectFailBecause "runHostFrame never drains the delayed-merge queue, so the merge's occurrence is lost" $
-      testCase "hold on mergeInt of now" $ do
+  , testCase "hold on mergeInt of now" $ do
         value <- runSpiderHost $ do
           b <- runHostFrame $ do
             buildTime <- now
