@@ -24,15 +24,15 @@ import qualified Control.Monad.State.Strict as Strict
 -- 'Behavior's and 'Dynamic's to be safely sampled, regardless of where they
 -- were created, when the post-build 'Event' fires.  The post-build 'Event' will
 -- fire exactly once for an given action.
-class (Reflex t, Monad m) => PostBuild t m | m -> t where
+class (Reflex t, Monad m, MonadHold t m) => PostBuild t m | m -> t where
   -- | Retrieve the post-build 'Event' for this action.
   getPostBuild :: m (Event t ())
 
 instance PostBuild t m => PostBuild t (ReaderT r m) where
-  getPostBuild = lift getPostBuild
+  getPostBuild = now
 
-instance PostBuild t m => PostBuild t (StateT s m) where
-  getPostBuild = lift getPostBuild
+instance (Reflex t, MonadHold t m) => PostBuild t (StateT s m) where
+  getPostBuild = now
 
 instance PostBuild t m => PostBuild t (Strict.StateT s m) where
-  getPostBuild = lift getPostBuild
+  getPostBuild = now

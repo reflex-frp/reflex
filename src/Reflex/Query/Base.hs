@@ -291,7 +291,7 @@ instance (S.Semigroup a, Monad m) => S.Semigroup (QueryT t q m a) where
   (<>) = liftA2 (S.<>)
 
 -- | withQueryT's QueryMorphism argument needs to be a group homomorphism in order to behave correctly
-withQueryT :: (MonadHold t m, PostBuild t m, Group q, Group q', Commutative q, Commutative q', Query q')
+withQueryT :: (Reflex t, MonadHold t m, Group q, Group q', Commutative q, Commutative q', Query q')
            => QueryMorphism q q'
            -> QueryT t q m a
            -> QueryT t q' m a
@@ -308,7 +308,7 @@ mapQueryT :: (forall b. m b -> n b) -> QueryT t q m a -> QueryT t q n a
 mapQueryT f (QueryT a) = QueryT $ mapStateT (mapEventWriterT (mapReaderT f)) a
 
 -- | dynWithQueryT's (Dynamic t QueryMorphism) argument needs to be a group homomorphism at all times in order to behave correctly
-dynWithQueryT :: (MonadHold t m, PostBuild t m, Group q, Commutative q, Group q', Commutative q', Query q')
+dynWithQueryT :: (Reflex t, MonadHold t m, Group q, Commutative q, Group q', Commutative q', Query q')
            => Dynamic t (QueryMorphism q q')
            -> QueryT t q m a
            -> QueryT t q' m a

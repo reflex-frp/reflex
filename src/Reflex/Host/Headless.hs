@@ -12,10 +12,9 @@ import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Fix (MonadFix, fix)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Primitive (PrimMonad)
-import Control.Monad.Ref (MonadRef, Ref, readRef)
+import Control.Monad.Ref (MonadRef, Ref)
 import Data.Dependent.Sum (DSum (..), (==>))
 import Data.Foldable (for_)
-import Data.Functor.Identity (Identity(..))
 import Data.IORef (IORef, readIORef)
 import Data.Maybe (catMaybes)
 import Data.Traversable (for)
@@ -61,40 +60,25 @@ runHeadlessApp
   -- closed at the first occurrence of the resulting 'Event'.
   -> IO a
 runHeadlessApp guest =
-  -- We are using the 'Spider' implementation of reflex. Running the host
-  -- allows us to take actions on the FRP timeline.
   withSpiderTimeline $ runSpiderHostForTimeline $ do
-    -- Create the "post-build" event and associated trigger. This event fires
-    -- once, when the application starts.
-    (postBuild, postBuildTriggerRef) <- newEventWithTriggerRef
     -- Queue of externally-triggered events awaiting processing.
     events <- liftIO newChan
-    -- Fold used for the post-build frame and for every event frame: stop as
-    -- soon as the guest's shutdown 'Event' fires, otherwise keep draining.
+    -- Fold used both for the initial settle and for every event frame: stop as
+    -- soon as the guest's shutdown 'Event' occurs, otherwise keep draining.
     let untilShutdown handle () = do
           mExit <- sequence =<< readEvent handle
           pure $ maybe (Right ()) Left mExit
-    -- Build the guest network. 'subscribeEvent' yields the shutdown handle; the
-    -- build settle observes nothing, since the post-build event has not fired.
-    (_, shutdownEventHandle, _, fc) <- hostPerformEventTAndRead
-          ( flip runPostBuildT postBuild   -- guest can access the post-build 'Event'
+    (_, shutdownEventHandle, shutdownImmediately, fc) <- hostPerformEventTAndRead
+          ( runPostBuildT   -- guest can access the post-build 'Event'
           . flip runTriggerEventT events   -- guest can create triggers, queued to 'events'
           $ guest )
           subscribeEvent
           ()
           untilShutdown
-    -- Read the post-build trigger. 'Nothing' if the guest never subscribed.
-    mPostBuildTrigger <- readRef postBuildTriggerRef
-    -- Fire the post-build event as the first frame (when subscribed), draining
-    -- its performEvent cascade and aborting the moment the shutdown 'Event' fires.
-    shutdownImmediately <- case mPostBuildTrigger of
-      Nothing -> pure (Right ())
-      Just postBuildTrigger ->
-        runFireCommandAndRead fc [postBuildTrigger :=> Identity ()] () (untilShutdown shutdownEventHandle)
     case shutdownImmediately of
       Left exitResult -> pure exitResult
-      -- Main loop: block for the next external event, fire it, and drain --
-      -- aborting the moment the shutdown 'Event' fires.
+      -- Main loop: block for the next external event, fire it, perform the effects
+      -- aborting the moment the shutdown 'Event' occurs.
       Right () -> fix $ \loop -> do
         ers <- liftIO $ readChan events
         mes <- liftIO $

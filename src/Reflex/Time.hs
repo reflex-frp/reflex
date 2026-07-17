@@ -38,7 +38,6 @@ import Data.Semigroup (Semigroup(..))
 import Reflex.Class
 import Reflex.Dynamic
 import Reflex.PerformEvent.Class
-import Reflex.PostBuild.Class
 import Reflex.TriggerEvent.Class
 
 -- | Metadata associated with a timer "tick"
@@ -55,14 +54,14 @@ data TickInfo
 -- | Fires an 'Event' once every time provided interval elapses, approximately.
 -- The provided 'UTCTime' is used bootstrap the determination of how much time has elapsed with each tick.
 -- This is a special case of 'tickLossyFrom' that uses the post-build event to start the tick thread.
-tickLossy :: (PostBuild t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m) => NominalDiffTime -> UTCTime -> m (Event t TickInfo)
-tickLossy dt t0 = tickLossyFrom dt t0 =<< getPostBuild
+tickLossy :: (MonadHold t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m) => NominalDiffTime -> UTCTime -> m (Event t TickInfo)
+tickLossy dt t0 = tickLossyFrom dt t0 =<< now
 
 -- | Fires an 'Event' once every time provided interval elapses, approximately.
 -- This is a special case of 'tickLossyFrom' that uses the post-build event to start the tick thread and the time of the post-build as the tick basis time.
-tickLossyFromPostBuildTime :: (PostBuild t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m) => NominalDiffTime -> m (Event t TickInfo)
+tickLossyFromPostBuildTime :: (MonadHold t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m) => NominalDiffTime -> m (Event t TickInfo)
 tickLossyFromPostBuildTime dt = do
-  postBuild <- getPostBuild
+  postBuild <- now
   postBuildTime <- performEvent $ liftIO getCurrentTime <$ postBuild
   tickLossyFrom' $ (dt,) <$> postBuildTime
 
@@ -98,7 +97,7 @@ tickLossyFrom' e = do
           cb (tick, pair)
 
 -- | Like 'tickLossy', but immediately calculates the first tick and provides a 'Dynamic' that is updated as ticks fire.
-clockLossy :: (MonadIO m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), PostBuild t m, MonadHold t m, MonadFix m) => NominalDiffTime -> UTCTime -> m (Dynamic t TickInfo)
+clockLossy :: (MonadIO m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadHold t m, MonadFix m) => NominalDiffTime -> UTCTime -> m (Dynamic t TickInfo)
 clockLossy dt t0 = do
   initial <- liftIO $ getCurrentTick dt t0
   e <- tickLossy dt t0
@@ -144,14 +143,14 @@ poissonLossyFrom rnd rate = inhomogeneousPoissonFrom rnd (constant rate) rate
 --   the current interval, with 0 representing the basis time.
 --   Automatically begin sending events when the DOM is built
 poissonLossy
-  :: (RandomGen g, MonadIO (Performable m), PerformEvent t m, TriggerEvent t m, PostBuild t m)
+  :: (RandomGen g, MonadIO (Performable m), PerformEvent t m, TriggerEvent t m, MonadHold t m)
   => g
   -> Double
   -- ^ Poisson event rate (Hz)
   -> UTCTime
   -- ^ Baseline time for events
   -> m (Event t TickInfo)
-poissonLossy rnd rate t0 = poissonLossyFrom rnd rate t0 =<< getPostBuild
+poissonLossy rnd rate t0 = poissonLossyFrom rnd rate t0 =<< now
 
 -- | Send events with inhomogeneous Poisson timing with the given basis
 --   and variable rate. Provide a maxRate that you expect to support.
@@ -211,14 +210,14 @@ inhomogeneousPoissonFrom rnd rate maxRate t0 e = do
 -- | Send events with inhomogeneous Poisson timing with the given basis
 --   and variable rate. Provide a maxRate that you expect to support
 inhomogeneousPoisson
-  :: (RandomGen g, MonadIO (Performable m), PerformEvent t m, TriggerEvent t m, PostBuild t m)
+  :: (RandomGen g, MonadIO (Performable m), PerformEvent t m, TriggerEvent t m, MonadHold t m)
   => g
   -> Behavior t Double
   -> Double
   -> UTCTime
   -> m (Event t TickInfo)
 inhomogeneousPoisson rnd rate maxRate t0 =
-  inhomogeneousPoissonFrom rnd rate maxRate t0 =<< getPostBuild
+  inhomogeneousPoissonFrom rnd rate maxRate t0 =<< now
 
 -- | Block occurrences of an Event until the given number of seconds elapses without
 --   the Event firing, at which point the last occurrence of the Event will fire.
