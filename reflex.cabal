@@ -445,6 +445,20 @@ test-suite rootCleanup
       , ref-tf
       , these
 
+test-suite runHostFrame
+    type:             exitcode-stdio-1.0
+    main-is:          runHostFrame.hs
+    hs-source-dirs:   test
+    default-language: Haskell2010
+    ghc-options:      -Wall
+    build-depends:
+        base >= 4.11 && < 4.22
+      , containers
+      , reflex
+      , tasty
+      , tasty-expected-failure
+      , tasty-hunit
+
 test-suite behaviorLeak
     type:             exitcode-stdio-1.0
     main-is:          behaviorLeak.hs
