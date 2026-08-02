@@ -127,6 +127,22 @@ testCases =
           eLater <- headE e
       return eHeadOfLater
 
+  -- Tests for a bug caught during headE development where the argument event's
+  -- heightRef was incorrectly reused as headE's heightRef.
+  , testE' "headE-height-after-head" [(1,())] $ do
+      unsubscribeHead <- plan [(1, ())]
+      dropFromMerge <- plan [(2, ())]
+      let taller = void (mergeList [unsubscribeHead, unsubscribeHead])
+      parent <- hold unsubscribeHead (taller <$ unsubscribeHead)
+      let switched = switch parent
+      headOfSwitched <- headE switched
+      mergeParents <- holdIncremental
+        (IntMap.singleton (0 :: Int) headOfSwitched)
+        (PatchIntMap (IntMap.singleton 0 Nothing) <$ dropFromMerge)
+      -- 'switched' stays subscribed here, so it goes on subscribing (and so
+      -- changing its height) after the headE has stopped listening to it:
+      pure $ leftmost [void (mergeIntIncremental mergeParents), switched]
+
   , testE' "switch-1" [(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       b <- hold never (e <$ e)
