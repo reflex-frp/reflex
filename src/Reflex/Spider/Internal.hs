@@ -278,33 +278,95 @@ terminalSubscriber p = Subscriber
   , subscriberRecalculateHeight = \_ -> return ()
   }
 
--- | Subscribe to an Event only for the duration of one occurrence
-{-# INLINE subscribeAndReadHead #-}
-subscribeAndReadHead :: Event x a -> Subscriber x a -> EventM x (EventSubscription x, Maybe a)
-subscribeAndReadHead e sub = do
-  subscriptionRef <- liftIO $ newIORef $ error "subscribeAndReadHead: not initialized"
-  (subscription, occ) <- subscribeAndRead e $ debugSubscriber' "head" $ sub
-    { subscriberPropagate = \a -> do
-        liftIO $ unsubscribe =<< readIORef subscriptionRef
-        subscriberPropagate sub a
-    }
-  liftIO $ case occ of
-    Nothing -> writeIORef subscriptionRef $! subscription
-    Just _ -> unsubscribe subscription
-  return (subscription, occ)
+data HeadESubscribed x a = HeadESubscribed
+  { headESubscribedSubscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
+  , headESubscribedParent :: !(EventSubscription x)
+  , headESubscribedOccurrence :: {-# UNPACK #-} !(IORef (Maybe a))
+  , headESubscribedHeight :: {-# UNPACK #-} !(IORef Height)
+  }
 
---TODO: Make this lazy in its input event
-headE :: Defer (SomeMergeInit x) m => Event x a -> m (Event x a)
+-- | State of a 'headE' node, retains exactly what's needed for each phase.
+data HeadEState x a
+  = HeadEStateInitial (Event x a)
+  | HeadEStateSubscribed !(HeadESubscribed x a) 
+  | HeadEStateOccurred {-# UNPACK #-} !(IORef (Maybe a))
+
+-- | Specialized implementation of 'Reflex.Class.slowHeadE'.
+headE :: forall x m a. (HasSpiderTimeline x, Defer (SomeMergeInit x) m) => Event x a -> m (Event x a)
 headE originalE = do
-  parent <- liftIO $ newIORef $ Just originalE
-  defer $ SomeMergeInit $ do --TODO: Rename SomeMergeInit appropriately
-    let clearParent = liftIO $ writeIORef parent Nothing
-    (_, occ) <- subscribeAndReadHead originalE $ terminalSubscriber $ const clearParent
-    when (isJust occ) clearParent
-  return $ Event $ \sub ->
-    liftIO (readIORef parent) >>= \case
-      Nothing -> subscribeAndReadNever
-      Just e -> subscribeAndReadHead e sub
+  stateRef <- liftIO $ newIORef (HeadEStateInitial originalE :: HeadEState x a)
+  let unsubscribeAfterOccurrence occRef = liftIO (readIORef stateRef) >>= \case
+        HeadEStateSubscribed subscribed -> do
+          liftIO $ writeIORef stateRef $ HeadEStateOccurred occRef
+          liftIO $ unsubscribe $ headESubscribedParent subscribed
+        _ -> pure ()
+      subscribeUntilHead :: EventM x (HeadEState x a)
+      subscribeUntilHead = liftIO (readIORef stateRef) >>= \case
+        HeadEStateInitial parentEvent -> do
+          subscribers <- liftIO FastWeakBag.empty
+          occRef <- liftIO $ newIORef Nothing
+          heightRef <- liftIO $ newIORef zeroHeight
+          (parentSubscription, occ) <- subscribeAndRead parentEvent $ Subscriber
+            { subscriberPropagate = \a -> do
+                liftIO $ writeIORef occRef $ Just a
+                scheduleClear occRef
+                -- Propagating before unsubscribing can help avoid
+                -- teardown-then-revive when downstream would re-subscribe:
+                propagateFast a subscribers
+                unsubscribeAfterOccurrence occRef
+            , subscriberInvalidateHeight = \old -> do
+                writeIORef heightRef invalidHeight
+                FastWeakBag.traverse_ subscribers $ invalidateSubscriberHeight old
+            , subscriberRecalculateHeight = \new -> do
+                writeIORef heightRef $! new
+                FastWeakBag.traverse_ subscribers $ recalculateSubscriberHeight new
+            }
+          liftIO $ writeIORef heightRef =<<
+            getEventSubscribedHeight (_eventSubscription_subscribed parentSubscription)
+          let !subscribed = HeadESubscribed
+                { headESubscribedSubscribers = subscribers
+                , headESubscribedParent = parentSubscription
+                , headESubscribedOccurrence = occRef
+                , headESubscribedHeight = heightRef
+                }
+          liftIO $ writeIORef stateRef $ HeadEStateSubscribed subscribed
+          if isJust occ
+            then do
+              liftIO $ writeIORef occRef occ
+              scheduleClear occRef
+              unsubscribeAfterOccurrence occRef
+              pure $ HeadEStateOccurred occRef
+            else pure $ HeadEStateSubscribed subscribed
+        alreadySubscribed -> pure alreadySubscribed
+  defer $ SomeMergeInit $ void subscribeUntilHead
+  pure $ Event $ \sub -> do
+    liftIO $ touch stateRef
+    state <- liftIO (readIORef stateRef) >>= \case
+      HeadEStateInitial _ -> subscribeUntilHead
+      alreadySubscribed -> pure alreadySubscribed
+    case state of
+      HeadEStateInitial _ -> error "headE in impossible HeadEStateInitial state"
+      HeadEStateSubscribed subscribed -> liftIO $ do
+        ticket <- FastWeakBag.insert sub $ headESubscribedSubscribers subscribed
+        occ <- readIORef $ headESubscribedOccurrence subscribed
+        pure ( EventSubscription
+                   { _eventSubscription_unsubscribe = do
+                       FastWeakBag.remove ticket
+                       touch ticket
+                   , _eventSubscription_subscribed = EventSubscribed
+                       { eventSubscribedHeightRef = headESubscribedHeight subscribed
+                       , eventSubscribedRetained = toAny (stateRef, ticket)
+#ifdef DEBUG_CYCLES
+                       , eventSubscribedGetParents = pure [_eventSubscription_subscribed $ headESubscribedParent subscribed]
+                       , eventSubscribedHasOwnHeightRef = True
+                       , eventSubscribedWhoCreated = whoCreatedIORef stateRef
+#endif
+                       }
+                   }
+               , occ )
+      HeadEStateOccurred occRef -> do
+        occ <- liftIO $ readIORef occRef
+        pure (EventSubscription (pure ()) eventSubscribedNever, occ)
 
 data CacheSubscribed x a
    = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
@@ -2147,7 +2209,7 @@ updateMerge subscribed m updateFunc p = SomeMergeUpdate updateMe (invalidateMerg
 {-# INLINE mergeGCheap' #-}
 mergeGCheap' :: forall k v x p s q. (HasSpiderTimeline x, GCompare k, PatchTarget p ~ DMap k q)
   => MergeGetSubscription x s -> MergeInitFunc k v q x s -> MergeUpdateFunc k v x p s -> MergeDestroyFunc k s -> DynamicS x p -> Event x (DMap k v)
-mergeGCheap' _ getInitialSubscribers updateFunc destroy d = Event $ \sub -> do
+mergeGCheap' _getParent getInitialSubscribers updateFunc destroy d = Event $ \sub -> do
   initialParents <- readBehaviorUntracked $ dynamicCurrent d
   accumRef <- liftIO $ newIORef $ error "merge: accumRef not yet initialized"
   heightRef <- liftIO $ newIORef $ error "merge: heightRef not yet initialized"
@@ -2160,7 +2222,7 @@ mergeGCheap' _ getInitialSubscribers updateFunc destroy d = Event $ \sub -> do
         , eventSubscribedRetained = toAny (parentsRef, changeSubdRef)
 #ifdef DEBUG_CYCLES
       , eventSubscribedGetParents = do
-          let getParent' (_ :=> v) = _eventSubscription_subscribed (getParent v)
+          let getParent' (_ :=> v) = _eventSubscription_subscribed (_getParent v)
           fmap getParent' . DMap.toList  <$> readIORef parentsRef
       , eventSubscribedHasOwnHeightRef = False
       , eventSubscribedWhoCreated = whoCreatedIORef heightRef
@@ -2563,8 +2625,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
   {-# INLINABLE buildDynamic #-}
   buildDynamic = buildDynamicSpiderEventM
   {-# INLINABLE headE #-}
-  headE = R.slowHeadE
---  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
+  headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = nowSpiderEventM
 
@@ -2586,8 +2647,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 (SpiderEvent e) = SpiderPushM $ fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce e
   {-# INLINABLE headE #-}
-  headE = R.slowHeadE
---  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+  headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = SpiderPushM nowSpiderEventM
 
@@ -2665,8 +2725,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 e = SpiderHostFrame $ fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
   {-# INLINABLE headE #-}
-  headE = R.slowHeadE
---  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
+  headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = SpiderHostFrame Reflex.Class.now
 
