@@ -2445,18 +2445,12 @@ clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeI
 -- | Run an event action outside of a frame
 runFrame :: forall x a. HasSpiderTimeline x => EventM x a -> SpiderHost x a --TODO: This function also needs to hold the mutex
 runFrame a = SpiderHost $ do
-  let env = _spiderTimeline_eventEnv $ unSTE (spiderTimeline :: SpiderTimelineEnv x)
   let go = do
         result <- a
         runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) -- This must happen before doing the assignments, in case subscribing a Hold causes existing Holds to be read by the newly-propagated events
         return result
   result <- runEventM go
-  toClear <- readIORef $ eventEnvClears env
-  forM_ toClear $ \(Some (Clear ref)) -> {-# SCC "clear" #-} writeIORef ref Nothing
-  toClearInt <- readIORef $ eventEnvIntClears env
-  forM_ toClearInt $ \(Some (IntClear ref)) -> {-# SCC "intClear" #-} writeIORef ref $! IntMap.empty
-  toClearRoot <- readIORef $ eventEnvRootClears env
-  forM_ toClearRoot $ \(Some (RootClear ref)) -> {-# SCC "rootClear" #-} writeIORef ref $! DMap.empty
+  clearOccurrences
   toAssign <- readIORef $ eventEnvAssignments env
   toReconnectRef <- newIORef []
   coincidenceInfos <- readIORef $ eventEnvResetCoincidences env
@@ -2485,7 +2479,7 @@ runFrame a = SpiderHost $ do
     runEventM $ runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
     --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
     sub <- newSubscriberSwitch subscribed
-    subscription <- unSpiderHost $ runFrame $ {-# SCC "subscribeSwitch" #-} subscribe e sub --TODO: Assert that the event isn't firing --TODO: This should not loop because none of the events should be firing, but still, it is inefficient
+    subscription <- {-# SCC "subscribeSwitch" #-} subscribeReconnect e sub --TODO: Assert that the event isn't firing
     {-
     stackTrace <- liftIO $ fmap renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
     liftIO $ debugStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
@@ -2516,6 +2510,33 @@ runFrame a = SpiderHost $ do
     height <- calculateSwitchHeight subscribed
     updateSwitchHeight height subscribed
   return result
+  where
+    env = _spiderTimeline_eventEnv $ unSTE (spiderTimeline :: SpiderTimelineEnv x)
+
+    clearOccurrences :: IO ()
+    clearOccurrences = do
+      toClear <- readIORef $ eventEnvClears env
+      forM_ toClear $ \(Some (Clear ref)) -> {-# SCC "clear" #-} writeIORef ref Nothing
+      toClearInt <- readIORef $ eventEnvIntClears env
+      forM_ toClearInt $ \(Some (IntClear ref)) -> {-# SCC "intClear" #-} writeIORef ref $! IntMap.empty
+      toClearRoot <- readIORef $ eventEnvRootClears env
+      forM_ toClearRoot $ \(Some (RootClear ref)) -> {-# SCC "rootClear" #-} writeIORef ref $! DMap.empty
+
+    subscribeReconnect :: forall b. Event x b -> Subscriber x b -> IO (EventSubscription x)
+    subscribeReconnect e sub = do
+      result <- runEventM $ do
+        subscription <- subscribe e sub
+        runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env)
+        return subscription
+      clearOccurrences
+#ifdef DEBUG
+      toAssign <- readIORef $ eventEnvAssignments env
+      coincidenceInfos <- readIORef $ eventEnvResetCoincidences env
+      invalidatedCoincidences <- readIORef $ eventEnvInvalidatedCoincidences env
+      unless (null toAssign && null coincidenceInfos && null invalidatedCoincidences) $ error "subscribeReconnect: the reconnect subscribe deferred a hold assignment, coincidence reset or coincidence height invalidation, which should be impossible when no event is firing"
+#endif
+      clearEventEnv env
+      return result
 
 newtype Height = Height { unHeight :: Int } deriving (Show, Read, Eq, Ord, Bounded)
 
