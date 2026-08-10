@@ -297,6 +297,14 @@ testCases =
       let eInner = switch bd
       return $ leftmost [eOuter, eInner]
 
+  , testE' "joinDyn-inner-occurrence" [(3, 1)] $ do
+      updateOld <- plan [(3, 100 :: Int)]
+      swap <- plan [(3, ())]
+      innerOld <- holdDyn 0 updateOld
+      innerNew <- holdDyn 1 never
+      outer <- holdDyn innerOld (innerNew <$ swap)
+      pure $ updated (join outer)
+
   , testB' "foldDyn" [(0,"0"),(1,"0"),(2,"a0"),(3,"ba0"),(4,"ba0"),(5,"ba0"),(6,"cba0"),(7,"cba0"),(8,"dcba0"),(9,"edcba0")] $ do
       d <- foldDyn (++) "0" =<< events1
       return (current d)
