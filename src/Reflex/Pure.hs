@@ -166,7 +166,7 @@ instance Monad (Dynamic (Pure t)) where
           Nothing -> (Nothing, Nothing)
           Just nextX -> let (c, u) = unDynamic (f nextX) t
                         in (Just c, u)
-    in (cur, getFirst $ mconcat $ map First [updBoth, updOuter, updInner])
+    in (cur, getFirst $ mconcat $ map First [updBoth, updInner, updOuter])
 
 instance MonadSample (Pure t) ((->) t) where
 
