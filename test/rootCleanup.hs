@@ -14,7 +14,7 @@ main = do
       e <- newEventWithTrigger $ \_ -> do
         modifyIORef' numSubscriptions succ
         return $ modifyIORef' numSubscriptions pred
-      _ <- hold () e
+      _ <- runHostFrame $ hold () e
       return ()
     replicateM_ 100 $ do
       performMajorGC

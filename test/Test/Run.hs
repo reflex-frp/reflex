@@ -29,11 +29,12 @@ runApp :: (t ~ SpiderTimeline Global, m ~ SpiderHost Global)
 runApp app b0 input = runSpiderHost $ do
   (appInHoldE, pulseHoldTriggerRef) <- newEventWithTriggerRef
   (appInE, pulseEventTriggerRef) <- newEventWithTriggerRef
-  appInB <- hold b0 appInHoldE
-  (out, FireCommand fire) <- hostPerformEventT $ app $ AppIn
-    { _appIn_event = appInE
-    , _appIn_behavior = appInB
-    }
+  (out, FireCommand fire) <- hostPerformEventT $ do
+    appInB <- hold b0 appInHoldE
+    app $ AppIn
+      { _appIn_event = appInE
+      , _appIn_behavior = appInB
+      }
   hnd <- subscribeEvent (_appOut_event out)
   mpulseB <- readRef pulseHoldTriggerRef
   mpulseE <- readRef pulseEventTriggerRef
