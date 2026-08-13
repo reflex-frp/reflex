@@ -54,7 +54,7 @@ checkHeadEAtMostOnce = S.runSpiderHost $ do
   Just trigger <- liftIO $ readIORef inputTriggerRef
   Host.fireEvents [trigger :=> Identity "first"]
   liftIO performMajorGC
-  lateHandle <- Host.subscribeEvent headOfInput
+  lateHandle <- Host.runHostFrame $ Host.subscribeEvent headOfInput
   lateOccurrence <- Host.fireEventsAndRead [trigger :=> Identity "second"] $
     Host.readEvent lateHandle >>= \case
       Nothing -> return Nothing
@@ -92,7 +92,7 @@ hostPerf ref = S.runSpiderHost $ do
                $ S.pushCheap (return . Just . DMap.singleton Action . (\_ -> liftIO (writeIORef ref (Just 1)))) $ eadd)
       (flip S.pushCheap reqMap $ \m -> return $ Just $ mconcat $ (\(Const2 _ :=> Identity reqs) -> reqs) <$> DMap.toList m)
   ---- epilogue
-  eventToPerformHandle <- Host.subscribeEvent (S.SpiderEvent eventToPerform)
+  eventToPerformHandle <- Host.runHostFrame $ Host.subscribeEvent (S.SpiderEvent eventToPerform)
   liftIO $ putStrLn "#performing GC" >> performMajorGC
   liftIO $ putStrLn "#attempting to fire eadd"
   mAddTrigger <- readRef addTriggerRef

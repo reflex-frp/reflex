@@ -19,6 +19,8 @@
 module Reflex.PerformEvent.Base
   ( PerformEventT (..)
   , FireCommand (..)
+  , runFireCommand
+  , hostPerformEventTAndRead
   , hostPerformEventT
   ) where
 
@@ -29,6 +31,7 @@ import Reflex.PerformEvent.Class
 import Reflex.Requester.Base
 import Reflex.Requester.Class
 
+import Control.Monad (void)
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Exception
 import Control.Monad.Fix
@@ -48,11 +51,24 @@ import qualified Data.Semigroup as S
 import Control.Monad.Identity
 #endif
 
--- | A function that fires events for the given 'EventTrigger's and then runs
--- any followup actions provided via 'PerformEvent'.  The given 'ReadPhase'
--- action will be run once for the initial trigger execution as well as once for
--- each followup.
-newtype FireCommand t m = FireCommand { runFireCommand :: forall a. [DSum (EventTrigger t) Identity] -> ReadPhase m a -> m [a] } --TODO: The handling of this ReadPhase seems wrong, or at least inelegant; how do we actually make the decision about what order frames run in?
+-- | Fires events for the given 'EventTrigger's and then folds the caller's step
+-- function over every resulting frame. Multiple frames can occur due to
+-- 'Reflex.Performevent.Class.PerformEvent.performEvent' feeding back new occurrences.
+--
+-- The caller is able to exit early by returning @Left <exitValue>@, after which
+-- no more effects are performed.
+newtype FireCommand t m = FireCommand
+  { runFireCommandAndRead
+      :: forall stop acc
+      .  [DSum (EventTrigger t) Identity]
+      -> acc
+      -> (acc -> ReadPhase m (Either stop acc))
+      -> m (Either stop acc)
+  }
+
+-- | Like 'runFireCommandAndRead', but without reading any events.
+runFireCommand :: MonadReflexHost t m => FireCommand t m -> [DSum (EventTrigger t) Identity] -> m ()
+runFireCommand fc triggers = void $ runFireCommandAndRead fc triggers () (\_ -> pure $ Right ())
 
 -- | Provides a basic implementation of 'PerformEvent'.  Note that, despite the
 -- name, 'PerformEventT' is not an instance of 'MonadTrans'.
@@ -120,9 +136,81 @@ instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
   {-# INLINABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = PerformEventT $ lift $ newFanEventWithTrigger f
 
--- | Run a 'PerformEventT' action, returning a 'FireCommand' that allows the
--- caller to trigger 'Event's while ensuring that 'performEvent' actions are run
--- at the appropriate time.
+-- | Handles the frame lifecycle for a 'PerformEventT' program.
+--
+-- * At t₀, the host-setup function is run, and any initial 'Performable'
+--   actions are evaluated outside of Reflex-time.
+--
+-- * At t₁, the results are fed back as occurrences to the 'performEvent' result
+--   events.
+--
+-- * If these result occurrences produce more 'Performable' actions, these are
+--   fed back as new occurrences at t₂, and so on, until no more actions are
+--   produced.
+--
+-- If 'Performable' occurrences happen after the initial settle, the same loop
+-- repeats. It returns the setup results, the folded observation of the frame-0
+-- settle, and a 'FireCommand' for subsequent frames.
+
+{-# INLINABLE hostPerformEventTAndRead #-}
+hostPerformEventTAndRead :: forall t m a b acc0 stop0.
+                     ( MonadReflexHost t m
+                     , MonadRef m
+                     , Ref m ~ Ref IO
+                     )
+                  => PerformEventT t m a
+                  -> (a -> HostFrame t b)
+                  -- ^ Setup on the t₀ result (e.g. do 'subscribeEvent' here).
+                  -> acc0
+                  -- ^ Initial value for the fold over the Perform-loop.
+                  -> (b -> acc0 -> ReadPhase m (Either stop0 acc0))
+                  -- ^ Perform-loop fold function.
+                  -> m (a, b, Either stop0 acc0, FireCommand t m)
+hostPerformEventTAndRead builder initialHostFrame seed step0 = do
+  (response, responseTrigger) <- newEventWithTriggerRef
+  let
+    readStep :: forall stop' acc'
+             .  EventHandle t (RequesterData (HostFrame t))
+             -> (acc' -> ReadPhase m (Either stop' acc'))
+             -> acc'
+             -> ReadPhase m (Either stop' acc', Maybe (RequesterData (HostFrame t)))
+    readStep perfHandle step acc = do
+      ds <- step acc
+      more <- sequence =<< readEvent perfHandle
+      pure (ds, more)
+    -- Fold the step across the cascade until it aborts or the cascade quiesces.
+    drain :: forall stop' acc'
+          .  EventHandle t (RequesterData (HostFrame t))
+          -> (acc' -> ReadPhase m (Either stop' acc'))
+          -> (Either stop' acc', Maybe (RequesterData (HostFrame t)))
+          -> m (Either stop' acc')
+    drain _ _ (Left stop, _) = pure $ Left stop
+    drain _ _ (Right acc, Nothing) = pure $ Right acc
+    drain perfHandle step (Right acc, Just toPerform) =
+      drain perfHandle step =<< do
+        mrt <- readRef responseTrigger
+        hostFrameAndRead
+          (traverseRequesterData (fmap Identity) toPerform)
+          (\responses -> pure $ maybe [] (\rt -> [rt :=> Identity responses]) mrt)
+          (const (readStep perfHandle step acc))
+  (a, b, perfHandle, frame0) <- hostFrameAndRead
+    (do (result, eventToPerform) <- runRequesterT (unPerformEventT builder) response
+        perfHandle' :: EventHandle t (RequesterData (HostFrame t)) <- subscribeEvent eventToPerform
+        b' <- initialHostFrame result
+        pure (result, b', perfHandle'))
+    (const (pure []))
+    (\(result, b', perfHandle') -> (,,,) result b' perfHandle' <$> readStep perfHandle' (step0 b') seed)
+  t0result <- drain perfHandle (step0 b) frame0
+  pure
+    ( a
+    , b
+    , t0result
+    , FireCommand $ \triggers v step ->
+        drain perfHandle step =<< fireEventsAndRead triggers (readStep perfHandle step v)
+    )
+
+-- | Like 'hostPerformEventTAndRead', but without observing the frame in which
+-- the network is built.
 {-# INLINABLE hostPerformEventT #-}
 hostPerformEventT :: forall t m a.
                      ( MonadReflexHost t m
@@ -131,33 +219,15 @@ hostPerformEventT :: forall t m a.
                      )
                   => PerformEventT t m a
                   -> m (a, FireCommand t m)
-hostPerformEventT a = do
-  (response, responseTrigger) <- newEventWithTriggerRef
-  (result, eventToPerform) <- runHostFrame $ runRequesterT (unPerformEventT a) response
-  eventToPerformHandle <- subscribeEvent eventToPerform
-  return $ (,) result $ FireCommand $ \triggers (readPhase :: ReadPhase m a') -> do
-    let go :: [DSum (EventTrigger t) Identity] -> m [a']
-        go ts = do
-          (result', mToPerform) <- fireEventsAndRead ts $ do
-            mToPerform <- sequence =<< readEvent eventToPerformHandle
-            result' <- readPhase
-            return (result', mToPerform)
-          case mToPerform of
-            Nothing -> return [result']
-            Just toPerform -> do
-              responses <- runHostFrame $ traverseRequesterData (fmap Identity) toPerform
-              mrt <- readRef responseTrigger
-              let followupEventTriggers = case mrt of
-                    Just rt -> [rt :=> Identity responses]
-                    Nothing -> []
-              (result':) <$> go followupEventTriggers
-    go triggers
+hostPerformEventT builder = do
+  (a, _, _, fc) <- hostPerformEventTAndRead builder (const $ pure ()) () (\_ _ -> pure $ Right ())
+  pure (a, fc)
 
 instance ReflexHost t => MonadSample t (PerformEventT t m) where
   {-# INLINABLE sample #-}
   sample = PerformEventT . lift . sample
 
-instance (ReflexHost t, MonadHold t m) => MonadHold t (PerformEventT t m) where
+instance ReflexHost t => MonadHold t (PerformEventT t m) where
   {-# INLINABLE hold #-}
   hold v0 v' = PerformEventT $ lift $ hold v0 v'
   {-# INLINABLE holdDyn #-}

@@ -61,7 +61,7 @@ import Data.Proxy
 import Data.These
 import Data.Traversable
 import Data.Type.Equality ((:~:)(Refl))
-import GHC.Exts hiding (toList)
+import GHC.Exts hiding (toList, build)
 import GHC.IORef (IORef (..))
 import GHC.Stack
 import Reflex.FastWeak
@@ -1392,12 +1392,11 @@ coincidence a = unsafePerformIO $ do
     , coincidenceSubscribed = ref
     }
 
--- Propagate the given event occurrence; before cleaning up, run the given action, which may read the state of events and behaviors
-run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> SpiderHost x b
-run roots after = do
-  tracePropagate (Proxy :: Proxy x) $ "Running an event frame with " <> show (length roots) <> " events"
-  let t = spiderTimeline :: SpiderTimelineEnv x
-  result <- SpiderHost $ withMVar (_spiderTimeline_lock (unSTE t)) $ \_ -> unSpiderHost $ runFrame $ do
+-- | Propagate root triggers and process delayed merges, then run the
+-- given read action. Runs inside the single 'runFrame' of
+-- 'runHostFrameFireAndRead', after the build and hold-init phases.
+propagateAndRead :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> EventM x b
+propagateAndRead roots after = do
     rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readIORef occRef
@@ -1423,8 +1422,6 @@ run roots after = do
     go
     putCurrentHeight maxBound
     after
-  tracePropagate (Proxy :: Proxy x) "Done running an event frame"
-  return result
 
 scheduleMerge' :: HasSpiderTimeline x => Height -> IORef Height -> EventM x () -> EventM x ()
 scheduleMerge' initialHeight heightRef a = scheduleMerge initialHeight $ do
@@ -2718,21 +2715,6 @@ holdIncrementalSpiderEventM v0 e = fmap (SpiderIncremental . dynamicHold) $ Refl
 buildDynamicSpiderEventM :: HasSpiderTimeline x => SpiderPushM x a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Dynamic (SpiderTimeline x) a)
 buildDynamicSpiderEventM getV0 e = fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
 
-instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderHost x) where
-  {-# INLINABLE hold #-}
-  hold v0 e = runFrame . runSpiderHostFrame $ Reflex.Class.hold v0 e
-  {-# INLINABLE holdDyn #-}
-  holdDyn v0 e = runFrame . runSpiderHostFrame $ Reflex.Class.holdDyn v0 e
-  {-# INLINABLE holdIncremental #-}
-  holdIncremental v0 e = runFrame . runSpiderHostFrame $ Reflex.Class.holdIncremental v0 e
-  {-# INLINABLE buildDynamic #-}
-  buildDynamic getV0 e = runFrame . runSpiderHostFrame $ Reflex.Class.buildDynamic getV0 e
-  {-# INLINABLE headE #-}
-  headE e = runFrame . runSpiderHostFrame $ Reflex.Class.headE e
-  {-# INLINABLE now #-}
-  now = runFrame . runSpiderHostFrame $ Reflex.Class.now
-
-
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
   sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
 
@@ -2749,10 +2731,6 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = SpiderHostFrame Reflex.Class.now
-
-instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHost x) where
-  {-# INLINABLE sample #-}
-  sample = runFrame . readBehaviorUntracked . unSpiderBehavior
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (Reflex.Spider.Internal.ReadPhase x) where
   {-# INLINABLE sample #-}
@@ -2784,13 +2762,11 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTim
   subscribeEvent e = SpiderHostFrame $ do
     --TODO: Unsubscribe eventually (manually and/or with weak ref)
     val <- liftIO $ newIORef Nothing
-    subscription <- subscribe (unSpiderEvent e) $ Subscriber
-      { subscriberPropagate = \a -> do
+    let recordOccurrence a = do
           liftIO $ writeIORef val $ Just a
           scheduleClear val
-      , subscriberInvalidateHeight = \_ -> return ()
-      , subscriberRecalculateHeight = \_ -> return ()
-      }
+    (subscription, occ) <- subscribeAndRead (unSpiderEvent e) $ terminalSubscriber recordOccurrence
+    forM_ occ recordOccurrence
     return $ SpiderEventHandle
       { spiderEventHandleSubscription = subscription
       , spiderEventHandleValue = val
@@ -2820,14 +2796,19 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexCreateTrigger (Spid
     es <- newFanEventWithTriggerIO f
     return $ Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es
 
-instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTimeline x) (SpiderHost x) where
-  {-# INLINABLE subscribeEvent #-}
-  subscribeEvent = runFrame . runSpiderHostFrame . Reflex.Host.Class.subscribeEvent
-
 instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexHost (SpiderTimeline x) (SpiderHost x) where
   type ReadPhase (SpiderHost x) = Reflex.Spider.Internal.ReadPhase x
-  fireEventsAndRead es (Reflex.Spider.Internal.ReadPhase a) = run es a
-  runHostFrame = runFrame . runSpiderHostFrame
+  hostFrameAndRead build getTriggers readPhase = runHostFrameFireAndRead (runSpiderHostFrame build) (runSpiderHostFrame . getTriggers) (\a -> let Reflex.Spider.Internal.ReadPhase r = readPhase a in r)
+
+runHostFrameFireAndRead :: forall x a b. HasSpiderTimeline x => EventM x a -> (a -> EventM x [DSum (RootTrigger x) Identity]) -> (a -> ResultM x b) -> SpiderHost x b
+runHostFrameFireAndRead build getTriggers readPhase = do
+  let t = spiderTimeline :: SpiderTimelineEnv x
+  SpiderHost $ withMVar (_spiderTimeline_lock (unSTE t)) $ \_ -> unSpiderHost $ runFrame $ do
+    a <- build
+    env <- asksEventEnv id
+    runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env)
+    roots <- getTriggers a
+    propagateAndRead roots (readPhase a)
 
 unsafeNewSpiderTimelineEnv :: forall x. IO (SpiderTimelineEnv x)
 unsafeNewSpiderTimelineEnv = do

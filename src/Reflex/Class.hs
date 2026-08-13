@@ -187,6 +187,7 @@ import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.State.Strict
+import qualified Control.Monad.State.Lazy as Lazy
 import Control.Monad.Trans.Cont (ContT)
 import Control.Monad.Trans.Except (ExceptT)
 import Control.Monad.Trans.RWS (RWST)
@@ -622,6 +623,17 @@ instance MonadSample t m => MonadSample t (ContT r m) where
   sample = lift . sample
 
 instance MonadHold t m => MonadHold t (ContT r m) where
+  hold a0 = lift . hold a0
+  holdDyn a0 = lift . holdDyn a0
+  holdIncremental a0 = lift . holdIncremental a0
+  buildDynamic a0 = lift . buildDynamic a0
+  headE = lift . headE
+  now = lift now
+
+instance MonadSample t m => MonadSample t (Lazy.StateT s m) where
+  sample = lift . sample
+
+instance MonadHold t m => MonadHold t (Lazy.StateT r m) where
   hold a0 = lift . hold a0
   holdDyn a0 = lift . holdDyn a0
   holdIncremental a0 = lift . holdIncremental a0

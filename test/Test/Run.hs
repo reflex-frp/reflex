@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
 module Test.Run where
 
 import Control.Monad
@@ -29,33 +30,38 @@ runApp :: (t ~ SpiderTimeline Global, m ~ SpiderHost Global)
 runApp app b0 input = runSpiderHost $ do
   (appInHoldE, pulseHoldTriggerRef) <- newEventWithTriggerRef
   (appInE, pulseEventTriggerRef) <- newEventWithTriggerRef
-  appInB <- hold b0 appInHoldE
-  (out, FireCommand fire) <- hostPerformEventT $ app $ AppIn
-    { _appIn_event = appInE
-    , _appIn_behavior = appInB
-    }
-  hnd <- subscribeEvent (_appOut_event out)
-  mpulseB <- readRef pulseHoldTriggerRef
-  mpulseE <- readRef pulseEventTriggerRef
-  let readPhase = do
+  let readPhase out hnd = do
         b <- sample (_appOut_behavior out)
         frames <- sequence =<< readEvent hnd
         return (b, frames)
+  let step (out, hnd) acc = (\x -> Right @() (x : acc)) <$> readPhase out hnd
+  (_, outAndHandle, _, FireCommand fire) <-
+    hostPerformEventTAndRead
+    (do appInB <- hold b0 appInHoldE
+        app $ AppIn
+          { _appIn_event = appInE
+          , _appIn_behavior = appInB
+          })
+    (\o -> (,) o <$> subscribeEvent (_appOut_event o))
+    []
+    step
+  mpulseB <- readRef pulseHoldTriggerRef
+  mpulseE <- readRef pulseEventTriggerRef
+  let fireCollect triggers = either (const []) reverse <$> fire triggers [] (step outAndHandle)
   forM input $ \case
-    Nothing ->
-      fire [] $ readPhase
+    Nothing -> fireCollect []
     Just i -> case i of
       This b' -> case mpulseB of
         Nothing -> error "tried to fire in-behavior but ref was empty"
-        Just pulseB -> fire [ pulseB :=> Identity b' ] $ readPhase
+        Just pulseB -> fireCollect [ pulseB :=> Identity b' ]
       That e' -> case mpulseE of
         Nothing -> error "tried to fire in-event but ref was empty"
-        Just pulseE -> fire [ pulseE :=> Identity e' ] $ readPhase
+        Just pulseE -> fireCollect [ pulseE :=> Identity e' ]
       These b' e' -> case mpulseB of
         Nothing -> error "tried to fire in-behavior but ref was empty"
         Just pulseB -> case mpulseE of
           Nothing -> error "tried to fire in-event but ref was empty"
-          Just pulseE -> fire [ pulseB :=> Identity b', pulseE :=> Identity e' ] $ readPhase
+          Just pulseE -> fireCollect [ pulseB :=> Identity b', pulseE :=> Identity e' ]
 
 runApp' :: (t ~ SpiderTimeline Global, m ~ SpiderHost Global)
         => (Event t eIn -> PerformEventT t m (Event t eOut))

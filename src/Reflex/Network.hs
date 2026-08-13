@@ -15,15 +15,14 @@ module Reflex.Network
 import Reflex.Class
 import Reflex.Adjustable.Class
 import Reflex.NotReady.Class
-import Reflex.PostBuild.Class
 
 -- | A 'Dynamic' "network": Takes a 'Dynamic' of network-creating actions and replaces the network whenever the 'Dynamic' updates.
 -- The returned Event of network results fires at post-build time and when the 'Dynamic' updates.
 -- Note:  Often, the type 'a' is an Event, in which case the return value is an Event-of-Events, where the outer 'Event' fires
 -- when switching networks. Such an 'Event' would typically be flattened (via 'switchHoldPromptly').
-networkView :: (NotReady t m, Adjustable t m, PostBuild t m) => Dynamic t (m a) -> m (Event t a)
+networkView :: (NotReady t m, Adjustable t m, MonadHold t m) => Dynamic t (m a) -> m (Event t a)
 networkView child = do
-  postBuild <- getPostBuild
+  postBuild <- now
   let newChild = leftmost [updated child, tagCheap (current child) postBuild]
   snd <$> runWithReplace notReady newChild
 
@@ -37,7 +36,7 @@ networkHold child0 newChild = do
 
 -- | Render a placeholder network to be shown while another network is not yet
 -- done building
-untilReady :: (Adjustable t m, PostBuild t m) => m a -> m b -> m (a, Event t b)
+untilReady :: (Adjustable t m, MonadHold t m) => m a -> m b -> m (a, Event t b)
 untilReady a b = do
-  postBuild <- getPostBuild
+  postBuild <- now
   runWithReplace a $ b <$ postBuild
