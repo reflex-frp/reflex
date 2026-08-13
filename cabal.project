@@ -1,3 +1,2 @@
 packages: .
-
-allow-newer: *:base
+allow-newer: patch:base
