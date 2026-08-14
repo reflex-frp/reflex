@@ -135,6 +135,10 @@ instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
   newEventWithTrigger = PerformEventT . lift . newEventWithTrigger
   {-# INLINABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = PerformEventT $ lift $ newFanEventWithTrigger f
+  {-# INLINABLE newEventWithTriggerAndRetire #-}
+  newEventWithTriggerAndRetire = PerformEventT . lift . newEventWithTriggerAndRetire
+  {-# INLINABLE newFanEventWithTriggerAndRetire #-}
+  newFanEventWithTriggerAndRetire f = PerformEventT $ lift $ newFanEventWithTriggerAndRetire f
 
 -- | Handles the frame lifecycle for a 'PerformEventT' program.
 --

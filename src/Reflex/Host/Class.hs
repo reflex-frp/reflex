@@ -10,6 +10,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | This module provides the interface for hosting 'Reflex' engines.  This
 -- should only be necessary if you're writing a binding or some other library
@@ -45,6 +46,7 @@ import Control.Monad.Trans.Writer (WriterT)
 import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Kind (Type)
+import Data.Some (Some)
 
 -- | Framework implementation support class for the reflex implementation
 -- represented by @t@.
@@ -75,7 +77,16 @@ class (Reflex t, Monad m) => MonadSubscribeEvent t m | m -> t where
   -- all dependencies of this event to be set up.  For example, if the event was
   -- created by 'newEventWithTrigger', then it's callback will be executed.
   --
+  -- When the Reflex implementation detects that the event cannot produce any
+  -- updates, it will either return Nothing (the event was dead already), or
+  -- execute the finalizer callback.
+  --
   -- It's safe to call this function multiple times.
+  subscribeEventWithFinalizer :: IO () -- ^ Finalizer callback.
+                              -> Event t a
+                              -> m (Maybe (EventHandle t a))
+
+  -- | Like 'subscribeEventWithFinalizer', but without finalizer.
   subscribeEvent :: Event t a -> m (EventHandle t a)
 
 -- | Monad that allows to read events' values.
@@ -94,6 +105,9 @@ class (ReflexHost t, Applicative m, Monad m) => MonadReadEvent t m | m -> t wher
 
 -- | A monad where new events feed from external sources can be created.
 class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
+  -- TODO: Describe the interaction between the "retire" action and the "teardown" action.
+  --   Can a "teardown" action still be called after "retire"? I would make sense to exclude
+  --   this possibility.
   -- | Creates a root 'Event' (one that is not based on any other event).
   --
   -- When a subscriber first subscribes to an event (building another event that
@@ -105,10 +119,20 @@ class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
   -- Any time between setup and teardown the trigger can be used to fire the
   -- event, by passing it to 'fireEventsAndRead'.
   --
+  -- Also returns a "retire" callback which, when called, signals the
+  -- implementation that no more events will be triggered to enable prompter
+  -- garbage collection and subsequent teardowns. The trigger becomes a no-op
+  -- after this. After calling "retire" the event is considered torn down
+  -- forever, and will never be set up again.
+  --
   -- Note: An event may be set up multiple times. So after the teardown action
   -- is executed, the event may still be set up again in the future.
+  newEventWithTriggerAndRetire :: (EventTrigger t a -> IO (IO ())) -> m (Event t a, IO ())
+  newFanEventWithTriggerAndRetire :: GCompare k => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> m (EventSelector t k, Some k -> IO ())
+    -- | Like 'newEventWithTriggerAndRetire', but without the "retire" callback.
   newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event t a)
   newFanEventWithTrigger :: GCompare k => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> m (EventSelector t k)
+
 
 -- | 'MonadReflexHost' designates monads that can run reflex frames.
 class ( ReflexHost t
@@ -219,9 +243,12 @@ fireEventRefAndRead mtRef input e = do
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ReaderT r m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire initializer = lift $ newFanEventWithTriggerAndRetire initializer
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ReaderT r m) where
   subscribeEvent = lift . subscribeEvent
+  subscribeEventWithFinalizer finalizer = lift . subscribeEventWithFinalizer finalizer
 
 instance MonadReflexHost t m => MonadReflexHost t (ReaderT r m) where
   type ReadPhase (ReaderT r m) = ReadPhase m
@@ -230,9 +257,12 @@ instance MonadReflexHost t m => MonadReflexHost t (ReaderT r m) where
 instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (WriterT w m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire initializer = lift $ newFanEventWithTriggerAndRetire initializer
 
 instance (MonadSubscribeEvent t m, Monoid w) => MonadSubscribeEvent t (WriterT w m) where
   subscribeEvent = lift . subscribeEvent
+  subscribeEventWithFinalizer finalizer = lift . subscribeEventWithFinalizer finalizer
 
 instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (WriterT w m) where
   type ReadPhase (WriterT w m) = ReadPhase m
@@ -241,9 +271,12 @@ instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (WriterT w m) wher
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (StateT s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire initializer = lift $ newFanEventWithTriggerAndRetire initializer
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (StateT r m) where
   subscribeEvent = lift . subscribeEvent
+  subscribeEventWithFinalizer finalizer = lift . subscribeEventWithFinalizer finalizer
 
 instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
   type ReadPhase (StateT s m) = ReadPhase m
@@ -253,9 +286,12 @@ instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (Strict.StateT s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire initializer = lift $ newFanEventWithTriggerAndRetire initializer
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (Strict.StateT r m) where
   subscribeEvent = lift . subscribeEvent
+  subscribeEventWithFinalizer finalizer = lift . subscribeEventWithFinalizer finalizer
 
 instance MonadReflexHost t m => MonadReflexHost t (Strict.StateT s m) where
   type ReadPhase (Strict.StateT s m) = ReadPhase m
@@ -266,9 +302,12 @@ instance MonadReflexHost t m => MonadReflexHost t (Strict.StateT s m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ContT r m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire initializer = lift $ newFanEventWithTriggerAndRetire initializer
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ContT r m) where
   subscribeEvent = lift . subscribeEvent
+  subscribeEventWithFinalizer finalizer = lift . subscribeEventWithFinalizer finalizer
 
 instance MonadReflexHost t m => MonadReflexHost t (ContT r m) where
   type ReadPhase (ContT r m) = ReadPhase m
@@ -277,9 +316,12 @@ instance MonadReflexHost t m => MonadReflexHost t (ContT r m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ExceptT e m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire initializer = lift $ newFanEventWithTriggerAndRetire initializer
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent t (ExceptT r m) where
   subscribeEvent = lift . subscribeEvent
+  subscribeEventWithFinalizer finalizer = lift . subscribeEventWithFinalizer finalizer
 
 instance MonadReflexHost t m => MonadReflexHost t (ExceptT e m) where
   type ReadPhase (ExceptT e m) = ReadPhase m
@@ -288,9 +330,12 @@ instance MonadReflexHost t m => MonadReflexHost t (ExceptT e m) where
 instance (MonadReflexCreateTrigger t m, Monoid w) => MonadReflexCreateTrigger t (RWST r w s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire initializer = lift $ newFanEventWithTriggerAndRetire initializer
 
 instance (MonadSubscribeEvent t m, Monoid w) => MonadSubscribeEvent t (RWST r w s m) where
   subscribeEvent = lift . subscribeEvent
+  subscribeEventWithFinalizer finalizer = lift . subscribeEventWithFinalizer finalizer
 
 instance (MonadReflexHost t m, Monoid w) => MonadReflexHost t (RWST r w s m) where
   type ReadPhase (RWST r w s m) = ReadPhase m

@@ -260,6 +260,10 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger (ProfiledTimel
   newFanEventWithTrigger f = do
     es <- lift $ newFanEventWithTrigger f
     return $ EventSelector $ \k -> coerce $ select es k
+  newEventWithTriggerAndRetire = lift . fmap (first coerce) . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire f = do
+    (es, retire) <- lift $ newFanEventWithTriggerAndRetire f
+    return (EventSelector $ \k -> coerce $ select es k, retire)
 
 instance MonadReader r m => MonadReader r (ProfiledM m) where
   ask = lift ask
@@ -273,6 +277,7 @@ instance ReflexHost t => ReflexHost (ProfiledTimeline t) where
 
 instance MonadSubscribeEvent t m => MonadSubscribeEvent (ProfiledTimeline t) (ProfiledM m) where
   subscribeEvent = lift . subscribeEvent . coerce
+  subscribeEventWithFinalizer finalizer = lift . subscribeEventWithFinalizer finalizer . coerce
 
 instance PrimMonad m => PrimMonad (ProfiledM m) where
   type PrimState (ProfiledM m) = PrimState m

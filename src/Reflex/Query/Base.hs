@@ -281,6 +281,8 @@ instance MonadRef m => MonadRef (QueryT t q m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (QueryT t q m) where
   newEventWithTrigger = QueryT . newEventWithTrigger
   newFanEventWithTrigger a = QueryT . lift $ newFanEventWithTrigger a
+  newEventWithTriggerAndRetire = QueryT . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire a = QueryT . lift $ newFanEventWithTriggerAndRetire a
 
 -- TODO: Monoid and Semigroup can likely be derived once StateT has them.
 instance (Monoid a, Monad m) => Monoid (QueryT t q m a) where

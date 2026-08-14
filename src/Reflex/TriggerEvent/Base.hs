@@ -83,6 +83,10 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (TriggerEven
   newEventWithTrigger = lift . newEventWithTrigger
   {-# INLINABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
+  {-# INLINABLE newEventWithTriggerAndRetire #-}
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  {-# INLINABLE newFanEventWithTriggerAndRetire #-}
+  newFanEventWithTriggerAndRetire f = lift $ newFanEventWithTriggerAndRetire f
 
 instance (Monad m, MonadRef m, Ref m ~ Ref IO, MonadReflexCreateTrigger t m) => TriggerEvent t (TriggerEventT t m) where
   {-# INLINABLE newTriggerEvent #-}

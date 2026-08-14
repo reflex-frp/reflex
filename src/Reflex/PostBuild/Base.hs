@@ -107,6 +107,10 @@ instance (ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigge
   newEventWithTrigger = PostBuildT . newEventWithTrigger
   {-# INLINABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = PostBuildT $ newFanEventWithTrigger f
+  {-# INLINABLE newEventWithTriggerAndRetire #-}
+  newEventWithTriggerAndRetire = PostBuildT . newEventWithTriggerAndRetire
+  {-# INLINABLE newFanEventWithTriggerAndRetire #-}
+  newFanEventWithTriggerAndRetire f = PostBuildT $ newFanEventWithTriggerAndRetire f
 
 instance TriggerEvent t m => TriggerEvent t (PostBuildT t m) where
   {-# INLINABLE newTriggerEvent #-}

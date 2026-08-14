@@ -2758,6 +2758,8 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
 {-# DEPRECATED SpiderEnv "Use 'SpiderTimelineEnv' instead" #-}
 type SpiderEnv = SpiderTimeline
 instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTimeline x) (SpiderHostFrame x) where
+  {-# INLINABLE subscribeEventWithFinalizer #-}
+  subscribeEventWithFinalizer _finalizer e = fmap Just $ Reflex.Host.Class.subscribeEvent e
   {-# INLINABLE subscribeEvent #-}
   subscribeEvent e = SpiderHostFrame $ do
     --TODO: Unsubscribe eventually (manually and/or with weak ref)
@@ -2789,12 +2791,24 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexCreateTrigger (Spid
   newFanEventWithTrigger f = SpiderHost $ do
     es <- newFanEventWithTriggerIO f
     return $ Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es
+  newEventWithTriggerAndRetire f = SpiderHost $ do
+    e <- newEventWithTriggerIO f
+    return (SpiderEvent e, pure ())
+  newFanEventWithTriggerAndRetire f = SpiderHost $ do
+    es <- newFanEventWithTriggerIO f
+    return (Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es, const (pure ()))
 
 instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexCreateTrigger (SpiderTimeline x) (SpiderHostFrame x) where
   newEventWithTrigger = SpiderHostFrame . EventM . liftIO . fmap SpiderEvent . newEventWithTriggerIO
   newFanEventWithTrigger f = SpiderHostFrame $ EventM $ liftIO $ do
     es <- newFanEventWithTriggerIO f
     return $ Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es
+  newEventWithTriggerAndRetire f = SpiderHostFrame $ EventM $ liftIO $ do
+    e <- newEventWithTriggerIO f
+    return (SpiderEvent e, pure ())
+  newFanEventWithTriggerAndRetire f = SpiderHostFrame $ EventM $ liftIO $ do
+    es <- newFanEventWithTriggerIO f
+    return (Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es, const (pure ()))
 
 instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexHost (SpiderTimeline x) (SpiderHost x) where
   type ReadPhase (SpiderHost x) = Reflex.Spider.Internal.ReadPhase x

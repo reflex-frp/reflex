@@ -125,6 +125,8 @@ instance MonadAtomicRef m => MonadAtomicRef (DynamicWriterT t w m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (DynamicWriterT t w m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire f = lift $ newFanEventWithTriggerAndRetire f
 
 -- | Run a 'DynamicWriterT' action.  The dynamic writer output will be provided
 -- along with the result of the action.

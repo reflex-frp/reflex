@@ -105,6 +105,8 @@ instance MonadAtomicRef m => MonadAtomicRef (BehaviorWriterT t w m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (BehaviorWriterT t w m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire f = lift $ newFanEventWithTriggerAndRetire f
 
 instance (Monad m, Monoid w, Reflex t) => BehaviorWriter t w (BehaviorWriterT t w m) where
   tellBehavior w = BehaviorWriterT $ modify (w :)

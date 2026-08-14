@@ -371,6 +371,8 @@ instance MonadRef m => MonadRef (RequesterT t request response m) where
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (RequesterT t request response m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
+  newEventWithTriggerAndRetire = lift . newEventWithTriggerAndRetire
+  newFanEventWithTriggerAndRetire f = lift $ newFanEventWithTriggerAndRetire f
 
 instance MonadReader r m => MonadReader r (RequesterT t request response m) where
   ask = lift ask
