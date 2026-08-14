@@ -17,6 +17,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE Trustworthy #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 -- |
 -- Module:
@@ -168,6 +169,8 @@ module Reflex.Class
   , mergeWithCheap'
     -- * Slow, but general, implementations
   , slowHeadE
+  , -- * IsConstant
+    IsConstant(..)
   ) where
 
 #ifdef MIN_VERSION_semialign
@@ -237,6 +240,10 @@ class ( MonadHold t (PushM t)
       , Functor (Dynamic t)
       , Applicative (Dynamic t) -- Necessary for GHC <= 7.8
       , Monad (Dynamic t)
+      , forall a. IsConstant t (Dynamic t a)
+      , forall a. IsConstant t (Event t a)
+      , forall a. IsConstant t (Behavior t a)
+      , forall a. IsConstant t (Incremental t a)
       ) => Reflex t where
   -- | A container for a value that can change over time.  'Behavior's can be
   -- sampled at will, but it is not possible to be notified when they change
@@ -1707,3 +1714,12 @@ switchPromptly = switchHoldPromptly
 -- | See 'switchHoldPromptOnly'
 switchPromptOnly :: (Reflex t, MonadHold t m) => Event t a -> Event t (Event t a) -> m (Event t a)
 switchPromptOnly = switchHoldPromptOnly
+
+--------------------------------------------------------------------------------
+-- IsConstant
+--------------------------------------------------------------------------------
+
+class IsConstant t vv | vv -> t where
+  isConstant :: vv -> Dynamic t Bool
+  default isConstant :: (Applicative (Dynamic t)) => vv -> Dynamic t Bool
+  isConstant _ = pure False

@@ -12,6 +12,7 @@
 --   * MonadSample (Pure t) ((->) t)
 --   * MonadHold (Pure t) ((->) t)
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- |
 -- Module: Reflex.Pure
@@ -132,6 +133,11 @@ instance (Enum t, HasTrie t, Ord t) => Reflex (Pure t) where
   fanInt e = EventSelectorInt $ \k -> Event $ \t -> unEvent e t >>= IntMap.lookup k
 
   mergeIntIncremental = mergeIntIncrementalImpl
+
+instance IsConstant (Pure t) (Behavior (Pure t) a)
+instance IsConstant (Pure t) (Dynamic (Pure t) a)
+instance IsConstant (Pure t) (Event (Pure t) a)
+instance IsConstant (Pure t) (Incremental (Pure t) a)
 
 mergeIncrementalImpl :: (PatchTarget p ~ DMap k q, GCompare k)
   => (forall a. q a -> Event (Pure t) (v a))

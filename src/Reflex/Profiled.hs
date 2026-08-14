@@ -289,3 +289,15 @@ instance MonadReflexHost t m => MonadReflexHost (ProfiledTimeline t) (ProfiledM 
 
 instance MonadReadEvent t m => MonadReadEvent (ProfiledTimeline t) (ProfiledM m) where
   readEvent = lift . fmap coerce . readEvent
+
+instance (Reflex t) => IsConstant (ProfiledTimeline t) (Behavior (ProfiledTimeline t) a) where
+  isConstant = Dynamic_Profiled . isConstant . coerce
+
+instance (Reflex t) => IsConstant (ProfiledTimeline t) (Dynamic (ProfiledTimeline t) a) where
+  isConstant = Dynamic_Profiled . isConstant . coerce
+
+instance (Reflex t) => IsConstant (ProfiledTimeline t) (Event (ProfiledTimeline t) a) where
+  isConstant = Dynamic_Profiled . isConstant . coerce
+
+instance (Reflex t) => IsConstant (ProfiledTimeline t) (Incremental (ProfiledTimeline t) a) where
+  isConstant = Dynamic_Profiled . isConstant . coerce

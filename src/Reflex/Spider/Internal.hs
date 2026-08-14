@@ -3035,3 +3035,8 @@ instance NotReady (SpiderTimeline x) (SpiderHost x) where
 instance HasSpiderTimeline x => NotReady (SpiderTimeline x) (PerformEventT (SpiderTimeline x) (SpiderHost x)) where
   notReadyUntil _ = return ()
   notReady = return ()
+
+instance (HasSpiderTimeline x) => R.IsConstant (SpiderTimeline x) (R.Behavior (SpiderTimeline x) a)
+instance (HasSpiderTimeline x) => R.IsConstant (SpiderTimeline x) (R.Dynamic (SpiderTimeline x) a)
+instance (HasSpiderTimeline x) => R.IsConstant (SpiderTimeline x) (R.Event (SpiderTimeline x) a)
+instance (HasSpiderTimeline x) => R.IsConstant (SpiderTimeline x) (R.Incremental (SpiderTimeline x) a)
