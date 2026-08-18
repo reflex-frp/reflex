@@ -587,15 +587,20 @@ newSubscriberSwitch subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <
       liftIO $ writeIORef (switchSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ switchSubscribedOccurrence subscribed
       propagate a $ switchSubscribedSubscribers subscribed
-  , subscriberInvalidateHeight = \_ -> do
-      oldHeight <- readIORef $ switchSubscribedHeight subscribed
-      case oldHeight of
-        ValidHeight -> do
-          writeIORef (switchSubscribedHeight subscribed) $! invalidHeight
-          WeakBag.traverse_ (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight oldHeight
-        InvalidHeight -> pure ()
+  , subscriberInvalidateHeight = \_ ->
+      invalidateOwnHeight (switchSubscribedHeight subscribed) (invalidateSwitchSubscribers subscribed)
   , subscriberRecalculateHeight = (`updateSwitchHeight` subscribed)
   }
+
+{-# INLINE invalidateSwitchSubscribers #-}
+invalidateSwitchSubscribers :: SwitchSubscribed x a -> Height -> IO ()
+invalidateSwitchSubscribers subscribed =
+  WeakBag.traverse_ (switchSubscribedSubscribers subscribed) . invalidateSubscriberHeight
+
+{-# INLINE recalculateSwitchSubscribers #-}
+recalculateSwitchSubscribers :: SwitchSubscribed x a -> Height -> IO ()
+recalculateSwitchSubscribers subscribed =
+  WeakBag.traverse_ (switchSubscribedSubscribers subscribed) . recalculateSubscriberHeight
 
 newSubscriberCoincidenceOuter :: forall x b. HasSpiderTimeline x => CoincidenceSubscribed x b -> IO (Subscriber x (Event x b))
 newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
@@ -610,10 +615,11 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
       scheduleClear $ coincidenceSubscribedInnerParent subscribed
       case occ of
         Nothing ->
-          for_ maybeRaisedToInnerHeight $ \innerHeight -> liftIO $ do -- If the event fires, it will fire at a later height
-            writeIORef (coincidenceSubscribedHeight subscribed) $! innerHeight
-            WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ invalidateSubscriberHeight outerHeight
-            WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight innerHeight
+          for_ maybeRaisedToInnerHeight $ \innerHeight -> liftIO $ do
+            -- During event propagation heights have to stay valid, so invalidate and immediately recalculate
+            -- TODO: Why not delay?
+            invalidateOwnHeight (coincidenceSubscribedHeight subscribed) (invalidateCoincidenceSubscribers subscribed)
+            recalculateOwnHeight (coincidenceSubscribedHeight subscribed) (recalculateCoincidenceSubscribers subscribed) (pure innerHeight)
         Just o -> do -- Since it's already firing, no need to adjust height
           liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) occ
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
@@ -630,7 +636,7 @@ newSubscriberCoincidenceInner subscribed = debugSubscriber ("SubscriberCoinciden
       case occ of
         Just _ -> error "Coincidence inner is propagating, but coincidence occurrence is already known?"
         Nothing -> do
-#endif          
+#endif
           liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) $ Just a
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
           propagate a $ coincidenceSubscribedSubscribers subscribed
@@ -2093,33 +2099,19 @@ invalidateMergeHeight :: Merge x k v s -> IO ()
 invalidateMergeHeight m = invalidateMergeHeight' (_merge_heightRef m) (_merge_sub m)
 
 invalidateMergeHeight' :: IORef Height -> Subscriber x a -> IO ()
-invalidateMergeHeight' heightRef sub = do
-  oldHeight <- readIORef heightRef
-  -- If the height used to be valid, it must be invalid now; we should never have *more* heights than we have parents
-  case oldHeight of
-    InvalidHeight -> pure ()
-    ValidHeight -> do
-      writeIORef heightRef $! invalidHeight
-      subscriberInvalidateHeight sub oldHeight
+invalidateMergeHeight' heightRef sub = invalidateOwnHeight heightRef (subscriberInvalidateHeight sub)
 
 revalidateMergeHeight :: Merge x k v s -> IO ()
-revalidateMergeHeight m = do
-  currentHeight <- readIORef $ _merge_heightRef m
-  -- revalidateMergeHeight may be called multiple times; perhaps the's a way to finesse it to avoid this check
-  case currentHeight of
-    ValidHeight -> pure ()
-    InvalidHeight -> do
-      heights <- readIORef $ _merge_heightBagRef m
-      parents <- readIORef $ _merge_parentsRef m
-      -- When the number of heights in the bag reaches the number of parents, we should have a valid height
-      case heightBagSize heights `compare` DMap.size parents of
-        LT -> return ()
-        EQ -> do
-          let height = heightBagSuccHeight heights
-          traceInvalidateHeight $ "recalculateSubscriberHeight: height: " <> show height
-          writeIORef (_merge_heightRef m) $! height
-          subscriberRecalculateHeight (_merge_sub m) height
-        GT -> error $ "revalidateMergeHeight: more heights (" <> show (heightBagSize heights) <> ") than parents (" <> show (DMap.size parents) <> ") for Merge"
+revalidateMergeHeight m =
+  -- revalidateMergeHeight may be called multiple times; perhaps there's a way to finesse it to avoid this check
+  recalculateOwnHeight (_merge_heightRef m) (subscriberRecalculateHeight (_merge_sub m)) $ do
+    heights <- readIORef $ _merge_heightBagRef m
+    parents <- readIORef $ _merge_parentsRef m
+    -- When the number of heights in the bag reaches the number of parents, we should have a valid height
+    case heightBagSize heights `compare` DMap.size parents of
+      LT -> pure invalidHeight
+      EQ -> pure $ heightBagSuccHeight heights
+      GT -> error $ "revalidateMergeHeight: more heights (" <> show (heightBagSize heights) <> ") than parents (" <> show (DMap.size parents) <> ") for Merge"
 
 scheduleMergeSelf :: HasSpiderTimeline x => Merge x k v s -> Height -> EventM x ()
 scheduleMergeSelf m height = scheduleMerge' height (_merge_heightRef m) $ do
@@ -2468,9 +2460,8 @@ runFrame a = SpiderHost $ do
         let heightChanged = case parentHeight of
               ValidHeight -> compareHeight parentHeight myHeight /= EQ
               InvalidHeight -> True
-        when heightChanged $ do
-          writeIORef (switchSubscribedHeight subscribed) $! invalidHeight
-          WeakBag.traverse_ (switchSubscribedSubscribers subscribed) $ invalidateSubscriberHeight myHeight
+        when heightChanged $
+          invalidateOwnHeight (switchSubscribedHeight subscribed) (invalidateSwitchSubscribers subscribed)
   mapM_ _someMergeUpdate_invalidateHeight mergeUpdates --TODO: In addition to when the patch is completely empty, we should also not run this if it has some Nothing values, but none of them have actually had any effect; potentially, we could even check for Just values with no effect (e.g. by comparing their IORefs and ignoring them if they are unchanged); actually, we could just check if the new height is different
   forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mInvalidate) -> do
     unsubscribe subscription
@@ -2516,6 +2507,39 @@ runFrame a = SpiderHost $ do
 -- Height algo
 --------------------------------------------------------------------------------
 
+-- | The first phase of a height change: notify downstream of the height you're
+-- leaving. The heightRef reads invalidHeight before notifying and until
+-- the recalculation phase.
+{-# INLINE invalidateOwnHeight #-}
+invalidateOwnHeight :: IORef Height -> (Height -> IO ()) -> IO ()
+invalidateOwnHeight heightRef notify = do
+  oldHeight <- readIORef heightRef
+  case oldHeight of
+    InvalidHeight -> pure ()
+    ValidHeight -> do
+      writeIORef heightRef $! invalidHeight
+      notify oldHeight
+
+-- | The second phase of a height change: the heightRef reads the new height
+-- during downstream notification of recalculation.
+{-# INLINE recalculateOwnHeight #-}
+recalculateOwnHeight :: IORef Height -> (Height -> IO ()) -> IO Height -> IO ()
+recalculateOwnHeight heightRef notify calculate = do
+  oldHeight <- readIORef heightRef
+  case oldHeight of
+    ValidHeight -> pure ()
+    InvalidHeight -> calculate >>= \case
+      InvalidHeight -> pure ()
+      newHeight@ValidHeight -> do
+        traceInvalidateHeight $ "recalculateOwnHeight: height: " <> show newHeight
+        writeIORef heightRef $! newHeight
+        notify newHeight
+
+-- | Ask for a height recalculation at the end of the current frame.
+--
+-- Call this from the node that just invalidated its own height.  Every
+-- invalidation owes exactly one recalculation, or the height bags of the
+-- subscribers stay one entry short and never complete again.
 {-# INLINE deferRecalculateHeight #-}
 deferRecalculateHeight :: forall x. HasSpiderTimeline x => SomeRecalculateHeight x -> IO ()
 deferRecalculateHeight recalculate = modifyIORef' (eventEnvPendingRecalculations env) (recalculate :)
@@ -2532,39 +2556,28 @@ runPendingRecalculations env = go
         go
 
 invalidateCoincidenceHeight :: forall x a. HasSpiderTimeline x => CoincidenceSubscribed x a -> IO ()
-invalidateCoincidenceHeight subscribed = do
-  oldHeight <- readIORef $ coincidenceSubscribedHeight subscribed
-  case oldHeight of
-    InvalidHeight -> pure ()
-    ValidHeight -> do
-      writeIORef (coincidenceSubscribedHeight subscribed) $! invalidHeight
-      deferRecalculateHeight @x $ SomeRecalculateHeight $ recalculateCoincidenceHeight subscribed
-      WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ invalidateSubscriberHeight oldHeight
+invalidateCoincidenceHeight subscribed =
+  invalidateOwnHeight (coincidenceSubscribedHeight subscribed) $ \oldHeight -> do
+    deferRecalculateHeight @x $ SomeRecalculateHeight $ recalculateCoincidenceHeight subscribed
+    invalidateCoincidenceSubscribers subscribed oldHeight
+
+{-# INLINE invalidateCoincidenceSubscribers #-}
+invalidateCoincidenceSubscribers :: CoincidenceSubscribed x a -> Height -> IO ()
+invalidateCoincidenceSubscribers subscribed =
+  WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) . invalidateSubscriberHeight
+
+{-# INLINE recalculateCoincidenceSubscribers #-}
+recalculateCoincidenceSubscribers :: CoincidenceSubscribed x a -> Height -> IO ()
+recalculateCoincidenceSubscribers subscribed =
+  WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) . recalculateSubscriberHeight
 
 updateSwitchHeight :: Height -> SwitchSubscribed x a -> IO ()
-updateSwitchHeight new subscribed = do
-  oldHeight <- readIORef $ switchSubscribedHeight subscribed
-  case oldHeight of
-    ValidHeight -> pure ()
-    InvalidHeight -> do
-      case new of
-        InvalidHeight -> pure ()
-        ValidHeight -> do
-          writeIORef (switchSubscribedHeight subscribed) $! new
-          WeakBag.traverse_ (switchSubscribedSubscribers subscribed) $ recalculateSubscriberHeight new
+updateSwitchHeight new subscribed =
+  recalculateOwnHeight (switchSubscribedHeight subscribed) (recalculateSwitchSubscribers subscribed) (pure new)
 
 recalculateCoincidenceHeight :: CoincidenceSubscribed x a -> IO ()
-recalculateCoincidenceHeight subscribed = do
-  oldHeight <- readIORef $ coincidenceSubscribedHeight subscribed
-  case oldHeight of
-    ValidHeight -> pure ()
-    InvalidHeight -> do
-      height <- calculateCoincidenceHeight subscribed
-      case height of
-        InvalidHeight -> pure ()
-        ValidHeight -> do
-          writeIORef (coincidenceSubscribedHeight subscribed) $! height
-          WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) $ recalculateSubscriberHeight height
+recalculateCoincidenceHeight subscribed =
+  recalculateOwnHeight (coincidenceSubscribedHeight subscribed) (recalculateCoincidenceSubscribers subscribed) (calculateCoincidenceHeight subscribed)
 
 calculateSwitchHeight :: SwitchSubscribed x a -> IO Height
 calculateSwitchHeight subscribed = getEventSubscribedHeight . _eventSubscription_subscribed =<< readIORef (switchSubscribedCurrentParent subscribed)
