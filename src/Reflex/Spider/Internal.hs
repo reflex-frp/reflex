@@ -319,9 +319,14 @@ headE :: forall x m a. (HasSpiderTimeline x, Defer (SomeMergeInit x) m) => Event
 headE originalE = do
   stateRef <- liftIO $ newIORef (HeadEStateInitial originalE :: HeadEState x a)
   let unsubscribeAfterOccurrence occRef = liftIO (readIORef stateRef) >>= \case
-        HeadEStateSubscribed subscribed -> do
-          liftIO $ writeIORef stateRef $ HeadEStateOccurred occRef
-          liftIO $ unsubscribe $ headESubscribedParent subscribed
+        HeadEStateSubscribed subscribed -> liftIO $ do
+          writeIORef stateRef $ HeadEStateOccurred occRef
+          unsubscribe $ headESubscribedParent subscribed
+          deferRecalculateHeight @x $ SomeRecalculateHeight $ do
+            let heightRef = headESubscribedHeight subscribed
+                subscribers = headESubscribedSubscribers subscribed
+            invalidateOwnHeight heightRef $ FastWeakBag.traverse_ subscribers . invalidateSubscriberHeight
+            recalculateOwnHeight heightRef (FastWeakBag.traverse_ subscribers . recalculateSubscriberHeight) (pure zeroHeight)
         _ -> pure ()
       subscribeUntilHead :: EventM x (HeadEState x a)
       subscribeUntilHead = liftIO (readIORef stateRef) >>= \case
