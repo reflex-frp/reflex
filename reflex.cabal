@@ -105,6 +105,7 @@ library
         Reflex.Requester.Base.Internal
         Reflex.Requester.Class
         Reflex.Spider
+        Reflex.Spider.Height
         Reflex.Spider.Internal
         Reflex.Time
         Reflex.TriggerEvent.Base
