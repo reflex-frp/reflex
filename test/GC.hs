@@ -78,10 +78,10 @@ hostPerf ref = S.runSpiderHost $ do
        $ S.hold DMap.empty
        -- Construct a new heap object for the subscriber, invalidating any weak references to the subscriber if they are not retained
        $ (\e -> S.Event $ \sub -> do
-            (s, o) <- S.subscribeAndRead e $ sub
+            S.SubscribeResult s o <- S.subscribeAndRead e $ sub
                { S.subscriberPropagate = S.subscriberPropagate sub
                }
-            return (s, o))
+            return (S.SubscribeResult s o))
        $ runIdentity . runIdentity <$> S.selectG
           (S.fanG $ S.pushCheap (return . Just . mapKeyValuePairsMonotonic (\(t :=> e) -> WrapArg t :=> Identity e)) response)
           (WrapArg Request)
