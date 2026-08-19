@@ -1,6 +1,6 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This module defines the 'WeakBag' type, which represents a mutable
 -- collection of items that does not cause the items to be retained in memory.
@@ -27,6 +27,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import qualified Data.IntMap.Internal as IntMap.Internal
 import Data.IORef
 import System.Mem.Weak
 
@@ -103,12 +104,25 @@ singleton a wbRef finalizer = {-# SCC "singleton" #-} do
 -- traversal, they will not be visited.  Every live node that was in the list
 -- when the traversal began will be visited exactly once; however, no guarantee
 -- is made about the order of the traversal.
-traverse_ :: MonadIO m => WeakBag a -> (a -> m ()) -> m ()
+traverse_ :: forall a m. MonadIO m => WeakBag a -> (a -> m ()) -> m ()
 traverse_ (WeakBag _ children) f = {-# SCC "traverse" #-} do
   cs <- liftIO $ readIORef children
-  forM_ cs $ \c -> do
-    ma <- liftIO $ deRefWeak c
-    mapM_ f ma
+  go cs
+  where
+    -- This is a very hot function in Reflex and directly recursing over the
+    -- internal data structure is a noticable improvement over using forM_:
+    go :: IntMap (Weak a) -> m ()
+#if MIN_VERSION_containers(0,8,0)
+    go (IntMap.Internal.Bin _ l r) = go l >> go r
+#else
+    go (IntMap.Internal.Bin _ _ l r) = go l >> go r
+#endif
+    go (IntMap.Internal.Tip _ c) = do
+      ma <- liftIO $ deRefWeak c
+      case ma of
+        Just a -> f a
+        Nothing -> pure ()
+    go IntMap.Internal.Nil = pure ()
 
 {-# DEPRECATED traverse "Use 'traverse_' instead" #-}
 traverse :: MonadIO m => WeakBag a -> (a -> m ()) -> m ()
