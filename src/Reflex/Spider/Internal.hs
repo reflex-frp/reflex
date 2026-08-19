@@ -12,6 +12,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -147,6 +148,7 @@ debugInvalidate :: Bool
 
 #ifdef DEBUG
 #define DEBUG_NODEIDS
+#define DEBUG_FRAME
 
 #ifdef DEBUG_TRACE_PROPAGATION
 debugPropagate = True
@@ -451,6 +453,11 @@ cacheEvent e =
 #endif
                   $ Subscriber
                   { subscriberPropagate = \a -> do
+#ifdef DEBUG_FRAME
+                      liftIO $ readIORef occRef >>= \case
+                        Just _ -> error "cacheEvent: two occurrences in one frame"
+                        Nothing -> pure ()
+#endif
                       liftIO $ writeIORef occRef (Just a)
                       scheduleClear occRef
                       propagateFast a subscribers
@@ -589,6 +596,11 @@ newSubscriberFan subscribed = debugSubscriber ("SubscriberFan " <> showNodeId su
 newSubscriberSwitch :: forall x a. HasSpiderTimeline x => SwitchSubscribed x a -> IO (Subscriber x a)
 newSubscriberSwitch subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseSwitch" #-} do
+#ifdef DEBUG_FRAME
+      liftIO $ readIORef (switchSubscribedOccurrence subscribed) >>= \case
+        Just _ -> error "switch: two occurrences in one frame"
+        Nothing -> pure ()
+#endif
       liftIO $ writeIORef (switchSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ switchSubscribedOccurrence subscribed
       propagate a $ switchSubscribedSubscribers subscribed
@@ -1439,8 +1451,6 @@ mkWeakPtrWithDebug x debugNote = do
 type CanTrace x m = (HasSpiderTimeline x, MonadIO m)
 
 
-
-
 #ifdef DEBUG
 
 debugSubscriber :: forall x a. HasSpiderTimeline x => String -> Subscriber x a -> IO (Subscriber x a)
@@ -1744,6 +1754,10 @@ fanInt p = unsafePerformIO $ do
       let desc = "fanInt" <> showNodeId self <> ", k = "  <> show k
       SubscribeResult subscription parentOcc <- subscribeAndRead p $ debugSubscriber' desc $ Subscriber
         { subscriberPropagate = \m -> do
+#ifdef DEBUG_FRAME
+            liftIO $ readIORef (_fanInt_occRef self) >>= \old ->
+              unless (IntMap.null old) $ error "fanInt: two occurrences in one frame"
+#endif
             liftIO $ writeIORef (_fanInt_occRef self) m
             scheduleIntClear $ _fanInt_occRef self
             FastMutableIntMap.forIntersectionWithImmutable_ (_fanInt_subscribers self) m $ \b v ->  --TODO: Do we need to know that no subscribers are being added as we traverse?
@@ -2404,6 +2418,12 @@ clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeI
   writeIORef toClearIntRef []
   writeIORef toClearRootRef []
   writeIORef coincidenceInfosRef []
+#ifdef DEBUG_FRAME
+  do delayed <- readIORef delayedRef
+     case heightQueueNext delayed of
+       Nothing -> pure ()
+       Just _ -> error "clearEventEnv: unprocessed scheduled merge"
+#endif
   writeIORef delayedRef heightQueueEmpty
 
 -- | Run an event action outside of a frame
@@ -2476,6 +2496,11 @@ runFrame a = SpiderHost $ do
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> do
     height <- calculateSwitchHeight subscribed
     updateSwitchHeight height subscribed
+#ifdef DEBUG_FRAME
+  do leftover <- readIORef $ eventEnvPendingRecalculations env
+     unless (null leftover) $
+       error "runFrame: pending recalculations at frame end"
+#endif
   return result
   where
     env = _spiderTimeline_eventEnv $ unSTE (spiderTimeline :: SpiderTimelineEnv x)

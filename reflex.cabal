@@ -59,6 +59,11 @@ flag debug-cycles
     default:     False
     manual:      True
 
+flag debug-frame
+    description: Check frame hygiene
+    default:     False
+    manual:      True
+
 flag split-these
     description: Use split these/semialign packages
     manual:      False
@@ -188,6 +193,9 @@ library
 
     if flag(debug-cycles)
         cpp-options: -DDEBUG_CYCLES
+
+    if flag(debug-frame)
+        cpp-options: -DDEBUG_FRAME
 
     if flag(fast-weak) && impl(ghcjs >=0)
         cpp-options: -DGHCJS_FAST_WEAK
