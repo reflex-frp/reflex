@@ -259,7 +259,7 @@ subscribeAndRead = unEvent
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
 {-# INLINE [1] pushCheap #-}
-pushCheap :: (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
+pushCheap :: forall (x :: Type) a b. HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
 pushCheap !f e = Event $ \sub -> do
   (subscription, occ) <- subscribeAndRead e $ debugSubscriber' "push" $ sub
     { subscriberPropagate = \a -> do
@@ -621,14 +621,14 @@ recalculateSubscriberHeight :: Height -> Subscriber x a -> IO ()
 recalculateSubscriberHeight = flip subscriberRecalculateHeight
 
 -- | Propagate everything at the current height
-propagate :: forall x a. a -> WeakBag (Subscriber x a) -> EventM x ()
+propagate :: forall x a. HasSpiderTimeline x => a -> WeakBag (Subscriber x a) -> EventM x ()
 propagate a subscribers = withIncreasedDepth (Proxy::Proxy x) $
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
   WeakBag.traverse_ subscribers $ \s -> subscriberPropagate s a
 
 -- | Propagate everything at the current height
-propagateFast :: forall x a. a -> FastWeakBag (Subscriber x a) -> EventM x ()
+propagateFast :: forall x a. HasSpiderTimeline x => a -> FastWeakBag (Subscriber x a) -> EventM x ()
 propagateFast a subscribers = withIncreasedDepth (Proxy::Proxy x) $
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
