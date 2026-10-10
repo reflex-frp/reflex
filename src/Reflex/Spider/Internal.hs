@@ -476,7 +476,7 @@ cacheEvent e =
 #endif
                     }
               subscribedTicket <- liftIO $ mkFastWeakTicket subscribed
-              liftIO $ writeIORef mSubscribedRef =<< getFastWeakTicketWeak subscribedTicket
+              liftIO $ writeIORef mSubscribedRef =<< evaluate =<< getFastWeakTicketWeak subscribedTicket
               return subscribedTicket
           liftIO $ cacheSubscription sub mSubscribedRef subscribedTicket
 
