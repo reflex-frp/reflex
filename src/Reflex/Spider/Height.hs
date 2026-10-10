@@ -175,14 +175,14 @@ heightBagFromParents :: [Height] -> (HeightBag, Height)
 heightBagFromParents heights =
   let step (!b, !inv) = \case
         h@ValidHeight -> (heightBagAdd h b, inv)
-        InvalidHeight     -> (b, True)
+        InvalidHeight -> (b, True)
       (bag, anyInvalid) = foldl' step (heightBagEmpty, False) heights
       nextHeight = if anyInvalid then invalidHeight else heightBagSuccHeight bag
   in (bag, nextHeight)
 
 heightBagSuccHeight :: HeightBag -> Height
-heightBagSuccHeight (HeightBag _ c) = case IntMap.maxViewWithKey c of
-  Just ((h, _), _) -> Height (succ h)
+heightBagSuccHeight (HeightBag _ c) = case IntMap.lookupMax c of
+  Just (h, _) -> Height (succ h)
   Nothing -> zeroHeight
 
 --------------------------------------------------------------------------------

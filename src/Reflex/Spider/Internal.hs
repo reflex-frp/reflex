@@ -476,7 +476,7 @@ cacheEvent e =
 #endif
                     }
               subscribedTicket <- liftIO $ mkFastWeakTicket subscribed
-              liftIO $ writeIORef mSubscribedRef =<< getFastWeakTicketWeak subscribedTicket
+              liftIO $ writeIORef mSubscribedRef =<< evaluate =<< getFastWeakTicketWeak subscribedTicket
               return subscribedTicket
           liftIO $ cacheSubscription sub mSubscribedRef subscribedTicket
 
@@ -594,7 +594,7 @@ newSubscriberFan subscribed = debugSubscriber ("SubscriberFan " <> showNodeId su
   }
 
 newSubscriberSwitch :: forall x a. HasSpiderTimeline x => SwitchSubscribed x a -> IO (Subscriber x a)
-newSubscriberSwitch subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
+newSubscriberSwitch subscribed = debugSubscriber ("SubscriberSwitch" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseSwitch" #-} do
 #ifdef DEBUG_FRAME
       liftIO $ readIORef (switchSubscribedOccurrence subscribed) >>= \case
@@ -2445,7 +2445,12 @@ runFrame a = SpiderHost $ do
   mergeUpdates <- readIORef $ eventEnvMergeUpdates env
   writeIORef (eventEnvMergeUpdates env) []
   tracePropagate (Proxy::Proxy x) $ "Updating merges"
-  mergeSubscriptionsToKill <- runEventM $ concat <$> mapM _someMergeUpdate_update mergeUpdates
+  mergeSubscriptionsToKill <- runEventM $ do
+    subscriptionsToKill <- concat <$> mapM _someMergeUpdate_update mergeUpdates
+    -- Subscribing to a new merge parent coming from a patch can cause new
+    -- deferred inits being added, evaluate them:
+    runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env)
+    pure subscriptionsToKill
   tracePropagate (Proxy::Proxy x) $ "Updating merges done"
   toReconnect <- readIORef toReconnectRef
   clearEventEnv env
