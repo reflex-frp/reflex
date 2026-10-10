@@ -2445,7 +2445,12 @@ runFrame a = SpiderHost $ do
   mergeUpdates <- readIORef $ eventEnvMergeUpdates env
   writeIORef (eventEnvMergeUpdates env) []
   tracePropagate (Proxy::Proxy x) $ "Updating merges"
-  mergeSubscriptionsToKill <- runEventM $ concat <$> mapM _someMergeUpdate_update mergeUpdates
+  mergeSubscriptionsToKill <- runEventM $ do
+    subscriptionsToKill <- concat <$> mapM _someMergeUpdate_update mergeUpdates
+    -- Subscribing to a new merge parent coming from a patch can cause new
+    -- deferred inits being added, evaluate them:
+    runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env)
+    pure subscriptionsToKill
   tracePropagate (Proxy::Proxy x) $ "Updating merges done"
   toReconnect <- readIORef toReconnectRef
   clearEventEnv env
