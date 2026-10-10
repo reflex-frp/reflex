@@ -594,7 +594,7 @@ newSubscriberFan subscribed = debugSubscriber ("SubscriberFan " <> showNodeId su
   }
 
 newSubscriberSwitch :: forall x a. HasSpiderTimeline x => SwitchSubscribed x a -> IO (Subscriber x a)
-newSubscriberSwitch subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
+newSubscriberSwitch subscribed = debugSubscriber ("SubscriberSwitch" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseSwitch" #-} do
 #ifdef DEBUG_FRAME
       liftIO $ readIORef (switchSubscribedOccurrence subscribed) >>= \case
