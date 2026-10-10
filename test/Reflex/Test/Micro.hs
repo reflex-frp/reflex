@@ -143,6 +143,15 @@ testCases =
       -- changing its height) after the headE has stopped listening to it:
       pure $ leftmost [void (mergeIntIncremental mergeParents), switched]
 
+  , testE' "nested-incremental-merge-added-by-patch" [(3, IntMap.singleton 0 7)] $ do
+      addInner <- plan [(1, ())]
+      addLeaf <- plan [(2, ())]
+      leaf <- plan [(3, 7 :: Int)]
+      inner <- holdIncremental IntMap.empty (PatchIntMap (IntMap.singleton 0 (Just leaf)) <$ addLeaf)
+      let innerSummed = sum <$> mergeIntIncremental inner
+      outer <- holdIncremental IntMap.empty (PatchIntMap (IntMap.singleton 0 (Just innerSummed)) <$ addInner)
+      pure $ mergeIntIncremental outer
+
   , testE' "switch-1" [(2,"b"),(5,"c"),(7,"d"),(8,"e")] $ do
       e <- events1
       b <- hold never (e <$ e)
