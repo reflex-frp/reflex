@@ -59,9 +59,9 @@ micros =
         ev <- fst <$> newEventWithTriggerRef
         runHostFrame (hold iv ev))
     (runHostFrame . subscribeEvent . switch)
-  , withSetupWHNF "subscribeMerge(1)" (setupMerge 1) $ \(ev,_) -> runHostFrame $ subscribeEvent ev
-  , withSetupWHNF "subscribeMerge(100)" (setupMerge 100) (runHostFrame . subscribeEvent . fst)
-  , withSetupWHNF "subscribeMerge(10000)" (setupMerge 10000) (runHostFrame . subscribeEvent . fst)
+  , bench "subscribeMerge(1)" $ subscribeMergeBuild 1
+  , bench "subscribeMerge(100)" $ subscribeMergeBuild 100
+  , bench "subscribeMerge(10000)" $ subscribeMergeBuild 10000
   , bench "runHostFrame" $ whnfIO $ runSpiderHost $ runHostFrame $ return ()
   , withSetupWHNF "fireEventsAndRead(single/single)"
     (newEventWithTriggerRef >>= subscribePair)
@@ -99,6 +99,10 @@ setupMerge num = do
   (evs, triggers) <- unzip <$> replicateM num newEventWithTriggerRef
   let !m = DMap.fromList [Const2 i :=> v | (i,v) <- zip [0..] evs]
   pure (merge m, triggers)
+
+subscribeMergeBuild :: Int -> Benchmarkable
+subscribeMergeBuild n = perRunEnv (WHNF . fst <$> runSpiderHost (setupMerge n)) $
+  \(WHNF ev) -> WHNF <$> runSpiderHost (runHostFrame (subscribeEvent ev))
 
 subscribePair :: (Event (SpiderTimeline Global) a, b) -> SpiderHost Global (EventHandle (SpiderTimeline Global) a, b)
 subscribePair (ev, b) = (,b) <$> runHostFrame (subscribeEvent ev)
