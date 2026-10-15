@@ -572,9 +572,6 @@ eventFan !k p !self = Event $ \sub -> do
           }
     pure $ SubscribeResult (EventSubscription (WeakBag.remove ticket >> touch ticket) subscribed) $ fanMapLookup k =<< currentOcc
 
-eventSwitch :: HasSpiderTimeline x => Switch x a -> Event x a
-eventSwitch !s = Event $ wrap eventSubscribedSwitch $ getSwitchSubscribed s
-
 eventCoincidence :: HasSpiderTimeline x => Coincidence x a -> Event x a
 eventCoincidence !c = Event $ wrap eventSubscribedCoincidence $ getCoincidenceSubscribed c
 
@@ -631,30 +628,6 @@ newSubscriberFan self = debugSubscriber ("SubscriberFan " <> showNodeId self) $ 
       subscribers <- readIORef $ _fan_subscribers self
       fanMapFor_ subscribers $ \(FanSubscribers bag) -> WeakBag.traverse_ bag $ recalculateSubscriberHeight new
   }
-
-newSubscriberSwitch :: forall x a. HasSpiderTimeline x => SwitchSubscribed x a -> IO (Subscriber x a)
-newSubscriberSwitch subscribed = debugSubscriber ("SubscriberSwitch" <> showNodeId subscribed) $ Subscriber
-  { subscriberPropagate = \a -> {-# SCC "traverseSwitch" #-} do
-#ifdef DEBUG_FRAME
-      liftIO $ readIORef (switchSubscribedOccurrence subscribed) >>= debugOccurrence "switch: two occurrences in one frame"
-#endif
-      liftIO $ writeIORef (switchSubscribedOccurrence subscribed) $ Just a
-      scheduleClear $ switchSubscribedOccurrence subscribed
-      propagate a $ switchSubscribedSubscribers subscribed
-  , subscriberInvalidateHeight = \_ ->
-      invalidateOwnHeight (switchSubscribedHeight subscribed) (invalidateSwitchSubscribers subscribed)
-  , subscriberRecalculateHeight = (`updateSwitchHeight` subscribed)
-  }
-
-{-# INLINE invalidateSwitchSubscribers #-}
-invalidateSwitchSubscribers :: SwitchSubscribed x a -> Height -> IO ()
-invalidateSwitchSubscribers subscribed =
-  WeakBag.traverse_ (switchSubscribedSubscribers subscribed) . invalidateSubscriberHeight
-
-{-# INLINE recalculateSwitchSubscribers #-}
-recalculateSwitchSubscribers :: SwitchSubscribed x a -> Height -> IO ()
-recalculateSwitchSubscribers subscribed =
-  WeakBag.traverse_ (switchSubscribedSubscribers subscribed) . recalculateSubscriberHeight
 
 newSubscriberCoincidenceOuter :: forall x b. HasSpiderTimeline x => CoincidenceSubscribed x b -> IO (Subscriber x (Event x b))
 newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
@@ -762,19 +735,6 @@ eventSubscribedNow = EventSubscribed
   , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = return ["now"]
-#endif
-  }
-
-eventSubscribedSwitch :: SwitchSubscribed x a -> EventSubscribed x
-eventSubscribedSwitch !subscribed = EventSubscribed
-  { eventSubscribedHeightRef = switchSubscribedHeight subscribed
-  , eventSubscribedRetained = toAny subscribed
-#ifdef DEBUG_CYCLES
-  , eventSubscribedGetParents = do
-      s <- readIORef $ switchSubscribedCurrentParent subscribed
-      return [_eventSubscription_subscribed s]
-  , eventSubscribedHasOwnHeightRef = True
-  , eventSubscribedWhoCreated = whoCreatedIORef $ switchSubscribedCachedSubscribed subscribed
 #endif
   }
 
@@ -1304,25 +1264,17 @@ newFan = do
   pure self
 
 data SwitchSubscribed x a
-   = SwitchSubscribed { switchSubscribedCachedSubscribed :: !(IORef (Maybe (SwitchSubscribed x a)))
-                      , switchSubscribedOccurrence :: !(IORef (Maybe a))
-                      , switchSubscribedHeight :: !(IORef Height)
-                      , switchSubscribedSubscribers :: !(WeakBag (Subscriber x a))
-                      , switchSubscribedOwnInvalidator :: {-# NOUNPACK #-} !(Invalidator x)
+   = SwitchSubscribed { switchSubscribedHeight :: !(IORef Height)
+                      , switchSubscribedSubscriber :: !(Subscriber x a)
+                      , switchSubscribedOwnInvalidator :: !(IORef (Invalidator x))
                       , switchSubscribedOwnWeakInvalidator :: !(IORef (Weak (Invalidator x)))
                       , switchSubscribedBehaviorParents :: !(IORef [SomeBehaviorSubscribed x])
                       , switchSubscribedParent :: !(Behavior x (Event x a))
                       , switchSubscribedCurrentParent :: !(IORef (EventSubscription x))
-                      , switchSubscribedWeakSelf :: !(IORef (Weak (SwitchSubscribed x a)))
 #ifdef DEBUG_NODEIDS
                       , switchSubscribedNodeId :: Int
 #endif
                       }
-
-data Switch x a
-   = Switch { switchParent :: !(Behavior x (Event x a))
-            , switchSubscribed :: !(IORef (Maybe (SwitchSubscribed x a)))
-            }
 
 {-# ANN CoincidenceSubscribed "HLint: ignore Redundant bracket" #-}
 data CoincidenceSubscribed x a
@@ -1434,14 +1386,63 @@ pull a = unsafePerformIO $ do
 #endif
     }
 
-{-# INLINABLE switch #-}
+{-# INLINE switch #-}
 switch :: HasSpiderTimeline x => Behavior x (Event x a) -> Event x a
-switch a = unsafePerformIO $ do
-  ref <- newIORef Nothing
-  pure $ eventSwitch $ Switch
-    { switchParent = a
-    , switchSubscribed = ref
-    }
+switch b = cacheEvent (switchUncached b)
+
+{-# INLINE [1] switchUncached #-}
+switchUncached :: forall x a. HasSpiderTimeline x => Behavior x (Event x a) -> Event x a
+switchUncached b = Event $ \sub -> do
+  heightRef <- liftIO $ newIORef $ error "switchUncached: height not yet known"
+  currentParentRef <- liftIO $ newIORef $ error "switchUncached: current parent not yet subscribed"
+  invalidatorRef <- liftIO $ newIORef $ error "switchUncached: invalidator not yet created"
+  weakInvalidatorRef <- liftIO $ newIORef $ error "switchUncached: weak invalidator not yet created"
+  parentsRef <- liftIO $ newIORef [] --TODO: This should be unnecessary, because it will always be filled with just the single parent behavior
+#ifdef DEBUG_NODEIDS
+  nid <- liftIO newNodeId
+#endif
+  let !subscribed = SwitchSubscribed
+        { switchSubscribedHeight = heightRef
+        , switchSubscribedSubscriber = debugSubscriber' ("SubscriberSwitch" <> showNodeId subscribed) $ sub
+            { subscriberInvalidateHeight = \_ -> invalidateOwnHeight heightRef $ subscriberInvalidateHeight sub
+            , subscriberRecalculateHeight = recalculateOwnHeight heightRef (subscriberRecalculateHeight sub) . pure
+            }
+        , switchSubscribedOwnInvalidator = invalidatorRef
+        , switchSubscribedOwnWeakInvalidator = weakInvalidatorRef
+        , switchSubscribedBehaviorParents = parentsRef
+        , switchSubscribedParent = b
+        , switchSubscribedCurrentParent = currentParentRef
+#ifdef DEBUG_NODEIDS
+        , switchSubscribedNodeId = nid
+#endif
+        }
+  i <- liftIO $ newInvalidatorSwitch subscribed
+  wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorSwitch"
+  liftIO $ writeIORef invalidatorRef i
+  liftIO $ writeIORef weakInvalidatorRef wi
+  holdInits <- getDeferralQueue
+  e <- liftIO $ runBehaviorM (readBehaviorTracked b) (Just (wi, parentsRef)) holdInits
+  SubscribeResult subscription@(EventSubscription _ subd) parentOcc <- subscribeAndRead e $ switchSubscribedSubscriber subscribed
+  liftIO $ writeIORef heightRef =<< getEventSubscribedHeight subd
+  liftIO $ writeIORef currentParentRef subscription
+  pure $ SubscribeResult
+    (EventSubscription
+      { _eventSubscription_unsubscribe = do
+          unsubscribe =<< readIORef currentParentRef
+          finalize =<< readIORef weakInvalidatorRef -- We don't need to get invalidated if we're dead
+      , _eventSubscription_subscribed = EventSubscribed
+          { eventSubscribedHeightRef = heightRef
+          , eventSubscribedRetained = toAny subscribed
+#ifdef DEBUG_CYCLES
+          , eventSubscribedGetParents = do
+              s <- readIORef currentParentRef
+              return [_eventSubscription_subscribed s]
+          , eventSubscribedHasOwnHeightRef = True
+          , eventSubscribedWhoCreated = whoCreatedIORef currentParentRef
+#endif
+          }
+      })
+    parentOcc
 
 coincidence :: HasSpiderTimeline x => Event x (Event x a) -> Event x a
 coincidence a = unsafePerformIO $ do
@@ -1778,65 +1779,6 @@ subscribeRootSubscribed :: RootSubscribed x a -> Subscriber x a -> IO WeakBagTic
 subscribeRootSubscribed subscribed sub = WeakBag.insert sub (rootSubscribedSubscribers subscribed) (rootSubscribedWeakSelf subscribed) cleanupRootSubscribed
 
 newtype EventSelectorInt x a = EventSelectorInt { selectInt :: Int -> Event x a }
-
-{-# INLINABLE getSwitchSubscribed #-}
-getSwitchSubscribed :: HasSpiderTimeline x => Switch x a -> Subscriber x a -> EventM x (WeakBagTicket, SwitchSubscribed x a, Maybe a)
-getSwitchSubscribed s sub = do
-  mSubscribed <- liftIO $ readIORef $ switchSubscribed s
-  case mSubscribed of
-    Just subscribed -> {-# SCC "hitSwitch" #-} liftIO $ do
-      sln <- subscribeSwitchSubscribed subscribed sub
-      occ <- readIORef $ switchSubscribedOccurrence subscribed
-      return (sln, subscribed, occ)
-    Nothing -> {-# SCC "missSwitch" #-} do
-      subscribedRef <- liftIO $ newIORef $ error "getSwitchSubscribed: subscribed has not yet been created"
-      subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
-      i <- liftIO $ newInvalidatorSwitch subscribedUnsafe
-      mySub <- liftIO $ newSubscriberSwitch subscribedUnsafe
-      wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorSwitch"
-      wiRef <- liftIO $ newIORef wi
-      parentsRef <- liftIO $ newIORef [] --TODO: This should be unnecessary, because it will always be filled with just the single parent behavior
-      holdInits <- getDeferralQueue
-      e <- liftIO $ runBehaviorM (readBehaviorTracked (switchParent s)) (Just (wi, parentsRef)) holdInits
-      SubscribeResult subscription@(EventSubscription _ subd) parentOcc <- subscribeAndRead e mySub
-      heightRef <- liftIO $ newIORef =<< getEventSubscribedHeight subd
-      subscriptionRef <- liftIO $ newIORef subscription
-      occRef <- liftIO $ newIORef parentOcc
-      when (isJust parentOcc) $ scheduleClear occRef
-      weakSelf <- liftIO $ newIORef $ error "getSwitchSubscribed: weakSelf not yet initialized"
-      (subs, slnForSub) <- liftIO $ WeakBag.singleton sub weakSelf cleanupSwitchSubscribed
-#ifdef DEBUG_NODEIDS
-      nid <- liftIO newNodeId
-#endif
-      let !subscribed = SwitchSubscribed
-            { switchSubscribedCachedSubscribed = switchSubscribed s
-            , switchSubscribedOccurrence = occRef
-            , switchSubscribedHeight = heightRef
-            , switchSubscribedSubscribers = subs
-            , switchSubscribedOwnInvalidator = i
-            , switchSubscribedOwnWeakInvalidator = wiRef
-            , switchSubscribedBehaviorParents = parentsRef
-            , switchSubscribedParent = switchParent s
-            , switchSubscribedCurrentParent = subscriptionRef
-            , switchSubscribedWeakSelf = weakSelf
-#ifdef DEBUG_NODEIDS
-            , switchSubscribedNodeId = nid
-#endif
-            }
-      liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "switchSubscribedWeakSelf"
-      liftIO $ writeIORef subscribedRef $! subscribed
-      liftIO $ writeIORef (switchSubscribed s) $ Just subscribed
-      return (slnForSub, subscribed, parentOcc)
-
-cleanupSwitchSubscribed :: SwitchSubscribed x a -> IO ()
-cleanupSwitchSubscribed subscribed = do
-  unsubscribe =<< readIORef (switchSubscribedCurrentParent subscribed)
-  finalize =<< readIORef (switchSubscribedOwnWeakInvalidator subscribed) -- We don't need to get invalidated if we're dead
-  writeIORef (switchSubscribedCachedSubscribed subscribed) Nothing
-
-{-# INLINE subscribeSwitchSubscribed #-}
-subscribeSwitchSubscribed :: SwitchSubscribed x a -> Subscriber x a -> IO WeakBagTicket
-subscribeSwitchSubscribed subscribed sub = WeakBag.insert sub (switchSubscribedSubscribers subscribed) (switchSubscribedWeakSelf subscribed) cleanupSwitchSubscribed
 
 {-# INLINABLE getCoincidenceSubscribed #-}
 getCoincidenceSubscribed :: forall x a. HasSpiderTimeline x => Coincidence x a -> Subscriber x a -> EventM x (WeakBagTicket, CoincidenceSubscribed x a, Maybe a)
@@ -2378,7 +2320,7 @@ runFrame a = SpiderHost $ do
     wi <- readIORef $ switchSubscribedOwnWeakInvalidator subscribed
     traceInvalidate $ "Finalizing invalidator for Switch" <> showNodeId subscribed
     finalize wi
-    i <- evaluate $ switchSubscribedOwnInvalidator subscribed
+    i <- readIORef $ switchSubscribedOwnInvalidator subscribed
     wi' <- mkWeakPtrWithDebug i "wi'"
     writeIORef (switchSubscribedOwnWeakInvalidator subscribed) $! wi'
     writeIORef (switchSubscribedBehaviorParents subscribed) []
@@ -2386,8 +2328,7 @@ runFrame a = SpiderHost $ do
     e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi', switchSubscribedBehaviorParents subscribed)) $ eventEnvHoldInits env
     runEventM $ runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
     --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
-    sub <- newSubscriberSwitch subscribed
-    subscription <- {-# SCC "subscribeSwitch" #-} subscribeReconnect e sub --TODO: Assert that the event isn't firing
+    subscription <- {-# SCC "subscribeSwitch" #-} subscribeReconnect e (switchSubscribedSubscriber subscribed) --TODO: Assert that the event isn't firing
     {-
     stackTrace <- liftIO $ fmap renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
     liftIO $ debugStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
@@ -2410,7 +2351,7 @@ runFrame a = SpiderHost $ do
               ValidHeight -> compareHeight parentHeight myHeight /= EQ
               InvalidHeight -> True
         when heightChanged $
-          invalidateOwnHeight (switchSubscribedHeight subscribed) (invalidateSwitchSubscribers subscribed)
+          subscriberInvalidateHeight (switchSubscribedSubscriber subscribed) myHeight
   mapM_ _someMergeUpdate_invalidateHeight mergeUpdates --TODO: In addition to when the patch is completely empty, we should also not run this if it has some Nothing values, but none of them have actually had any effect; potentially, we could even check for Just values with no effect (e.g. by comparing their IORefs and ignoring them if they are unchanged); actually, we could just check if the new height is different
   forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mInvalidate) -> do
     unsubscribe subscription
@@ -2419,7 +2360,7 @@ runFrame a = SpiderHost $ do
   mapM_ _someMergeUpdate_recalculateHeight mergeUpdates
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> do
     height <- calculateSwitchHeight subscribed
-    updateSwitchHeight height subscribed
+    subscriberRecalculateHeight (switchSubscribedSubscriber subscribed) height
 #ifdef DEBUG_FRAME
   do leftover <- readIORef $ eventEnvPendingRecalculations env
      unless (null leftover) $
@@ -2522,10 +2463,6 @@ invalidateCoincidenceSubscribers subscribed =
 recalculateCoincidenceSubscribers :: CoincidenceSubscribed x a -> Height -> IO ()
 recalculateCoincidenceSubscribers subscribed =
   WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) . recalculateSubscriberHeight
-
-updateSwitchHeight :: Height -> SwitchSubscribed x a -> IO ()
-updateSwitchHeight new subscribed =
-  recalculateOwnHeight (switchSubscribedHeight subscribed) (recalculateSwitchSubscribers subscribed) (pure new)
 
 recalculateCoincidenceHeight :: CoincidenceSubscribed x a -> IO ()
 recalculateCoincidenceHeight subscribed =
