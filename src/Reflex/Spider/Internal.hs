@@ -484,13 +484,16 @@ cacheSubscription sub mSubscribedRef subscribed = do
   ticket <- WeakBag.insertWithoutCallback sub $ _cacheSubscribed_subscribers subscribed
   occ <- readIORef $ _cacheSubscribed_occurrence subscribed
   let parentSub = _cacheSubscribed_parent subscribed
+      -- Prevent reboxing of the unpacked _cacheSubscribed_parent on every
+      -- subscribe.
+      unsubscribeParent = _eventSubscription_unsubscribe parentSub
       es = EventSubscription
         { _eventSubscription_unsubscribe = do
             WeakBag.remove ticket
             isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers subscribed
             when isEmpty $ do
               writeIORef mSubscribedRef Nothing
-              unsubscribe parentSub
+              unsubscribeParent
             touch ticket
         , _eventSubscription_subscribed = EventSubscribed
           { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed parentSub
