@@ -530,9 +530,9 @@ eventNever :: Event x a
 eventNever = Event $ const subscribeAndReadNever
 
 {-# INLINE eventFan #-}
-eventFan :: (HasSpiderTimeline x, IsFanMap map) => FanMapKey map a -> Event x (map v) -> Fan x map v -> Event x (v a)
+eventFan :: (HasSpiderTimeline x, IsMap map) => MapKey map a -> Event x (map v) -> Fan x map v -> Event x (v a)
 eventFan !k p !self = Event $ \sub -> do
-  isEmpty <- liftIO $ fanMapNull <$> readIORef (_fan_subscribers self)
+  isEmpty <- liftIO $ mapNull <$> readIORef (_fan_subscribers self)
   parentSubscription <-
     if isEmpty
     then do
@@ -547,15 +547,15 @@ eventFan !k p !self = Event $ \sub -> do
                   <$!> readIORef (_fan_subscriptionRef self)
   liftIO $ do
     subscribers <- readIORef (_fan_subscribers self)
-    bag <- case fanMapLookup k subscribers of
+    bag <- case mapLookup k subscribers of
       Nothing -> do
         bag <- WeakBag.empty
-        writeIORef (_fan_subscribers self) $! fanMapInsert k (FanSubscribers bag) subscribers
+        writeIORef (_fan_subscribers self) $! mapInsert k (FanSubscribers bag) subscribers
         pure bag
       Just (FanSubscribers bag) -> pure bag
     ticket <- WeakBag.insert sub bag (_fan_weakSelf self) $ \fan -> do
-      modifyIORef' (_fan_subscribers fan) $ fanMapDelete k
-      noKeys <- fanMapNull <$> readIORef (_fan_subscribers fan)
+      modifyIORef' (_fan_subscribers fan) $ mapDelete k
+      noKeys <- mapNull <$> readIORef (_fan_subscribers fan)
       when noKeys $
         traverse_ unsubscribe =<< atomicModifyIORef' (_fan_subscriptionRef fan) (Nothing,)
     currentOcc <- readIORef (_fan_occRef self)
@@ -569,7 +569,7 @@ eventFan !k p !self = Event $ \sub -> do
           , eventSubscribedWhoCreated = whoCreatedIORef $ _fan_subscriptionRef self
 #endif
           }
-    pure $ SubscribeResult (EventSubscription (WeakBag.remove ticket >> touch ticket) subscribed) $ fanMapLookup k =<< currentOcc
+    pure $ SubscribeResult (EventSubscription (WeakBag.remove ticket >> touch ticket) subscribed) $ mapLookup k =<< currentOcc
 
 eventHold :: Hold x p -> Event x p
 eventHold !h = Event $ subscribeHoldEvent h
@@ -606,23 +606,23 @@ newSubscriberHold h = return $ Subscriber
   }
 
 {-# INLINE newSubscriberFan #-}
-newSubscriberFan :: forall x map v. (HasSpiderTimeline x, IsFanMap map) => Fan x map v -> IO (Subscriber x (map v))
+newSubscriberFan :: forall x map v. (HasSpiderTimeline x, IsMap map) => Fan x map v -> IO (Subscriber x (map v))
 newSubscriberFan self = debugSubscriber ("SubscriberFan " <> showNodeId self) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
 #ifdef DEBUG_FRAME
       liftIO $ readIORef (_fan_occRef self) >>= debugOccurrence "fan: two occurrences in one frame"
 #endif
       subs <- liftIO $ readIORef $ _fan_subscribers self
-      tracePropagate (Proxy :: Proxy x) $ show (fanMapSize subs) <> " keys subscribed, " <> show (fanMapSize a) <> " keys firing"
+      tracePropagate (Proxy :: Proxy x) $ show (mapSize subs) <> " keys subscribed, " <> show (mapSize a) <> " keys firing"
       liftIO $ writeIORef (_fan_occRef self) $ Just a
       scheduleClear $ _fan_occRef self
-      fanMapForIntersection_ subs a $ \(FanSubscribers bag) v -> propagate v bag
+      mapForIntersection_ subs a $ \(FanSubscribers bag) v -> propagate v bag
   , subscriberInvalidateHeight = \old -> do
       subscribers <- readIORef $ _fan_subscribers self
-      fanMapFor_ subscribers $ \(FanSubscribers bag) -> WeakBag.traverse_ bag $ invalidateSubscriberHeight old
+      mapFor_ subscribers $ \(FanSubscribers bag) -> WeakBag.traverse_ bag $ invalidateSubscriberHeight old
   , subscriberRecalculateHeight = \new -> do
       subscribers <- readIORef $ _fan_subscribers self
-      fanMapFor_ subscribers $ \(FanSubscribers bag) -> WeakBag.traverse_ bag $ recalculateSubscriberHeight new
+      mapFor_ subscribers $ \(FanSubscribers bag) -> WeakBag.traverse_ bag $ recalculateSubscriberHeight new
   }
 
 newSubscriberCoincidenceOuter :: forall x b. HasSpiderTimeline x => CoincidenceSubscribed x b -> IO (Subscriber x (Event x b))
@@ -1165,42 +1165,42 @@ data MergeSubscribedParentWithMove x k a = MergeSubscribedParentWithMove
 
 -- TODO: A type class like this could unify the different merge types as well?
 -- | Utility type class; the operations needed to share structure between 'fan' and 'fanInt'.
-class IsFanMap (map :: (i -> Type) -> Type) where
-  type FanMapKey map :: i -> Type
-  fanMapEmpty :: map v
-  fanMapNull :: map v -> Bool
-  fanMapSize :: map v -> Int
-  fanMapLookup :: FanMapKey map a -> map v -> Maybe (v a)
-  fanMapInsert :: FanMapKey map a -> v a -> map v -> map v
-  fanMapDelete :: FanMapKey map a -> map v -> map v
-  fanMapForIntersection_ :: Monad m => map v -> map w -> (forall a. v a -> w a -> m ()) -> m ()
-  fanMapFor_ :: Monad m => map v -> (forall a. v a -> m ()) -> m ()
+class IsMap (map :: (i -> Type) -> Type) where
+  type MapKey map :: i -> Type
+  mapEmpty :: map v
+  mapNull :: map v -> Bool
+  mapSize :: map v -> Int
+  mapLookup :: MapKey map a -> map v -> Maybe (v a)
+  mapInsert :: MapKey map a -> v a -> map v -> map v
+  mapDelete :: MapKey map a -> map v -> map v
+  mapForIntersection_ :: Monad m => map v -> map w -> (forall a. v a -> w a -> m ()) -> m ()
+  mapFor_ :: Monad m => map v -> (forall a. v a -> m ()) -> m ()
 
-instance GCompare k => IsFanMap (DMap k) where
-  type FanMapKey (DMap k) = k
-  fanMapEmpty = DMap.empty
-  fanMapNull = DMap.null
-  fanMapSize = DMap.size
-  fanMapLookup = DMap.lookup
-  fanMapInsert = DMap.insert
-  fanMapDelete = DMap.delete
-  fanMapForIntersection_ left right f =
+instance GCompare k => IsMap (DMap k) where
+  type MapKey (DMap k) = k
+  mapEmpty = DMap.empty
+  mapNull = DMap.null
+  mapSize = DMap.size
+  mapLookup = DMap.lookup
+  mapInsert = DMap.insert
+  mapDelete = DMap.delete
+  mapForIntersection_ left right f =
     DMap.foldrWithKey (\_ (Pair v w) rest -> f v w >> rest) (pure ())
     $ DMap.intersectionWithKey (\_ -> Pair) left right
-  fanMapFor_ m f = DMap.foldrWithKey (\_ v rest -> f v >> rest) (pure ()) m
+  mapFor_ m f = DMap.foldrWithKey (\_ v rest -> f v >> rest) (pure ()) m
 
-newtype FanIntMap a v = FanIntMap (IntMap (v a))
+newtype IntMapOf a v = IntMapOf (IntMap (v a))
 
-instance IsFanMap (FanIntMap a) where
-  type FanMapKey (FanIntMap a) = Const2 Int a
-  fanMapEmpty = FanIntMap IntMap.empty
-  fanMapNull (FanIntMap m) = IntMap.null m
-  fanMapSize (FanIntMap m) = IntMap.size m
-  fanMapLookup (Const2 k) (FanIntMap m) = IntMap.lookup k m
-  fanMapInsert (Const2 k) v (FanIntMap m) = FanIntMap $ IntMap.insert k v m
-  fanMapDelete (Const2 k) (FanIntMap m) = FanIntMap $ IntMap.delete k m
-  fanMapForIntersection_ (FanIntMap left) (FanIntMap right) f = traverse_ (uncurry f) $ IntMap.intersectionWith (,) left right
-  fanMapFor_ (FanIntMap m) f = traverse_ f m
+instance IsMap (IntMapOf a) where
+  type MapKey (IntMapOf a) = Const2 Int a
+  mapEmpty = IntMapOf IntMap.empty
+  mapNull (IntMapOf m) = IntMap.null m
+  mapSize (IntMapOf m) = IntMap.size m
+  mapLookup (Const2 k) (IntMapOf m) = IntMap.lookup k m
+  mapInsert (Const2 k) v (IntMapOf m) = IntMapOf $ IntMap.insert k v m
+  mapDelete (Const2 k) (IntMapOf m) = IntMapOf $ IntMap.delete k m
+  mapForIntersection_ (IntMapOf left) (IntMapOf right) f = traverse_ (uncurry f) $ IntMap.intersectionWith (,) left right
+  mapFor_ (IntMapOf m) f = traverse_ f m
 
 newtype FanSubscribers x v a = FanSubscribers (WeakBag (Subscriber x (v a)))
 
@@ -1215,9 +1215,9 @@ data Fan x map v = Fan
   }
 
 {-# INLINE newFan #-}
-newFan :: IsFanMap map => IO (Fan x map v)
+newFan :: IsMap map => IO (Fan x map v)
 newFan = do
-  subscribers <- newIORef fanMapEmpty
+  subscribers <- newIORef mapEmpty
   subscriptionRef <- newIORef Nothing
   occRef <- newIORef Nothing
   weakSelf <- newIORef $ error "newFan: weakSelf not initialized"
@@ -2140,7 +2140,7 @@ fanG e = unsafePerformIO $ do
 fanInt :: forall x a. HasSpiderTimeline x => Event x (IntMap a) -> EventSelectorInt x a
 fanInt e = unsafePerformIO $ do
   self <- newFan
-  pure $ EventSelectorInt $ \k -> coerce $ eventFan (Const2 k) (coerce e :: Event x (FanIntMap a Identity)) self
+  pure $ EventSelectorInt $ \k -> coerce $ eventFan (Const2 k) (coerce e :: Event x (IntMapOf a Identity)) self
 
 runHoldInits :: HasSpiderTimeline x => IORef [SomeHoldInit x] -> IORef [SomeDynInit x] -> IORef [SomeMergeInit x] -> EventM x ()
 runHoldInits holdInitRef dynInitRef mergeInitRef = do
