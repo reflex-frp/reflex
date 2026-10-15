@@ -23,6 +23,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Traversable (for, traverse)
 
 import qualified Data.Dependent.Map as DMap
+import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
@@ -100,6 +101,12 @@ fanMerge n e =  leftmost $ s <$> [0..n - 1] where
   s k = select f (Const2 k)
   f = fan (toMap <$> e)
   toMap k = DMap.singleton (Const2 $ k `mod` n) (Identity k)
+
+fanIntMerge :: Reflex t => Word -> Event t Word -> Event t Word
+fanIntMerge n e =  leftmost $ s <$> [0..n - 1] where
+  s k = selectInt f (fromIntegral k)
+  f = fanInt (toIntMap <$> e)
+  toIntMap k = IntMap.singleton (fromIntegral $ k `mod` n) k
 
 -- Dumb version of the above using simple fmapMaybe to filter
 fmapFanMerge :: Reflex t => Word -> Event t Word -> Event t Word
@@ -196,6 +203,9 @@ headEShared n e = mergeTree 8 . fmapFan n <$> headE e
 fanMergeChain :: Reflex t => Word -> Word -> Event t Word -> Event t Word
 fanMergeChain width = iter $ fanMerge width
 
+fanIntMergeChain :: Reflex t => Word -> Word -> Event t Word -> Event t Word
+fanIntMergeChain width = iter $ fanIntMerge width
+
 fmapFanMergeChain :: Reflex t => Word -> Word -> Event t Word -> Event t Word
 fmapFanMergeChain width = iter $ fmapFanMerge width
 
@@ -275,6 +285,7 @@ subscribing :: Word -> Word -> [(String, TestCase)]
 subscribing n frames =
   [ testSub "fmapFanMerge"        $ return . mergeList . fmapFan n
   , testSub "fanMerge"            $ return . fanMerge n
+  , testSub "fanIntMerge"         $ return . fanIntMerge n
   , testSub "fmapFan/mergeTree"   $ return . mergeTree 8 . fmapFan n
   , testSub "fmapChain"           $ return . fmapChain n
   , testSub "switchChain"         $ switchChain n
@@ -342,9 +353,11 @@ eventWriters n =
 fans :: Word -> [(String, TestCase)]
 fans n =
   [  testE "fanMapChain"               $ fanMergeChain n 10 <$> e
+  ,  testE "fanIntMapChain"            $ fanIntMergeChain n 10 <$> e
   ,  testE "fmapFanMapChain"           $ fmapFanMergeChain n 10 <$> e
 
   , testE "fanMerge " $ fanMerge n <$> events n
+  , testE "fanIntMerge" $ fanIntMerge n <$> events n
 
   , testE "fmapFanMerge " $ fmapFanMerge n <$> events n
   , testE "triggerMerge" $ leftmost <$> for [1..n] (\i -> plan [(i, i)])
