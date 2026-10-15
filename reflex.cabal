@@ -456,6 +456,20 @@ test-suite runHostFrame
       , tasty-expected-failure
       , tasty-hunit
 
+test-suite newFanEventWithTrigger
+    type:             exitcode-stdio-1.0
+    main-is:          newFanEventWithTrigger.hs
+    hs-source-dirs:   test
+    default-language: Haskell2010
+    ghc-options:      -Wall
+    build-depends:
+        base >= 4.11 && < 4.23
+      , containers
+      , dependent-sum
+      , reflex
+      , tasty
+      , tasty-hunit
+
 test-suite behaviorLeak
     type:             exitcode-stdio-1.0
     main-is:          behaviorLeak.hs

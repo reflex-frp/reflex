@@ -122,7 +122,10 @@ class ( ReflexHost t
   -- given callback is executed which allows to read the final values of events
   -- and check whether they have fired in this frame or not.
   --
-  -- All events that are given are fired at the same time.
+  -- All events that are given are fired at the same time. If a trigger is listed
+  -- twice, the behavior is undefined for efficiency reasons. For safety or
+  -- debugging purposes, the @debug-frame@ Cabal flag can be used: it causes an
+  -- exception to be thrown when the any-trigger-once-per-frame rule is violated.
   --
   -- This function is typically used in the main loop of a reflex framework
   -- implementation.  The main loop waits for external events to happen (such as

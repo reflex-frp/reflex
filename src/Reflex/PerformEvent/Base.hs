@@ -52,6 +52,8 @@ import Control.Monad.Identity
 -- any followup actions provided via 'PerformEvent'.  The given 'ReadPhase'
 -- action will be run once for the initial trigger execution as well as once for
 -- each followup.
+-- As for 'Reflex.Host.Class.fireEventsAndRead', the list must not contain one
+-- trigger twice.
 newtype FireCommand t m = FireCommand { runFireCommand :: forall a. [DSum (EventTrigger t) Identity] -> ReadPhase m a -> m [a] } --TODO: The handling of this ReadPhase seems wrong, or at least inelegant; how do we actually make the decision about what order frames run in?
 
 -- | Provides a basic implementation of 'PerformEvent'.  Note that, despite the
