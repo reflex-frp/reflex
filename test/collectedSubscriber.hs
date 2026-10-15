@@ -7,6 +7,8 @@
 import Control.Exception (evaluate)
 import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
+import Data.Dependent.Sum (DSum ((:=>)))
+import Data.Functor.Identity (Identity (..))
 import Data.Functor.Misc (Const2 (..))
 import Data.IORef (modifyIORef', newIORef, readIORef, writeIORef)
 import qualified Data.IntMap as IntMap

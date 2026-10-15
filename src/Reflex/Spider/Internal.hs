@@ -64,7 +64,6 @@ import Data.Type.Equality ((:~:)(Refl))
 import GHC.Exts hiding (toList, build)
 import GHC.IORef (IORef (..))
 import GHC.Stack
-import Reflex.FastWeak
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
@@ -100,9 +99,6 @@ import Data.Tree (Forest, Tree (..), drawForest)
 #ifdef DEBUG_HIDE_INTERNALS
 import Data.List (isPrefixOf)
 #endif
-
-import Data.FastWeakBag (FastWeakBag)
-import qualified Data.FastWeakBag as FastWeakBag
 
 import Data.Reflection
 import Data.Some (Some(Some))
@@ -301,7 +297,7 @@ terminalSubscriber p = Subscriber
   }
 
 data HeadESubscribed x a = HeadESubscribed
-  { headESubscribedSubscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
+  { headESubscribedSubscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
   , headESubscribedParent :: !(EventSubscription x)
   , headESubscribedOccurrence :: {-# UNPACK #-} !(IORef (Maybe a))
   , headESubscribedHeight :: {-# UNPACK #-} !(IORef Height)
@@ -310,7 +306,7 @@ data HeadESubscribed x a = HeadESubscribed
 -- | State of a 'headE' node, retains exactly what's needed for each phase.
 data HeadEState x a
   = HeadEStateInitial (Event x a)
-  | HeadEStateSubscribed !(HeadESubscribed x a) 
+  | HeadEStateSubscribed !(HeadESubscribed x a)
   | HeadEStateOccurred {-# UNPACK #-} !(IORef (Maybe a))
 
 -- | Specialized implementation of 'Reflex.Class.slowHeadE'.
@@ -324,13 +320,13 @@ headE originalE = do
           deferRecalculateHeight @x $ SomeRecalculateHeight $ do
             let heightRef = headESubscribedHeight subscribed
                 subscribers = headESubscribedSubscribers subscribed
-            invalidateOwnHeight heightRef $ FastWeakBag.traverse_ subscribers . invalidateSubscriberHeight
-            recalculateOwnHeight heightRef (FastWeakBag.traverse_ subscribers . recalculateSubscriberHeight) (pure zeroHeight)
+            invalidateOwnHeight heightRef $ WeakBag.traverse_ subscribers . invalidateSubscriberHeight
+            recalculateOwnHeight heightRef (WeakBag.traverse_ subscribers . recalculateSubscriberHeight) (pure zeroHeight)
         _ -> pure ()
       subscribeUntilHead :: EventM x (HeadEState x a)
       subscribeUntilHead = liftIO (readIORef stateRef) >>= \case
         HeadEStateInitial parentEvent -> do
-          subscribers <- liftIO FastWeakBag.empty
+          subscribers <- liftIO WeakBag.empty
           occRef <- liftIO $ newIORef Nothing
           heightRef <- liftIO $ newIORef zeroHeight
           SubscribeResult parentSubscription occ <- subscribeAndRead parentEvent $ Subscriber
@@ -339,14 +335,14 @@ headE originalE = do
                 scheduleClear occRef
                 -- Propagating before unsubscribing can help avoid
                 -- teardown-then-revive when downstream would re-subscribe:
-                propagateFast a subscribers
+                propagate a subscribers
                 unsubscribeAfterOccurrence occRef
             , subscriberInvalidateHeight = \old -> do
                 writeIORef heightRef invalidHeight
-                FastWeakBag.traverse_ subscribers $ invalidateSubscriberHeight old
+                WeakBag.traverse_ subscribers $ invalidateSubscriberHeight old
             , subscriberRecalculateHeight = \new -> do
                 writeIORef heightRef $! new
-                FastWeakBag.traverse_ subscribers $ recalculateSubscriberHeight new
+                WeakBag.traverse_ subscribers $ recalculateSubscriberHeight new
             }
           liftIO $ writeIORef heightRef =<<
             getEventSubscribedHeight (_eventSubscription_subscribed parentSubscription)
@@ -374,16 +370,16 @@ headE originalE = do
     case state of
       HeadEStateInitial _ -> error "headE in impossible HeadEStateInitial state"
       HeadEStateSubscribed subscribed -> liftIO $ do
-        ticket <- FastWeakBag.insert sub $ headESubscribedSubscribers subscribed
+        ticket <- WeakBag.insertWithoutCallback sub $ headESubscribedSubscribers subscribed
         occ <- readIORef $ headESubscribedOccurrence subscribed
         pure $ SubscribeResult
               (EventSubscription
                    { _eventSubscription_unsubscribe = do
-                       FastWeakBag.remove ticket
+                       WeakBag.remove ticket
                        touch ticket
                    , _eventSubscription_subscribed = EventSubscribed
                        { eventSubscribedHeightRef = headESubscribedHeight subscribed
-                       , eventSubscribedRetained = toAny (stateRef, ticket)
+                       , eventSubscribedRetained = toAny stateRef
 #ifdef DEBUG_CYCLES
                        , eventSubscribedGetParents = pure [_eventSubscription_subscribed $ headESubscribedParent subscribed]
                        , eventSubscribedHasOwnHeightRef = True
@@ -397,7 +393,7 @@ headE originalE = do
         pure $ SubscribeResult (EventSubscription (pure ()) eventSubscribedNever) occ
 
 data CacheSubscribed x a
-   = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
+   = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
                      , _cacheSubscribed_parent :: {-# UNPACK #-} !(EventSubscription x)
                      , _cacheSubscribed_occurrence :: {-# UNPACK #-} !(IORef (Maybe a))
 #ifdef DEBUG_NODEIDS
@@ -419,7 +415,7 @@ now = do
 -- repeatedly
 --
 --TODO: Try a caching strategy where we subscribe directly to the parent when
---there's only one subscriber, and then build our own FastWeakBag only when a second
+--there's only one subscriber, and then build our own WeakBag only when a second
 --subscriber joins
 {-# NOINLINE [0] cacheEvent #-}
 cacheEvent :: forall x a. HasSpiderTimeline x => Event x a -> Event x a
@@ -430,19 +426,19 @@ cacheEvent e =
   Event $
 #endif
   unsafePerformIO $ do
-    mSubscribedRef :: IORef (FastWeak (CacheSubscribed x a))
-        <- newIORef emptyFastWeak
+    mSubscribedRef :: IORef (Maybe (Weak (CacheSubscribed x a)))
+        <- newIORef Nothing
     pure $ \sub -> {-# SCC "cacheEvent" #-} do
 #ifdef DEBUG_TRACE_EVENTS
           unless (BS8.null callSite) $ liftIO $ BS8.hPutStrLn stderr callSite
 #endif
-          subscribedTicket <- liftIO (readIORef mSubscribedRef >>= getFastWeakTicket) >>= \case
-            Just subscribedTicket -> return subscribedTicket
+          subscribed <- liftIO (readIORef mSubscribedRef >>= maybe (pure Nothing) deRefWeak) >>= \case
+            Just subscribed -> return subscribed
             Nothing -> do
 #ifdef DEBUG_NODEIDS
               nodeId <- liftIO newNodeId
 #endif
-              subscribers <- liftIO FastWeakBag.empty
+              subscribers <- liftIO WeakBag.empty
               occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
               SubscribeResult parentSub occ <- subscribeAndRead e
 #ifdef DEBUG_NODEIDS
@@ -457,9 +453,9 @@ cacheEvent e =
 #endif
                       liftIO $ writeIORef occRef (Just a)
                       scheduleClear occRef
-                      propagateFast a subscribers
-                  , subscriberInvalidateHeight = FastWeakBag.traverse_ subscribers . invalidateSubscriberHeight
-                  , subscriberRecalculateHeight = FastWeakBag.traverse_ subscribers . recalculateSubscriberHeight
+                      propagate a subscribers
+                  , subscriberInvalidateHeight = WeakBag.traverse_ subscribers . invalidateSubscriberHeight
+                  , subscriberRecalculateHeight = WeakBag.traverse_ subscribers . recalculateSubscriberHeight
                   }
               when (isJust occ) $ do
                 liftIO $ writeIORef occRef occ -- Set the initial value of occRef; we don't need to do this if occ is Nothing
@@ -472,32 +468,26 @@ cacheEvent e =
                     , _cacheSubscribed_nodeId = nodeId
 #endif
                     }
-              subscribedTicket <- liftIO $ mkFastWeakTicket subscribed
-              liftIO $ writeIORef mSubscribedRef =<< evaluate =<< getFastWeakTicketWeak subscribedTicket
-              return subscribedTicket
-          liftIO $ cacheSubscription sub mSubscribedRef subscribedTicket
+              liftIO $ writeIORef mSubscribedRef . Just =<< mkWeakPtrWithDebug subscribed "CacheSubscribed"
+              return subscribed
+          liftIO $ cacheSubscription sub mSubscribedRef subscribed
 
-cacheSubscription :: Subscriber x a -> IORef (FastWeak (CacheSubscribed x a))
-                  -> FastWeakTicket (CacheSubscribed x a) -> IO (SubscribeResult x a)
-cacheSubscription sub mSubscribedRef subscribedTicket = do
-  subscribed <- getFastWeakTicketValue subscribedTicket
-  ticket <- FastWeakBag.insert sub $ _cacheSubscribed_subscribers subscribed
+cacheSubscription :: Subscriber x a -> IORef (Maybe (Weak (CacheSubscribed x a))) -> CacheSubscribed x a -> IO (SubscribeResult x a)
+cacheSubscription sub mSubscribedRef subscribed = do
+  ticket <- WeakBag.insertWithoutCallback sub $ _cacheSubscribed_subscribers subscribed
   occ <- readIORef $ _cacheSubscribed_occurrence subscribed
-
   let parentSub = _cacheSubscribed_parent subscribed
       es = EventSubscription
         { _eventSubscription_unsubscribe = do
-          FastWeakBag.remove ticket
-
-          isEmpty <- FastWeakBag.isEmpty $ _cacheSubscribed_subscribers subscribed
-          when isEmpty $ do
-            writeIORef mSubscribedRef emptyFastWeak
-            unsubscribe parentSub
-          touch ticket
-          touch subscribedTicket
+            WeakBag.remove ticket
+            isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers subscribed
+            when isEmpty $ do
+              writeIORef mSubscribedRef Nothing
+              unsubscribe parentSub
+            touch ticket
         , _eventSubscription_subscribed = EventSubscribed
           { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed parentSub
-          , eventSubscribedRetained = toAny subscribedTicket
+          , eventSubscribedRetained = toAny subscribed
 #ifdef DEBUG_CYCLES
           , eventSubscribedGetParents = return [_eventSubscription_subscribed parentSub]
           , eventSubscribedHasOwnHeightRef = False
@@ -506,7 +496,6 @@ cacheSubscription sub mSubscribedRef subscribedTicket = do
           }
         }
   pure $ SubscribeResult es occ
-
 
 subscribe :: Event x a -> Subscriber x a -> EventM x (EventSubscription x)
 subscribe e s = subscribeSubscription <$> subscribeAndRead e s
@@ -560,7 +549,7 @@ eventFan !k p !self = Event $ \sub -> do
     let subscribedParent = _eventSubscription_subscribed parentSubscription
         subscribed = EventSubscribed
           { eventSubscribedHeightRef = eventSubscribedHeightRef subscribedParent
-          , eventSubscribedRetained = toAny (self, ticket)
+          , eventSubscribedRetained = toAny self
 #ifdef DEBUG_CYCLES
           , eventSubscribedGetParents = pure [subscribedParent]
           , eventSubscribedHasOwnHeightRef = False
@@ -711,13 +700,6 @@ propagate a subscribers = withIncreasedDepth (Proxy::Proxy x) $
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
   WeakBag.traverse_ subscribers $ \s -> subscriberPropagate s a
-
--- | Propagate everything at the current height
-propagateFast :: forall x a. HasSpiderTimeline x => a -> FastWeakBag (Subscriber x a) -> EventM x ()
-propagateFast a subscribers = withIncreasedDepth (Proxy::Proxy x) $
-  -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
-  --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
-  FastWeakBag.traverse_ subscribers $ \s -> subscriberPropagate s a
 
 --------------------------------------------------------------------------------
 -- EventSubscribed
