@@ -2575,10 +2575,12 @@ type role SpiderTimeline nominal
 type Spider = SpiderTimeline Global
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (EventM x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadSample (SpiderTimeline Global) (EventM Global) #-}
   {-# INLINABLE sample #-}
   sample (SpiderBehavior b) = readBehaviorUntracked b
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (EventM x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (EventM Global) #-}
   {-# INLINABLE hold #-}
   hold = holdSpiderEventM
   {-# INLINABLE holdDyn #-}
@@ -2597,10 +2599,12 @@ instance Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPullM x) where
   sample = coerce . readBehaviorTracked . unSpiderBehavior
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPushM x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadSample (SpiderTimeline Global) (SpiderPushM Global) #-}
   {-# INLINABLE sample #-}
   sample (SpiderBehavior b) = SpiderPushM $ readBehaviorUntracked b
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderPushM x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (SpiderPushM Global) #-}
   {-# INLINABLE hold #-}
   hold v0 e = Reflex.Class.current <$> Reflex.Class.holdDyn v0 e
   {-# INLINABLE holdDyn #-}
@@ -2676,9 +2680,11 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
 
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadSample (SpiderTimeline Global) (SpiderHostFrame Global) #-}
   sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderHostFrame x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (SpiderHostFrame Global) #-}
   {-# INLINABLE hold #-}
   hold v0 e = SpiderHostFrame $ fmap (SpiderBehavior . behaviorHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
   {-# INLINABLE holdDyn #-}
@@ -2697,10 +2703,12 @@ instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (Spi
   sample = runFrame . readBehaviorUntracked . unSpiderBehavior
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (Reflex.Spider.Internal.ReadPhase x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadSample (SpiderTimeline Global) (Reflex.Spider.Internal.ReadPhase Global) #-}
   {-# INLINABLE sample #-}
   sample = Reflex.Spider.Internal.ReadPhase . Reflex.Class.sample
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Reflex.Spider.Internal.ReadPhase x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (Reflex.Spider.Internal.ReadPhase Global) #-}
   {-# INLINABLE hold #-}
   hold v0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.hold v0 e
   {-# INLINABLE holdDyn #-}
@@ -2742,6 +2750,7 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTim
       }
 
 instance HasSpiderTimeline x => Reflex.Host.Class.ReflexHost (SpiderTimeline x) where
+  {-# SPECIALIZE instance Reflex.Host.Class.ReflexHost (SpiderTimeline Global) #-}
   type EventTrigger (SpiderTimeline x) = RootTrigger x
   type EventHandle (SpiderTimeline x) = SpiderEventHandle x
   type HostFrame (SpiderTimeline x) = SpiderHostFrame x
@@ -2770,6 +2779,7 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTim
   subscribeEvent = runFrame . runSpiderHostFrame . Reflex.Host.Class.subscribeEvent
 
 instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexHost (SpiderTimeline x) (SpiderHost x) where
+  {-# SPECIALIZE instance Reflex.Host.Class.MonadReflexHost (SpiderTimeline Global) (SpiderHost Global) #-}
   type ReadPhase (SpiderHost x) = Reflex.Spider.Internal.ReadPhase x
   fireEventsAndRead es (Reflex.Spider.Internal.ReadPhase a) = run es a
   runHostFrame = runFrame . runSpiderHostFrame
