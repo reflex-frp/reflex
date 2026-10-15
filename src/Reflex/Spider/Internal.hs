@@ -572,9 +572,6 @@ eventFan !k p !self = Event $ \sub -> do
           }
     pure $ SubscribeResult (EventSubscription (WeakBag.remove ticket >> touch ticket) subscribed) $ fanMapLookup k =<< currentOcc
 
-eventCoincidence :: HasSpiderTimeline x => Coincidence x a -> Event x a
-eventCoincidence !c = Event $ wrap eventSubscribedCoincidence $ getCoincidenceSubscribed c
-
 eventHold :: Hold x p -> Event x p
 eventHold !h = Event $ subscribeHoldEvent h
 
@@ -584,12 +581,12 @@ eventDyn !j = Event $ \sub -> getDynHold j >>= \h -> subscribeHoldEvent h sub
 {-# INLINE subscribeCoincidenceInner #-}
 -- | Returns Maybe Height where Nothing means the height was not raised to the inner's height.
 subscribeCoincidenceInner :: HasSpiderTimeline x => Event x a -> Height -> CoincidenceSubscribed x a -> EventM x (Maybe a, Maybe Height, EventSubscribed x)
-subscribeCoincidenceInner inner outerHeight subscribedUnsafe = do
-  subInner <- liftIO $ newSubscriberCoincidenceInner subscribedUnsafe
+subscribeCoincidenceInner inner outerHeight subscribed = do
+  subInner <- liftIO $ newSubscriberCoincidenceInner subscribed
   SubscribeResult subscription@(EventSubscription _ innerSubd) innerOcc <- subscribeAndRead inner subInner
   innerHeight <- liftIO $ getEventSubscribedHeight innerSubd
   let maybeRaised = raiseHeight outerHeight innerHeight
-  defer $ SomeResetCoincidence subscription $ subscribedUnsafe <$ maybeRaised
+  defer $ SomeResetCoincidence subscription $ subscribed <$ maybeRaised
   return (innerOcc, maybeRaised, innerSubd)
 
 --------------------------------------------------------------------------------
@@ -647,27 +644,15 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
             -- TODO: Why not delay?
             invalidateOwnHeight (coincidenceSubscribedHeight subscribed) (invalidateCoincidenceSubscribers subscribed)
             recalculateOwnHeight (coincidenceSubscribedHeight subscribed) (recalculateCoincidenceSubscribers subscribed) (pure innerHeight)
-        Just o -> do -- Since it's already firing, no need to adjust height
-#ifdef DEBUG_FRAME
-          liftIO $ readIORef (coincidenceSubscribedOccurrence subscribed) >>= debugOccurrence "coincidence (outer subscriber): two occurrences in one frame"
-#endif
-          liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) occ
-          scheduleClear $ coincidenceSubscribedOccurrence subscribed
-          propagate o $ coincidenceSubscribedSubscribers subscribed
+        Just o -> -- Since it's already firing, no need to adjust height
+          subscriberPropagate (coincidenceSubscribedSubscriber subscribed) o
   , subscriberInvalidateHeight  = \_ -> invalidateCoincidenceHeight subscribed
   , subscriberRecalculateHeight = \_ -> recalculateCoincidenceHeight subscribed
   }
 
 newSubscriberCoincidenceInner :: forall x a. HasSpiderTimeline x => CoincidenceSubscribed x a -> IO (Subscriber x a)
-newSubscriberCoincidenceInner subscribed = debugSubscriber ("SubscriberCoincidenceInner" <> showNodeId subscribed) $ Subscriber
-  { subscriberPropagate = \a -> {-# SCC "traverseCoincidenceInner" #-} do
-#ifdef DEBUG_FRAME
-      liftIO $ readIORef (coincidenceSubscribedOccurrence subscribed) >>= debugOccurrence "coincidence (inner subscriber): two occurrences in one frame"
-#endif
-      liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) $ Just a
-      scheduleClear $ coincidenceSubscribedOccurrence subscribed
-      propagate a $ coincidenceSubscribedSubscribers subscribed
-  , subscriberInvalidateHeight  = \_ -> invalidateCoincidenceHeight subscribed
+newSubscriberCoincidenceInner subscribed = debugSubscriber ("SubscriberCoincidenceInner" <> showNodeId subscribed) $ (coincidenceSubscribedSubscriber subscribed)
+  { subscriberInvalidateHeight  = \_ -> invalidateCoincidenceHeight subscribed
   , subscriberRecalculateHeight = \_ -> recalculateCoincidenceHeight subscribed
   }
 
@@ -735,21 +720,6 @@ eventSubscribedNow = EventSubscribed
   , eventSubscribedGetParents = return []
   , eventSubscribedHasOwnHeightRef = False
   , eventSubscribedWhoCreated = return ["now"]
-#endif
-  }
-
-eventSubscribedCoincidence :: CoincidenceSubscribed x a -> EventSubscribed x
-eventSubscribedCoincidence !subscribed = EventSubscribed
-  { eventSubscribedHeightRef = coincidenceSubscribedHeight subscribed
-  , eventSubscribedRetained = toAny subscribed
-#ifdef DEBUG_CYCLES
-  , eventSubscribedGetParents = do
-      innerSubscription <- readIORef $ coincidenceSubscribedInnerParent subscribed
-      let outerParent = _eventSubscription_subscribed $ coincidenceSubscribedOuterParent subscribed
-          innerParents = maybeToList $ innerSubscription
-      return $ outerParent : innerParents
-  , eventSubscribedHasOwnHeightRef = True
-  , eventSubscribedWhoCreated = whoCreatedIORef $ coincidenceSubscribedCachedSubscribed subscribed
 #endif
   }
 
@@ -1276,25 +1246,15 @@ data SwitchSubscribed x a
 #endif
                       }
 
-{-# ANN CoincidenceSubscribed "HLint: ignore Redundant bracket" #-}
 data CoincidenceSubscribed x a
-   = CoincidenceSubscribed { coincidenceSubscribedCachedSubscribed :: !(IORef (Maybe (CoincidenceSubscribed x a)))
-                           , coincidenceSubscribedOccurrence :: !(IORef (Maybe a))
-                           , coincidenceSubscribedSubscribers :: !(WeakBag (Subscriber x a))
-                           , coincidenceSubscribedHeight :: !(IORef Height)
-                           , coincidenceSubscribedOuter :: {-# NOUNPACK #-} (Subscriber x (Event x a))
-                           , coincidenceSubscribedOuterParent :: !(EventSubscription x)
+   = CoincidenceSubscribed { coincidenceSubscribedHeight :: !(IORef Height)
+                           , coincidenceSubscribedSubscriber :: !(Subscriber x a)
+                           , coincidenceSubscribedOuterParent :: !(IORef (EventSubscription x))
                            , coincidenceSubscribedInnerParent :: !(IORef (Maybe (EventSubscribed x)))
-                           , coincidenceSubscribedWeakSelf :: !(IORef (Weak (CoincidenceSubscribed x a)))
 #ifdef DEBUG_NODEIDS
                            , coincidenceSubscribedNodeId :: Int
 #endif
                            }
-
-data Coincidence x a
-   = Coincidence { coincidenceParent :: !(Event x (Event x a))
-                 , coincidenceSubscribed :: !(IORef (Maybe (CoincidenceSubscribed x a)))
-                 }
 
 {-# NOINLINE newInvalidatorSwitch #-}
 newInvalidatorSwitch :: SwitchSubscribed x a -> IO (Invalidator x)
@@ -1444,13 +1404,57 @@ switchUncached b = Event $ \sub -> do
       })
     parentOcc
 
+{-# INLINE coincidence #-}
 coincidence :: HasSpiderTimeline x => Event x (Event x a) -> Event x a
-coincidence a = unsafePerformIO $ do
-  ref <- newIORef Nothing
-  pure $ eventCoincidence $ Coincidence
-    { coincidenceParent = a
-    , coincidenceSubscribed = ref
-    }
+coincidence e = cacheEvent (coincidenceUncached e)
+
+{-# INLINE [1] coincidenceUncached #-}
+coincidenceUncached :: forall x a. HasSpiderTimeline x => Event x (Event x a) -> Event x a
+coincidenceUncached outer = Event $ \sub -> do
+  heightRef <- liftIO $ newIORef $ error "coincidenceUncached: height not yet known"
+  outerParentRef <- liftIO $ newIORef $ error "coincidenceUncached: outer parent not yet subscribed"
+  innerParentRef <- liftIO $ newIORef Nothing
+#ifdef DEBUG_NODEIDS
+  nid <- liftIO newNodeId
+#endif
+  let !subscribed = CoincidenceSubscribed
+        { coincidenceSubscribedHeight = heightRef
+        , coincidenceSubscribedSubscriber = sub
+        , coincidenceSubscribedOuterParent = outerParentRef
+        , coincidenceSubscribedInnerParent = innerParentRef
+#ifdef DEBUG_NODEIDS
+        , coincidenceSubscribedNodeId = nid
+#endif
+        }
+  subOuter <- liftIO $ newSubscriberCoincidenceOuter subscribed
+  SubscribeResult outerSubscription@(EventSubscription _ outerSubd) outerOcc <- subscribeAndRead outer subOuter
+  liftIO $ writeIORef outerParentRef outerSubscription
+  outerHeight <- liftIO $ getEventSubscribedHeight outerSubd
+  (occ, height, mInnerSubd) <- case outerOcc of
+    Nothing -> return (Nothing, outerHeight, Nothing)
+    Just o -> do
+      (occ, maybeRaisedToInnerHeight, innerSubd) <- subscribeCoincidenceInner o outerHeight subscribed
+      return (occ, fromMaybe outerHeight maybeRaisedToInnerHeight, Just innerSubd)
+  liftIO $ writeIORef heightRef $! height
+  liftIO $ writeIORef innerParentRef mInnerSubd
+  scheduleClear innerParentRef
+  pure $ SubscribeResult
+    (EventSubscription
+      { _eventSubscription_unsubscribe = unsubscribe =<< readIORef outerParentRef
+      , _eventSubscription_subscribed = EventSubscribed
+          { eventSubscribedHeightRef = heightRef
+          , eventSubscribedRetained = toAny subscribed
+#ifdef DEBUG_CYCLES
+          , eventSubscribedGetParents = do
+              outerParent <- _eventSubscription_subscribed <$> readIORef outerParentRef
+              innerParents <- maybeToList <$> readIORef innerParentRef
+              return $ outerParent : innerParents
+          , eventSubscribedHasOwnHeightRef = True
+          , eventSubscribedWhoCreated = whoCreatedIORef outerParentRef
+#endif
+          }
+      })
+    occ
 
 -- | Propagate root triggers and process delayed merges, then run the
 -- given read action. Runs inside the single 'runFrame' of
@@ -1779,63 +1783,6 @@ subscribeRootSubscribed :: RootSubscribed x a -> Subscriber x a -> IO WeakBagTic
 subscribeRootSubscribed subscribed sub = WeakBag.insert sub (rootSubscribedSubscribers subscribed) (rootSubscribedWeakSelf subscribed) cleanupRootSubscribed
 
 newtype EventSelectorInt x a = EventSelectorInt { selectInt :: Int -> Event x a }
-
-{-# INLINABLE getCoincidenceSubscribed #-}
-getCoincidenceSubscribed :: forall x a. HasSpiderTimeline x => Coincidence x a -> Subscriber x a -> EventM x (WeakBagTicket, CoincidenceSubscribed x a, Maybe a)
-getCoincidenceSubscribed c sub = do
-  mSubscribed <- liftIO $ readIORef $ coincidenceSubscribed c
-  case mSubscribed of
-    Just subscribed -> {-# SCC "hitCoincidence" #-} liftIO $ do
-      sln <- subscribeCoincidenceSubscribed subscribed sub
-      occ <- readIORef $ coincidenceSubscribedOccurrence subscribed
-      return (sln, subscribed, occ)
-    Nothing -> {-# SCC "missCoincidence" #-} do
-      subscribedRef <- liftIO $ newIORef $ error "getCoincidenceSubscribed: subscribed has not yet been created"
-      subscribedUnsafe <- liftIO $ unsafeInterleaveIO $ readIORef subscribedRef
-      subOuter <- liftIO $ newSubscriberCoincidenceOuter subscribedUnsafe
-      SubscribeResult outerSubscription@(EventSubscription _ outerSubd) outerOcc <- subscribeAndRead (coincidenceParent c) subOuter
-      outerHeight <- liftIO $ getEventSubscribedHeight outerSubd
-      (occ, height, mInnerSubd) <- case outerOcc of
-        Nothing -> return (Nothing, outerHeight, Nothing)
-        Just o -> do
-          (occ, maybeRaisedToInnerHeight, innerSubd) <- subscribeCoincidenceInner o outerHeight subscribedUnsafe
-          return (occ, fromMaybe outerHeight maybeRaisedToInnerHeight, Just innerSubd)
-      occRef <- liftIO $ newIORef occ
-      when (isJust occ) $ scheduleClear occRef
-      heightRef <- liftIO $ newIORef height
-      innerSubdRef <- liftIO $ newIORef mInnerSubd
-      scheduleClear innerSubdRef
-      weakSelf <- liftIO $ newIORef $ error "getCoincidenceSubscribed: weakSelf not yet implemented"
-      (subs, slnForSub) <- liftIO $ WeakBag.singleton sub weakSelf cleanupCoincidenceSubscribed
-#ifdef DEBUG_NODEIDS
-      nid <- liftIO newNodeId
-#endif
-      let subscribed = CoincidenceSubscribed
-            { coincidenceSubscribedCachedSubscribed = coincidenceSubscribed c
-            , coincidenceSubscribedOccurrence = occRef
-            , coincidenceSubscribedHeight = heightRef
-            , coincidenceSubscribedSubscribers = subs
-            , coincidenceSubscribedOuter = subOuter
-            , coincidenceSubscribedOuterParent = outerSubscription
-            , coincidenceSubscribedInnerParent = innerSubdRef
-            , coincidenceSubscribedWeakSelf = weakSelf
-#ifdef DEBUG_NODEIDS
-            , coincidenceSubscribedNodeId = nid
-#endif
-            }
-      liftIO $ writeIORef weakSelf =<< evaluate =<< mkWeakPtrWithDebug subscribed "CoincidenceSubscribed"
-      liftIO $ writeIORef subscribedRef $! subscribed
-      liftIO $ writeIORef (coincidenceSubscribed c) $ Just subscribed
-      return (slnForSub, subscribed, occ)
-
-cleanupCoincidenceSubscribed :: CoincidenceSubscribed x a -> IO ()
-cleanupCoincidenceSubscribed subscribed = do
-  unsubscribe $ coincidenceSubscribedOuterParent subscribed
-  writeIORef (coincidenceSubscribedCachedSubscribed subscribed) Nothing
-
-{-# INLINE subscribeCoincidenceSubscribed #-}
-subscribeCoincidenceSubscribed :: CoincidenceSubscribed x a -> Subscriber x a -> IO WeakBagTicket
-subscribeCoincidenceSubscribed subscribed sub = WeakBag.insert sub (coincidenceSubscribedSubscribers subscribed) (coincidenceSubscribedWeakSelf subscribed) cleanupCoincidenceSubscribed
 
 {-# INLINE mergeG #-}
 mergeG :: forall k q x v. (HasSpiderTimeline x, GCompare k)
@@ -2456,13 +2403,11 @@ invalidateCoincidenceHeight subscribed =
 
 {-# INLINE invalidateCoincidenceSubscribers #-}
 invalidateCoincidenceSubscribers :: CoincidenceSubscribed x a -> Height -> IO ()
-invalidateCoincidenceSubscribers subscribed =
-  WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) . invalidateSubscriberHeight
+invalidateCoincidenceSubscribers = subscriberInvalidateHeight . coincidenceSubscribedSubscriber
 
 {-# INLINE recalculateCoincidenceSubscribers #-}
 recalculateCoincidenceSubscribers :: CoincidenceSubscribed x a -> Height -> IO ()
-recalculateCoincidenceSubscribers subscribed =
-  WeakBag.traverse_ (coincidenceSubscribedSubscribers subscribed) . recalculateSubscriberHeight
+recalculateCoincidenceSubscribers = subscriberRecalculateHeight . coincidenceSubscribedSubscriber
 
 recalculateCoincidenceHeight :: CoincidenceSubscribed x a -> IO ()
 recalculateCoincidenceHeight subscribed =
@@ -2473,7 +2418,7 @@ calculateSwitchHeight subscribed = getEventSubscribedHeight . _eventSubscription
 
 calculateCoincidenceHeight :: CoincidenceSubscribed x a -> IO Height
 calculateCoincidenceHeight subscribed = do
-  outerHeight <- getEventSubscribedHeight $ _eventSubscription_subscribed $ coincidenceSubscribedOuterParent subscribed
+  outerHeight <- getEventSubscribedHeight . _eventSubscription_subscribed =<< readIORef (coincidenceSubscribedOuterParent subscribed)
   innerHeight <- maybe (return zeroHeight) getEventSubscribedHeight =<< readIORef (coincidenceSubscribedInnerParent subscribed)
   pure $ coincidenceHeight outerHeight innerHeight
 
