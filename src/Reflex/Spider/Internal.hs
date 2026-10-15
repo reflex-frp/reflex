@@ -222,6 +222,13 @@ newNodeId :: IO Int
 newNodeId = atomicModifyIORef' nextNodeIdRef $ \n -> (succ n, n)
 #endif
 
+#ifdef DEBUG_FRAME
+debugOccurrence :: Applicative m => String -> Maybe a -> m ()
+debugOccurrence message = \case
+  Just _ -> error message
+  Nothing -> pure ()
+#endif
+
 --------------------------------------------------------------------------------
 -- EventSubscription
 --------------------------------------------------------------------------------
@@ -331,6 +338,9 @@ headE originalE = do
           heightRef <- liftIO $ newIORef zeroHeight
           SubscribeResult parentSubscription occ <- subscribeAndRead parentEvent $ Subscriber
             { subscriberPropagate = \a -> do
+#ifdef DEBUG_FRAME
+                liftIO $ readIORef occRef >>= debugOccurrence "headE: two occurrences in one frame"
+#endif
                 liftIO $ writeIORef occRef $ Just a
                 scheduleClear occRef
                 -- Propagating before unsubscribing can help avoid
@@ -447,9 +457,7 @@ cacheEvent e =
                   $ Subscriber
                   { subscriberPropagate = \a -> do
 #ifdef DEBUG_FRAME
-                      liftIO $ readIORef occRef >>= \case
-                        Just _ -> error "cacheEvent: two occurrences in one frame"
-                        Nothing -> pure ()
+                      liftIO $ readIORef occRef >>= debugOccurrence "cacheEvent: two occurrences in one frame"
 #endif
                       liftIO $ writeIORef occRef (Just a)
                       scheduleClear occRef
@@ -603,9 +611,7 @@ newSubscriberFan :: forall x map v. (HasSpiderTimeline x, IsFanMap map) => Fan x
 newSubscriberFan self = debugSubscriber ("SubscriberFan " <> showNodeId self) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
 #ifdef DEBUG_FRAME
-      liftIO $ readIORef (_fan_occRef self) >>= \case
-        Just _ -> error "fan: two occurrences in one frame"
-        Nothing -> pure ()
+      liftIO $ readIORef (_fan_occRef self) >>= debugOccurrence "fan: two occurrences in one frame"
 #endif
       subs <- liftIO $ readIORef $ _fan_subscribers self
       tracePropagate (Proxy :: Proxy x) $ show (fanMapSize subs) <> " keys subscribed, " <> show (fanMapSize a) <> " keys firing"
@@ -624,9 +630,7 @@ newSubscriberSwitch :: forall x a. HasSpiderTimeline x => SwitchSubscribed x a -
 newSubscriberSwitch subscribed = debugSubscriber ("SubscriberSwitch" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseSwitch" #-} do
 #ifdef DEBUG_FRAME
-      liftIO $ readIORef (switchSubscribedOccurrence subscribed) >>= \case
-        Just _ -> error "switch: two occurrences in one frame"
-        Nothing -> pure ()
+      liftIO $ readIORef (switchSubscribedOccurrence subscribed) >>= debugOccurrence "switch: two occurrences in one frame"
 #endif
       liftIO $ writeIORef (switchSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ switchSubscribedOccurrence subscribed
@@ -665,6 +669,9 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
             invalidateOwnHeight (coincidenceSubscribedHeight subscribed) (invalidateCoincidenceSubscribers subscribed)
             recalculateOwnHeight (coincidenceSubscribedHeight subscribed) (recalculateCoincidenceSubscribers subscribed) (pure innerHeight)
         Just o -> do -- Since it's already firing, no need to adjust height
+#ifdef DEBUG_FRAME
+          liftIO $ readIORef (coincidenceSubscribedOccurrence subscribed) >>= debugOccurrence "coincidence (outer subscriber): two occurrences in one frame"
+#endif
           liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) occ
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
           propagate o $ coincidenceSubscribedSubscribers subscribed
@@ -675,15 +682,12 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
 newSubscriberCoincidenceInner :: forall x a. HasSpiderTimeline x => CoincidenceSubscribed x a -> IO (Subscriber x a)
 newSubscriberCoincidenceInner subscribed = debugSubscriber ("SubscriberCoincidenceInner" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseCoincidenceInner" #-} do
-#ifdef DEBUG
-      occ <- liftIO $ readIORef $ coincidenceSubscribedOccurrence subscribed
-      case occ of
-        Just _ -> error "Coincidence inner is propagating, but coincidence occurrence is already known?"
-        Nothing -> do
+#ifdef DEBUG_FRAME
+      liftIO $ readIORef (coincidenceSubscribedOccurrence subscribed) >>= debugOccurrence "coincidence (inner subscriber): two occurrences in one frame"
 #endif
-          liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) $ Just a
-          scheduleClear $ coincidenceSubscribedOccurrence subscribed
-          propagate a $ coincidenceSubscribedSubscribers subscribed
+      liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) $ Just a
+      scheduleClear $ coincidenceSubscribedOccurrence subscribed
+      propagate a $ coincidenceSubscribedSubscribers subscribed
   , subscriberInvalidateHeight  = \_ -> invalidateCoincidenceHeight subscribed
   , subscriberRecalculateHeight = \_ -> recalculateCoincidenceHeight subscribed
   }
@@ -1446,16 +1450,16 @@ coincidence a = unsafePerformIO $ do
 -- 'runHostFrameFireAndRead', after the build and hold-init phases.
 propagateAndRead :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> EventM x b
 propagateAndRead roots after = do
-    rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
+    forM_ roots $ \(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readIORef occRef
+#ifdef DEBUG_FRAME
+        debugOccurrence "propagateAndRead: one trigger fired twice in one frame" $ DMap.lookup k occBefore
+#endif
         writeIORef occRef $! DMap.insert k a occBefore
         return occBefore
-      if DMap.null occBefore
-        then do scheduleRootClear occRef
-                return $ Just r
-        else return Nothing
-    forM_ (catMaybes rootsToPropagate) $ \(RootTrigger (subscribersRef, _, _) :=> Identity a) -> do
+      when (DMap.null occBefore) $ scheduleRootClear occRef
+    forM_ roots $ \(RootTrigger (subscribersRef, _, _) :=> Identity a) ->
       propagate a subscribersRef
     delayedRef <- asksEventEnv eventEnvDelayedMerges
     let go = do
@@ -2073,7 +2077,10 @@ mergeSubscriber subscribed m getKey = Subscriber
   { subscriberPropagate = \a -> do
       oldM <- liftIO $ readIORef $ _merge_accumRef m
       k <- getKey
-      let newM = DMap.insertWith (error "Same key fired multiple times for Merge") k a oldM
+#ifdef DEBUG_FRAME
+      debugOccurrence "merge: one parent fired twice in one frame" $ DMap.lookup k oldM
+#endif
+      let newM = DMap.insert k a oldM
       tracePropagate (Proxy :: Proxy x) $ "  DMap.size oldM = " <> show (DMap.size oldM) <> "; DMap.size newM = " <> show (DMap.size newM)
       liftIO $ writeIORef (_merge_accumRef m) $! newM
       when (DMap.null oldM) $ do -- Only schedule the firing once
@@ -2202,6 +2209,9 @@ mergeIntCheap d = Event $ \sub -> do
       mySubscriber k = Subscriber
         { subscriberPropagate = \a -> do
             checkCycle subscribed
+#ifdef DEBUG_FRAME
+            liftIO (FastMutableIntMap.lookup accum k) >>= debugOccurrence "mergeInt: one parent fired twice in one frame"
+#endif
 
             wasEmpty <- liftIO $ FastMutableIntMap.isEmpty accum
             liftIO $ FastMutableIntMap.insert accum k a
@@ -2693,6 +2703,9 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTim
     --TODO: Unsubscribe eventually (manually and/or with weak ref)
     val <- liftIO $ newIORef Nothing
     let recordOccurrence a = do
+#ifdef DEBUG_FRAME
+          liftIO $ readIORef val >>= debugOccurrence "subscribeEvent: two occurrences in one frame"
+#endif
           liftIO $ writeIORef val $ Just a
           scheduleClear val
     SubscribeResult subscription occ <- subscribeAndRead (unSpiderEvent e) $ terminalSubscriber recordOccurrence

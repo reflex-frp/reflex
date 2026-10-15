@@ -1,9 +1,10 @@
 # Revision history for reflex
 
-## 0.10.0.0
+## Unreleased
 
 * Breaking Change: `runQueryT`, `withQueryT`, and `dynWithQueryT` now require the `MonadHold t m` constraint instead of `MonadFix m`. This is due to [#530](https://github.com/reflex-frp/reflex/pull/530) by @parenthetical fixing an implementation detail in `runQueryT`.
 * Breaking Change: the modules `Reflex.FastWeak` and `Data.FastWeakBag` and the `fast-weak` cabal flag are removed.
+* Fix: `newFanEventWithTrigger` can now fire multiple keys in one frame.
 
 ## 0.9.4.1
 

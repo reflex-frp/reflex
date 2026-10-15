@@ -54,6 +54,8 @@ import Control.Monad.Identity
 -- | Fires events for the given 'EventTrigger's and then folds the caller's step
 -- function over every resulting frame. Multiple frames can occur due to
 -- 'Reflex.Performevent.Class.PerformEvent.performEvent' feeding back new occurrences.
+-- As for 'Reflex.Host.Class.fireEventsAndRead', the list must not contain one
+-- trigger twice.
 --
 -- The caller is able to exit early by returning @Left <exitValue>@, after which
 -- no more effects are performed.

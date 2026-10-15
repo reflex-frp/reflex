@@ -124,11 +124,12 @@ class ( ReflexHost t
   -- The build action runs first and returns its result. After hold
   -- initializations are processed (which subscribes holds to their events,
   -- populating event trigger refs), the trigger extraction action runs and
-  -- returns the triggers to fire in this frame. The triggers are then
-  -- propagated, the read phase observes the settled frame, and only then
-  -- does finalization advance time. This matches the pure reference
-  -- semantics where build and frame 0 are the same instant, so a build-time
-  -- 'now' is observable.
+  -- returns the triggers to fire in this frame. Just like with
+  -- 'fireEventsAndRead', this list must not contain a trigger twice. The
+  -- triggers are then propagated, the read phase observes the settled frame,
+  -- and only then does finalization advance time. This matches the pure
+  -- reference semantics where build and frame 0 are the same instant, so a
+  -- build-time 'now' is observable.
   --
   -- This is the sole primitive of the class: every frame an instance can run
   -- goes through it, so building, firing, and reading cannot disagree about
@@ -144,7 +145,10 @@ class ( ReflexHost t
 -- given callback is executed which allows to read the final values of events
 -- and check whether they have fired in this frame or not.
 --
--- All events that are given are fired at the same time.
+-- All events that are given are fired at the same time. If a trigger is listed
+-- twice, the behavior is undefined for efficiency reasons. For safety or
+-- debugging purposes, the @debug-frame@ Cabal flag can be used: it causes an
+-- exception to be thrown when the any-trigger-once-per-frame rule is violated.
 --
 -- This function is typically used in the main loop of a reflex framework
 -- implementation.  The main loop waits for external events to happen (such as
