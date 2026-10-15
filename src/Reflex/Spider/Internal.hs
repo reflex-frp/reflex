@@ -1962,6 +1962,7 @@ checkCycle subscribed = do
 mergeSubscriber :: forall x k v s a. (HasSpiderTimeline x, GCompare k) => EventSubscribed x -> Merge x k v s -> EventM x (k a) -> Subscriber x (v a)
 mergeSubscriber subscribed m getKey = Subscriber
   { subscriberPropagate = \a -> do
+      checkCycle subscribed
       oldM <- liftIO $ readIORef $ _merge_accumRef m
       k <- getKey
 #ifdef DEBUG_FRAME
@@ -1972,8 +1973,6 @@ mergeSubscriber subscribed m getKey = Subscriber
       liftIO $ writeIORef (_merge_accumRef m) $! newM
       when (DMap.null oldM) $ do -- Only schedule the firing once
         height <- liftIO $ readIORef $ _merge_heightRef m
-        checkCycle subscribed
-
         scheduleMergeSelf m height
   , subscriberInvalidateHeight = \old -> do --TODO: When removing a parent doesn't actually change the height, maybe we can avoid invalidating
       modifyIORef' (_merge_heightBagRef m) $ heightBagRemove old
