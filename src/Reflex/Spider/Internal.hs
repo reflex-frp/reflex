@@ -45,7 +45,6 @@ import Data.Coerce
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum (DSum (..))
-import qualified Data.FastMutableIntMap as FastMutableIntMap
 import Data.Foldable hiding (concat, elem, sequence_)
 import Data.Functor.Constant
 import Data.Functor.Misc
@@ -1162,8 +1161,6 @@ data MergeSubscribedParentWithMove x k a = MergeSubscribedParentWithMove
   , _mergeSubscribedParentWithMove_key :: !(IORef (k a))
   }
 
--- | Utility type class; the operations needed to share structure between fan
--- and merge varieties.
 class IsMap (map :: (i -> Type) -> Type) where
   type MapKey map :: i -> Type
   mapEmpty :: map v
@@ -1816,19 +1813,8 @@ mergeCheap
 mergeCheap nt = genericMergeCheap unMergeSubscribedParent getInitialSubscribers updateMe
   where
       updateMe :: MergeUpdateFunc (DMap k) v x (PatchDMap k q) (MergeSubscribedParent x)
-      updateMe subscriber heightBagRef oldParents (PatchDMap p) = do
-        let f (subscriptionsToKill, parents) (k :=> ComposeMaybe me) = do
-              (maybeOldSubscribed, newParents) <- case me of
-                Nothing -> pure $ DMap.updateLookupWithKey (\_ _ -> Nothing) k parents
-                Just e -> do
-                  newParent <- MergeSubscribedParent <$> subscribeMergeParent heightBagRef (nt e) (subscriber $ pure k)
-                  pure $ DMap.insertLookupWithKey' (\_ new _ -> new) k newParent parents
-              for_ maybeOldSubscribed $
-                liftIO . forgetMergeParentHeight heightBagRef . unMergeSubscribedParent
-              pure ( maybeToList (unMergeSubscribedParent <$> maybeOldSubscribed) ++ subscriptionsToKill
-                   , newParents
-                   )
-        foldM f ([], oldParents) $ DMap.toList p
+      updateMe subscriber heightBagRef oldParents (PatchDMap p) =
+        updateMergeParents nt subscriber heightBagRef oldParents p
 
       getInitialSubscribers :: MergeInitFunc (DMap k) v (DMap k q) x (MergeSubscribedParent x)
       getInitialSubscribers = initMergeParents nt (\k -> pure (pure k, MergeSubscribedParent))
@@ -1908,6 +1894,27 @@ initMergeParents nt parentAt initialParents subscriber = do
   heights <- liftIO $ readIORef heightsRef --TODO: Assert that there's no invalidHeight in here
   pure (occurrences, heights, mapFromDistinctAscList parents)
 
+{-# INLINE updateMergeParents #-}
+updateMergeParents
+  :: forall map q v x. IsMap map
+  => (forall a. q a -> Event x (v a))
+  -> MergeUpdateFunc map v x (map (ComposeMaybe q)) (MergeSubscribedParent x)
+updateMergeParents nt subscriber heightBagRef oldParents patch =
+  foldM updateParent ([], oldParents) $ mapToList patch
+  where
+    updateParent (subscriptionsToKill, parents) (k :=> ComposeMaybe maybeEvent) = do
+      let maybeOldSubscribed = mapLookup k parents
+      newParents <- case maybeEvent of
+        Nothing -> pure $ mapDelete k parents
+        Just e -> do
+          newParent <- MergeSubscribedParent <$> subscribeMergeParent heightBagRef (nt e) (subscriber $ pure k)
+          pure $ mapInsert k newParent parents
+      for_ maybeOldSubscribed $
+        liftIO . forgetMergeParentHeight heightBagRef . unMergeSubscribedParent
+      pure ( maybeToList (unMergeSubscribedParent <$> maybeOldSubscribed) ++ subscriptionsToKill
+           , newParents
+           )
+
 subscribeMergeParent :: IORef HeightBag -> Event x a -> Subscriber x a -> EventM x (EventSubscription x)
 subscribeMergeParent heightBagRef e sub = do
   subscription <- subscribe e sub
@@ -1917,9 +1924,6 @@ subscribeMergeParent heightBagRef e sub = do
 forgetMergeParentHeight :: IORef HeightBag -> EventSubscription x -> IO ()
 forgetMergeParentHeight heightBagRef subscription =
   modifyIORef' heightBagRef . heightBagRemove =<< eventSubscriptionHeight subscription
-
-invalidateMergeHeight' :: IORef Height -> Subscriber x a -> IO ()
-invalidateMergeHeight' heightRef sub = invalidateOwnHeight heightRef (subscriberInvalidateHeight sub)
 
 checkCycle :: HasSpiderTimeline x => EventSubscribed x -> EventM x ()
 checkCycle subscribed = do
@@ -2049,101 +2053,34 @@ mergeInt = cacheEvent . mergeIntCheap
 
 {-# INLINABLE mergeIntCheap #-}
 mergeIntCheap :: forall x a. (HasSpiderTimeline x) => DynamicS x (PatchIntMap (Event x a)) -> Event x (IntMap a)
-mergeIntCheap d = Event $ \sub -> do
-  initialParents <- readBehaviorUntracked $ dynamicCurrent d
-  accum <- liftIO $ FastMutableIntMap.newEmpty
-  heightRef <- liftIO $ newIORef zeroHeight
-  heightBagRef <- liftIO $ newIORef heightBagEmpty
-  parents <- liftIO $ FastMutableIntMap.newEmpty
-  changeSubdRef <- liftIO $ newIORef $ error "getMergeSubscribed: changeSubdRef not yet initialized"
-  let subscribed = EventSubscribed
-        { eventSubscribedHeightRef = heightRef
-        , eventSubscribedRetained = toAny (parents, changeSubdRef)
-#ifdef DEBUG_CYCLES
-        , eventSubscribedGetParents = fmap (_eventSubscription_subscribed . snd) <$> FastMutableIntMap.toList parents
-        , eventSubscribedHasOwnHeightRef = True
-        , eventSubscribedWhoCreated = whoCreatedIORef heightRef
-#endif
-        }
-  let scheduleSelf = do
-        height <- liftIO $ readIORef $ heightRef
-        scheduleMerge' height heightRef $ do
-          vals <- liftIO $ FastMutableIntMap.getFrozenAndClear accum
-          subscriberPropagate sub vals
-      invalidateMyHeight = invalidateMergeHeight' heightRef sub
-      recalculateMyHeight = do
-        currentHeight <- readIORef heightRef
-        case currentHeight of
-          ValidHeight -> pure ()
-          InvalidHeight -> do --TODO: This will almost always be true; can we get rid of this check and just proceed to the next one always?
-            heights <- readIORef heightBagRef
-            numParents <- FastMutableIntMap.size parents
-            case heightBagSize heights `compare` numParents of
-              LT -> return ()
-              EQ -> do
-                let height = heightBagSuccHeight heights
-                traceInvalidateHeight $ "recalculateSubscriberHeight: height: " <> show height
-                writeIORef heightRef $! height
-                subscriberRecalculateHeight sub height
-              GT -> error $ "revalidateMergeHeight: more heights (" <> show (heightBagSize heights) <> ") than parents (" <> show numParents <> ") for Merge"
-      mySubscriber k = Subscriber
-        { subscriberPropagate = \a -> do
-            checkCycle subscribed
-#ifdef DEBUG_FRAME
-            liftIO (FastMutableIntMap.lookup accum k) >>= debugOccurrence "mergeInt: one parent fired twice in one frame"
-#endif
+mergeIntCheap = coerceEvent . genericMergeCheap unMergeSubscribedParent getInitialSubscribers updateMe
+  where
+      coerceEvent :: Event x (IntMapOf a Identity) -> Event x (IntMap a)
+      coerceEvent = coerce
 
-            wasEmpty <- liftIO $ FastMutableIntMap.isEmpty accum
-            liftIO $ FastMutableIntMap.insert accum k a
-            when wasEmpty scheduleSelf
-        , subscriberInvalidateHeight = \old -> do
-            modifyIORef' heightBagRef $ heightBagRemove old
-            invalidateMyHeight
-        , subscriberRecalculateHeight = \new -> do
-            modifyIORef' heightBagRef $ heightBagAdd new
-            recalculateMyHeight
-        }
-  parentHeights <- forM (IntMap.toList initialParents) $ \(k, p) -> do
-    SubscribeResult subscription parentOcc <- subscribeAndRead p (mySubscriber k)
-    liftIO $ do
-      forM_ parentOcc $ FastMutableIntMap.insert accum k
-      FastMutableIntMap.insert parents k subscription
-      eventSubscriptionHeight subscription
-  let (myHeightBag, myHeight) = heightBagFromParents parentHeights
-  liftIO $ writeIORef heightBagRef $! myHeightBag
-  liftIO $ writeIORef heightRef $! myHeight
-  currentHeight <- getCurrentHeight
-  isEmpty <- liftIO $ FastMutableIntMap.isEmpty accum
-  occ <- if heightSlotPassed currentHeight myHeight -- If we should have fired by now
-    then if isEmpty
-         then return Nothing
-         else liftIO $ Just <$> FastMutableIntMap.getFrozenAndClear accum
-    else do when (not isEmpty) scheduleSelf -- We have things accumulated, but we shouldn't have fired them yet
-            return Nothing
-  defer $ SomeMergeInit $ do
-    let updateMe a = SomeMergeUpdate u invalidateMyHeight recalculateMyHeight
-          where
-            u = do
-              let f k newParent = subscribeMergeParent heightBagRef newParent $ mySubscriber k
-              newSubscriptions <- FastMutableIntMap.traverseIntMapPatchWithKey f a
-              oldParents <- liftIO $ FastMutableIntMap.applyPatch parents newSubscriptions
-              liftIO $ for_ oldParents $ forgetMergeParentHeight heightBagRef
-              return $ IntMap.elems oldParents
-    let changeSubscriber = Subscriber
-          { subscriberPropagate = \a -> {-# SCC "traverseMergeChange" #-} do
-              tracePropagate (Proxy :: Proxy x) $ "SubscriberMergeInt/Change"
-              defer $ updateMe a
-          , subscriberInvalidateHeight = \_ -> return ()
-          , subscriberRecalculateHeight = \_ -> return ()
-          }
-    SubscribeResult changeSubscription change <- subscribeAndRead (dynamicUpdated d) changeSubscriber
-    forM_ change $ \c -> defer $ updateMe c
-    -- We explicitly hold on to the unsubscribe function from subscribing to the update event.
-    -- If we don't do this, there are certain cases where mergeCheap will fail to properly retain
-    -- its subscription.
-    liftIO $ writeIORef changeSubdRef (changeSubscriber, changeSubscription)
-  let unsubscribeAll = traverse_ (unsubscribe . snd) =<< FastMutableIntMap.toList parents
-  pure $ SubscribeResult (EventSubscription unsubscribeAll subscribed) occ
+      eventOfIdentity :: forall b. Event x b -> Event x (Identity b)
+      eventOfIdentity = coerce
+
+      updateMe :: MergeUpdateFunc (IntMapOf a) Identity x (PatchIntMap (Event x a)) (MergeSubscribedParent x)
+      updateMe subscriber heightBagRef oldParents (PatchIntMap p) =
+        updateMergeParents eventOfIdentity subscriber heightBagRef oldParents (IntMapOf (coerce p) :: IntMapOf a (ComposeMaybe (Event x)))
+
+      -- Not re-using 'initMergeParents' here; inserting each parent into
+      -- IntMaps directly allocates less than going through lists of 'DSum'
+      -- entries with 'Const2' keys and 'mapFromDistinctAscList'.
+      getInitialSubscribers :: MergeInitFunc (IntMapOf a) Identity (IntMap (Event x a)) x (MergeSubscribedParent x)
+      getInitialSubscribers initialParents subscriber = do
+        occurrencesRef <- liftIO $ newIORef IntMap.empty
+        parentsRef <- liftIO $ newIORef IntMap.empty
+        heights <- forM (IntMap.toList initialParents) $ \(k, e) -> do
+          SubscribeResult subscription parentOcc <- subscribeAndRead (eventOfIdentity e) (subscriber $ pure $ Const2 k)
+          liftIO $ do
+            for_ parentOcc $ \occurrence -> modifyIORef' occurrencesRef $ IntMap.insert k occurrence
+            modifyIORef' parentsRef $ IntMap.insert k $ MergeSubscribedParent subscription
+            eventSubscriptionHeight subscription
+        occurrences <- liftIO $ readIORef occurrencesRef
+        parents <- liftIO $ readIORef parentsRef
+        pure (IntMapOf occurrences, heights, IntMapOf parents)
 
 newtype EventSelector x k = EventSelector { select :: forall a. k a -> Event x a }
 newtype EventSelectorG x k v = EventSelectorG { selectG :: forall a. k a -> Event x (v a) }
