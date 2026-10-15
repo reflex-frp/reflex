@@ -347,12 +347,11 @@ headE originalE = do
                 -- teardown-then-revive when downstream would re-subscribe:
                 propagate a subscribers
                 unsubscribeAfterOccurrence occRef
-            , subscriberInvalidateHeight = \old -> do
-                writeIORef heightRef invalidHeight
-                WeakBag.traverse_ subscribers $ invalidateSubscriberHeight old
-            , subscriberRecalculateHeight = \new -> do
-                writeIORef heightRef $! new
-                WeakBag.traverse_ subscribers $ recalculateSubscriberHeight new
+            , subscriberInvalidateHeight = \_ ->
+                invalidateOwnHeight heightRef $ WeakBag.traverse_ subscribers . invalidateSubscriberHeight
+            , subscriberRecalculateHeight =
+                recalculateOwnHeight heightRef (WeakBag.traverse_ subscribers . recalculateSubscriberHeight)
+                . pure
             }
           liftIO $ writeIORef heightRef =<<
             getEventSubscribedHeight (_eventSubscription_subscribed parentSubscription)
