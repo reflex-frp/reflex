@@ -1988,6 +1988,16 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
           EQ -> heightBagSuccHeight heights
           GT -> error $ "merge: more heights (" <> show (heightBagSize heights) <> ") than parents (" <> show n <> ")"
 
+      invalidateMyHeightOnParentChange = do
+        n <- numParents
+        heights <- readIORef heightBagRef
+        own <- readIORef heightRef
+        case own of
+          ValidHeight ->
+            when (heightBagSize heights /= n || compareHeight own (heightBagSuccHeight heights) /= EQ)
+              invalidateMyHeight
+          InvalidHeight -> pure ()
+
       {-# INLINE parentSubscriber #-}
       parentSubscriber :: forall a. EventM x (MapKey map a) -> Subscriber x (v a)
       parentSubscriber getKey = Subscriber
@@ -2004,11 +2014,22 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
             when (mapNull oldM) $ do -- Only schedule the firing once
               height <- liftIO $ readIORef heightRef
               scheduleSelf height
-        , subscriberInvalidateHeight = \old -> do --TODO: When removing a parent doesn't actually change the height, maybe we can avoid invalidating
-            modifyIORef' heightBagRef $ heightBagRemove old
-            invalidateMyHeight
+        , subscriberInvalidateHeight = \old -> do
+            heights <- readIORef heightBagRef
+            let heights' = heightBagRemove old heights
+            writeIORef heightBagRef $! heights'
+            own <- readIORef heightRef
+            case own of
+              ValidHeight ->
+                when (compareHeight (heightBagSuccHeight heights') (heightBagSuccHeight heights) == LT)
+                  invalidateMyHeight
+              InvalidHeight -> pure ()
         , subscriberRecalculateHeight = \new -> do
             modifyIORef' heightBagRef $ heightBagAdd new
+            own <- readIORef heightRef
+            case own of
+              ValidHeight -> when (compareHeight own new /= GT) invalidateMyHeight
+              InvalidHeight -> pure ()
             recalculateMyHeight
         }
 
@@ -2020,7 +2041,7 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
         return subscriptionsToKill
 
       deferParentUpdate patch =
-        defer $ SomeMergeUpdate (updateParents patch) invalidateMyHeight recalculateMyHeight
+        defer $ SomeMergeUpdate (updateParents patch) invalidateMyHeightOnParentChange recalculateMyHeight
 
   (dm, heights, initialParentState) <- getInitialSubscribers initialParents parentSubscriber
   let (myHeightBag, myHeight) = heightBagFromParents heights
@@ -2213,7 +2234,7 @@ runFrame a = SpiderHost $ do
               InvalidHeight -> True
         when heightChanged $
           subscriberInvalidateHeight (switchSubscribedSubscriber subscribed) myHeight
-  mapM_ _someMergeUpdate_invalidateHeight mergeUpdates --TODO: In addition to when the patch is completely empty, we should also not run this if it has some Nothing values, but none of them have actually had any effect; potentially, we could even check for Just values with no effect (e.g. by comparing their IORefs and ignoring them if they are unchanged); actually, we could just check if the new height is different
+  mapM_ _someMergeUpdate_invalidateHeight mergeUpdates
   forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mInvalidate) -> do
     unsubscribe subscription
     mapM_ invalidateCoincidenceHeight mInvalidate
