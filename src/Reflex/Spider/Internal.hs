@@ -274,18 +274,64 @@ instance Witherable (SubscribeResult x) where
 subscribeAndRead :: Event x a -> Subscriber x a -> EventM x (SubscribeResult x a)
 subscribeAndRead = unEvent
 
+-- Rewrite rules for cached events
+--
+-- Before phase 1, the "expand" rules rewrite each cached primitive to
+-- cacheEvent over its uncached event, and the other rules simplify the result.
+-- From phase 1, the "contract" rules turn each remaining cacheEvent over an
+-- uncached event back into the cached primitive, or into a fused primitive such
+-- as pushSwitch when there is a pushCheap in between. cacheEvent, the uncached
+-- events, the cached primitives and holdBehavior are not inlined before
+-- phase 0, so that the rules can match them. fanG, fanInt and headE are only
+-- in rules that are active before phase 1, so they are not inlined before
+-- phase 1.
 {-# RULES
-"cacheEvent/cacheEvent" forall e. cacheEvent (cacheEvent e) = cacheEvent e
-"cacheEvent/pushCheap" forall f e. pushCheap f (cacheEvent e) = cacheEvent (pushCheap f e)
-"hold/cacheEvent" forall f e. hold f (cacheEvent e) = hold f e
+"push/expand" [~1] forall f e. push f e = cacheEvent (pushCheap f e)
+"switch/expand" [~1] forall b. switch b = cacheEvent (switchUncached b)
+"coincidence/expand" [~1] forall e. coincidence e = cacheEvent (coincidenceUncached e)
+"mergeInt/expand" [~1] forall d. mergeInt d = cacheEvent (mergeIntCheap d)
+"mergeG/expand" [~1] forall (nt :: forall a. q a -> Event x (v a)) (d :: DynamicS x (PatchDMap k q)). mergeG nt d = cacheEvent (mergeCheap nt d)
+"mergeWithMove/expand" [~1] forall (nt :: forall a. q a -> Event x (v a)) (d :: DynamicS x (PatchDMapWithMove k q)). mergeWithMove nt d = cacheEvent (mergeCheapWithMove nt d)
+
+"cacheEvent/cacheEvent" [~1] forall e. cacheEvent (cacheEvent e) = cacheEvent e
+"pushCheap/cacheEvent" [~1] forall f e. pushCheap f (cacheEvent e) = cacheEvent (pushCheap f e)
+"pushCheap/pushCheap" [~1] forall f g e. pushCheap f (pushCheap g e) = pushCheap (composePush f g) e
+"coincidenceUncached/cacheEvent" [~1] forall e. cacheEvent (coincidenceUncached (cacheEvent e)) = cacheEvent (coincidenceUncached e)
+"pushCheap/coincidenceUncached/cacheEvent" [~1] forall f e. cacheEvent (pushCheap f (coincidenceUncached (cacheEvent e))) = cacheEvent (pushCheap f (coincidenceUncached e))
+"fanG/cacheEvent" [~1] forall e. fanG (cacheEvent e) = fanG e
+"fanInt/cacheEvent" [~1] forall e. fanInt (cacheEvent e) = fanInt e
+"headE/cacheEvent" [~1] forall e. headE (cacheEvent e) = headE e
+"holdBehavior/cacheEvent" [~1] forall v e. holdBehavior v (cacheEvent e) = holdBehavior v e
+
+"push/contract" [1] forall f e. cacheEvent (pushCheap f e) = push f e
+"switch/contract" [1] forall b. cacheEvent (switchUncached b) = switch b
+"coincidence/contract" [1] forall e. cacheEvent (coincidenceUncached e) = coincidence e
+"mergeInt/contract" [1] forall d. cacheEvent (mergeIntCheap d) = mergeInt d
+"mergeG/contract" [1] forall (nt :: forall a. q a -> Event x (v a)) (d :: DynamicS x (PatchDMap k q)). cacheEvent (mergeCheap nt d) = mergeG nt d
+"mergeWithMove/contract" [1] forall (nt :: forall a. q a -> Event x (v a)) (d :: DynamicS x (PatchDMapWithMove k q)). cacheEvent (mergeCheapWithMove nt d) = mergeWithMove nt d
+
+"pushSwitch/contract" [1] forall f b. cacheEvent (pushCheap f (switchUncached b)) = pushSwitch f b
+"pushCoincidence/contract" [1] forall f e. cacheEvent (pushCheap f (coincidenceUncached e)) = pushCoincidence f e
+"pushMergeInt/contract" [1] forall f d. cacheEvent (pushCheap f (mergeIntCheap d)) = pushMergeInt f d
+"pushMergeG/contract" [1] forall (f :: DMap k v -> ComputeM x (Maybe c)) (nt :: forall a. q a -> Event x (v a)) (d :: DynamicS x (PatchDMap k q)). cacheEvent (pushCheap f (mergeCheap nt d)) = pushMergeG f nt d
+"pushMergeWithMove/contract" [1] forall (f :: DMap k v -> ComputeM x (Maybe c)) (nt :: forall a. q a -> Event x (v a)) (d :: DynamicS x (PatchDMapWithMove k q)). cacheEvent (pushCheap f (mergeCheapWithMove nt d)) = pushMergeWithMove f nt d
   #-}
+
+-- | Used by the rule "pushCheap/pushCheap".
+{-# INLINE composePush #-}
+composePush :: (b -> ComputeM x (Maybe c)) -> (a -> ComputeM x (Maybe b)) -> a -> ComputeM x (Maybe c)
+composePush f g a = g a >>= maybe (return Nothing) f
 
 -- | Construct an 'Event' equivalent to that constructed by 'push', but with no
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
-{-# INLINE [1] pushCheap #-}
+{-# INLINE [0] pushCheap #-}
 pushCheap :: forall (x :: Type) a b. HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
-pushCheap !f e = Event $ \sub -> do
+pushCheap = pushCheapImpl
+
+{-# INLINE pushCheapImpl #-}
+pushCheapImpl :: forall (x :: Type) a b. HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
+pushCheapImpl !f e = Event $ \sub -> do
   wither f <=< subscribeAndRead e $ debugSubscriber' "push" $ sub
     { subscriberPropagate = \a -> do
         mb <- f a
@@ -315,6 +361,7 @@ data HeadEState x a
   | HeadEStateOccurred {-# UNPACK #-} !(IORef (Maybe a))
 
 -- | Specialized implementation of 'Reflex.Class.slowHeadE'.
+{-# NOINLINE [1] headE #-}
 headE :: forall x m a. (HasSpiderTimeline x, Defer (SomeMergeInit x) m) => Event x a -> m (Event x a)
 headE originalE = do
   stateRef <- liftIO $ newIORef (HeadEStateInitial originalE :: HeadEState x a)
@@ -420,12 +467,17 @@ now = do
 -- | Construct an 'Event' whose value is guaranteed not to be recomputed
 -- repeatedly
 --
---TODO: Try a caching strategy where we subscribe directly to the parent when
---there's only one subscriber, and then build our own WeakBag only when a second
---subscriber joins
+-- The cached primitives use cacheEventImpl and the Impl versions of the
+-- uncached events, because the "push/contract" rule would rewrite the body of
+-- push (@cacheEvent (pushCheap f e)@) into a call to push.
 {-# NOINLINE [0] cacheEvent #-}
+{-# SPECIALIZE cacheEvent :: Event Global a -> Event Global a #-}
 cacheEvent :: forall x a. HasSpiderTimeline x => Event x a -> Event x a
-cacheEvent e =
+cacheEvent = cacheEventImpl
+
+{-# INLINE cacheEventImpl #-}
+cacheEventImpl :: forall x a. HasSpiderTimeline x => Event x a -> Event x a
+cacheEventImpl e =
 #ifdef DEBUG_TRACE_EVENTS
   withStackOneLine $ \callSite -> Event $
 #else
@@ -623,6 +675,7 @@ newSubscriberFan self = debugSubscriber ("SubscriberFan " <> showNodeId self) $ 
       mapFor_ subscribers $ \(FanSubscribers bag) -> WeakBag.traverse_ bag $ recalculateSubscriberHeight new
   }
 
+{-# INLINE newSubscriberCoincidenceOuter #-}
 newSubscriberCoincidenceOuter :: forall x b. HasSpiderTimeline x => CoincidenceSubscribed x b -> IO (Subscriber x (Event x b))
 newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseCoincidenceOuter" #-} do
@@ -647,6 +700,7 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
   , subscriberRecalculateHeight = \_ -> recalculateCoincidenceHeight subscribed
   }
 
+{-# INLINE newSubscriberCoincidenceInner #-}
 newSubscriberCoincidenceInner :: forall x a. HasSpiderTimeline x => CoincidenceSubscribed x a -> IO (Subscriber x a)
 newSubscriberCoincidenceInner subscribed = debugSubscriber ("SubscriberCoincidenceInner" <> showNodeId subscribed) $ (coincidenceSubscribedSubscriber subscribed)
   { subscriberInvalidateHeight  = \_ -> invalidateCoincidenceHeight subscribed
@@ -758,6 +812,12 @@ behaviorHold !h = Behavior $ readHoldTracked h
 
 behaviorHoldIdentity :: Hold x (Identity a) -> Behavior x a
 behaviorHoldIdentity = behaviorHold
+
+-- | Unlike with hold, the Hold is the only subscriber of the input event, so
+-- the rule "holdBehavior/cacheEvent" can drop a cacheEvent on it.
+{-# INLINE [0] holdBehavior #-}
+holdBehavior :: Defer (SomeHoldInit x) m => a -> Event x a -> m (Behavior x a)
+holdBehavior v0 e = behaviorHoldIdentity <$> hold v0 (coerce e)
 
 behaviorConst :: a -> Behavior x a
 behaviorConst !a = Behavior $ return a
@@ -1335,9 +1395,41 @@ instance HasSpiderTimeline x => Functor (Event x) where
 instance Functor (Behavior x) where
   fmap f = pull . fmap f . readBehaviorTracked
 
-{-# INLINE push #-}
+-- | See the comment at cacheEvent for why this is not
+-- @cacheEvent (pushCheap f e)@.
+{-# NOINLINE [0] push #-}
+{-# SPECIALIZE push :: (a -> ComputeM Global (Maybe b)) -> Event Global a -> Event Global b #-}
 push :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
-push f e = cacheEvent (pushCheap f e)
+push f e = cacheEventImpl (pushCheapImpl f e)
+
+{-# NOINLINE [0] pushSwitch #-}
+{-# SPECIALIZE pushSwitch :: (a -> ComputeM Global (Maybe b)) -> Behavior Global (Event Global a) -> Event Global b #-}
+pushSwitch :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Behavior x (Event x a) -> Event x b
+pushSwitch f b = cacheEventImpl (pushCheapImpl f (switchUncachedImpl b))
+
+{-# NOINLINE [0] pushCoincidence #-}
+{-# SPECIALIZE pushCoincidence :: (a -> ComputeM Global (Maybe c)) -> Event Global (R.Event (SpiderTimeline Global) a) -> Event Global c #-}
+pushCoincidence :: HasSpiderTimeline x => (a -> ComputeM x (Maybe c)) -> Event x (R.Event (SpiderTimeline x) a) -> Event x c
+pushCoincidence f e = cacheEventImpl (pushCheapImpl f (coincidenceUncachedImpl e))
+
+{-# NOINLINE [0] pushMergeInt #-}
+{-# SPECIALIZE pushMergeInt :: (IntMap a -> ComputeM Global (Maybe b)) -> DynamicS Global (PatchIntMap (Event Global a)) -> Event Global b #-}
+pushMergeInt :: HasSpiderTimeline x => (IntMap a -> ComputeM x (Maybe b)) -> DynamicS x (PatchIntMap (Event x a)) -> Event x b
+pushMergeInt f d = cacheEventImpl (pushCheapImpl f (mergeIntCheapImpl d))
+
+{-# INLINE [0] pushMergeG #-}
+pushMergeG :: forall k q x v c. (HasSpiderTimeline x, GCompare k)
+  => (DMap k v -> ComputeM x (Maybe c))
+  -> (forall a. q a -> Event x (v a))
+  -> DynamicS x (PatchDMap k q) -> Event x c
+pushMergeG f nt d = cacheEventImpl (pushCheapImpl f (mergeCheapImpl nt d))
+
+{-# INLINE [0] pushMergeWithMove #-}
+pushMergeWithMove :: forall k q x v c. (HasSpiderTimeline x, GCompare k)
+  => (DMap k v -> ComputeM x (Maybe c))
+  -> (forall a. q a -> Event x (v a))
+  -> DynamicS x (PatchDMapWithMove k q) -> Event x c
+pushMergeWithMove f nt d = cacheEventImpl (pushCheapImpl f (mergeCheapWithMoveImpl nt d))
 
 {-# INLINABLE pull #-}
 pull :: BehaviorM x a -> Behavior x a
@@ -1354,13 +1446,19 @@ pull a = unsafePerformIO $ do
 #endif
     }
 
-{-# INLINE switch #-}
+{-# NOINLINE [0] switch #-}
+{-# SPECIALIZE switch :: Behavior Global (Event Global a) -> Event Global a #-}
 switch :: HasSpiderTimeline x => Behavior x (Event x a) -> Event x a
-switch b = cacheEvent (switchUncached b)
+switch b = cacheEventImpl (switchUncachedImpl b)
 
-{-# INLINE [1] switchUncached #-}
+{-# NOINLINE [0] switchUncached #-}
+{-# SPECIALIZE switchUncached :: Behavior Global (Event Global a) -> Event Global a #-}
 switchUncached :: forall x a. HasSpiderTimeline x => Behavior x (Event x a) -> Event x a
-switchUncached b = Event $ \sub -> do
+switchUncached = switchUncachedImpl
+
+{-# INLINE switchUncachedImpl #-}
+switchUncachedImpl :: forall x a. HasSpiderTimeline x => Behavior x (Event x a) -> Event x a
+switchUncachedImpl b = Event $ \sub -> do
   heightRef <- liftIO $ newIORef $ error "switchUncached: height not yet known"
   currentParentRef <- liftIO $ newIORef $ error "switchUncached: current parent not yet subscribed"
   invalidatorRef <- liftIO $ newIORef $ error "switchUncached: invalidator not yet created"
@@ -1412,13 +1510,22 @@ switchUncached b = Event $ \sub -> do
       })
     parentOcc
 
-{-# INLINE coincidence #-}
-coincidence :: HasSpiderTimeline x => Event x (Event x a) -> Event x a
-coincidence e = cacheEvent (coincidenceUncached e)
+-- The inner events on coincidence have the type of the Reflex instance, so that
+-- the instance passes the outer event to coincidence without a coerce: the
+-- rules that drop a cacheEvent on the outer event don't match through a cast.
+{-# NOINLINE [0] coincidence #-}
+{-# SPECIALIZE coincidence :: Event Global (R.Event (SpiderTimeline Global) a) -> Event Global a #-}
+coincidence :: HasSpiderTimeline x => Event x (R.Event (SpiderTimeline x) a) -> Event x a
+coincidence e = cacheEventImpl (coincidenceUncachedImpl e)
 
-{-# INLINE [1] coincidenceUncached #-}
-coincidenceUncached :: forall x a. HasSpiderTimeline x => Event x (Event x a) -> Event x a
-coincidenceUncached outer = Event $ \sub -> do
+{-# NOINLINE [0] coincidenceUncached #-}
+{-# SPECIALIZE coincidenceUncached :: Event Global (R.Event (SpiderTimeline Global) a) -> Event Global a #-}
+coincidenceUncached :: forall x a. HasSpiderTimeline x => Event x (R.Event (SpiderTimeline x) a) -> Event x a
+coincidenceUncached = coincidenceUncachedImpl
+
+{-# INLINE coincidenceUncachedImpl #-}
+coincidenceUncachedImpl :: forall x a. HasSpiderTimeline x => Event x (R.Event (SpiderTimeline x) a) -> Event x a
+coincidenceUncachedImpl outer = Event $ \sub -> do
   heightRef <- liftIO $ newIORef $ error "coincidenceUncached: height not yet known"
   outerParentRef <- liftIO $ newIORef $ error "coincidenceUncached: outer parent not yet subscribed"
   innerParentRef <- liftIO $ newIORef Nothing
@@ -1435,13 +1542,13 @@ coincidenceUncached outer = Event $ \sub -> do
 #endif
         }
   subOuter <- liftIO $ newSubscriberCoincidenceOuter subscribed
-  SubscribeResult outerSubscription outerOcc <- subscribeAndRead outer subOuter
+  SubscribeResult outerSubscription outerOcc <- subscribeAndRead outer (coerce subOuter)
   liftIO $ writeIORef outerParentRef outerSubscription
   outerHeight <- liftIO $ eventSubscriptionHeight outerSubscription
   (occ, height, mInnerSubd) <- case outerOcc of
     Nothing -> return (Nothing, outerHeight, Nothing)
     Just o -> do
-      (occ, maybeRaisedToInnerHeight, innerSubd) <- subscribeCoincidenceInner o outerHeight subscribed
+      (occ, maybeRaisedToInnerHeight, innerSubd) <- subscribeCoincidenceInner (unSpiderEvent o) outerHeight subscribed
       return (occ, fromMaybe outerHeight maybeRaisedToInnerHeight, Just innerSubd)
   liftIO $ writeIORef heightRef $! height
   liftIO $ writeIORef innerParentRef mInnerSubd
@@ -1783,25 +1890,33 @@ subscribeRootSubscribed subscribed sub = WeakBag.insert sub (rootSubscribedSubsc
 
 newtype EventSelectorInt x a = EventSelectorInt { selectInt :: Int -> Event x a }
 
-{-# INLINE mergeG #-}
+{-# INLINE [0] mergeG #-}
 mergeG :: forall k q x v. (HasSpiderTimeline x, GCompare k)
   => (forall a. q a -> Event x (v a))
   -> DynamicS x (PatchDMap k q) -> Event x (DMap k v)
-mergeG nt d = cacheEvent (mergeCheap nt d)
+mergeG nt d = cacheEventImpl (mergeCheapImpl nt d)
 
-{-# INLINE mergeWithMove #-}
+{-# INLINE [0] mergeWithMove #-}
 mergeWithMove :: forall k v q x. (HasSpiderTimeline x, GCompare k)
   => (forall a. q a -> Event x (v a))
   -> DynamicS x (PatchDMapWithMove k q) -> Event x (DMap k v)
-mergeWithMove nt d = cacheEvent (mergeCheapWithMove nt d)
+mergeWithMove nt d = cacheEventImpl (mergeCheapWithMoveImpl nt d)
 
-{-# INLINE [1] mergeCheap #-}
+{-# INLINE [0] mergeCheap #-}
 mergeCheap
   :: forall k x q v. (HasSpiderTimeline x, GCompare k)
   => (forall a. q a -> Event x (v a))
   -> DynamicS x (PatchDMap k q)
   -> Event x (DMap k v)
-mergeCheap nt = genericMergeCheap unMergeSubscribedParent getInitialSubscribers updateMe
+mergeCheap = mergeCheapImpl
+
+{-# INLINE mergeCheapImpl #-}
+mergeCheapImpl
+  :: forall k x q v. (HasSpiderTimeline x, GCompare k)
+  => (forall a. q a -> Event x (v a))
+  -> DynamicS x (PatchDMap k q)
+  -> Event x (DMap k v)
+mergeCheapImpl nt = genericMergeCheap unMergeSubscribedParent getInitialSubscribers updateMe
   where
       updateMe :: MergeUpdateFunc (DMap k) v x (PatchDMap k q) (MergeSubscribedParent x)
       updateMe subscriber heightBagRef oldParents (PatchDMap p) =
@@ -1810,12 +1925,19 @@ mergeCheap nt = genericMergeCheap unMergeSubscribedParent getInitialSubscribers 
       getInitialSubscribers :: MergeInitFunc (DMap k) v (DMap k q) x (MergeSubscribedParent x)
       getInitialSubscribers = initMergeParents nt (\k -> pure (pure k, MergeSubscribedParent))
 
-{-# INLINE [1] mergeCheapWithMove #-}
+{-# INLINE [0] mergeCheapWithMove #-}
 mergeCheapWithMove :: forall k x v q. (HasSpiderTimeline x, GCompare k)
   => (forall a. q a -> Event x (v a))
   -> DynamicS x (PatchDMapWithMove k q)
   -> Event x (DMap k v)
-mergeCheapWithMove nt = genericMergeCheap _mergeSubscribedParentWithMove_subscription getInitialSubscribers updateMe
+mergeCheapWithMove = mergeCheapWithMoveImpl
+
+{-# INLINE mergeCheapWithMoveImpl #-}
+mergeCheapWithMoveImpl :: forall k x v q. (HasSpiderTimeline x, GCompare k)
+  => (forall a. q a -> Event x (v a))
+  -> DynamicS x (PatchDMapWithMove k q)
+  -> Event x (DMap k v)
+mergeCheapWithMoveImpl nt = genericMergeCheap _mergeSubscribedParentWithMove_subscription getInitialSubscribers updateMe
   where
       updateMe :: MergeUpdateFunc (DMap k) v x (PatchDMapWithMove k q) (MergeSubscribedParentWithMove x k)
       updateMe subscriber heightBagRef oldParents p = do
@@ -2073,12 +2195,19 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
   pure $ SubscribeResult (EventSubscription unsubscribeAll subscribed) occ
 
 
+{-# NOINLINE [0] mergeInt #-}
+{-# SPECIALIZE mergeInt :: DynamicS Global (PatchIntMap (Event Global a)) -> Event Global (IntMap a) #-}
 mergeInt :: forall x a. (HasSpiderTimeline x) => DynamicS x (PatchIntMap (Event x a)) -> Event x (IntMap a)
-mergeInt = cacheEvent . mergeIntCheap
+mergeInt d = cacheEventImpl (mergeIntCheapImpl d)
 
-{-# INLINABLE mergeIntCheap #-}
+{-# NOINLINE [0] mergeIntCheap #-}
+{-# SPECIALIZE mergeIntCheap :: DynamicS Global (PatchIntMap (Event Global a)) -> Event Global (IntMap a) #-}
 mergeIntCheap :: forall x a. (HasSpiderTimeline x) => DynamicS x (PatchIntMap (Event x a)) -> Event x (IntMap a)
-mergeIntCheap = coerceEvent . genericMergeCheap unMergeSubscribedParent getInitialSubscribers updateMe
+mergeIntCheap = mergeIntCheapImpl
+
+{-# INLINE mergeIntCheapImpl #-}
+mergeIntCheapImpl :: forall x a. (HasSpiderTimeline x) => DynamicS x (PatchIntMap (Event x a)) -> Event x (IntMap a)
+mergeIntCheapImpl = coerceEvent . genericMergeCheap unMergeSubscribedParent getInitialSubscribers updateMe
   where
       coerceEvent :: Event x (IntMapOf a Identity) -> Event x (IntMap a)
       coerceEvent = coerce
@@ -2110,11 +2239,13 @@ mergeIntCheap = coerceEvent . genericMergeCheap unMergeSubscribedParent getIniti
 newtype EventSelector x k = EventSelector { select :: forall a. k a -> Event x a }
 newtype EventSelectorG x k v = EventSelectorG { selectG :: forall a. k a -> Event x (v a) }
 
+{-# NOINLINE [1] fanG #-}
 fanG :: (HasSpiderTimeline x, GCompare k) => Event x (DMap k v) -> EventSelectorG x k v
 fanG e = unsafePerformIO $ do
   self <- newFan
   pure $ EventSelectorG $ \k -> eventFan k e self
 
+{-# NOINLINE [1] fanInt #-}
 fanInt :: forall x a. HasSpiderTimeline x => Event x (IntMap a) -> EventSelectorInt x a
 fanInt e = unsafePerformIO $ do
   self <- newFan
@@ -2403,7 +2534,9 @@ instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (Eve
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (EventM x) where
   {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (EventM Global) #-}
-  {-# INLINABLE hold #-}
+  -- hold and headE are INLINE in all four MonadHold instances, for the reason
+  -- in the Reflex instance.
+  {-# INLINE hold #-}
   hold = holdSpiderEventM
   {-# INLINABLE holdDyn #-}
   holdDyn = holdDynSpiderEventM
@@ -2411,7 +2544,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Event
   holdIncremental = holdIncrementalSpiderEventM
   {-# INLINABLE buildDynamic #-}
   buildDynamic = buildDynamicSpiderEventM
-  {-# INLINABLE headE #-}
+  {-# INLINE headE #-}
   headE (SpiderEvent e) = SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = nowSpiderEventM
@@ -2427,15 +2560,15 @@ instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (Spi
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderPushM x) where
   {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (SpiderPushM Global) #-}
-  {-# INLINABLE hold #-}
-  hold v0 e = Reflex.Class.current <$> Reflex.Class.holdDyn v0 e
+  {-# INLINE hold #-}
+  hold v0 (SpiderEvent e) = SpiderPushM $ SpiderBehavior <$> holdBehavior v0 e
   {-# INLINABLE holdDyn #-}
   holdDyn v0 (SpiderEvent e) = SpiderPushM $ fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce e
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 (SpiderEvent e) = SpiderPushM $ SpiderIncremental . dynamicHold <$> Reflex.Spider.Internal.hold v0 e
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 (SpiderEvent e) = SpiderPushM $ fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce e
-  {-# INLINABLE headE #-}
+  {-# INLINE headE #-}
   headE (SpiderEvent e) = SpiderPushM $ SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = SpiderPushM nowSpiderEventM
@@ -2455,7 +2588,7 @@ newJoinDyn d =
   let readV0 = readBehaviorTracked . dynamicCurrent =<< readBehaviorTracked (dynamicCurrent d)
       eOuter = Reflex.Spider.Internal.push (fmap (Just . Identity) . readBehaviorUntracked . dynamicCurrent . runIdentity) $ dynamicUpdated d
       eInner = Reflex.Spider.Internal.switch $ dynamicUpdated <$> dynamicCurrent d
-      eBoth = Reflex.Spider.Internal.coincidence $ dynamicUpdated . runIdentity <$> dynamicUpdated d
+      eBoth = Reflex.Spider.Internal.coincidence $ SpiderEvent . dynamicUpdated . runIdentity <$> dynamicUpdated d
       v' = unSpiderEvent $ Reflex.Class.leftmost $ map SpiderEvent [eBoth, eOuter, eInner]
   in Reflex.Spider.Internal.unsafeBuildDynamic readV0 v'
 
@@ -2474,8 +2607,9 @@ instance HasSpiderTimeline x => Applicative (Reflex.Class.Dynamic (SpiderTimelin
   a *> b = R.unsafeBuildDynamic (R.sample $ R.current b) $ R.leftmost [R.updated b, R.tag (R.current b) $ R.updated a]
   (<*) = flip (*>) -- There are no effects, so order doesn't matter
 
+{-# INLINE holdSpiderEventM #-}
 holdSpiderEventM :: HasSpiderTimeline x => a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Behavior (SpiderTimeline x) a)
-holdSpiderEventM v0 e = fmap (SpiderBehavior . behaviorHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
+holdSpiderEventM v0 e = fmap SpiderBehavior $ holdBehavior v0 $ unSpiderEvent e
 
 holdDynSpiderEventM :: HasSpiderTimeline x => a -> Reflex.Class.Event (SpiderTimeline x) a -> EventM x (Reflex.Class.Dynamic (SpiderTimeline x) a)
 holdDynSpiderEventM v0 e = fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
@@ -2492,15 +2626,15 @@ instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (Spi
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderHostFrame x) where
   {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (SpiderHostFrame Global) #-}
-  {-# INLINABLE hold #-}
-  hold v0 e = SpiderHostFrame $ fmap (SpiderBehavior . behaviorHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
+  {-# INLINE hold #-}
+  hold v0 e = SpiderHostFrame $ fmap SpiderBehavior $ holdBehavior v0 $ unSpiderEvent e
   {-# INLINABLE holdDyn #-}
   holdDyn v0 e = SpiderHostFrame $ fmap (SpiderDynamic . dynamicHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
   {-# INLINABLE holdIncremental #-}
   holdIncremental v0 e = SpiderHostFrame $ fmap (SpiderIncremental . dynamicHold) $ Reflex.Spider.Internal.hold v0 $ unSpiderEvent e
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 e = SpiderHostFrame $ fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
-  {-# INLINABLE headE #-}
+  {-# INLINE headE #-}
   headE (SpiderEvent e) = SpiderHostFrame $ SpiderEvent <$> Reflex.Spider.Internal.headE e
   {-# INLINABLE now #-}
   now = SpiderHostFrame Reflex.Class.now
@@ -2512,7 +2646,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (Ref
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Reflex.Spider.Internal.ReadPhase x) where
   {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (Reflex.Spider.Internal.ReadPhase Global) #-}
-  {-# INLINABLE hold #-}
+  {-# INLINE hold #-}
   hold v0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.hold v0 e
   {-# INLINABLE holdDyn #-}
   holdDyn v0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.holdDyn v0 e
@@ -2520,7 +2654,7 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
   holdIncremental v0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.holdIncremental v0 e
   {-# INLINABLE buildDynamic #-}
   buildDynamic getV0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.buildDynamic getV0 e
-  {-# INLINABLE headE #-}
+  {-# INLINE headE #-}
   headE e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.headE e
   {-# INLINABLE now #-}
   now = Reflex.Spider.Internal.ReadPhase Reflex.Class.now
@@ -2635,6 +2769,9 @@ newtype SpiderPushM (x :: Type) a = SpiderPushM (ComputeM x a) deriving (Functor
 
 instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# SPECIALIZE instance R.Reflex (SpiderTimeline Global) #-}
+  -- The methods that build events are INLINE, because in the SPECIALIZE
+  -- dictionary the cached primitives are already specialized and the rewrite
+  -- rules don't match them.
   newtype Behavior (SpiderTimeline x) a = SpiderBehavior { unSpiderBehavior :: Behavior x a }
   newtype Event (SpiderTimeline x) a = SpiderEvent { unSpiderEvent :: Event x a }
   newtype Dynamic (SpiderTimeline x) a = SpiderDynamic { unSpiderDynamic :: DynamicS x (Identity a) } -- deriving (Functor, Applicative, Monad)
@@ -2651,34 +2788,34 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   pushCheap f = SpiderEvent . pushCheap (coerce f) . unSpiderEvent
   {-# INLINABLE pull #-}
   pull = SpiderBehavior . pull . coerce
-  {-# INLINABLE fanG #-}
+  {-# INLINE fanG #-}
   fanG e = R.EventSelectorG $ SpiderEvent . selectG (fanG (unSpiderEvent e))
-  {-# INLINABLE mergeG #-}
+  {-# INLINE mergeG #-}
   mergeG
     :: forall k2 (k :: k2 -> Type) q (v :: k2 -> Type). GCompare k
     => (forall a. q a -> R.Event (SpiderTimeline x) (v a))
     -> DMap k q
     -> R.Event (SpiderTimeline x) (DMap k v)
   mergeG nt = SpiderEvent . mergeG (unSpiderEvent #. nt) . dynamicConst
-  {-# INLINABLE switch #-}
+  {-# INLINE switch #-}
   switch = SpiderEvent . switch . (coerce :: Behavior x (R.Event (SpiderTimeline x) a) -> Behavior x (Event x a)) . unSpiderBehavior
-  {-# INLINABLE coincidence #-}
-  coincidence = SpiderEvent . coincidence . (coerce :: Event x (R.Event (SpiderTimeline x) a) -> Event x (Event x a)) . unSpiderEvent
+  {-# INLINE coincidence #-}
+  coincidence = SpiderEvent . coincidence . unSpiderEvent
   {-# INLINABLE current #-}
   current = SpiderBehavior . dynamicCurrent . unSpiderDynamic
-  {-# INLINABLE updated #-}
+  {-# INLINE updated #-}
   updated = SpiderEvent #. dynamicUpdated .# fmap coerce . unSpiderDynamic
   {-# INLINABLE unsafeBuildDynamic #-}
   unsafeBuildDynamic readV0 v' = SpiderDynamic $ dynamicDynIdentity $ unsafeBuildDynamic (coerce readV0) $ coerce $ unSpiderEvent v'
   {-# INLINABLE unsafeBuildIncremental #-}
   unsafeBuildIncremental readV0 dv = SpiderIncremental $ dynamicDyn $ unsafeBuildDynamic (coerce readV0) $ unSpiderEvent dv
-  {-# INLINABLE mergeIncrementalG #-}
+  {-# INLINE mergeIncrementalG #-}
   mergeIncrementalG nt = SpiderEvent #. mergeG (coerce #. nt) .# unSpiderIncremental
-  {-# INLINABLE mergeIncrementalWithMoveG #-}
+  {-# INLINE mergeIncrementalWithMoveG #-}
   mergeIncrementalWithMoveG nt = SpiderEvent #. mergeWithMove (coerce #. nt) .# unSpiderIncremental
   {-# INLINABLE currentIncremental #-}
   currentIncremental = SpiderBehavior . dynamicCurrent . unSpiderIncremental
-  {-# INLINABLE updatedIncremental #-}
+  {-# INLINE updatedIncremental #-}
   updatedIncremental = SpiderEvent . dynamicUpdated . unSpiderIncremental
   {-# INLINABLE incrementalToDynamic #-}
   incrementalToDynamic (SpiderIncremental i) = SpiderDynamic $ dynamicDynIdentity $ unsafeBuildDynamic (readBehaviorUntracked $ dynamicCurrent i) $ flip push (dynamicUpdated i) $ \p -> do
@@ -2688,9 +2825,9 @@ instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   behaviorCoercion Coercion = Coercion
   dynamicCoercion Coercion = Coercion
   incrementalCoercion Coercion Coercion = Coercion
-  {-# INLINABLE mergeIntIncremental #-}
+  {-# INLINE mergeIntIncremental #-}
   mergeIntIncremental = SpiderEvent . mergeInt . coerce
-  {-# INLINABLE fanInt #-}
+  {-# INLINE fanInt #-}
   fanInt e = R.EventSelectorInt $ SpiderEvent . selectInt (fanInt (unSpiderEvent e))
 
 data RootTrigger x a = forall k. GCompare k => RootTrigger (WeakBag (Subscriber x a), IORef (DMap k Identity), k a)
