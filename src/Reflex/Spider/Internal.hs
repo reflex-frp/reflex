@@ -1498,15 +1498,6 @@ run roots after = do
   tracePropagate (Proxy :: Proxy x) "Done running an event frame"
   return result
 
-scheduleMerge' :: HasSpiderTimeline x => Height -> IORef Height -> EventM x () -> EventM x ()
-scheduleMerge' initialHeight heightRef a = scheduleMerge initialHeight $ do
-  height <- liftIO $ readIORef heightRef
-  currentHeight <- getCurrentHeight
-  case height `compareHeight` currentHeight of
-    LT -> error "Somehow a merge's height has been decreased after it was scheduled"
-    GT -> scheduleMerge' height heightRef a -- The height has been increased by a coincidence event.
-    EQ -> a
-
 newtype Clear a = Clear (IORef (Maybe a))
 
 newtype RootClear k = RootClear (IORef (DMap k Identity))
@@ -1975,7 +1966,20 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
 
       numParents = mapSize <$> readIORef parentsRef
 
-      scheduleSelf height = scheduleMerge' height heightRef $ do
+      scheduleSelf height = scheduleMerge height propagateAtHeight
+
+      -- propagateAtHeight and propagateAccumulated are defined outside
+      -- scheduleSelf so that they are allocated once per subscription
+      -- instead of on every call.
+      propagateAtHeight = do
+        height <- liftIO $ readIORef heightRef
+        currentHeight <- getCurrentHeight
+        case height `compareHeight` currentHeight of
+          LT -> error "Somehow a merge's height has been decreased after it was scheduled"
+          GT -> scheduleMerge height propagateAtHeight -- The height has been increased by a coincidence event.
+          EQ -> propagateAccumulated
+
+      propagateAccumulated = do
         vals <- liftIO $ readIORef accumRef
         liftIO $ writeIORef accumRef $! mapEmpty
         --TODO: Assert that vals is not empty
