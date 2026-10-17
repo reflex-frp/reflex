@@ -190,6 +190,9 @@ library
     if impl(ghcjs)
         build-depends: ghcjs-base >=0.2 && <0.3
 
+    if impl(ghc >= 9.12)
+        ghc-options: -fexpose-overloaded-unfoldings
+
 test-suite semantics
     type:             exitcode-stdio-1.0
     main-is:          semantics.hs
