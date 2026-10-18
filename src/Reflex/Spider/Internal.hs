@@ -64,7 +64,6 @@ import Data.Type.Equality ((:~:)(Refl))
 import GHC.Exts hiding (toList, build)
 import GHC.IORef (IORef (..))
 import GHC.Stack
-import Reflex.FastWeak
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
@@ -100,9 +99,6 @@ import Data.Tree (Forest, Tree (..), drawForest)
 #ifdef DEBUG_HIDE_INTERNALS
 import Data.List (isPrefixOf)
 #endif
-
-import Data.FastWeakBag (FastWeakBag)
-import qualified Data.FastWeakBag as FastWeakBag
 
 import Data.Reflection
 import Data.Some (Some(Some))
@@ -226,6 +222,13 @@ newNodeId :: IO Int
 newNodeId = atomicModifyIORef' nextNodeIdRef $ \n -> (succ n, n)
 #endif
 
+#ifdef DEBUG_FRAME
+debugOccurrence :: Applicative m => String -> Maybe a -> m ()
+debugOccurrence message = \case
+  Just _ -> error message
+  Nothing -> pure ()
+#endif
+
 --------------------------------------------------------------------------------
 -- EventSubscription
 --------------------------------------------------------------------------------
@@ -301,7 +304,7 @@ terminalSubscriber p = Subscriber
   }
 
 data HeadESubscribed x a = HeadESubscribed
-  { headESubscribedSubscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
+  { headESubscribedSubscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
   , headESubscribedParent :: !(EventSubscription x)
   , headESubscribedOccurrence :: {-# UNPACK #-} !(IORef (Maybe a))
   , headESubscribedHeight :: {-# UNPACK #-} !(IORef Height)
@@ -310,7 +313,7 @@ data HeadESubscribed x a = HeadESubscribed
 -- | State of a 'headE' node, retains exactly what's needed for each phase.
 data HeadEState x a
   = HeadEStateInitial (Event x a)
-  | HeadEStateSubscribed !(HeadESubscribed x a) 
+  | HeadEStateSubscribed !(HeadESubscribed x a)
   | HeadEStateOccurred {-# UNPACK #-} !(IORef (Maybe a))
 
 -- | Specialized implementation of 'Reflex.Class.slowHeadE'.
@@ -324,29 +327,31 @@ headE originalE = do
           deferRecalculateHeight @x $ SomeRecalculateHeight $ do
             let heightRef = headESubscribedHeight subscribed
                 subscribers = headESubscribedSubscribers subscribed
-            invalidateOwnHeight heightRef $ FastWeakBag.traverse_ subscribers . invalidateSubscriberHeight
-            recalculateOwnHeight heightRef (FastWeakBag.traverse_ subscribers . recalculateSubscriberHeight) (pure zeroHeight)
+            invalidateOwnHeight heightRef $ WeakBag.traverse_ subscribers . invalidateSubscriberHeight
+            recalculateOwnHeight heightRef (WeakBag.traverse_ subscribers . recalculateSubscriberHeight) (pure zeroHeight)
         _ -> pure ()
       subscribeUntilHead :: EventM x (HeadEState x a)
       subscribeUntilHead = liftIO (readIORef stateRef) >>= \case
         HeadEStateInitial parentEvent -> do
-          subscribers <- liftIO FastWeakBag.empty
+          subscribers <- liftIO WeakBag.empty
           occRef <- liftIO $ newIORef Nothing
           heightRef <- liftIO $ newIORef zeroHeight
           SubscribeResult parentSubscription occ <- subscribeAndRead parentEvent $ Subscriber
             { subscriberPropagate = \a -> do
+#ifdef DEBUG_FRAME
+                liftIO $ readIORef occRef >>= debugOccurrence "headE: two occurrences in one frame"
+#endif
                 liftIO $ writeIORef occRef $ Just a
                 scheduleClear occRef
                 -- Propagating before unsubscribing can help avoid
                 -- teardown-then-revive when downstream would re-subscribe:
-                propagateFast a subscribers
+                propagate a subscribers
                 unsubscribeAfterOccurrence occRef
-            , subscriberInvalidateHeight = \old -> do
-                writeIORef heightRef invalidHeight
-                FastWeakBag.traverse_ subscribers $ invalidateSubscriberHeight old
-            , subscriberRecalculateHeight = \new -> do
-                writeIORef heightRef $! new
-                FastWeakBag.traverse_ subscribers $ recalculateSubscriberHeight new
+            , subscriberInvalidateHeight = \_ ->
+                invalidateOwnHeight heightRef $ WeakBag.traverse_ subscribers . invalidateSubscriberHeight
+            , subscriberRecalculateHeight =
+                recalculateOwnHeight heightRef (WeakBag.traverse_ subscribers . recalculateSubscriberHeight)
+                . pure
             }
           liftIO $ writeIORef heightRef =<<
             getEventSubscribedHeight (_eventSubscription_subscribed parentSubscription)
@@ -374,16 +379,16 @@ headE originalE = do
     case state of
       HeadEStateInitial _ -> error "headE in impossible HeadEStateInitial state"
       HeadEStateSubscribed subscribed -> liftIO $ do
-        ticket <- FastWeakBag.insert sub $ headESubscribedSubscribers subscribed
+        ticket <- WeakBag.insertWithoutCallback sub $ headESubscribedSubscribers subscribed
         occ <- readIORef $ headESubscribedOccurrence subscribed
         pure $ SubscribeResult
               (EventSubscription
                    { _eventSubscription_unsubscribe = do
-                       FastWeakBag.remove ticket
+                       WeakBag.remove ticket
                        touch ticket
                    , _eventSubscription_subscribed = EventSubscribed
                        { eventSubscribedHeightRef = headESubscribedHeight subscribed
-                       , eventSubscribedRetained = toAny (stateRef, ticket)
+                       , eventSubscribedRetained = toAny stateRef
 #ifdef DEBUG_CYCLES
                        , eventSubscribedGetParents = pure [_eventSubscription_subscribed $ headESubscribedParent subscribed]
                        , eventSubscribedHasOwnHeightRef = True
@@ -397,7 +402,7 @@ headE originalE = do
         pure $ SubscribeResult (EventSubscription (pure ()) eventSubscribedNever) occ
 
 data CacheSubscribed x a
-   = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(FastWeakBag (Subscriber x a))
+   = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
                      , _cacheSubscribed_parent :: {-# UNPACK #-} !(EventSubscription x)
                      , _cacheSubscribed_occurrence :: {-# UNPACK #-} !(IORef (Maybe a))
 #ifdef DEBUG_NODEIDS
@@ -419,7 +424,7 @@ now = do
 -- repeatedly
 --
 --TODO: Try a caching strategy where we subscribe directly to the parent when
---there's only one subscriber, and then build our own FastWeakBag only when a second
+--there's only one subscriber, and then build our own WeakBag only when a second
 --subscriber joins
 {-# NOINLINE [0] cacheEvent #-}
 cacheEvent :: forall x a. HasSpiderTimeline x => Event x a -> Event x a
@@ -430,19 +435,19 @@ cacheEvent e =
   Event $
 #endif
   unsafePerformIO $ do
-    mSubscribedRef :: IORef (FastWeak (CacheSubscribed x a))
-        <- newIORef emptyFastWeak
+    mSubscribedRef :: IORef (Maybe (Weak (CacheSubscribed x a)))
+        <- newIORef Nothing
     pure $ \sub -> {-# SCC "cacheEvent" #-} do
 #ifdef DEBUG_TRACE_EVENTS
           unless (BS8.null callSite) $ liftIO $ BS8.hPutStrLn stderr callSite
 #endif
-          subscribedTicket <- liftIO (readIORef mSubscribedRef >>= getFastWeakTicket) >>= \case
-            Just subscribedTicket -> return subscribedTicket
+          subscribed <- liftIO (readIORef mSubscribedRef >>= maybe (pure Nothing) deRefWeak) >>= \case
+            Just subscribed -> return subscribed
             Nothing -> do
 #ifdef DEBUG_NODEIDS
               nodeId <- liftIO newNodeId
 #endif
-              subscribers <- liftIO FastWeakBag.empty
+              subscribers <- liftIO WeakBag.empty
               occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
               SubscribeResult parentSub occ <- subscribeAndRead e
 #ifdef DEBUG_NODEIDS
@@ -451,15 +456,13 @@ cacheEvent e =
                   $ Subscriber
                   { subscriberPropagate = \a -> do
 #ifdef DEBUG_FRAME
-                      liftIO $ readIORef occRef >>= \case
-                        Just _ -> error "cacheEvent: two occurrences in one frame"
-                        Nothing -> pure ()
+                      liftIO $ readIORef occRef >>= debugOccurrence "cacheEvent: two occurrences in one frame"
 #endif
                       liftIO $ writeIORef occRef (Just a)
                       scheduleClear occRef
-                      propagateFast a subscribers
-                  , subscriberInvalidateHeight = FastWeakBag.traverse_ subscribers . invalidateSubscriberHeight
-                  , subscriberRecalculateHeight = FastWeakBag.traverse_ subscribers . recalculateSubscriberHeight
+                      propagate a subscribers
+                  , subscriberInvalidateHeight = WeakBag.traverse_ subscribers . invalidateSubscriberHeight
+                  , subscriberRecalculateHeight = WeakBag.traverse_ subscribers . recalculateSubscriberHeight
                   }
               when (isJust occ) $ do
                 liftIO $ writeIORef occRef occ -- Set the initial value of occRef; we don't need to do this if occ is Nothing
@@ -472,32 +475,29 @@ cacheEvent e =
                     , _cacheSubscribed_nodeId = nodeId
 #endif
                     }
-              subscribedTicket <- liftIO $ mkFastWeakTicket subscribed
-              liftIO $ writeIORef mSubscribedRef =<< evaluate =<< getFastWeakTicketWeak subscribedTicket
-              return subscribedTicket
-          liftIO $ cacheSubscription sub mSubscribedRef subscribedTicket
+              liftIO $ writeIORef mSubscribedRef . Just =<< mkWeakPtrWithDebug subscribed "CacheSubscribed"
+              return subscribed
+          liftIO $ cacheSubscription sub mSubscribedRef subscribed
 
-cacheSubscription :: Subscriber x a -> IORef (FastWeak (CacheSubscribed x a))
-                  -> FastWeakTicket (CacheSubscribed x a) -> IO (SubscribeResult x a)
-cacheSubscription sub mSubscribedRef subscribedTicket = do
-  subscribed <- getFastWeakTicketValue subscribedTicket
-  ticket <- FastWeakBag.insert sub $ _cacheSubscribed_subscribers subscribed
+cacheSubscription :: Subscriber x a -> IORef (Maybe (Weak (CacheSubscribed x a))) -> CacheSubscribed x a -> IO (SubscribeResult x a)
+cacheSubscription sub mSubscribedRef subscribed = do
+  ticket <- WeakBag.insertWithoutCallback sub $ _cacheSubscribed_subscribers subscribed
   occ <- readIORef $ _cacheSubscribed_occurrence subscribed
-
   let parentSub = _cacheSubscribed_parent subscribed
+      -- Prevent reboxing of the unpacked _cacheSubscribed_parent on every
+      -- subscribe.
+      unsubscribeParent = _eventSubscription_unsubscribe parentSub
       es = EventSubscription
         { _eventSubscription_unsubscribe = do
-          FastWeakBag.remove ticket
-
-          isEmpty <- FastWeakBag.isEmpty $ _cacheSubscribed_subscribers subscribed
-          when isEmpty $ do
-            writeIORef mSubscribedRef emptyFastWeak
-            unsubscribe parentSub
-          touch ticket
-          touch subscribedTicket
+            WeakBag.remove ticket
+            isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers subscribed
+            when isEmpty $ do
+              writeIORef mSubscribedRef Nothing
+              unsubscribeParent
+            touch ticket
         , _eventSubscription_subscribed = EventSubscribed
           { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed parentSub
-          , eventSubscribedRetained = toAny subscribedTicket
+          , eventSubscribedRetained = toAny subscribed
 #ifdef DEBUG_CYCLES
           , eventSubscribedGetParents = return [_eventSubscription_subscribed parentSub]
           , eventSubscribedHasOwnHeightRef = False
@@ -506,7 +506,6 @@ cacheSubscription sub mSubscribedRef subscribedTicket = do
           }
         }
   pure $ SubscribeResult es occ
-
 
 subscribe :: Event x a -> Subscriber x a -> EventM x (EventSubscription x)
 subscribe e s = subscribeSubscription <$> subscribeAndRead e s
@@ -560,7 +559,7 @@ eventFan !k p !self = Event $ \sub -> do
     let subscribedParent = _eventSubscription_subscribed parentSubscription
         subscribed = EventSubscribed
           { eventSubscribedHeightRef = eventSubscribedHeightRef subscribedParent
-          , eventSubscribedRetained = toAny (self, ticket)
+          , eventSubscribedRetained = toAny self
 #ifdef DEBUG_CYCLES
           , eventSubscribedGetParents = pure [subscribedParent]
           , eventSubscribedHasOwnHeightRef = False
@@ -614,9 +613,7 @@ newSubscriberFan :: forall x map v. (HasSpiderTimeline x, IsFanMap map) => Fan x
 newSubscriberFan self = debugSubscriber ("SubscriberFan " <> showNodeId self) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
 #ifdef DEBUG_FRAME
-      liftIO $ readIORef (_fan_occRef self) >>= \case
-        Just _ -> error "fan: two occurrences in one frame"
-        Nothing -> pure ()
+      liftIO $ readIORef (_fan_occRef self) >>= debugOccurrence "fan: two occurrences in one frame"
 #endif
       subs <- liftIO $ readIORef $ _fan_subscribers self
       tracePropagate (Proxy :: Proxy x) $ show (fanMapSize subs) <> " keys subscribed, " <> show (fanMapSize a) <> " keys firing"
@@ -635,9 +632,7 @@ newSubscriberSwitch :: forall x a. HasSpiderTimeline x => SwitchSubscribed x a -
 newSubscriberSwitch subscribed = debugSubscriber ("SubscriberSwitch" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseSwitch" #-} do
 #ifdef DEBUG_FRAME
-      liftIO $ readIORef (switchSubscribedOccurrence subscribed) >>= \case
-        Just _ -> error "switch: two occurrences in one frame"
-        Nothing -> pure ()
+      liftIO $ readIORef (switchSubscribedOccurrence subscribed) >>= debugOccurrence "switch: two occurrences in one frame"
 #endif
       liftIO $ writeIORef (switchSubscribedOccurrence subscribed) $ Just a
       scheduleClear $ switchSubscribedOccurrence subscribed
@@ -676,6 +671,9 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
             invalidateOwnHeight (coincidenceSubscribedHeight subscribed) (invalidateCoincidenceSubscribers subscribed)
             recalculateOwnHeight (coincidenceSubscribedHeight subscribed) (recalculateCoincidenceSubscribers subscribed) (pure innerHeight)
         Just o -> do -- Since it's already firing, no need to adjust height
+#ifdef DEBUG_FRAME
+          liftIO $ readIORef (coincidenceSubscribedOccurrence subscribed) >>= debugOccurrence "coincidence (outer subscriber): two occurrences in one frame"
+#endif
           liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) occ
           scheduleClear $ coincidenceSubscribedOccurrence subscribed
           propagate o $ coincidenceSubscribedSubscribers subscribed
@@ -686,15 +684,12 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
 newSubscriberCoincidenceInner :: forall x a. HasSpiderTimeline x => CoincidenceSubscribed x a -> IO (Subscriber x a)
 newSubscriberCoincidenceInner subscribed = debugSubscriber ("SubscriberCoincidenceInner" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseCoincidenceInner" #-} do
-#ifdef DEBUG
-      occ <- liftIO $ readIORef $ coincidenceSubscribedOccurrence subscribed
-      case occ of
-        Just _ -> error "Coincidence inner is propagating, but coincidence occurrence is already known?"
-        Nothing -> do
+#ifdef DEBUG_FRAME
+      liftIO $ readIORef (coincidenceSubscribedOccurrence subscribed) >>= debugOccurrence "coincidence (inner subscriber): two occurrences in one frame"
 #endif
-          liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) $ Just a
-          scheduleClear $ coincidenceSubscribedOccurrence subscribed
-          propagate a $ coincidenceSubscribedSubscribers subscribed
+      liftIO $ writeIORef (coincidenceSubscribedOccurrence subscribed) $ Just a
+      scheduleClear $ coincidenceSubscribedOccurrence subscribed
+      propagate a $ coincidenceSubscribedSubscribers subscribed
   , subscriberInvalidateHeight  = \_ -> invalidateCoincidenceHeight subscribed
   , subscriberRecalculateHeight = \_ -> recalculateCoincidenceHeight subscribed
   }
@@ -711,13 +706,6 @@ propagate a subscribers = withIncreasedDepth (Proxy::Proxy x) $
   -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
   --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
   WeakBag.traverse_ subscribers $ \s -> subscriberPropagate s a
-
--- | Propagate everything at the current height
-propagateFast :: forall x a. HasSpiderTimeline x => a -> FastWeakBag (Subscriber x a) -> EventM x ()
-propagateFast a subscribers = withIncreasedDepth (Proxy::Proxy x) $
-  -- Note: in the following traversal, we do not visit nodes that are added to the list during our traversal; they are new events, which will necessarily have full information already, so there is no need to traverse them
-  --TODO: Should we check if nodes already have their values before propagating?  Maybe we're re-doing work
-  FastWeakBag.traverse_ subscribers $ \s -> subscriberPropagate s a
 
 --------------------------------------------------------------------------------
 -- EventSubscribed
@@ -1464,16 +1452,16 @@ coincidence a = unsafePerformIO $ do
 -- 'runHostFrameFireAndRead', after the build and hold-init phases.
 propagateAndRead :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> EventM x b
 propagateAndRead roots after = do
-    rootsToPropagate <- forM roots $ \r@(RootTrigger (_, occRef, k) :=> a) -> do
+    forM_ roots $ \(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readIORef occRef
+#ifdef DEBUG_FRAME
+        debugOccurrence "propagateAndRead: one trigger fired twice in one frame" $ DMap.lookup k occBefore
+#endif
         writeIORef occRef $! DMap.insert k a occBefore
         return occBefore
-      if DMap.null occBefore
-        then do scheduleRootClear occRef
-                return $ Just r
-        else return Nothing
-    forM_ (catMaybes rootsToPropagate) $ \(RootTrigger (subscribersRef, _, _) :=> Identity a) -> do
+      when (DMap.null occBefore) $ scheduleRootClear occRef
+    forM_ roots $ \(RootTrigger (subscribersRef, _, _) :=> Identity a) ->
       propagate a subscribersRef
     delayedRef <- asksEventEnv eventEnvDelayedMerges
     let go = do
@@ -2091,7 +2079,10 @@ mergeSubscriber subscribed m getKey = Subscriber
   { subscriberPropagate = \a -> do
       oldM <- liftIO $ readIORef $ _merge_accumRef m
       k <- getKey
-      let newM = DMap.insertWith (error "Same key fired multiple times for Merge") k a oldM
+#ifdef DEBUG_FRAME
+      debugOccurrence "merge: one parent fired twice in one frame" $ DMap.lookup k oldM
+#endif
+      let newM = DMap.insert k a oldM
       tracePropagate (Proxy :: Proxy x) $ "  DMap.size oldM = " <> show (DMap.size oldM) <> "; DMap.size newM = " <> show (DMap.size newM)
       liftIO $ writeIORef (_merge_accumRef m) $! newM
       when (DMap.null oldM) $ do -- Only schedule the firing once
@@ -2220,6 +2211,9 @@ mergeIntCheap d = Event $ \sub -> do
       mySubscriber k = Subscriber
         { subscriberPropagate = \a -> do
             checkCycle subscribed
+#ifdef DEBUG_FRAME
+            liftIO (FastMutableIntMap.lookup accum k) >>= debugOccurrence "mergeInt: one parent fired twice in one frame"
+#endif
 
             wasEmpty <- liftIO $ FastMutableIntMap.isEmpty accum
             liftIO $ FastMutableIntMap.insert accum k a
@@ -2578,10 +2572,12 @@ type role SpiderTimeline nominal
 type Spider = SpiderTimeline Global
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (EventM x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadSample (SpiderTimeline Global) (EventM Global) #-}
   {-# INLINABLE sample #-}
   sample (SpiderBehavior b) = readBehaviorUntracked b
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (EventM x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (EventM Global) #-}
   {-# INLINABLE hold #-}
   hold = holdSpiderEventM
   {-# INLINABLE holdDyn #-}
@@ -2600,10 +2596,12 @@ instance Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPullM x) where
   sample = coerce . readBehaviorTracked . unSpiderBehavior
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderPushM x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadSample (SpiderTimeline Global) (SpiderPushM Global) #-}
   {-# INLINABLE sample #-}
   sample (SpiderBehavior b) = SpiderPushM $ readBehaviorUntracked b
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderPushM x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (SpiderPushM Global) #-}
   {-# INLINABLE hold #-}
   hold v0 e = Reflex.Class.current <$> Reflex.Class.holdDyn v0 e
   {-# INLINABLE holdDyn #-}
@@ -2664,9 +2662,11 @@ buildDynamicSpiderEventM :: HasSpiderTimeline x => SpiderPushM x a -> Reflex.Cla
 buildDynamicSpiderEventM getV0 e = fmap (SpiderDynamic . dynamicDynIdentity) $ Reflex.Spider.Internal.buildDynamic (coerce getV0) $ coerce $ unSpiderEvent e
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (SpiderHostFrame x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadSample (SpiderTimeline Global) (SpiderHostFrame Global) #-}
   sample = SpiderHostFrame . readBehaviorUntracked . unSpiderBehavior --TODO: This can cause problems with laziness, so we should get rid of it if we can
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (SpiderHostFrame x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (SpiderHostFrame Global) #-}
   {-# INLINABLE hold #-}
   hold v0 e = SpiderHostFrame $ fmap (SpiderBehavior . behaviorHoldIdentity) $ Reflex.Spider.Internal.hold v0 $ coerce $ unSpiderEvent e
   {-# INLINABLE holdDyn #-}
@@ -2681,10 +2681,12 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Spide
   now = SpiderHostFrame Reflex.Class.now
 
 instance HasSpiderTimeline x => Reflex.Class.MonadSample (SpiderTimeline x) (Reflex.Spider.Internal.ReadPhase x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadSample (SpiderTimeline Global) (Reflex.Spider.Internal.ReadPhase Global) #-}
   {-# INLINABLE sample #-}
   sample = Reflex.Spider.Internal.ReadPhase . Reflex.Class.sample
 
 instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Reflex.Spider.Internal.ReadPhase x) where
+  {-# SPECIALIZE instance Reflex.Class.MonadHold (SpiderTimeline Global) (Reflex.Spider.Internal.ReadPhase Global) #-}
   {-# INLINABLE hold #-}
   hold v0 e = Reflex.Spider.Internal.ReadPhase $ Reflex.Class.hold v0 e
   {-# INLINABLE holdDyn #-}
@@ -2711,6 +2713,9 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTim
     --TODO: Unsubscribe eventually (manually and/or with weak ref)
     val <- liftIO $ newIORef Nothing
     let recordOccurrence a = do
+#ifdef DEBUG_FRAME
+          liftIO $ readIORef val >>= debugOccurrence "subscribeEvent: two occurrences in one frame"
+#endif
           liftIO $ writeIORef val $ Just a
           scheduleClear val
     SubscribeResult subscription occ <- subscribeAndRead (unSpiderEvent e) $ terminalSubscriber recordOccurrence
@@ -2721,6 +2726,7 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTim
       }
 
 instance HasSpiderTimeline x => Reflex.Host.Class.ReflexHost (SpiderTimeline x) where
+  {-# SPECIALIZE instance Reflex.Host.Class.ReflexHost (SpiderTimeline Global) #-}
   type EventTrigger (SpiderTimeline x) = RootTrigger x
   type EventHandle (SpiderTimeline x) = SpiderEventHandle x
   type HostFrame (SpiderTimeline x) = SpiderHostFrame x
@@ -2745,6 +2751,7 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexCreateTrigger (Spid
     return $ Reflex.Class.EventSelector $ SpiderEvent . Reflex.Spider.Internal.select es
 
 instance HasSpiderTimeline x => Reflex.Host.Class.MonadReflexHost (SpiderTimeline x) (SpiderHost x) where
+  {-# SPECIALIZE instance Reflex.Host.Class.MonadReflexHost (SpiderTimeline Global) (SpiderHost Global) #-}
   type ReadPhase (SpiderHost x) = Reflex.Spider.Internal.ReadPhase x
   hostFrameAndRead build getTriggers readPhase = runHostFrameFireAndRead (runSpiderHostFrame build) (runSpiderHostFrame . getTriggers) (\a -> let Reflex.Spider.Internal.ReadPhase r = readPhase a in r)
 

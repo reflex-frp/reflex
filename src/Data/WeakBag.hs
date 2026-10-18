@@ -1,6 +1,6 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This module defines the 'WeakBag' type, which represents a mutable
 -- collection of items that does not cause the items to be retained in memory.
@@ -12,6 +12,8 @@ module Data.WeakBag
   , empty
   , singleton
   , insert
+  , insertWithoutCallback
+  , isEmpty
   , traverse
   , traverse_
   , remove
@@ -27,6 +29,7 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import qualified Data.IntMap.Internal as IntMap.Internal
 import Data.IORef
 import System.Mem.Weak
 
@@ -53,9 +56,10 @@ insert :: a -- ^ The item
        -> WeakBag a -- ^ The 'WeakBag' to insert into
        -> IORef (Weak b) -- ^ An arbitrary value to be used in the following
                          -- callback
-       -> (b -> IO ()) -- ^ A callback to be invoked when the item is removed
-                       -- (whether automatically by the item being garbage
-                       -- collected or manually via 'remove')
+       -> (b -> IO ()) -- ^ A callback to be invoked when the removal of the
+                       -- item leaves the bag empty (whether the item is removed
+                       -- automatically by being garbage collected or manually
+                       -- via 'remove'), as long as the weak reference is alive
        -> IO WeakBagTicket -- ^ Returns a 'WeakBagTicket' that ensures the item
                            -- is retained and allows the item to be removed.
 insert a (WeakBag nextId children) wbRef finalizer = {-# SCC "insert" #-} do
@@ -66,11 +70,26 @@ insert a (WeakBag nextId children) wbRef finalizer = {-# SCC "insert" #-} do
         wb <- readIORef wbRef'
         mb <- deRefWeak wb
         forM_ mb $ \b -> do
-          csWithoutMe <- atomicModifyIORef children $ \cs ->
-            let !csWithoutMe = IntMap.delete myId cs
+          csWithoutMe <- atomicModifyIORef' children $ \cs ->
+            let csWithoutMe = IntMap.delete myId cs
             in (csWithoutMe, csWithoutMe)
           when (IntMap.null csWithoutMe) $ finalizer b
   wa <- mkWeakPtr a' $ Just cleanup
+  atomicModifyIORef' children $ \cs -> (IntMap.insert myId wa cs, ())
+  return $ WeakBagTicket
+    { _weakBagTicket_weakItem = wa
+    , _weakBagTicket_item = a'
+    }
+
+-- | Insert an item into a 'WeakBag' without an empty-bag callback: the removal
+-- of the item, by garbage collection or by 'remove', only deletes it from the
+-- bag.
+{-# INLINE insertWithoutCallback #-}
+insertWithoutCallback :: a -> WeakBag a -> IO WeakBagTicket
+insertWithoutCallback a (WeakBag nextId children) = {-# SCC "insertWithoutCallback" #-} do
+  a' <- evaluate a
+  myId <- atomicModifyIORef' nextId $ \n -> (succ n, n)
+  wa <- mkWeakPtr a' $ Just $ atomicModifyIORef' children $ \cs -> (IntMap.delete myId cs, ())
   atomicModifyIORef' children $ \cs -> (IntMap.insert myId wa cs, ())
   return $ WeakBagTicket
     { _weakBagTicket_weakItem = wa
@@ -89,6 +108,13 @@ empty = {-# SCC "empty" #-} do
         }
   return bag
 
+-- | Whether the bag has no entry. The entry of an item that the garbage
+-- collector removed is deleted by the finalizer of the item's weak pointer, so
+-- the bag can be non-empty for a while after its last live item is gone.
+{-# INLINE isEmpty #-}
+isEmpty :: WeakBag a -> IO Bool
+isEmpty (WeakBag _ children) = {-# SCC "isEmpty" #-} IntMap.null <$> readIORef children
+
 -- | Create a 'WeakBag' with one item; equivalent to creating the 'WeakBag' with
 -- 'empty', then using 'insert'.
 {-# INLINE singleton #-}
@@ -103,12 +129,21 @@ singleton a wbRef finalizer = {-# SCC "singleton" #-} do
 -- traversal, they will not be visited.  Every live node that was in the list
 -- when the traversal began will be visited exactly once; however, no guarantee
 -- is made about the order of the traversal.
-traverse_ :: MonadIO m => WeakBag a -> (a -> m ()) -> m ()
+traverse_ :: forall a m. MonadIO m => WeakBag a -> (a -> m ()) -> m ()
 traverse_ (WeakBag _ children) f = {-# SCC "traverse" #-} do
   cs <- liftIO $ readIORef children
-  forM_ cs $ \c -> do
-    ma <- liftIO $ deRefWeak c
-    mapM_ f ma
+  go cs
+  where
+    -- This is a very hot function in Reflex and directly recursing over the
+    -- internal data structure is a noticable improvement over using forM_:
+    go :: IntMap (Weak a) -> m ()
+#if MIN_VERSION_containers(0,8,0)
+    go (IntMap.Internal.Bin _ l r) = go l >> go r
+#else
+    go (IntMap.Internal.Bin _ _ l r) = go l >> go r
+#endif
+    go (IntMap.Internal.Tip _ c) = mapM_ f =<< liftIO (deRefWeak c)
+    go IntMap.Internal.Nil = pure ()
 
 {-# DEPRECATED traverse "Use 'traverse_' instead" #-}
 traverse :: MonadIO m => WeakBag a -> (a -> m ()) -> m ()

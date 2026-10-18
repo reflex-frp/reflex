@@ -42,13 +42,6 @@ flag debug-trace-events
     default:     False
     manual:      True
 
-flag fast-weak
-    description:
-        Use the primitive implementation of FastWeak in GHCJS; note that this requires GHCJS to be built with FastWeak and FastWeakBag present in the RTS, which is not the default
-
-    default:     False
-    manual:      True
-
 flag debug-propagation
     description: Enable debugging of spider internals
     default:     False
@@ -74,7 +67,6 @@ library
         Control.Monad.ReaderIO
         Data.AppendMap
         Data.FastMutableIntMap
-        Data.FastWeakBag
         Data.Map.Misc
         Data.WeakBag
         Reflex
@@ -92,7 +84,6 @@ library
         Reflex.EventWriter
         Reflex.EventWriter.Base
         Reflex.EventWriter.Class
-        Reflex.FastWeak
         Reflex.FunctorMaybe
         Reflex.Host.Class
         Reflex.Host.Headless
@@ -196,9 +187,6 @@ library
 
     if flag(debug-frame)
         cpp-options: -DDEBUG_FRAME
-
-    if flag(fast-weak) && impl(ghcjs >=0)
-        cpp-options: -DGHCJS_FAST_WEAK
 
     if impl(ghcjs)
         build-depends: ghcjs-base >=0.2 && <0.3
@@ -468,6 +456,20 @@ test-suite runHostFrame
       , tasty-expected-failure
       , tasty-hunit
 
+test-suite newFanEventWithTrigger
+    type:             exitcode-stdio-1.0
+    main-is:          newFanEventWithTrigger.hs
+    hs-source-dirs:   test
+    default-language: Haskell2010
+    ghc-options:      -Wall
+    build-depends:
+        base >= 4.11 && < 4.23
+      , containers
+      , dependent-sum
+      , reflex
+      , tasty
+      , tasty-hunit
+
 test-suite behaviorLeak
     type:             exitcode-stdio-1.0
     main-is:          behaviorLeak.hs
@@ -490,6 +492,7 @@ test-suite collectedSubscriber
     build-depends:
         base >= 4.11 && < 4.23
       , containers
+      , dependent-sum
       , reflex
       , tasty
       , tasty-hunit
