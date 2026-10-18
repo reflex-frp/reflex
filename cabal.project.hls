@@ -1,0 +1,4 @@
+import: cabal.project
+
+package reflex
+  flags: +debug-frame +debug-trace-events +debug-propagation +debug-cycles
