@@ -481,16 +481,20 @@ cacheEvent e =
 
 cacheSubscription :: Subscriber x a -> IORef (Maybe (Weak (CacheSubscribed x a))) -> CacheSubscribed x a -> IO (SubscribeResult x a)
 cacheSubscription sub mSubscribedRef subscribed = do
-  ticket <- WeakBag.insertWithoutCallback sub $ _cacheSubscribed_subscribers subscribed
-  occ <- readIORef $ _cacheSubscribed_occurrence subscribed
-  let parentSub = _cacheSubscribed_parent subscribed
+  -- 'lazy' stops GHC <= 9.0 from reboxing subscribed, so that
+  -- 'eventSubscribedRetained' keeps the key of the weak pointer in
+  -- 'mSubscribedRef' alive:
+  let fields = lazy subscribed
+  ticket <- WeakBag.insertWithoutCallback sub $ _cacheSubscribed_subscribers fields
+  occ <- readIORef $ _cacheSubscribed_occurrence fields
+  let parentSub = _cacheSubscribed_parent fields
       -- Prevent reboxing of the unpacked _cacheSubscribed_parent on every
       -- subscribe.
       unsubscribeParent = _eventSubscription_unsubscribe parentSub
       es = EventSubscription
         { _eventSubscription_unsubscribe = do
             WeakBag.remove ticket
-            isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers subscribed
+            isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers fields
             when isEmpty $ do
               writeIORef mSubscribedRef Nothing
               unsubscribeParent
