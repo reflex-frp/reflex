@@ -66,7 +66,6 @@ library
     exposed-modules:
         Control.Monad.ReaderIO
         Data.AppendMap
-        Data.FastMutableIntMap
         Data.Map.Misc
         Data.WeakBag
         Reflex

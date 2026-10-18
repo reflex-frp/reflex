@@ -32,7 +32,6 @@ import Data.Bifunctor
 import Data.Coerce
 import Data.Dependent.Map (DMap)
 import Data.GADT.Compare (GCompare)
-import Data.FastMutableIntMap
 import Data.IORef
 import Data.List
 import Data.Kind (Type)
