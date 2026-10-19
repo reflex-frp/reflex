@@ -1,0 +1,15 @@
+# The same settings as the hlint test-suite in test/hlint.hs.
+- arguments: [--cpp-define=DEBUG]
+
+- ignore: {name: "Redundant do"}
+- ignore: {name: "Use camelCase"}
+- ignore: {name: "Redundant $"}
+- ignore: {name: "Use &&"}
+- ignore: {name: "Use &&&"}
+- ignore: {name: "Use const"}
+- ignore: {name: "Use >=>"}
+- ignore: {name: "Use ."}
+- ignore: {name: "Use unless"}
+- ignore: {name: "Reduce duplication"}
+- ignore: {name: "Replace case with maybe"}
+- ignore: {name: "Use tuple-section"}
