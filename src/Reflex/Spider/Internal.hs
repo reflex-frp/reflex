@@ -1552,7 +1552,7 @@ coincidenceUncachedImpl outer = Event $ \sub -> do
       return (occ, fromMaybe outerHeight maybeRaisedToInnerHeight, Just innerSubd)
   liftIO $ writeIORef heightRef $! height
   liftIO $ writeIORef innerParentRef mInnerSubd
-  scheduleClear innerParentRef
+  when (isJust mInnerSubd) $ scheduleClear innerParentRef
   pure $ SubscribeResult
     (EventSubscription
       { _eventSubscription_unsubscribe = unsubscribe =<< readIORef outerParentRef
@@ -2294,6 +2294,12 @@ clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeI
   writeIORef mergeUpdateRef []
   writeIORef mergeInitRef []
   writeIORef heightRef zeroHeight
+#ifdef DEBUG_FRAME
+  do toClear <- readIORef toClearRef
+     toClearRoot <- readIORef toClearRootRef
+     unless (null toClear && null toClearRoot) $
+       error "clearEventEnv: a clear was scheduled after clearOccurrences"
+#endif
   writeIORef toClearRef []
   writeIORef toClearRootRef []
   writeIORef coincidenceInfosRef []
@@ -2393,6 +2399,12 @@ runFrame a = SpiderHost $ do
       forM_ toClear $ \(Some (Clear ref)) -> {-# SCC "clear" #-} writeIORef ref Nothing
       toClearRoot <- readIORef $ eventEnvRootClears env
       forM_ toClearRoot $ \(Some (RootClear ref)) -> {-# SCC "rootClear" #-} writeIORef ref $! DMap.empty
+#ifdef DEBUG_FRAME
+      -- Empty the clear lists, so that the DEBUG_FRAME check can verify that no
+      -- clear was scheduled that would have been dropped silently.
+      writeIORef (eventEnvClears env) []
+      writeIORef (eventEnvRootClears env) []
+#endif
 
     subscribeReconnect :: forall b. Event x b -> Subscriber x b -> IO (EventSubscription x)
     subscribeReconnect e sub = do
