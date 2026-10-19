@@ -66,7 +66,6 @@ library
     exposed-modules:
         Control.Monad.ReaderIO
         Data.AppendMap
-        Data.FastMutableIntMap
         Data.Map.Misc
         Data.WeakBag
         Reflex
@@ -190,6 +189,9 @@ library
 
     if impl(ghcjs)
         build-depends: ghcjs-base >=0.2 && <0.3
+
+    if impl(ghc >= 9.12)
+        ghc-options: -fexpose-overloaded-unfoldings
 
 test-suite semantics
     type:             exitcode-stdio-1.0

@@ -31,7 +31,6 @@ import Control.Monad.State.Strict
 import Data.Align
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
-import Data.FastMutableIntMap
 import Data.Functor.Misc
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
