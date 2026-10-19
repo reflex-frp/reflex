@@ -430,15 +430,12 @@ headE originalE = do
                    { _eventSubscription_unsubscribe = do
                        WeakBag.remove ticket
                        touch ticket
-                   , _eventSubscription_subscribed = EventSubscribed
-                       { eventSubscribedHeightRef = headESubscribedHeight subscribed
-                       , eventSubscribedRetained = toAny stateRef
-#ifdef DEBUG_CYCLES
-                       , eventSubscribedGetParents = pure [_eventSubscription_subscribed $ headESubscribedParent subscribed]
-                       , eventSubscribedHasOwnHeightRef = True
-                       , eventSubscribedWhoCreated = whoCreatedIORef stateRef
-#endif
-                       }
+                   , _eventSubscription_subscribed = newEventSubscribed
+                       (headESubscribedHeight subscribed)
+                       stateRef
+                       (pure [_eventSubscription_subscribed $ headESubscribedParent subscribed])
+                       True
+                       (whoCreatedIORef stateRef)
                    })
                occ
       HeadEStateOccurred occRef -> do
@@ -548,15 +545,8 @@ cacheSubscription sub mSubscribedRef subscribed = do
               writeIORef mSubscribedRef Nothing
               unsubscribeParent
             touch ticket
-        , _eventSubscription_subscribed = EventSubscribed
-          { eventSubscribedHeightRef = eventSubscribedHeightRef $ _eventSubscription_subscribed parentSub
-          , eventSubscribedRetained = toAny subscribed
-#ifdef DEBUG_CYCLES
-          , eventSubscribedGetParents = return [_eventSubscription_subscribed parentSub]
-          , eventSubscribedHasOwnHeightRef = False
-          , eventSubscribedWhoCreated = whoCreatedIORef mSubscribedRef
-#endif
-          }
+        , _eventSubscription_subscribed =
+            passThroughEventSubscribed (_eventSubscription_subscribed parentSub) subscribed (whoCreatedIORef mSubscribedRef)
         }
   pure $ SubscribeResult es occ
 
@@ -609,16 +599,8 @@ eventFan !k p !self = Event $ \sub -> do
       when noKeys $
         traverse_ unsubscribe =<< atomicModifyIORef' (_fan_subscriptionRef fan) (Nothing,)
     currentOcc <- readIORef (_fan_occRef self)
-    let subscribedParent = _eventSubscription_subscribed parentSubscription
-        subscribed = EventSubscribed
-          { eventSubscribedHeightRef = eventSubscribedHeightRef subscribedParent
-          , eventSubscribedRetained = toAny self
-#ifdef DEBUG_CYCLES
-          , eventSubscribedGetParents = pure [subscribedParent]
-          , eventSubscribedHasOwnHeightRef = False
-          , eventSubscribedWhoCreated = whoCreatedIORef $ _fan_subscriptionRef self
-#endif
-          }
+    let subscribed = passThroughEventSubscribed (_eventSubscription_subscribed parentSubscription) self
+          (whoCreatedIORef $ _fan_subscriptionRef self)
     pure $ SubscribeResult (EventSubscription (WeakBag.remove ticket >> touch ticket) subscribed) $ mapLookup k =<< currentOcc
 
 eventHold :: Hold x p -> Event x p
@@ -742,37 +724,34 @@ data EventSubscribed x = EventSubscribed
 #endif
   }
 
-eventSubscribedRoot :: RootSubscribed x a -> EventSubscribed x
-eventSubscribedRoot !r = EventSubscribed
-  { eventSubscribedHeightRef = zeroRef
-  , eventSubscribedRetained = toAny r
+{-# INLINE newEventSubscribed #-}
+newEventSubscribed
+  :: IORef Height
+  -> a
+  -> IO [EventSubscribed x]
+  -> Bool
+  -> IO [String]
+  -> EventSubscribed x
 #ifdef DEBUG_CYCLES
-  , eventSubscribedGetParents = return []
-  , eventSubscribedHasOwnHeightRef = False
-  , eventSubscribedWhoCreated = return ["root"]
+newEventSubscribed heightRef retained = EventSubscribed heightRef (toAny retained)
+#else
+newEventSubscribed heightRef retained _ _ _ = EventSubscribed heightRef (toAny retained)
 #endif
-  }
+
+-- Node which uses its parent's heightRef
+{-# INLINE passThroughEventSubscribed #-}
+passThroughEventSubscribed :: EventSubscribed x -> a -> IO [String] -> EventSubscribed x
+passThroughEventSubscribed parentSubscribed retained =
+  newEventSubscribed (eventSubscribedHeightRef parentSubscribed) retained (pure [parentSubscribed]) False
+
+eventSubscribedRoot :: RootSubscribed x a -> EventSubscribed x
+eventSubscribedRoot !r = newEventSubscribed zeroRef r (pure []) False (pure ["root"])
 
 eventSubscribedNever :: EventSubscribed x
-eventSubscribedNever = EventSubscribed
-  { eventSubscribedHeightRef = zeroRef
-  , eventSubscribedRetained = toAny ()
-#ifdef DEBUG_CYCLES
-  , eventSubscribedGetParents = return []
-  , eventSubscribedHasOwnHeightRef = False
-  , eventSubscribedWhoCreated = return ["never"]
-#endif
-  }
+eventSubscribedNever = newEventSubscribed zeroRef () (pure []) False (pure ["never"])
+
 eventSubscribedNow :: EventSubscribed x
-eventSubscribedNow = EventSubscribed
-  { eventSubscribedHeightRef = zeroRef
-  , eventSubscribedRetained = toAny ()
-#ifdef DEBUG_CYCLES
-  , eventSubscribedGetParents = return []
-  , eventSubscribedHasOwnHeightRef = False
-  , eventSubscribedWhoCreated = return ["now"]
-#endif
-  }
+eventSubscribedNow = newEventSubscribed zeroRef () (pure []) False (pure ["now"])
 
 getEventSubscribedHeight :: EventSubscribed x -> IO Height
 getEventSubscribedHeight es = readIORef $ eventSubscribedHeightRef es
@@ -1496,17 +1475,14 @@ switchUncachedImpl b = Event $ \sub -> do
       { _eventSubscription_unsubscribe = do
           unsubscribe =<< readIORef currentParentRef
           finalize =<< readIORef weakInvalidatorRef -- We don't need to get invalidated if we're dead
-      , _eventSubscription_subscribed = EventSubscribed
-          { eventSubscribedHeightRef = heightRef
-          , eventSubscribedRetained = toAny subscribed
-#ifdef DEBUG_CYCLES
-          , eventSubscribedGetParents = do
+      , _eventSubscription_subscribed = newEventSubscribed
+          heightRef
+          subscribed
+          (do
               s <- readIORef currentParentRef
-              return [_eventSubscription_subscribed s]
-          , eventSubscribedHasOwnHeightRef = True
-          , eventSubscribedWhoCreated = whoCreatedIORef currentParentRef
-#endif
-          }
+              return [_eventSubscription_subscribed s])
+          True
+          (whoCreatedIORef currentParentRef)
       })
     parentOcc
 
@@ -1556,18 +1532,15 @@ coincidenceUncachedImpl outer = Event $ \sub -> do
   pure $ SubscribeResult
     (EventSubscription
       { _eventSubscription_unsubscribe = unsubscribe =<< readIORef outerParentRef
-      , _eventSubscription_subscribed = EventSubscribed
-          { eventSubscribedHeightRef = heightRef
-          , eventSubscribedRetained = toAny subscribed
-#ifdef DEBUG_CYCLES
-          , eventSubscribedGetParents = do
+      , _eventSubscription_subscribed = newEventSubscribed
+          heightRef
+          subscribed
+          (do
               outerParent <- _eventSubscription_subscribed <$> readIORef outerParentRef
               innerParents <- maybeToList <$> readIORef innerParentRef
-              return $ outerParent : innerParents
-          , eventSubscribedHasOwnHeightRef = True
-          , eventSubscribedWhoCreated = whoCreatedIORef outerParentRef
-#endif
-          }
+              return $ outerParent : innerParents)
+          True
+          (whoCreatedIORef outerParentRef)
       })
     occ
 
@@ -2068,16 +2041,12 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
   parentsRef :: IORef (map s) <- liftIO $ newIORef $ error "merge: parentsRef not yet initialized"
   changeSubdRef <- liftIO $ newIORef $ error "merge: changeSubdRef not yet initialized"
 
-  let subscribed = EventSubscribed
-        { eventSubscribedHeightRef = heightRef
-        , eventSubscribedRetained = toAny (parentsRef, changeSubdRef)
-#ifdef DEBUG_CYCLES
-      , eventSubscribedGetParents =
-          fmap (\(_ :=> parent) -> _eventSubscription_subscribed (getParent parent)) . mapToList <$> readIORef parentsRef
-      , eventSubscribedHasOwnHeightRef = True
-      , eventSubscribedWhoCreated = whoCreatedIORef heightRef
-#endif
-      }
+  let subscribed = newEventSubscribed
+        heightRef
+        (parentsRef, changeSubdRef)
+        (fmap (\(_ :=> parent) -> _eventSubscription_subscribed (getParent parent)) . mapToList <$> readIORef parentsRef)
+        True
+        (whoCreatedIORef heightRef)
 
       scheduleSelf height = scheduleMerge height propagateAtHeight
 
