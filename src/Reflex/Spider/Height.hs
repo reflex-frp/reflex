@@ -2,8 +2,6 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE MultiWayIf #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE BangPatterns #-}
 module Reflex.Spider.Height
   (Height
   , pattern ZeroHeight
@@ -22,10 +20,12 @@ module Reflex.Spider.Height
   , heightSlotPassed
   , HeightBag
   , heightBagEmpty
-  , heightBagSize
-  , heightBagAdd
-  , heightBagRemove
-  , heightBagFromParents
+  , heightBagHeight
+  , heightBagParentCount
+  , heightBagAddParent
+  , heightBagRemoveParent
+  , heightBagInvalidateParent
+  , heightBagRecalculateParent
   , heightBagSuccHeight
   , HeightQueue
   , heightQueueEmpty
@@ -130,9 +130,11 @@ heightSlotPassed InvalidHeight _ = error "heightSlotPassed: current height is sp
 -- Heightbag
 --------------------------------------------------------------------------------
 
+-- | Valid merge parents' heights and the number of parents with invalid
+-- heights.
 data HeightBag = HeightBag
-  { _heightBag_size :: {-# UNPACK #-} !Int
-  , _heightBag_contents :: !(IntMap Word) -- Number of excess in each bucket
+  { _heightBag_invalidParents :: {-# UNPACK #-} !Int
+  , _heightBag_contents :: !(IntMap Word) -- Number of parents in each height bucket
   }
   deriving (Show, Read, Eq, Ord)
 
@@ -140,45 +142,63 @@ data HeightBag = HeightBag
 heightBagEmpty :: HeightBag
 heightBagEmpty = heightBagVerify $ HeightBag 0 IntMap.empty
 
-{-# INLINE heightBagSize #-}
-heightBagSize :: HeightBag -> Int
-heightBagSize = _heightBag_size
+{-# INLINE heightBagHeight #-}
+heightBagHeight :: HeightBag -> Height
+heightBagHeight b@(HeightBag invalidParents _) = case compare invalidParents 0 of
+  EQ -> heightBagSuccHeight b
+  GT -> invalidHeight
+  LT -> error $ "heightBagHeight: more heights than parents: " <> show b
 
-{-# INLINE heightBagAdd #-}
-heightBagAdd :: Height -> HeightBag -> HeightBag
-heightBagAdd (Height h) (HeightBag s c) = heightBagVerify $ HeightBag (succ s) $
-  IntMap.insertWith (+) h 1 c
+{-# INLINE heightBagParentCount #-}
+heightBagParentCount :: HeightBag -> Int
+heightBagParentCount (HeightBag invalidParents c) = invalidParents + fromIntegral (sum (IntMap.elems c))
 
-{-# INLINE heightBagRemove #-}
-heightBagRemove :: Height -> HeightBag -> HeightBag
-heightBagRemove (Height h) b@(HeightBag s c) = heightBagVerify $ case IntMap.lookup h c of
-  Nothing -> error $ "heightBagRemove: Height " <> show h <> " not present in bag " <> show b
-  Just old -> HeightBag (pred s) $ case old of
+{-# INLINE heightBagAddParent #-}
+heightBagAddParent :: Height -> HeightBag -> HeightBag
+heightBagAddParent h (HeightBag invalidParents c) = heightBagVerify $ case h of
+  ValidHeight -> HeightBag invalidParents (insertHeight h c)
+  InvalidHeight -> HeightBag (succ invalidParents) c
+
+{-# INLINE heightBagRemoveParent #-}
+heightBagRemoveParent :: Height -> HeightBag -> HeightBag
+heightBagRemoveParent h b@(HeightBag invalidParents c) = heightBagVerify $ case h of
+  ValidHeight -> HeightBag invalidParents (deleteHeight h b)
+  InvalidHeight -> HeightBag (pred invalidParents) c
+
+{-# INLINE heightBagInvalidateParent #-}
+heightBagInvalidateParent :: Height -> HeightBag -> HeightBag
+heightBagInvalidateParent h b@(HeightBag invalidParents _) = heightBagVerify $
+  HeightBag (succ invalidParents) (deleteHeight h b)
+
+{-# INLINE heightBagRecalculateParent #-}
+heightBagRecalculateParent :: Height -> HeightBag -> HeightBag
+heightBagRecalculateParent h (HeightBag invalidParents c) = heightBagVerify $
+  HeightBag (pred invalidParents) (insertHeight h c)
+
+{-# INLINE insertHeight #-}
+insertHeight :: Height -> IntMap Word -> IntMap Word
+insertHeight (Height h) = IntMap.insertWith (+) h 1
+
+{-# INLINE deleteHeight #-}
+deleteHeight :: Height -> HeightBag -> IntMap Word
+deleteHeight (Height h) b@(HeightBag _ c) = case IntMap.lookup h c of
+  Nothing -> error $ "deleteHeight: Height " <> show h <> " not present in bag " <> show b
+  Just old -> case old of
     1 -> IntMap.delete h c
     _ -> IntMap.insert h (pred old) c
 
 {-# INLINE heightBagVerify #-}
 heightBagVerify :: HeightBag -> HeightBag
 #ifdef DEBUG
-heightBagVerify b@(HeightBag s c) = if
-  | s /= fromIntegral (sum (IntMap.elems c))
-    -> error $ "heightBagVerify: size doesn't match: " <> show b
+heightBagVerify b@(HeightBag invalidParents c) = if
+  | invalidParents < 0
+    -> error $ "heightBagVerify: more heights than parents: " <> show b
   | unsafeHeightAsInt invalidHeight `IntMap.member` c
     -> error $ "heightBagVerify: contains invalid height: " <> show b
   | otherwise -> b
 #else
 heightBagVerify = id
 #endif
-
-{-# INLINE heightBagFromParents #-}
-heightBagFromParents :: [Height] -> (HeightBag, Height)
-heightBagFromParents heights =
-  let step (!b, !inv) = \case
-        h@ValidHeight -> (heightBagAdd h b, inv)
-        InvalidHeight -> (b, True)
-      (bag, anyInvalid) = foldl' step (heightBagEmpty, False) heights
-      nextHeight = if anyInvalid then invalidHeight else heightBagSuccHeight bag
-  in (bag, nextHeight)
 
 heightBagSuccHeight :: HeightBag -> Height
 heightBagSuccHeight (HeightBag _ c) = case IntMap.lookupMax c of
