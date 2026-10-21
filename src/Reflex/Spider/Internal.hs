@@ -245,7 +245,7 @@ unsubscribe (EventSubscription u _) = u
 -- Event
 --------------------------------------------------------------------------------
 
-newtype Event x a = Event { unEvent :: Subscriber x a -> EventM x (SubscribeResult x a) }
+newtype Event x a = Event { subscribeAndRead :: Subscriber x a -> EventM x (SubscribeResult x a) }
 
 data SubscribeResult x a = SubscribeResult
   { subscribeSubscription :: EventSubscription x
@@ -269,10 +269,6 @@ instance Witherable (SubscribeResult x) where
   {-# INLINE wither #-}
   wither f (SubscribeResult s occ) = SubscribeResult s <$> wither f occ
 
-
-{-# INLINE subscribeAndRead #-}
-subscribeAndRead :: Event x a -> Subscriber x a -> EventM x (SubscribeResult x a)
-subscribeAndRead = unEvent
 
 -- Rewrite rules for cached events
 --
