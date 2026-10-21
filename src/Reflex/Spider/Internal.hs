@@ -313,24 +313,24 @@ subscribeAndRead = unEvent
 "pushSwitch/contract" [1] forall f b. cacheEvent (pushCheap f (switchUncached b)) = pushSwitch f b
 "pushCoincidence/contract" [1] forall f e. cacheEvent (pushCheap f (coincidenceUncached e)) = pushCoincidence f e
 "pushMergeInt/contract" [1] forall f d. cacheEvent (pushCheap f (mergeIntCheap d)) = pushMergeInt f d
-"pushMergeG/contract" [1] forall (f :: DMap k v -> ComputeM x (Maybe c)) (nt :: forall a. q a -> Event x (v a)) (d :: DynamicS x (PatchDMap k q)). cacheEvent (pushCheap f (mergeCheap nt d)) = pushMergeG f nt d
-"pushMergeWithMove/contract" [1] forall (f :: DMap k v -> ComputeM x (Maybe c)) (nt :: forall a. q a -> Event x (v a)) (d :: DynamicS x (PatchDMapWithMove k q)). cacheEvent (pushCheap f (mergeCheapWithMove nt d)) = pushMergeWithMove f nt d
+"pushMergeG/contract" [1] forall (f :: DMap k v -> EventM x (Maybe c)) (nt :: forall a. q a -> Event x (v a)) (d :: DynamicS x (PatchDMap k q)). cacheEvent (pushCheap f (mergeCheap nt d)) = pushMergeG f nt d
+"pushMergeWithMove/contract" [1] forall (f :: DMap k v -> EventM x (Maybe c)) (nt :: forall a. q a -> Event x (v a)) (d :: DynamicS x (PatchDMapWithMove k q)). cacheEvent (pushCheap f (mergeCheapWithMove nt d)) = pushMergeWithMove f nt d
   #-}
 
 -- | Used by the rule "pushCheap/pushCheap".
 {-# INLINE composePush #-}
-composePush :: (b -> ComputeM x (Maybe c)) -> (a -> ComputeM x (Maybe b)) -> a -> ComputeM x (Maybe c)
+composePush :: (b -> EventM x (Maybe c)) -> (a -> EventM x (Maybe b)) -> a -> EventM x (Maybe c)
 composePush f g a = g a >>= maybe (return Nothing) f
 
 -- | Construct an 'Event' equivalent to that constructed by 'push', but with no
 -- caching; if the computation function is very cheap, this is (much) more
 -- efficient than 'push'
 {-# INLINE [0] pushCheap #-}
-pushCheap :: forall (x :: Type) a b. HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
+pushCheap :: forall (x :: Type) a b. HasSpiderTimeline x => (a -> EventM x (Maybe b)) -> Event x a -> Event x b
 pushCheap = pushCheapImpl
 
 {-# INLINE pushCheapImpl #-}
-pushCheapImpl :: forall (x :: Type) a b. HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
+pushCheapImpl :: forall (x :: Type) a b. HasSpiderTimeline x => (a -> EventM x (Maybe b)) -> Event x a -> Event x b
 pushCheapImpl !f e = Event $ \sub -> do
   wither f <=< subscribeAndRead e $ debugSubscriber' "push" $ sub
     { subscriberPropagate = \a -> do
@@ -1365,9 +1365,6 @@ unsafeBuildDynamic :: BehaviorM x (PatchTarget p) -> Event x p -> Dyn x p
 unsafeBuildDynamic readV0 v' =
   Dyn $ unsafePerformIO $ newIORef $ UnsafeDyn (readV0, v')
 
--- ResultM can read behaviors and events
-type ResultM = EventM
-
 instance HasSpiderTimeline x => Functor (Event x) where
   fmap f = push $ return . Just . f
 
@@ -1377,35 +1374,35 @@ instance Functor (Behavior x) where
 -- | See the comment at cacheEvent for why this is not
 -- @cacheEvent (pushCheap f e)@.
 {-# NOINLINE [0] push #-}
-{-# SPECIALIZE push :: (a -> ComputeM Global (Maybe b)) -> Event Global a -> Event Global b #-}
-push :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Event x a -> Event x b
+{-# SPECIALIZE push :: (a -> EventM Global (Maybe b)) -> Event Global a -> Event Global b #-}
+push :: HasSpiderTimeline x => (a -> EventM x (Maybe b)) -> Event x a -> Event x b
 push f e = cacheEventImpl (pushCheapImpl f e)
 
 {-# NOINLINE [0] pushSwitch #-}
-{-# SPECIALIZE pushSwitch :: (a -> ComputeM Global (Maybe b)) -> Behavior Global (Event Global a) -> Event Global b #-}
-pushSwitch :: HasSpiderTimeline x => (a -> ComputeM x (Maybe b)) -> Behavior x (Event x a) -> Event x b
+{-# SPECIALIZE pushSwitch :: (a -> EventM Global (Maybe b)) -> Behavior Global (Event Global a) -> Event Global b #-}
+pushSwitch :: HasSpiderTimeline x => (a -> EventM x (Maybe b)) -> Behavior x (Event x a) -> Event x b
 pushSwitch f b = cacheEventImpl (pushCheapImpl f (switchUncachedImpl b))
 
 {-# NOINLINE [0] pushCoincidence #-}
-{-# SPECIALIZE pushCoincidence :: (a -> ComputeM Global (Maybe c)) -> Event Global (R.Event (SpiderTimeline Global) a) -> Event Global c #-}
-pushCoincidence :: HasSpiderTimeline x => (a -> ComputeM x (Maybe c)) -> Event x (R.Event (SpiderTimeline x) a) -> Event x c
+{-# SPECIALIZE pushCoincidence :: (a -> EventM Global (Maybe c)) -> Event Global (R.Event (SpiderTimeline Global) a) -> Event Global c #-}
+pushCoincidence :: HasSpiderTimeline x => (a -> EventM x (Maybe c)) -> Event x (R.Event (SpiderTimeline x) a) -> Event x c
 pushCoincidence f e = cacheEventImpl (pushCheapImpl f (coincidenceUncachedImpl e))
 
 {-# NOINLINE [0] pushMergeInt #-}
-{-# SPECIALIZE pushMergeInt :: (IntMap a -> ComputeM Global (Maybe b)) -> DynamicS Global (PatchIntMap (Event Global a)) -> Event Global b #-}
-pushMergeInt :: HasSpiderTimeline x => (IntMap a -> ComputeM x (Maybe b)) -> DynamicS x (PatchIntMap (Event x a)) -> Event x b
+{-# SPECIALIZE pushMergeInt :: (IntMap a -> EventM Global (Maybe b)) -> DynamicS Global (PatchIntMap (Event Global a)) -> Event Global b #-}
+pushMergeInt :: HasSpiderTimeline x => (IntMap a -> EventM x (Maybe b)) -> DynamicS x (PatchIntMap (Event x a)) -> Event x b
 pushMergeInt f d = cacheEventImpl (pushCheapImpl f (mergeIntCheapImpl d))
 
 {-# INLINE [0] pushMergeG #-}
 pushMergeG :: forall k q x v c. (HasSpiderTimeline x, GCompare k)
-  => (DMap k v -> ComputeM x (Maybe c))
+  => (DMap k v -> EventM x (Maybe c))
   -> (forall a. q a -> Event x (v a))
   -> DynamicS x (PatchDMap k q) -> Event x c
 pushMergeG f nt d = cacheEventImpl (pushCheapImpl f (mergeCheapImpl nt d))
 
 {-# INLINE [0] pushMergeWithMove #-}
 pushMergeWithMove :: forall k q x v c. (HasSpiderTimeline x, GCompare k)
-  => (DMap k v -> ComputeM x (Maybe c))
+  => (DMap k v -> EventM x (Maybe c))
   -> (forall a. q a -> Event x (v a))
   -> DynamicS x (PatchDMapWithMove k q) -> Event x c
 pushMergeWithMove f nt d = cacheEventImpl (pushCheapImpl f (mergeCheapWithMoveImpl nt d))
@@ -1545,7 +1542,7 @@ coincidenceUncachedImpl outer = Event $ \sub -> do
     occ
 
 -- Propagate the given event occurrence; before cleaning up, run the given action, which may read the state of events and behaviors
-run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> ResultM x b -> SpiderHost x b
+run :: forall x b. HasSpiderTimeline x => [DSum (RootTrigger x) Identity] -> EventM x b -> SpiderHost x b
 run roots after = do
   tracePropagate (Proxy :: Proxy x) $ "Running an event frame with " <> show (length roots) <> " events"
   let t = spiderTimeline :: SpiderTimelineEnv x
@@ -2768,9 +2765,7 @@ withSpiderTimeline k = do
 
 newtype SpiderPullM (x :: Type) a = SpiderPullM (BehaviorM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
-type ComputeM = EventM
-
-newtype SpiderPushM (x :: Type) a = SpiderPushM (ComputeM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
+newtype SpiderPushM (x :: Type) a = SpiderPushM (EventM x a) deriving (Functor, Applicative, Monad, MonadIO, MonadFix)
 
 instance HasSpiderTimeline x => R.Reflex (SpiderTimeline x) where
   {-# SPECIALIZE instance R.Reflex (SpiderTimeline Global) #-}
@@ -2912,7 +2907,7 @@ newFanEventWithTriggerIO f = do
         }
   return $ EventSelector $ \k -> eventRoot k r
 
-newtype ReadPhase x a = ReadPhase (ResultM x a) deriving (Functor, Applicative, Monad, MonadFix)
+newtype ReadPhase x a = ReadPhase (EventM x a) deriving (Functor, Applicative, Monad, MonadFix)
 
 instance MonadRef (SpiderHost x) where
   type Ref (SpiderHost x) = Ref IO
