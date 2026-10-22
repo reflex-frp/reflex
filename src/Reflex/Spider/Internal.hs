@@ -963,7 +963,7 @@ data EventEnv x
               , eventEnvRootClears :: !(IORef [Some RootClear])
               , eventEnvCurrentHeight :: !(IORef Height) -- Needed for Subscribe
               , eventEnvResetCoincidences :: !(IORef [SomeResetCoincidence x]) -- Needed for Subscribe
-              , eventEnvPendingRecalculations :: !(IORef [SomeRecalculateHeight x]) -- Nodes that invalidated their own height this frame and must recalculate it at the end of the frame; populated by 'deferRecalculateHeight', drained by 'runPendingRecalculations'
+              , eventEnvPendingRecalculations :: !(IORef [SomeRecalculateHeight x])
               , eventEnvDelayedMerges :: !(IORef (HeightQueue (EventM x ())))
               }
 
@@ -971,8 +971,12 @@ data EventEnv x
 runEventM :: EventM x a -> IO a
 runEventM = unEventM
 
+{-# INLINE spiderEventEnv #-}
+spiderEventEnv :: forall x. HasSpiderTimeline x => EventEnv x
+spiderEventEnv = _spiderTimeline_eventEnv (unSTE (spiderTimeline :: SpiderTimelineEnv x))
+
 asksEventEnv :: forall x a. HasSpiderTimeline x => (EventEnv x -> a) -> EventM x a
-asksEventEnv f = return $ f $ _spiderTimeline_eventEnv (unSTE (spiderTimeline :: SpiderTimelineEnv x))
+asksEventEnv f = pure $ f $ spiderEventEnv @x
 
 class MonadIO m => Defer a m where
   getDeferralQueue :: m (IORef [a])
@@ -2300,7 +2304,7 @@ runFrame a = SpiderHost $ do
 #endif
   return result
   where
-    env = _spiderTimeline_eventEnv $ unSTE (spiderTimeline :: SpiderTimelineEnv x)
+    env = spiderEventEnv @x
 
     clearOccurrences :: IO ()
     clearOccurrences = do
@@ -2365,15 +2369,14 @@ recalculateOwnHeight heightRef notify calculate = do
         writeIORef heightRef $! newHeight
         notify newHeight
 
--- | Ask for a height recalculation at the end of the current frame.
+-- | Requests a height recalculation at the end of the current frame.
 --
--- Call this from the node that just invalidated its own height.  Every
--- invalidation owes exactly one recalculation, or the height bags of the
+-- Call this from the node that invalidated its own height. Every invalidation
+-- requires exactly one recalculation. Otherwise the height bags of the
 -- subscribers stay one entry short and never complete again.
 {-# INLINE deferRecalculateHeight #-}
 deferRecalculateHeight :: forall x. HasSpiderTimeline x => SomeRecalculateHeight x -> IO ()
-deferRecalculateHeight recalculate = modifyIORef' (eventEnvPendingRecalculations env) (recalculate :)
-  where env = _spiderTimeline_eventEnv (unSTE (spiderTimeline :: SpiderTimelineEnv x))
+deferRecalculateHeight recalculate = modifyIORef' (eventEnvPendingRecalculations (spiderEventEnv @x)) (recalculate :)
 
 runPendingRecalculations :: EventEnv x -> IO ()
 runPendingRecalculations env = go
