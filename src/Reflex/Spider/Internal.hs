@@ -329,8 +329,8 @@ pushCheapImpl !f e = Event $ \sub -> do
 terminalSubscriber :: (a -> EventM x ()) -> Subscriber x a
 terminalSubscriber p = Subscriber
   { subscriberPropagate = p
-  , subscriberInvalidateHeight = \_ -> return ()
-  , subscriberRecalculateHeight = \_ -> return ()
+  , subscriberInvalidateHeight = \_ -> pure ()
+  , subscriberRecalculateHeight = \_ -> pure ()
   }
 
 {-# INLINE ownHeightSubscriber #-}
@@ -647,13 +647,6 @@ data Subscriber x a = Subscriber
   { subscriberPropagate :: !(a -> EventM x ())
   , subscriberInvalidateHeight :: !(Height -> IO ())
   , subscriberRecalculateHeight :: !(Height -> IO ())
-  }
-
-newSubscriberHold :: (HasSpiderTimeline x, Patch p) => Hold x p -> Subscriber x p
-newSubscriberHold h = Subscriber
-  { subscriberPropagate = {-# SCC "traverseHold" #-} propagateSubscriberHold h
-  , subscriberInvalidateHeight = \_ -> return ()
-  , subscriberRecalculateHeight = \_ -> return ()
   }
 
 {-# INLINE newSubscriberCoincidenceOuter #-}
@@ -1087,18 +1080,6 @@ hold v0 e = do
         }
   defer $ SomeHoldInit h
   return h
-
-{-# INLINE getHoldEventSubscription #-}
-getHoldEventSubscription :: forall p x. (HasSpiderTimeline x, Patch p) => Hold x p -> EventM x (EventSubscription x)
-getHoldEventSubscription h = do
-  ep <- liftIO $ readIORef $ holdParent h
-  case ep of
-    Just subd -> return subd
-    Nothing -> do
-      SubscribeResult subscription@(EventSubscription _ _ _) occ <- subscribeAndRead (holdEvent h) $ newSubscriberHold h
-      for_ occ $ propagateSubscriberHold h
-      liftIO $ writeIORef (holdParent h) $ Just subscription
-      return subscription
 
 data BehaviorEnv x = BehaviorEnv
   { behaviorEnvInvalidator :: !(Maybe (Weak (Invalidator x)))
@@ -1714,24 +1695,6 @@ instance Show EventLoopException where
 
 #endif
 
-
-{-# INLINE propagateSubscriberHold #-}
-propagateSubscriberHold :: forall x p. (HasSpiderTimeline x, Patch p) => Hold x p -> p -> EventM x ()
-propagateSubscriberHold h a = do
-  {-# SCC "trace" #-} when debugPropagate $ traceM (Proxy :: Proxy x) $ liftIO $ do
-    InvalidatorList n _ _ <- liftIO $ readIORef $ holdInvalidators h
-    return $ "SubscriberHold" <> showNodeId h <> ": " ++ show n
-
-  v <- {-# SCC "read" #-} liftIO $ readIORef $ holdValue h
-  case {-# SCC "apply" #-} apply a v of
-    Nothing -> return ()
-    Just v' -> do
-      {-# SCC "trace2" #-} withIncreasedDepth (Proxy :: Proxy x) $
-        tracePropagate (Proxy :: Proxy x) ("propagateSubscriberHold: assigning Hold" <> showNodeId h)
-      vRef <- {-# SCC "vRef" #-} liftIO $ evaluate $ holdValue h
-      iRef <- {-# SCC "iRef" #-} liftIO $ evaluate $ holdInvalidators h
-      defer $ {-# SCC "assignment" #-} SomeAssignment vRef iRef v'
-
 -- | 'CoincidenceSubscribed' is present only when the coincidence raised its height while subscribing to the inner event.
 data SomeResetCoincidence x = forall a. SomeResetCoincidence !(EventSubscription x) !(Maybe (CoincidenceSubscribed x a))
 
@@ -2189,8 +2152,27 @@ runHoldInits holdInitRef dynInitRef mergeInitRef = do
     mapM_ unSomeMergeInit mergeInits
     runHoldInits holdInitRef dynInitRef mergeInitRef
 
-initHold :: HasSpiderTimeline x => SomeHoldInit x -> EventM x ()
-initHold (SomeHoldInit h) = void $ getHoldEventSubscription h
+initHold :: forall x. HasSpiderTimeline x => SomeHoldInit x -> EventM x ()
+initHold (SomeHoldInit h) = do
+  (liftIO $ readIORef $ holdParent h) >>= \case
+    Just _ -> pure ()
+    Nothing -> do
+      -- Need to evaluate these so that we don't retain the Hold itself
+      valueRef <- liftIO $ evaluate $ holdValue h
+      invalidators <- liftIO $ evaluate $ holdInvalidators h
+      let applyPatch patch = do
+            old <- {-# SCC "read" #-} liftIO $ readIORef valueRef
+            for_ ({-# SCC "apply" #-} apply patch old) $ \new -> do
+              withIncreasedDepth (Proxy :: Proxy x) $
+                tracePropagate (Proxy :: Proxy x) ("initHold: assigning Hold" <> showNodeId h)
+              defer $ {-# SCC "assignment" #-} SomeAssignment valueRef invalidators new
+      SubscribeResult subscription occ <- subscribeAndRead (holdEvent h) $ terminalSubscriber $ \a -> {-# SCC "traverseHold" #-} do
+        when debugPropagate $ traceM (Proxy :: Proxy x) $ liftIO $ do
+          InvalidatorList n _ _ <- readIORef invalidators
+          return $ "SubscriberHold" <> showNodeId h <> ": " ++ show n
+        applyPatch a
+      for_ occ applyPatch
+      liftIO $ writeIORef (holdParent h) $ Just subscription
 
 initDyn :: HasSpiderTimeline x => SomeDynInit x -> EventM x ()
 initDyn (SomeDynInit d) = void $ getDynHold d
