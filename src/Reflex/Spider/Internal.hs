@@ -549,15 +549,8 @@ cacheSubscription sub mSubscribedRef subscribed = do
 subscribe :: Event x a -> Subscriber x a -> EventM x (EventSubscription x)
 subscribe e s = subscribeSubscription <$> subscribeAndRead e s
 
-{-# INLINE wrap #-}
-wrap :: MonadIO m => (t -> EventSubscribed x) -> (Subscriber x a -> m (WeakBagTicket, t, Maybe a)) -> Subscriber x a -> m (SubscribeResult x a)
-wrap tag getSpecificSubscribed sub = do
-  (sln, subd, occ) <- getSpecificSubscribed sub
-  let es = tag subd
-  pure $ SubscribeResult (EventSubscription (WeakBag.remove sln >> touch sln) es) occ
-
 eventRoot :: (GCompare k, HasSpiderTimeline x) => k a -> Root x k -> Event x a
-eventRoot !k !r = Event $ wrap eventSubscribedRoot $ liftIO . getRootSubscribed k r
+eventRoot !k !r = Event $ liftIO . subscribeAndReadRoot k r
 
 subscribeAndReadNever :: EventM x (SubscribeResult x a)
 subscribeAndReadNever = pure $ SubscribeResult (EventSubscription (return ()) eventSubscribedNever) Nothing
@@ -1787,22 +1780,21 @@ getDynHold d = do
 zeroRef :: IORef Height
 zeroRef = unsafePerformIO $ newIORef zeroHeight
 
-getRootSubscribed :: forall k x a. (GCompare k, HasSpiderTimeline x) => k a -> Root x k -> Subscriber x a -> IO (WeakBagTicket, RootSubscribed x a, Maybe a)
-getRootSubscribed k r sub = do
+subscribeAndReadRoot :: forall k x a. (GCompare k, HasSpiderTimeline x) => k a -> Root x k -> Subscriber x a -> IO (SubscribeResult x a)
+subscribeAndReadRoot k r sub = do
   mSubscribed <- readIORef $ rootSubscribed r
   let getOcc = fmap (coerce . DMap.lookup k) $ readIORef $ rootOccurrence r
-  case DMap.lookup k mSubscribed of
+  (sln, subscribed) <- case DMap.lookup k mSubscribed of
     Just subscribed -> {-# SCC "hitRoot" #-} do
       sln <- subscribeRootSubscribed subscribed sub
-      occ <- getOcc
-      return (sln, subscribed, occ)
+      return (sln, subscribed)
     Nothing -> {-# SCC "missRoot" #-} do
-      weakSelf <- newIORef $ error "getRootSubscribed: weakSelfRef not initialized"
+      weakSelf <- newIORef $ error "subscribeAndReadRoot: weakSelfRef not initialized"
       let !cached = rootSubscribed r
-      uninitRef <- newIORef $ error "getRootsubscribed: uninitRef not initialized"
+      uninitRef <- newIORef $ error "subscribeAndReadRoot: uninitRef not initialized"
       (subs, sln) <- WeakBag.singleton sub weakSelf cleanupRootSubscribed
 
-      tracePropagate (Proxy::Proxy x) $  "getRootSubscribed: calling rootInit"
+      tracePropagate (Proxy::Proxy x) $  "subscribeAndReadRoot: calling rootInit"
 
       uninit <- rootInit r k $ RootTrigger (subs, rootOccurrence r, k)
       writeIORef uninitRef $! uninit
@@ -1831,9 +1823,10 @@ getRootSubscribed k r sub = do
             cs <- readIORef $ _weakBag_children subs
             when (not $ IntMap.null cs) (cleanupRootSubscribed subscribed)
       writeIORef weakSelf =<< evaluate =<< mkWeakPtr subscribed (Just finalCleanup)
-      modifyIORef' (rootSubscribed r) $ DMap.insertWith (error $ "getRootSubscribed: duplicate key inserted into Root") k subscribed --TODO: I think we can just write back mSubscribed rather than re-reading it
-      occ <- getOcc
-      return (sln, subscribed, occ)
+      modifyIORef' (rootSubscribed r) $ DMap.insertWith (error $ "subscribeAndReadRoot: duplicate key inserted into Root") k subscribed --TODO: I think we can just write back mSubscribed rather than re-reading it
+      return (sln, subscribed)
+  occ <- getOcc
+  return $ SubscribeResult (EventSubscription (WeakBag.remove sln >> touch sln) (eventSubscribedRoot subscribed)) occ
 
 {-# ANN cleanupRootSubscribed "HLint: ignore Redundant bracket" #-}
 cleanupRootSubscribed :: RootSubscribed x a -> IO ()
