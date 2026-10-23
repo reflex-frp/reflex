@@ -1267,11 +1267,15 @@ data SwitchSubscribed x a
                       , switchSubscribedOwnWeakInvalidator :: !(IORef (Weak (Invalidator x)))
                       , switchSubscribedBehaviorParents :: !(IORef [SomeBehaviorSubscribed x])
                       , switchSubscribedParent :: !(Behavior x (Event x a))
-                      , switchSubscribedCurrentParent :: !(IORef (EventSubscription x))
+                      , switchSubscribedCurrentParent :: !(IORef (SwitchParentSubscription x))
 #ifdef DEBUG_NODEIDS
                       , switchSubscribedNodeId :: Int
 #endif
                       }
+
+data SwitchParentSubscription x
+  = SwitchParentSubscribed !(EventSubscription x)
+  | SwitchParentUnsubscribed
 
 data CoincidenceSubscribed x a
    = CoincidenceSubscribed { coincidenceSubscribedHeight :: !(IORef Height)
@@ -1446,18 +1450,21 @@ switchUncachedImpl b = Event $ \sub -> do
   e <- liftIO $ runBehaviorM (readBehaviorTracked b) (Just (wi, parentsRef)) holdInits
   SubscribeResult subscription parentOcc <- subscribeAndRead e $ switchSubscribedSubscriber subscribed
   liftIO $ writeIORef heightRef =<< eventSubscriptionHeight subscription
-  liftIO $ writeIORef currentParentRef subscription
+  liftIO $ writeIORef currentParentRef $ SwitchParentSubscribed subscription
   pure $ SubscribeResult
     (EventSubscription
       { _eventSubscription_unsubscribe = do
-          unsubscribe =<< readIORef currentParentRef
+          readIORef currentParentRef >>= \case
+            SwitchParentSubscribed parent -> unsubscribe parent
+            SwitchParentUnsubscribed -> pure ()
+          writeIORef currentParentRef SwitchParentUnsubscribed
           finalize =<< readIORef weakInvalidatorRef -- We don't need to get invalidated if we're dead
       , _eventSubscription_subscribed = newEventSubscribed
           heightRef
           subscribed
-          (do
-              s <- readIORef currentParentRef
-              return [_eventSubscription_subscribed s])
+          (readIORef currentParentRef >>= \case
+              SwitchParentSubscribed parent -> return [_eventSubscription_subscribed parent]
+              SwitchParentUnsubscribed -> return [])
           True
           (whoCreatedIORef currentParentRef)
       })
@@ -2301,51 +2308,58 @@ runFrame a = SpiderHost $ do
   tracePropagate (Proxy::Proxy x) $ "Updating merges done"
   toReconnect <- readIORef toReconnectRef
   clearEventEnv env
-  switchSubscriptionsToKill <- forM toReconnect $ \(SomeSwitchSubscribed subscribed) -> {-# SCC "switchSubscribed" #-} do
-    oldSubscription <- readIORef $ switchSubscribedCurrentParent subscribed
-    wi <- readIORef $ switchSubscribedOwnWeakInvalidator subscribed
-    traceInvalidate $ "Finalizing invalidator for Switch" <> showNodeId subscribed
-    finalize wi
-    i <- readIORef $ switchSubscribedOwnInvalidator subscribed
-    wi' <- mkWeakPtrWithDebug i "wi'"
-    writeIORef (switchSubscribedOwnWeakInvalidator subscribed) $! wi'
-    writeIORef (switchSubscribedBehaviorParents subscribed) []
-    writeIORef (eventEnvHoldInits env) [] --TODO: Should we reuse this?
-    e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi', switchSubscribedBehaviorParents subscribed)) $ eventEnvHoldInits env
-    runEventM $ runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
-    --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
-    subscription <- {-# SCC "subscribeSwitch" #-} subscribeReconnect e (switchSubscribedSubscriber subscribed) --TODO: Assert that the event isn't firing
-    {-
-    stackTrace <- liftIO $ fmap renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
-    liftIO $ debugStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
-      EventRoot _ -> "EventRoot"
-      EventNever -> "EventNever"
-      _ -> "something else"
-    -}
-    writeIORef (switchSubscribedCurrentParent subscribed) $! subscription
-    return oldSubscription
+  switchSubscriptionsToKill <- fmap catMaybes . forM toReconnect $ \(SomeSwitchSubscribed subscribed) -> {-# SCC "switchSubscribed" #-}
+    readIORef (switchSubscribedCurrentParent subscribed) >>= \case
+      SwitchParentUnsubscribed -> pure Nothing
+      SwitchParentSubscribed oldSubscription -> do
+        wi <- readIORef $ switchSubscribedOwnWeakInvalidator subscribed
+        traceInvalidate $ "Finalizing invalidator for Switch" <> showNodeId subscribed
+        finalize wi
+        i <- readIORef $ switchSubscribedOwnInvalidator subscribed
+        wi' <- mkWeakPtrWithDebug i "wi'"
+        writeIORef (switchSubscribedOwnWeakInvalidator subscribed) $! wi'
+        writeIORef (switchSubscribedBehaviorParents subscribed) []
+        writeIORef (eventEnvHoldInits env) [] --TODO: Should we reuse this?
+        e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi', switchSubscribedBehaviorParents subscribed)) $ eventEnvHoldInits env
+        runEventM $ runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
+        --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
+        subscription <- {-# SCC "subscribeSwitch" #-} subscribeReconnect e (switchSubscribedSubscriber subscribed) --TODO: Assert that the event isn't firing
+        {-
+        stackTrace <- liftIO $ fmap renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
+        liftIO $ debugStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
+          EventRoot _ -> "EventRoot"
+          EventNever -> "EventNever"
+          _ -> "something else"
+        -}
+        writeIORef (switchSubscribedCurrentParent subscribed) $! SwitchParentSubscribed subscription
+        return $ Just oldSubscription
   liftIO $ mapM_ unsubscribe mergeSubscriptionsToKill
   liftIO $ mapM_ unsubscribe switchSubscriptionsToKill
-  forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> {-# SCC "switchSubscribed" #-} do
-    parentHeight <- eventSubscriptionHeight =<< readIORef (switchSubscribedCurrentParent subscribed)
-    myHeight <- readIORef $ switchSubscribedHeight subscribed
-    case myHeight of
-      InvalidHeight -> pure ()
-      ValidHeight -> do
-        let heightChanged = case parentHeight of
-              ValidHeight -> compareHeight parentHeight myHeight /= EQ
-              InvalidHeight -> True
-        when heightChanged $
-          subscriberInvalidateHeight (switchSubscribedSubscriber subscribed) myHeight
+  forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> {-# SCC "switchSubscribed" #-}
+    readIORef (switchSubscribedCurrentParent subscribed) >>= \case
+      SwitchParentUnsubscribed -> pure ()
+      SwitchParentSubscribed parent -> do
+        parentHeight <- eventSubscriptionHeight parent
+        myHeight <- readIORef $ switchSubscribedHeight subscribed
+        case myHeight of
+          InvalidHeight -> pure ()
+          ValidHeight -> do
+            let heightChanged = case parentHeight of
+                  ValidHeight -> compareHeight parentHeight myHeight /= EQ
+                  InvalidHeight -> True
+            when heightChanged $
+              subscriberInvalidateHeight (switchSubscribedSubscriber subscribed) myHeight
   mapM_ _someMergeUpdate_invalidateHeight mergeUpdates
   forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mInvalidate) -> do
     unsubscribe subscription
     mapM_ invalidateCoincidenceHeight mInvalidate
   runPendingRecalculations env
   mapM_ _someMergeUpdate_recalculateHeight mergeUpdates
-  forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) -> do
-    height <- calculateSwitchHeight subscribed
-    subscriberRecalculateHeight (switchSubscribedSubscriber subscribed) height
+  forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) ->
+    readIORef (switchSubscribedCurrentParent subscribed) >>= \case
+      SwitchParentUnsubscribed -> pure ()
+      SwitchParentSubscribed parent ->
+        subscriberRecalculateHeight (switchSubscribedSubscriber subscribed) =<< eventSubscriptionHeight parent
 #ifdef DEBUG_FRAME
   do leftover <- readIORef $ eventEnvPendingRecalculations env
      unless (null leftover) $
@@ -2456,9 +2470,6 @@ recalculateCoincidenceSubscribers = subscriberRecalculateHeight . coincidenceSub
 recalculateCoincidenceHeight :: CoincidenceSubscribed x a -> IO ()
 recalculateCoincidenceHeight subscribed =
   recalculateOwnHeight (coincidenceSubscribedHeight subscribed) (recalculateCoincidenceSubscribers subscribed) (calculateCoincidenceHeight subscribed)
-
-calculateSwitchHeight :: SwitchSubscribed x a -> IO Height
-calculateSwitchHeight subscribed = eventSubscriptionHeight =<< readIORef (switchSubscribedCurrentParent subscribed)
 
 calculateCoincidenceHeight :: CoincidenceSubscribed x a -> IO Height
 calculateCoincidenceHeight subscribed = do
