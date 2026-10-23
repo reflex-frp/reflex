@@ -1937,6 +1937,11 @@ type MergeInitFunc map v t x s
   -> IORef HeightBag
   -> EventM x (map v, map s)
 
+data MergeChangeSubscription x
+  = MergeChangeNotSubscribed
+  | MergeChangeSubscribed !(EventSubscription x)
+  | MergeChangeUnsubscribed
+
 {-# INLINE initMergeParents #-}
 initMergeParents
   :: forall map q v x s. IsMap map
@@ -2016,7 +2021,7 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
   heightRef <- liftIO $ newIORef $ error "merge: heightRef not yet initialized"
   heightBagRef <- liftIO $ newIORef heightBagEmpty
   parentsRef :: IORef (map s) <- liftIO $ newIORef $ error "merge: parentsRef not yet initialized"
-  changeSubdRef <- liftIO $ newIORef $ error "merge: changeSubdRef not yet initialized"
+  changeSubdRef <- liftIO $ newIORef MergeChangeNotSubscribed
 
   let subscribed = newEventSubscribed
         heightRef
@@ -2107,14 +2112,16 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
         }
 
       --TODO: Be able to run as much of this as possible promptly
-      updateParents patch = do
-        oldParents <- liftIO $ readIORef parentsRef
-        (subscriptionsToKill, newParents) <- updateFunc parentSubscriber heightBagRef oldParents patch
-        liftIO $ writeIORef parentsRef $! newParents
+      updateParents patch = liftIO (readIORef changeSubdRef) >>= \case
+        MergeChangeUnsubscribed -> return []
+        _ -> do
+          oldParents <- liftIO $ readIORef parentsRef
+          (subscriptionsToKill, newParents) <- updateFunc parentSubscriber heightBagRef oldParents patch
+          liftIO $ writeIORef parentsRef $! newParents
 #ifdef DEBUG
-        liftIO checkParentCount
+          liftIO checkParentCount
 #endif
-        return subscriptionsToKill
+          return subscriptionsToKill
 
       deferParentUpdate patch =
         defer $ SomeMergeUpdate (updateParents patch) invalidateMyHeightOnParentChange recalculateMyHeight
@@ -2132,18 +2139,22 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
 #ifdef DEBUG
   liftIO checkParentCount
 #endif
-  defer $ SomeMergeInit $ do
-    let changeSubscriber = terminalSubscriber $ \patch -> {-# SCC "traverseMergeChange" #-} do
-          tracePropagate (Proxy :: Proxy x) "SubscriberMerge/Change"
-          deferParentUpdate patch
-    SubscribeResult changeSubscription change <- subscribeAndRead (dynamicUpdated d) changeSubscriber
-    for_ change deferParentUpdate
-    -- We explicitly hold on to the unsubscribe function from subscribing to the update event.
-    -- If we don't do this, there are certain cases where mergeCheap will fail to properly retain
-    -- its subscription.
-    liftIO $ writeIORef changeSubdRef (changeSubscriber, changeSubscription)
-  let unsubscribeAll = readIORef parentsRef >>= \parents ->
+  defer $ SomeMergeInit $ liftIO (readIORef changeSubdRef) >>= \case
+    MergeChangeNotSubscribed -> do
+      let changeSubscriber = terminalSubscriber $ \patch -> {-# SCC "traverseMergeChange" #-} do
+            tracePropagate (Proxy :: Proxy x) "SubscriberMerge/Change"
+            deferParentUpdate patch
+      SubscribeResult changeSubscription change <- subscribeAndRead (dynamicUpdated d) changeSubscriber
+      for_ change deferParentUpdate
+      liftIO $ writeIORef changeSubdRef $ MergeChangeSubscribed changeSubscription
+    _ -> pure ()
+  let unsubscribeAll = do
+        parents <- readIORef parentsRef
         mapFor_ parents $ unsubscribe . getParent
+        readIORef changeSubdRef >>= \case
+          MergeChangeSubscribed changeSubscription -> unsubscribe changeSubscription
+          _ -> pure ()
+        writeIORef changeSubdRef MergeChangeUnsubscribed
   pure $ SubscribeResult (EventSubscription unsubscribeAll subscribed) occ
 
 
