@@ -1264,7 +1264,6 @@ data SwitchSubscribed x a
    = SwitchSubscribed { switchSubscribedHeight :: !(IORef Height)
                       , switchSubscribedSubscriber :: !(Subscriber x a)
                       , switchSubscribedOwnInvalidator :: !(IORef (Invalidator x))
-                      , switchSubscribedOwnWeakInvalidator :: !(IORef (Weak (Invalidator x)))
                       , switchSubscribedBehaviorParents :: !(IORef [SomeBehaviorSubscribed x])
                       , switchSubscribedParent :: !(Behavior x (Event x a))
                       , switchSubscribedCurrentParent :: !(IORef (SwitchParentSubscription x))
@@ -1422,7 +1421,6 @@ switchUncachedImpl b = Event $ \sub -> do
   heightRef <- liftIO $ newIORef $ error "switchUncached: height not yet known"
   currentParentRef <- liftIO $ newIORef $ error "switchUncached: current parent not yet subscribed"
   invalidatorRef <- liftIO $ newIORef $ error "switchUncached: invalidator not yet created"
-  weakInvalidatorRef <- liftIO $ newIORef $ error "switchUncached: weak invalidator not yet created"
   parentsRef <- liftIO $ newIORef [] --TODO: This should be unnecessary, because it will always be filled with just the single parent behavior
 #ifdef DEBUG_NODEIDS
   nid <- liftIO newNodeId
@@ -1434,7 +1432,6 @@ switchUncachedImpl b = Event $ \sub -> do
             , subscriberRecalculateHeight = recalculateOwnHeight heightRef (subscriberRecalculateHeight sub) . pure
             }
         , switchSubscribedOwnInvalidator = invalidatorRef
-        , switchSubscribedOwnWeakInvalidator = weakInvalidatorRef
         , switchSubscribedBehaviorParents = parentsRef
         , switchSubscribedParent = b
         , switchSubscribedCurrentParent = currentParentRef
@@ -1445,7 +1442,6 @@ switchUncachedImpl b = Event $ \sub -> do
   i <- liftIO $ newInvalidatorSwitch subscribed
   wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorSwitch"
   liftIO $ writeIORef invalidatorRef i
-  liftIO $ writeIORef weakInvalidatorRef wi
   holdInits <- getDeferralQueue
   e <- liftIO $ runBehaviorM (readBehaviorTracked b) (Just (wi, parentsRef)) holdInits
   SubscribeResult subscription parentOcc <- subscribeAndRead e $ switchSubscribedSubscriber subscribed
@@ -1458,7 +1454,6 @@ switchUncachedImpl b = Event $ \sub -> do
             SwitchParentSubscribed parent -> unsubscribe parent
             SwitchParentUnsubscribed -> pure ()
           writeIORef currentParentRef SwitchParentUnsubscribed
-          finalize =<< readIORef weakInvalidatorRef -- We don't need to get invalidated if we're dead
       , _eventSubscription_subscribed = newEventSubscribed
           heightRef
           subscribed
@@ -2312,12 +2307,8 @@ runFrame a = SpiderHost $ do
     readIORef (switchSubscribedCurrentParent subscribed) >>= \case
       SwitchParentUnsubscribed -> pure Nothing
       SwitchParentSubscribed oldSubscription -> do
-        wi <- readIORef $ switchSubscribedOwnWeakInvalidator subscribed
-        traceInvalidate $ "Finalizing invalidator for Switch" <> showNodeId subscribed
-        finalize wi
         i <- readIORef $ switchSubscribedOwnInvalidator subscribed
         wi' <- mkWeakPtrWithDebug i "wi'"
-        writeIORef (switchSubscribedOwnWeakInvalidator subscribed) $! wi'
         writeIORef (switchSubscribedBehaviorParents subscribed) []
         e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi', switchSubscribedBehaviorParents subscribed)) $ eventEnvHoldInits env
         subscription <- {-# SCC "subscribeSwitch" #-} subscribeReconnect e (switchSubscribedSubscriber subscribed)
