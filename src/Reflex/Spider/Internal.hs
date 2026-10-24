@@ -61,6 +61,9 @@ import Data.Traversable
 import Data.Type.Equality ((:~:)(Refl))
 import GHC.Exts hiding (toList, build)
 import GHC.IORef (IORef (..))
+#if MIN_VERSION_base(4,13,0)
+import GHC.IORef (atomicModifyIORef'_)
+#endif
 import GHC.Stack
 import System.IO.Unsafe
 import System.Mem.Weak
@@ -558,6 +561,12 @@ subscribeAndReadNever = pure $ SubscribeResult (EventSubscription (return ()) ev
 eventNever :: Event x a
 eventNever = Event $ const subscribeAndReadNever
 
+#if !MIN_VERSION_base(4,13,0)
+-- | 'GHC.IORef.atomicModifyIORef'_', which base < 4.13 does not have.
+atomicModifyIORef'_ :: IORef a -> (a -> a) -> IO (a, a)
+atomicModifyIORef'_ ref f = atomicModifyIORef' ref $ \old -> let !new = f old in (new, (old, new))
+#endif
+
 {-# INLINE eventFan #-}
 eventFan :: forall x map v a. (HasSpiderTimeline x, IsMap map) => MapKey map a -> Event x (map v) -> Fan x map v -> Event x (v a)
 eventFan !k p !(Fan weakMaybeFanSubscribed) = Event $ \sub -> do
@@ -618,9 +627,9 @@ eventFan !k p !(Fan weakMaybeFanSubscribed) = Event $ \sub -> do
     let removeSubscriber (FanSubscribers s) =
           let remaining = IntMap.delete i s
           in if IntMap.null remaining then Nothing else Just (FanSubscribers remaining)
-    w <- mkWeakPtr sub' $ Just $ atomicModifyIORef' subscribersRef $ \m -> (mapUpdate removeSubscriber k m, ())
+    w <- mkWeakPtr sub' $ Just $ void $ atomicModifyIORef'_ subscribersRef $ mapUpdate removeSubscriber k
     let !onlySubscriber = FanSubscribers $ IntMap.singleton i w
-    atomicModifyIORef' subscribersRef $ \m -> (mapInsertWith (\_ (FanSubscribers s) -> FanSubscribers $ IntMap.insert i w s) k onlySubscriber m, ())
+    void $ atomicModifyIORef'_ subscribersRef $ mapInsertWith (\_ (FanSubscribers s) -> FanSubscribers $ IntMap.insert i w s) k onlySubscriber
     currentOcc <- readIORef $ fanSubscribedOccurrence fields
     let unsubscribeKey = do
           finalize w
