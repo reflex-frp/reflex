@@ -611,15 +611,16 @@ eventFan !k p !(Fan weakMaybeFanSubscribed) = Event $ \sub -> do
     let fields = lazy subscribed -- see 'cacheSubscription' for 'lazy' reason
         subscribersRef = fanSubscribedSubscribers fields
     sub' <- evaluate sub
-    i <- atomicModifyIORef' (fanSubscribedNextId fields) $ \n -> (succ n, n)
-    w <- mkWeakPtr sub' $ Just $ atomicModifyIORef' subscribersRef $ \m -> (, ()) $ case mapLookup k m of
-      Nothing -> m
-      Just (FanSubscribers s) ->
-        let remaining = IntMap.delete i s
-        in if IntMap.null remaining then mapDelete k m else mapInsert k (FanSubscribers remaining) m
-    atomicModifyIORef' subscribersRef $ \m ->
-      let !keySubscribers = IntMap.insert i w $ maybe IntMap.empty (\(FanSubscribers s) -> s) $ mapLookup k m
-      in (mapInsert k (FanSubscribers keySubscribers) m, ())
+    -- Unlike the key map, the finalizer never changes fanSubscribedNextId, so a
+    -- plain read and write are enough.
+    i <- readIORef $ fanSubscribedNextId fields
+    writeIORef (fanSubscribedNextId fields) $! succ i
+    let removeSubscriber (FanSubscribers s) =
+          let remaining = IntMap.delete i s
+          in if IntMap.null remaining then Nothing else Just (FanSubscribers remaining)
+    w <- mkWeakPtr sub' $ Just $ atomicModifyIORef' subscribersRef $ \m -> (mapUpdate removeSubscriber k m, ())
+    let !onlySubscriber = FanSubscribers $ IntMap.singleton i w
+    atomicModifyIORef' subscribersRef $ \m -> (mapInsertWith (\_ (FanSubscribers s) -> FanSubscribers $ IntMap.insert i w s) k onlySubscriber m, ())
     currentOcc <- readIORef $ fanSubscribedOccurrence fields
     let unsubscribeKey = do
           finalize w
@@ -1210,6 +1211,8 @@ class IsMap (map :: (i -> Type) -> Type) where
   mapLookup :: MapKey map a -> map v -> Maybe (v a)
   mapInsert :: MapKey map a -> v a -> map v -> map v
   mapDelete :: MapKey map a -> map v -> map v
+  mapInsertWith :: (v a -> v a -> v a) -> MapKey map a -> v a -> map v -> map v
+  mapUpdate :: (v a -> Maybe (v a)) -> MapKey map a -> map v -> map v
   mapForIntersection_ :: Monad m => map v -> map w -> (forall a. v a -> w a -> m ()) -> m ()
   mapFor_ :: Monad m => map v -> (forall a. v a -> m ()) -> m ()
   mapToList :: map v -> [DSum (MapKey map) v]
@@ -1223,6 +1226,8 @@ instance GCompare k => IsMap (DMap k) where
   mapLookup = DMap.lookup
   mapInsert = DMap.insert
   mapDelete = DMap.delete
+  mapInsertWith = DMap.insertWith'
+  mapUpdate = DMap.update
   mapForIntersection_ left right f =
     DMap.foldrWithKey (\_ (Pair v w) rest -> f v w >> rest) (pure ())
     $ DMap.intersectionWithKey (\_ -> Pair) left right
@@ -1240,6 +1245,8 @@ instance IsMap (IntMapOf a) where
   mapLookup (Const2 k) (IntMapOf m) = IntMap.lookup k m
   mapInsert (Const2 k) v (IntMapOf m) = IntMapOf $ IntMap.insert k v m
   mapDelete (Const2 k) (IntMapOf m) = IntMapOf $ IntMap.delete k m
+  mapInsertWith f (Const2 k) v (IntMapOf m) = IntMapOf $ IntMap.insertWith f k v m
+  mapUpdate f (Const2 k) (IntMapOf m) = IntMapOf $ IntMap.update f k m
   mapForIntersection_ (IntMapOf left) (IntMapOf right) f = traverse_ (uncurry f) $ IntMap.intersectionWith (,) left right
   mapFor_ (IntMapOf m) f = traverse_ f m
   mapToList (IntMapOf m) = (\(k, v) -> Const2 k :=> v) <$> IntMap.toList m
