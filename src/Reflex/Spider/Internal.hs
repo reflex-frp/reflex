@@ -1219,7 +1219,8 @@ class IsMap (map :: (i -> Type) -> Type) where
   mapSize :: map v -> Int
   mapLookup :: MapKey map a -> map v -> Maybe (v a)
   mapInsert :: MapKey map a -> v a -> map v -> map v
-  mapDelete :: MapKey map a -> map v -> map v
+  mapInsertLookup :: MapKey map a -> v a -> map v -> (Maybe (v a), map v)
+  mapDeleteLookup :: MapKey map a -> map v -> (Maybe (v a), map v)
   mapInsertWith :: (v a -> v a -> v a) -> MapKey map a -> v a -> map v -> map v
   mapUpdate :: (v a -> Maybe (v a)) -> MapKey map a -> map v -> map v
   mapForIntersection_ :: Monad m => map v -> map w -> (forall a. v a -> w a -> m ()) -> m ()
@@ -1234,7 +1235,8 @@ instance GCompare k => IsMap (DMap k) where
   mapSize = DMap.size
   mapLookup = DMap.lookup
   mapInsert = DMap.insert
-  mapDelete = DMap.delete
+  mapInsertLookup k v m = (DMap.lookup k m, DMap.insert k v m)
+  mapDeleteLookup k m = (DMap.lookup k m, DMap.delete k m)
   mapInsertWith = DMap.insertWith'
   mapUpdate = DMap.update
   mapForIntersection_ left right f =
@@ -1253,7 +1255,8 @@ instance IsMap (IntMapOf a) where
   mapSize (IntMapOf m) = IntMap.size m
   mapLookup (Const2 k) (IntMapOf m) = IntMap.lookup k m
   mapInsert (Const2 k) v (IntMapOf m) = IntMapOf $ IntMap.insert k v m
-  mapDelete (Const2 k) (IntMapOf m) = IntMapOf $ IntMap.delete k m
+  mapInsertLookup (Const2 k) v (IntMapOf m) = IntMapOf <$> IntMap.insertLookupWithKey (\_ new _ -> new) k v m
+  mapDeleteLookup (Const2 k) (IntMapOf m) = IntMapOf <$> IntMap.updateLookupWithKey (\_ _ -> Nothing) k m
   mapInsertWith f (Const2 k) v (IntMapOf m) = IntMapOf $ IntMap.insertWith f k v m
   mapUpdate f (Const2 k) (IntMapOf m) = IntMapOf $ IntMap.update f k m
   mapForIntersection_ (IntMapOf left) (IntMapOf right) f = traverse_ (uncurry f) $ IntMap.intersectionWith (,) left right
@@ -1992,12 +1995,11 @@ updateMergeParents nt subscriber heightBagRef oldParents patch =
   foldM updateParent ([], oldParents) $ mapToList patch
   where
     updateParent (subscriptionsToKill, parents) (k :=> ComposeMaybe maybeEvent) = do
-      let maybeOldSubscribed = mapLookup k parents
-      newParents <- case maybeEvent of
-        Nothing -> pure $ mapDelete k parents
+      (maybeOldSubscribed, newParents) <- case maybeEvent of
+        Nothing -> pure $ mapDeleteLookup k parents
         Just e -> do
           newParent <- MergeSubscribedParent . subscribeSubscription <$> subscribeMergeParent heightBagRef (nt e) (subscriber $ pure k)
-          pure $ mapInsert k newParent parents
+          pure $ mapInsertLookup k newParent parents
       for_ maybeOldSubscribed $
         liftIO . forgetMergeParentHeight heightBagRef . unMergeSubscribedParent
       pure ( maybeToList (unMergeSubscribedParent <$> maybeOldSubscribed) ++ subscriptionsToKill
