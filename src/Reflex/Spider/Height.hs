@@ -181,11 +181,11 @@ insertHeight (Height h) = IntMap.insertWith (+) h 1
 
 {-# INLINE deleteHeight #-}
 deleteHeight :: Height -> HeightBag -> IntMap Word
-deleteHeight (Height h) b@(HeightBag _ c) = case IntMap.lookup h c of
-  Nothing -> error $ "deleteHeight: Height " <> show h <> " not present in bag " <> show b
-  Just old -> case old of
-    1 -> IntMap.delete h c
-    _ -> IntMap.insert h (pred old) c
+deleteHeight (Height h) b@(HeightBag _ c) = IntMap.alter decrement h c
+  where
+    decrement Nothing = error $ "deleteHeight: Height " <> show h <> " not present in bag " <> show b
+    decrement (Just 1) = Nothing
+    decrement (Just old) = Just $ pred old
 
 {-# INLINE heightBagVerify #-}
 heightBagVerify :: HeightBag -> HeightBag
