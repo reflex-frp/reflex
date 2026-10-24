@@ -116,6 +116,7 @@ benchmarks = implGroup "spider" runSpiderHost cases
     firing n     = group ("firing "    <> show n) $ Focused.firing n
     merging n    = group ("merging "   <> show n) $ Focused.merging n
     fans n       = group ("fans "      <> show n) $ Focused.fans n
+    mergePatches n = group ("mergePatches " <> show n) $ Focused.mergePatches n
     dynamics n   = group ("dynamics "  <> show n) $ Focused.dynamics n
     shared w     = group ("sharedInvalidators " <> show w) $ Focused.sharedInvalidators w
     eventWriter w = group ("eventWriter " <> show w) $ Focused.eventWriters w
@@ -132,6 +133,8 @@ benchmarks = implGroup "spider" runSpiderHost cases
       , merging 200
       , fans 10
       , fans 100
+      , mergePatches 100
+      , mergePatches 1000
       , shared 30
       , shared 100
       , shared 300

@@ -340,6 +340,28 @@ merging n =
     counters = countMany =<< sparse
 
 
+-- | Merges of n events whose parents change in every frame. The patch of
+-- frame i removes the parent of each key k with odd (k + i) and adds a parent
+-- for each key k with even (k + i), so every frame changes every key.
+mergePatches :: Word -> [(String, TestCase)]
+mergePatches n =
+  [ testE "mergeMapIncremental" $ do
+      e <- events 10
+      parents <- holdIncremental Map.empty $ mapPatch e <$> e
+      return $ fmapCheap sum $ mergeMapIncremental parents
+  , testE "mergeIntIncremental" $ do
+      e <- events 10
+      parents <- holdIncremental IntMap.empty $ intMapPatch e <$> e
+      return $ fmapCheap sum $ mergeIntIncremental parents
+  ]
+  where
+    keyParent :: Reflex t => Event t Word -> Word -> Word -> Maybe (Event t Word)
+    keyParent e i k = if even (k + i) then Just ((+ k) <$> e) else Nothing
+    mapPatch :: Reflex t => Event t Word -> Word -> PatchMap Word (Event t Word)
+    mapPatch e i = PatchMap $ Map.fromList [ (k, keyParent e i k) | k <- [0 .. n - 1] ]
+    intMapPatch :: Reflex t => Event t Word -> Word -> PatchIntMap (Event t Word)
+    intMapPatch e i = PatchIntMap $ IntMap.fromList [ (fromIntegral k, keyParent e i k) | k <- [0 .. n - 1] ]
+
 eventWriters :: Word -> [(String, TestCase)]
 eventWriters n =
   [ testE "firing"      $ fmapCheap sum <$> (tellMany =<< events 10)
