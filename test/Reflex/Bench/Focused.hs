@@ -356,10 +356,10 @@ fans n =
   ,  testE "fanIntMapChain"            $ fanIntMergeChain n 10 <$> e
   ,  testE "fmapFanMapChain"           $ fmapFanMergeChain n 10 <$> e
 
-  , testE "fanMerge " $ fanMerge n <$> events n
+  , testE "fanMerge" $ fanMerge n <$> events n
   , testE "fanIntMerge" $ fanIntMerge n <$> events n
 
-  , testE "fmapFanMerge " $ fmapFanMerge n <$> events n
+  , testE "fmapFanMerge" $ fmapFanMerge n <$> events n
   , testE "triggerMerge" $ leftmost <$> for [1..n] (\i -> plan [(i, i)])
 
   ]
