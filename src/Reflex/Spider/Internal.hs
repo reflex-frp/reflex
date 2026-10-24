@@ -174,8 +174,8 @@ instance HasNodeId (Hold x p) where
 instance HasNodeId (SwitchSubscribed x a) where
   getNodeId = switchSubscribedNodeId
 
-instance HasNodeId (Fan x map v) where
-  getNodeId = _fan_nodeId
+instance HasNodeId (FanSubscribed x map v) where
+  getNodeId = fanSubscribedNodeId
 
 instance HasNodeId (CoincidenceSubscribed x a) where
   getNodeId = coincidenceSubscribedNodeId
@@ -559,38 +559,80 @@ eventNever :: Event x a
 eventNever = Event $ const subscribeAndReadNever
 
 {-# INLINE eventFan #-}
-eventFan :: (HasSpiderTimeline x, IsMap map) => MapKey map a -> Event x (map v) -> Fan x map v -> Event x (v a)
-eventFan !k p !self = Event $ \sub -> do
-  isEmpty <- liftIO $ mapNull <$> readIORef (_fan_subscribers self)
-  parentSubscription <-
-    if isEmpty
-    then do
-      s <- liftIO $ newSubscriberFan self
-      SubscribeResult subscription parentOcc <- subscribeAndRead p s
-      liftIO $ do
-        writeIORef (_fan_subscriptionRef self) $ Just subscription
-        writeIORef (_fan_occRef self) parentOcc
-      when (isJust parentOcc) $ scheduleClear $ _fan_occRef self
-      pure subscription
-    else liftIO $ fromMaybe (error "fan: a key has a subscriber, but the parent is not subscribed")
-                  <$!> readIORef (_fan_subscriptionRef self)
+eventFan :: forall x map v a. (HasSpiderTimeline x, IsMap map) => MapKey map a -> Event x (map v) -> Fan x map v -> Event x (v a)
+eventFan !k p !(Fan weakMaybeFanSubscribed) = Event $ \sub -> do
+  subscribed <- (liftIO $ readIORef weakMaybeFanSubscribed >>= maybe (pure Nothing) deRefWeak) >>= \case
+    Just subscribed -> pure subscribed
+    Nothing -> do
+#ifdef DEBUG_NODEIDS
+      nodeId <- liftIO newNodeId
+#endif
+      subscribersRef <- liftIO $ newIORef mapEmpty
+      nextIdRef <- liftIO $ newIORef 0
+      occRef <- liftIO $ newIORef Nothing
+      SubscribeResult parentSub parentOcc <- subscribeAndRead p
+#ifdef DEBUG_NODEIDS
+          $ debugSubscriber' ("SubscriberFan " <> showNodeId' nodeId)
+#endif
+          $ Subscriber
+        { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
+#ifdef DEBUG_FRAME
+            liftIO $ readIORef occRef >>= debugOccurrence "fan: two occurrences in one frame"
+#endif
+            subs <- liftIO $ readIORef subscribersRef
+            tracePropagate (Proxy :: Proxy x) $ show (mapSize subs) <> " keys subscribed, " <> show (mapSize a) <> " keys firing"
+            liftIO $ writeIORef occRef $ Just a
+            scheduleClear occRef
+            mapForIntersection_ subs a $ \(FanSubscribers s) v ->
+              withIncreasedDepth (Proxy :: Proxy x) $ WeakBag.traverseWeakIntMap_ s $ \c -> subscriberPropagate c v
+        , subscriberInvalidateHeight = \old -> do
+            subs <- readIORef subscribersRef
+            mapFor_ subs $ \(FanSubscribers s) ->
+              WeakBag.traverseWeakIntMap_ s $ invalidateSubscriberHeight old
+        , subscriberRecalculateHeight = \new -> do
+            subs <- readIORef subscribersRef
+            mapFor_ subs $ \(FanSubscribers s) ->
+              WeakBag.traverseWeakIntMap_ s $ recalculateSubscriberHeight new
+        }
+      liftIO $ writeIORef occRef parentOcc
+      when (isJust parentOcc) $ scheduleClear occRef
+      let !subscribed = FanSubscribed
+            { fanSubscribedSubscribers = subscribersRef
+            , fanSubscribedNextId = nextIdRef
+            , fanSubscribedOccurrence = occRef
+            , fanSubscribedParent = parentSub
+#ifdef DEBUG_NODEIDS
+            , fanSubscribedNodeId = nodeId
+#endif
+            }
+      liftIO $ writeIORef weakMaybeFanSubscribed . Just =<< mkWeakPtrWithDebug subscribed "FanSubscribed"
+      pure subscribed
   liftIO $ do
-    subscribers <- readIORef (_fan_subscribers self)
-    bag <- case mapLookup k subscribers of
-      Nothing -> do
-        bag <- WeakBag.empty
-        writeIORef (_fan_subscribers self) $! mapInsert k (FanSubscribers bag) subscribers
-        pure bag
-      Just (FanSubscribers bag) -> pure bag
-    ticket <- WeakBag.insert sub bag (_fan_weakSelf self) $ \fan -> do
-      modifyIORef' (_fan_subscribers fan) $ mapDelete k
-      noKeys <- mapNull <$> readIORef (_fan_subscribers fan)
-      when noKeys $
-        traverse_ unsubscribe =<< atomicModifyIORef' (_fan_subscriptionRef fan) (Nothing,)
-    currentOcc <- readIORef (_fan_occRef self)
-    let subscribed = passThroughEventSubscribed (_eventSubscription_subscribed parentSubscription) self
-          (whoCreatedIORef $ _fan_subscriptionRef self)
-    pure $ SubscribeResult (EventSubscription (WeakBag.remove ticket >> touch ticket) subscribed) $ mapLookup k =<< currentOcc
+    let fields = lazy subscribed -- see 'cacheSubscription' for 'lazy' reason
+        subscribersRef = fanSubscribedSubscribers fields
+    sub' <- evaluate sub
+    i <- atomicModifyIORef' (fanSubscribedNextId fields) $ \n -> (succ n, n)
+    w <- mkWeakPtr sub' $ Just $ atomicModifyIORef' subscribersRef $ \m -> (, ()) $ case mapLookup k m of
+      Nothing -> m
+      Just (FanSubscribers s) ->
+        let remaining = IntMap.delete i s
+        in if IntMap.null remaining then mapDelete k m else mapInsert k (FanSubscribers remaining) m
+    atomicModifyIORef' subscribersRef $ \m ->
+      let !keySubscribers = IntMap.insert i w $ maybe IntMap.empty (\(FanSubscribers s) -> s) $ mapLookup k m
+      in (mapInsert k (FanSubscribers keySubscribers) m, ())
+    currentOcc <- readIORef $ fanSubscribedOccurrence fields
+    let unsubscribeKey = do
+          finalize w
+          noKeys <- mapNull <$> readIORef subscribersRef
+          when noKeys $ do
+            slotSubscribed <- readIORef weakMaybeFanSubscribed >>= maybe (pure Nothing) deRefWeak
+            for_ slotSubscribed $ \current -> when (fanSubscribedSubscribers current == subscribersRef) $ do
+              writeIORef weakMaybeFanSubscribed Nothing
+              unsubscribe $ fanSubscribedParent fields
+          touch sub'
+        es = passThroughEventSubscribed (_eventSubscription_subscribed $ fanSubscribedParent fields) subscribed
+          (whoCreatedIORef weakMaybeFanSubscribed)
+    pure $ SubscribeResult (EventSubscription unsubscribeKey es) $ mapLookup k =<< currentOcc
 
 eventHold :: Hold x p -> Event x p
 eventHold !h = Event $ subscribeHoldEvent h
@@ -624,26 +666,6 @@ newSubscriberHold h = return $ Subscriber
   { subscriberPropagate = {-# SCC "traverseHold" #-} propagateSubscriberHold h
   , subscriberInvalidateHeight = \_ -> return ()
   , subscriberRecalculateHeight = \_ -> return ()
-  }
-
-{-# INLINE newSubscriberFan #-}
-newSubscriberFan :: forall x map v. (HasSpiderTimeline x, IsMap map) => Fan x map v -> IO (Subscriber x (map v))
-newSubscriberFan self = debugSubscriber ("SubscriberFan " <> showNodeId self) $ Subscriber
-  { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
-#ifdef DEBUG_FRAME
-      liftIO $ readIORef (_fan_occRef self) >>= debugOccurrence "fan: two occurrences in one frame"
-#endif
-      subs <- liftIO $ readIORef $ _fan_subscribers self
-      tracePropagate (Proxy :: Proxy x) $ show (mapSize subs) <> " keys subscribed, " <> show (mapSize a) <> " keys firing"
-      liftIO $ writeIORef (_fan_occRef self) $ Just a
-      scheduleClear $ _fan_occRef self
-      mapForIntersection_ subs a $ \(FanSubscribers bag) v -> propagate v bag
-  , subscriberInvalidateHeight = \old -> do
-      subscribers <- readIORef $ _fan_subscribers self
-      mapFor_ subscribers $ \(FanSubscribers bag) -> WeakBag.traverse_ bag $ invalidateSubscriberHeight old
-  , subscriberRecalculateHeight = \new -> do
-      subscribers <- readIORef $ _fan_subscribers self
-      mapFor_ subscribers $ \(FanSubscribers bag) -> WeakBag.traverse_ bag $ recalculateSubscriberHeight new
   }
 
 {-# INLINE newSubscriberCoincidenceOuter #-}
@@ -1226,39 +1248,24 @@ instance IsMap (IntMapOf a) where
       toPair :: forall b w. DSum (Const2 Int b) w -> (Int, w b)
       toPair (Const2 k :=> v) = (k, v)
 
-newtype FanSubscribers x v a = FanSubscribers (WeakBag (Subscriber x (v a)))
+newtype FanSubscribers x v a = FanSubscribers (IntMap (Weak (Subscriber x (v a))))
 
-data Fan x map v = Fan
-  { _fan_subscribers :: {-# UNPACK #-} !(IORef (map (FanSubscribers x v)))
-  , _fan_subscriptionRef :: {-# UNPACK #-} !(IORef (Maybe (EventSubscription x)))
-  , _fan_occRef :: {-# UNPACK #-} !(IORef (Maybe (map v)))
-  , _fan_weakSelf :: !(IORef (Weak (Fan x map v)))
+newtype Fan x map v = Fan (IORef (Maybe (Weak (FanSubscribed x map v))))
+
+-- We don't re-use WeakBag in Fan so that we can get atomic modification of the entire 'fanSubscribedSubscribers':
+data FanSubscribed x map v = FanSubscribed
+  { fanSubscribedSubscribers :: {-# UNPACK #-} !(IORef (map (FanSubscribers x v)))
+  , fanSubscribedNextId :: {-# UNPACK #-} !(IORef Int)
+  , fanSubscribedOccurrence :: {-# UNPACK #-} !(IORef (Maybe (map v)))
+  , fanSubscribedParent :: {-# UNPACK #-} !(EventSubscription x)
 #ifdef DEBUG_NODEIDS
-  , _fan_nodeId :: {-# UNPACK #-} !Int
+  , fanSubscribedNodeId :: {-# UNPACK #-} !Int
 #endif
   }
 
 {-# INLINE newFan #-}
-newFan :: IsMap map => IO (Fan x map v)
-newFan = do
-  subscribers <- newIORef mapEmpty
-  subscriptionRef <- newIORef Nothing
-  occRef <- newIORef Nothing
-  weakSelf <- newIORef $ error "newFan: weakSelf not initialized"
-#ifdef DEBUG_NODEIDS
-  nodeId <- newNodeId
-#endif
-  let !self = Fan
-        { _fan_subscribers = subscribers
-        , _fan_subscriptionRef = subscriptionRef
-        , _fan_occRef = occRef
-        , _fan_weakSelf = weakSelf
-#ifdef DEBUG_NODEIDS
-        , _fan_nodeId = nodeId
-#endif
-        }
-  writeIORef weakSelf =<< mkWeakPtrWithDebug self "Fan"
-  pure self
+newFan :: IO (Fan x map v)
+newFan = Fan <$> newIORef Nothing
 
 data SwitchSubscribed x a
    = SwitchSubscribed { switchSubscribedHeight :: !(IORef Height)

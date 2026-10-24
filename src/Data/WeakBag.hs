@@ -16,6 +16,7 @@ module Data.WeakBag
   , isEmpty
   , traverse
   , traverse_
+  , traverseWeakIntMap_
   , remove
   -- * Internal functions
   -- These will not always be available.
@@ -132,7 +133,11 @@ singleton a wbRef finalizer = {-# SCC "singleton" #-} do
 traverse_ :: forall a m. MonadIO m => WeakBag a -> (a -> m ()) -> m ()
 traverse_ (WeakBag _ children) f = {-# SCC "traverse" #-} do
   cs <- liftIO $ readIORef children
-  go cs
+  traverseWeakIntMap_ cs f
+
+{-# INLINE traverseWeakIntMap_ #-}
+traverseWeakIntMap_ :: forall a m. MonadIO m => IntMap (Weak a) -> (a -> m ()) -> m ()
+traverseWeakIntMap_ items f = go items
   where
     -- This is a very hot function in Reflex and directly recursing over the
     -- internal data structure is a noticable improvement over using forM_:
