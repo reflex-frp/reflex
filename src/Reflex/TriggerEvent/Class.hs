@@ -32,7 +32,8 @@ class Monad m => TriggerEvent t m | m -> t where
   -- subscribed lazily and then removed whenever the returned 'Event' is no
   -- longer being listened to.  Note that the setup/teardown may happen multiple
   -- times, and there is no guarantee that the teardown will be executed
-  -- promptly, or even at all, in the case of program termination.
+  -- promptly, or even at all, in the case of program termination. The setup
+  -- and teardown must not run a frame.
   newEventWithLazyTriggerWithOnComplete :: ((a -> IO () -> IO ()) -> IO (IO ())) -> m (Event t a)
 
 instance TriggerEvent t m => TriggerEvent t (ReaderT r m) where
