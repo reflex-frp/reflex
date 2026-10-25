@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -32,6 +33,9 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.IntMap.Internal as IntMap.Internal
 import Data.IORef
+#if MIN_VERSION_base(4,13,0)
+import GHC.IORef (atomicModifyIORef'_)
+#endif
 import System.Mem.Weak
 
 -- | A 'WeakBag' holds a set of values of type @/a/@, but does not retain them -
@@ -90,12 +94,18 @@ insertWithoutCallback :: a -> WeakBag a -> IO WeakBagTicket
 insertWithoutCallback a (WeakBag nextId children) = {-# SCC "insertWithoutCallback" #-} do
   a' <- evaluate a
   myId <- atomicModifyIORef' nextId $ \n -> (succ n, n)
-  wa <- mkWeakPtr a' $ Just $ atomicModifyIORef' children $ \cs -> (IntMap.delete myId cs, ())
-  atomicModifyIORef' children $ \cs -> (IntMap.insert myId wa cs, ())
+  wa <- mkWeakPtr a' $ Just $ void $ atomicModifyIORef'_ children $ IntMap.delete myId
+  void $ atomicModifyIORef'_ children $ IntMap.insert myId wa
   return $ WeakBagTicket
     { _weakBagTicket_weakItem = wa
     , _weakBagTicket_item = a'
     }
+
+#if !MIN_VERSION_base(4,13,0)
+-- | 'GHC.IORef.atomicModifyIORef'_', which base < 4.13 does not have.
+atomicModifyIORef'_ :: IORef a -> (a -> a) -> IO (a, a)
+atomicModifyIORef'_ ref f = atomicModifyIORef' ref $ \old -> let !new = f old in (new, (old, new))
+#endif
 
 -- | Create an empty 'WeakBag'.
 {-# INLINE empty #-}

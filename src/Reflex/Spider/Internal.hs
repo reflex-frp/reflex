@@ -105,7 +105,7 @@ import Data.Reflection
 import Data.Some (Some(Some))
 import Data.Type.Coercion
 import Data.Profunctor.Unsafe ((#.), (.#))
-import Data.WeakBag (WeakBag, WeakBagTicket, _weakBag_children)
+import Data.WeakBag (WeakBag)
 import qualified Data.WeakBag as WeakBag
 import qualified Reflex.Class
 import qualified Reflex.Class as R
@@ -1171,21 +1171,21 @@ data Invalidator x
    = forall a. InvalidatorPull (Pull x a)
    | forall a. InvalidatorSwitch (SwitchSubscribed x a)
 
-data RootSubscribed x a = forall k. GCompare k => RootSubscribed
-  { rootSubscribedKey :: !(k a)
-  , rootSubscribedCachedSubscribed :: !(IORef (DMap k (RootSubscribed x))) -- From the original Root
-  , rootSubscribedSubscribers :: !(WeakBag (Subscriber x a))
-  , rootSubscribedOccurrence :: !(IO (Maybe a)) -- Lookup from rootOccurrence
-  , rootSubscribedUninit :: IO ()
-  , rootSubscribedWeakSelf :: !(IORef (Weak (RootSubscribed x a))) --TODO: Can we make this a lazy non-IORef and then force it manually to avoid an indirection each time we use it?
+data RootSubscribed x a = RootSubscribed
+  { rootSubscribedSubscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
 #ifdef DEBUG_NODEIDS
   , rootSubscribedNodeId :: Int
 #endif
   }
 
+data RootKey x a = RootKey
+  { rootKeySubscribed :: {-# UNPACK #-} !(Weak (RootSubscribed x a))
+  , rootKeyTeardown :: {-# UNPACK #-} !(MVar (Maybe (IO ())))
+  }
+
 data Root x k
    = Root { rootOccurrence :: !(IORef (DMap k Identity)) -- The currently-firing occurrence of this event
-          , rootSubscribed :: !(IORef (DMap k (RootSubscribed x)))
+          , rootSubscribed :: !(IORef (DMap k (RootKey x)))
           , rootInit :: !(forall a. k a -> RootTrigger x a -> IO (IO ()))
           }
 
@@ -1810,61 +1810,48 @@ zeroRef = unsafePerformIO $ newIORef zeroHeight
 
 subscribeAndReadRoot :: forall k x a. (GCompare k, HasSpiderTimeline x) => k a -> Root x k -> Subscriber x a -> IO (SubscribeResult x a)
 subscribeAndReadRoot k r sub = do
-  mSubscribed <- readIORef $ rootSubscribed r
-  let getOcc = fmap (coerce . DMap.lookup k) $ readIORef $ rootOccurrence r
-  (sln, subscribed) <- case DMap.lookup k mSubscribed of
-    Just subscribed -> {-# SCC "hitRoot" #-} do
-      sln <- subscribeRootSubscribed subscribed sub
-      return (sln, subscribed)
+  entry <- DMap.lookup k <$> readIORef (rootSubscribed r)
+  live <- case entry of
+    Just RootKey { rootKeySubscribed = w } -> fmap ((,) w) <$> deRefWeak w
+    Nothing -> pure Nothing
+  (weakSubscribed, subscribed) <- case live of
+    Just found -> {-# SCC "hitRoot" #-} pure found
     Nothing -> {-# SCC "missRoot" #-} do
-      weakSelf <- newIORef $ error "subscribeAndReadRoot: weakSelfRef not initialized"
-      let !cached = rootSubscribed r
-      uninitRef <- newIORef $ error "subscribeAndReadRoot: uninitRef not initialized"
-      (subs, sln) <- WeakBag.singleton sub weakSelf cleanupRootSubscribed
-
+      for_ entry $ runRootKeyTeardown (rootSubscribed r) . rootKeyTeardown
+      subscribers <- WeakBag.empty
       tracePropagate (Proxy::Proxy x) $  "subscribeAndReadRoot: calling rootInit"
-
-      uninit <- rootInit r k $ RootTrigger (subs, rootOccurrence r, k)
-      writeIORef uninitRef $! uninit
+      teardown <- rootInit r k $ RootTrigger (subscribers, rootOccurrence r, k)
 #ifdef DEBUG_NODEIDS
       nid <- newNodeId
 #endif
       let !subscribed = RootSubscribed
-            { rootSubscribedKey = k
-            , rootSubscribedCachedSubscribed = cached
-            , rootSubscribedOccurrence = getOcc
-            , rootSubscribedSubscribers = subs
-            , rootSubscribedUninit = uninit
-            , rootSubscribedWeakSelf = weakSelf
+            { rootSubscribedSubscribers = subscribers
 #ifdef DEBUG_NODEIDS
             , rootSubscribedNodeId = nid
 #endif
             }
-          -- If we die at the same moment that all our children die, they will
-          -- try to clean us up but will fail because their Weak reference to us
-          -- will also be dead.  So, if we are dying, check if there are any
-          -- children; since children don't bother cleaning themselves up if
-          -- their parents are already dead, I don't think there's a race
-          -- condition here.  However, if there are any children, then we can
-          -- infer that we need to clean ourselves up, so we do.
-          finalCleanup = do
-            cs <- readIORef $ _weakBag_children subs
-            when (not $ IntMap.null cs) (cleanupRootSubscribed subscribed)
-      writeIORef weakSelf =<< evaluate =<< mkWeakPtr subscribed (Just finalCleanup)
-      modifyIORef' (rootSubscribed r) $ DMap.insertWith (error $ "subscribeAndReadRoot: duplicate key inserted into Root") k subscribed --TODO: I think we can just write back mSubscribed rather than re-reading it
-      return (sln, subscribed)
-  occ <- getOcc
-  return $ SubscribeResult (EventSubscription (WeakBag.remove sln >> touch sln) (eventSubscribedRoot subscribed)) occ
-
-{-# ANN cleanupRootSubscribed "HLint: ignore Redundant bracket" #-}
-cleanupRootSubscribed :: RootSubscribed x a -> IO ()
-cleanupRootSubscribed self@RootSubscribed { rootSubscribedKey = k, rootSubscribedCachedSubscribed = cached } = do
-  rootSubscribedUninit self
-  modifyIORef' cached $ DMap.delete k
-
-{-# INLINE subscribeRootSubscribed #-}
-subscribeRootSubscribed :: RootSubscribed x a -> Subscriber x a -> IO WeakBagTicket
-subscribeRootSubscribed subscribed sub = WeakBag.insert sub (rootSubscribedSubscribers subscribed) (rootSubscribedWeakSelf subscribed) cleanupRootSubscribed
+      teardownVar <- newMVar $ Just teardown
+      weakSubscribed <- mkWeakPtr subscribed $ Just $ runRootKeyTeardown (rootSubscribed r) teardownVar
+      void $ atomicModifyIORef'_ (rootSubscribed r) $ DMap.insert k $ RootKey weakSubscribed teardownVar
+      pure (weakSubscribed, lazy subscribed)
+  let fields = lazy subscribed -- 'lazy' used as in 'cacheSubscription'
+      subscribers = rootSubscribedSubscribers fields
+  ticket <- WeakBag.insertWithoutCallback sub subscribers
+  occ <- coerce . DMap.lookup k <$> readIORef (rootOccurrence r)
+  let unsubscribeRoot = do
+        WeakBag.remove ticket
+        noSubscribers <- WeakBag.isEmpty subscribers
+        when noSubscribers $ finalize weakSubscribed
+        touch ticket
+  return $ SubscribeResult (EventSubscription unsubscribeRoot (eventSubscribedRoot subscribed)) occ
+  where
+    runRootKeyTeardown :: IORef (DMap k (RootKey x)) -> MVar (Maybe (IO ())) -> IO ()
+    runRootKeyTeardown rootMap teardownVar = Control.Exception.mask $ \restore -> do
+      teardown <- takeMVar teardownVar
+      restore (sequence_ teardown) `Control.Exception.finally` (do
+        putMVar teardownVar Nothing
+        void $ atomicModifyIORef'_ rootMap $
+          DMap.update (\e -> if rootKeyTeardown e == teardownVar then Nothing else Just e) k)
 
 newtype EventSelectorInt x a = EventSelectorInt { selectInt :: Int -> Event x a }
 

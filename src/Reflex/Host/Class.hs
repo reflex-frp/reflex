@@ -106,7 +106,8 @@ class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
   -- event, by passing it to 'fireEventsAndRead'.
   --
   -- Note: An event may be set up multiple times. So after the teardown action
-  -- is executed, the event may still be set up again in the future.
+  -- is executed, the event may still be set up again in the future. Also, the
+  -- setup and teardown actions must not run a frame.
   newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event t a)
   newFanEventWithTrigger :: GCompare k => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> m (EventSelector t k)
 
