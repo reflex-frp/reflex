@@ -422,7 +422,7 @@ headE originalE = do
     case state of
       HeadEStateInitial _ -> error "headE in impossible HeadEStateInitial state"
       HeadEStateSubscribed subscribed -> liftIO $ do
-        ticket <- WeakBag.insertWithoutCallback sub $ headESubscribedSubscribers subscribed
+        ticket <- WeakBag.insert sub $ headESubscribedSubscribers subscribed
         occ <- readIORef $ headESubscribedOccurrence subscribed
         pure $ SubscribeResult
               (EventSubscription
@@ -530,7 +530,7 @@ cacheSubscription sub mSubscribedRef subscribed = do
   -- 'eventSubscribedRetained' keeps the key of the weak pointer in
   -- 'mSubscribedRef' alive:
   let fields = lazy subscribed
-  ticket <- WeakBag.insertWithoutCallback sub $ _cacheSubscribed_subscribers fields
+  ticket <- WeakBag.insert sub $ _cacheSubscribed_subscribers fields
   occ <- readIORef $ _cacheSubscribed_occurrence fields
   let parentSub = _cacheSubscribed_parent fields
       -- Prevent reboxing of the unpacked _cacheSubscribed_parent on every
@@ -1836,7 +1836,7 @@ subscribeAndReadRoot k r sub = do
       pure (weakSubscribed, lazy subscribed)
   let fields = lazy subscribed -- 'lazy' used as in 'cacheSubscription'
       subscribers = rootSubscribedSubscribers fields
-  ticket <- WeakBag.insertWithoutCallback sub subscribers
+  ticket <- WeakBag.insert sub subscribers
   occ <- coerce . DMap.lookup k <$> readIORef (rootOccurrence r)
   let unsubscribeRoot = do
         WeakBag.remove ticket
