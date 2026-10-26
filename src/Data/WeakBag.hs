@@ -11,27 +11,22 @@ module Data.WeakBag
   ( WeakBag
   , WeakBagTicket
   , empty
-  , singleton
   , insert
-  , insertWithoutCallback
   , isEmpty
   , traverse
   , traverse_
   , traverseWeakIntMap_
   , remove
-  -- * Internal functions
-  -- These will not always be available.
-  , _weakBag_children --TODO: Don't export this
   ) where
 
 import Prelude hiding (traverse)
 
 import Control.Exception
-import Control.Monad
 import Control.Monad.IO.Class
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.IntMap.Internal as IntMap.Internal
+import Data.Functor (void)
 import Data.IORef
 #if MIN_VERSION_base(4,13,0)
 import GHC.IORef (atomicModifyIORef'_)
@@ -55,43 +50,11 @@ data WeakBagTicket = forall a. WeakBagTicket
   , _weakBagTicket_item :: {-# NOUNPACK #-} !a
   }
 
--- | Insert an item into a 'WeakBag'.
+-- | Insert an item into a 'WeakBag'. The removal of the item, by garbage
+-- collection or by 'remove', deletes it from the bag.
 {-# INLINE insert #-}
-insert :: a -- ^ The item
-       -> WeakBag a -- ^ The 'WeakBag' to insert into
-       -> IORef (Weak b) -- ^ An arbitrary value to be used in the following
-                         -- callback
-       -> (b -> IO ()) -- ^ A callback to be invoked when the removal of the
-                       -- item leaves the bag empty (whether the item is removed
-                       -- automatically by being garbage collected or manually
-                       -- via 'remove'), as long as the weak reference is alive
-       -> IO WeakBagTicket -- ^ Returns a 'WeakBagTicket' that ensures the item
-                           -- is retained and allows the item to be removed.
-insert a (WeakBag nextId children) wbRef finalizer = {-# SCC "insert" #-} do
-  a' <- evaluate a
-  wbRef' <- evaluate wbRef
-  myId <- atomicModifyIORef' nextId $ \n -> (succ n, n)
-  let cleanup = do
-        wb <- readIORef wbRef'
-        mb <- deRefWeak wb
-        forM_ mb $ \b -> do
-          csWithoutMe <- atomicModifyIORef' children $ \cs ->
-            let csWithoutMe = IntMap.delete myId cs
-            in (csWithoutMe, csWithoutMe)
-          when (IntMap.null csWithoutMe) $ finalizer b
-  wa <- mkWeakPtr a' $ Just cleanup
-  atomicModifyIORef' children $ \cs -> (IntMap.insert myId wa cs, ())
-  return $ WeakBagTicket
-    { _weakBagTicket_weakItem = wa
-    , _weakBagTicket_item = a'
-    }
-
--- | Insert an item into a 'WeakBag' without an empty-bag callback: the removal
--- of the item, by garbage collection or by 'remove', only deletes it from the
--- bag.
-{-# INLINE insertWithoutCallback #-}
-insertWithoutCallback :: a -> WeakBag a -> IO WeakBagTicket
-insertWithoutCallback a (WeakBag nextId children) = {-# SCC "insertWithoutCallback" #-} do
+insert :: a -> WeakBag a -> IO WeakBagTicket
+insert a (WeakBag nextId children) = {-# SCC "insert" #-} do
   a' <- evaluate a
   myId <- atomicModifyIORef' nextId $ \n -> (succ n, n)
   wa <- mkWeakPtr a' $ Just $ void $ atomicModifyIORef'_ children $ IntMap.delete myId
@@ -125,15 +88,6 @@ empty = {-# SCC "empty" #-} do
 {-# INLINE isEmpty #-}
 isEmpty :: WeakBag a -> IO Bool
 isEmpty (WeakBag _ children) = {-# SCC "isEmpty" #-} IntMap.null <$> readIORef children
-
--- | Create a 'WeakBag' with one item; equivalent to creating the 'WeakBag' with
--- 'empty', then using 'insert'.
-{-# INLINE singleton #-}
-singleton :: a -> IORef (Weak b) -> (b -> IO ()) -> IO (WeakBag a, WeakBagTicket)
-singleton a wbRef finalizer = {-# SCC "singleton" #-} do
-  bag <- empty
-  ticket <- insert a bag wbRef finalizer
-  return (bag, ticket)
 
 {-# INLINE traverse_ #-}
 -- | Visit every node in the given list.  If new nodes are appended during the
