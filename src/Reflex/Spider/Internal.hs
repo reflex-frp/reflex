@@ -2319,18 +2319,8 @@ runFrame a = SpiderHost $ do
         wi' <- mkWeakPtrWithDebug i "wi'"
         writeIORef (switchSubscribedOwnWeakInvalidator subscribed) $! wi'
         writeIORef (switchSubscribedBehaviorParents subscribed) []
-        writeIORef (eventEnvHoldInits env) [] --TODO: Should we reuse this?
         e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi', switchSubscribedBehaviorParents subscribed)) $ eventEnvHoldInits env
-        runEventM $ runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env) --TODO: Is this actually OK? It seems like it should be, since we know that no events are firing at this point, but it still seems inelegant
-        --TODO: Make sure we touch the pieces of the SwitchSubscribed at the appropriate times
-        subscription <- {-# SCC "subscribeSwitch" #-} subscribeReconnect e (switchSubscribedSubscriber subscribed) --TODO: Assert that the event isn't firing
-        {-
-        stackTrace <- liftIO $ fmap renderStack $ ccsToStrings =<< (getCCSOf $! switchSubscribedParent subscribed)
-        liftIO $ debugStrLn $ (++stackTrace) $ "subd' subscribed to " ++ case e of
-          EventRoot _ -> "EventRoot"
-          EventNever -> "EventNever"
-          _ -> "something else"
-        -}
+        subscription <- {-# SCC "subscribeSwitch" #-} subscribeReconnect e (switchSubscribedSubscriber subscribed)
         writeIORef (switchSubscribedCurrentParent subscribed) $! SwitchParentSubscribed subscription
         return $ Just oldSubscription
   liftIO $ mapM_ unsubscribe mergeSubscriptionsToKill
@@ -2387,19 +2377,18 @@ runFrame a = SpiderHost $ do
 #ifdef DEBUG
       pendingRecalculationsBefore <- length <$> readIORef (eventEnvPendingRecalculations env)
 #endif
-      result <- runEventM $ do
-        subscription <- subscribe e sub
-        runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env)
-        return subscription
+      result <- runEventM $
+        subscribeAndRead e sub <* runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env)
       clearOccurrences
 #ifdef DEBUG
+      when (isJust $ subscribeOccurrence result) $ error "subscribeReconnect: the new parent has an occurrence, which should be impossible when no event is firing"
       toAssign <- readIORef $ eventEnvAssignments env
       coincidenceInfos <- readIORef $ eventEnvResetCoincidences env
       pendingRecalculationsAfter <- length <$> readIORef (eventEnvPendingRecalculations env)
       unless (null toAssign && null coincidenceInfos && pendingRecalculationsAfter == pendingRecalculationsBefore) $ error "subscribeReconnect: the reconnect subscribe deferred a hold assignment, coincidence reset or height recalculation, which should be impossible when no event is firing"
 #endif
       clearEventEnv env
-      return result
+      return $ subscribeSubscription result
 
 --------------------------------------------------------------------------------
 -- Height algo
