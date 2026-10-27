@@ -756,9 +756,6 @@ eventSubscriptionHeight :: EventSubscription x -> IO Height
 eventSubscriptionHeight = getEventSubscribedHeight . _eventSubscription_subscribed
 
 #ifdef DEBUG_CYCLES
-whoCreatedEventSubscribed :: EventSubscribed x -> IO [String]
-whoCreatedEventSubscribed = eventSubscribedWhoCreated
-
 walkInvalidHeightParents :: EventSubscribed x -> IO [EventSubscribed x]
 walkInvalidHeightParents s0 = do
   subscribers <- flip execStateT mempty $ ($ s0) $ fix $ \loop s -> do
@@ -1972,7 +1969,7 @@ checkCycle subscribed = do
 #ifdef DEBUG_CYCLES
           do
             nodesInvolvedInCycle <- walkInvalidHeightParents subscribed
-            stacks <- forM nodesInvolvedInCycle whoCreatedEventSubscribed
+            stacks <- forM nodesInvolvedInCycle eventSubscribedWhoCreated
             throwIO (EventLoopException stacks)
 #else
           throwIO EventLoopException
