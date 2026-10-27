@@ -814,8 +814,7 @@ behaviorPull !p = Behavior $ do
     val <- liftIO $ readIORef $ pullValue p
     case val of
       Just subscribed -> do
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some (BehaviorSubscribedPull subscribed)) :))
-        askInvalidator >>= mapM_ (liftIO . addInvalidatorAmortized (pullSubscribedInvalidators subscribed))
+        trackRead (pullSubscribedInvalidators subscribed) $ BehaviorSubscribedPull subscribed
         liftIO $ touch $ pullSubscribedOwnInvalidator subscribed
         return $ pullSubscribedValue subscribed
       Nothing -> do
@@ -834,7 +833,7 @@ behaviorPull !p = Behavior $ do
               , pullSubscribedParents = parents
               }
         liftIO $ writeIORef (pullValue p) $ Just subscribed
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some (BehaviorSubscribedPull subscribed)) :))
+        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (BehaviorSubscribedPull subscribed :))
         return a
 
 behaviorDyn :: Patch p => Dyn x p -> Behavior x (PatchTarget p)
@@ -844,10 +843,15 @@ behaviorDyn !d = Behavior $ readHoldTracked =<< getDynHold d
 readHoldTracked :: Hold x p -> BehaviorM x (PatchTarget p)
 readHoldTracked h = do
   result <- liftIO $ readIORef $ holdValue h
-  askInvalidator >>= mapM_ (liftIO . addInvalidatorAmortized (holdInvalidators h))
-  askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (SomeBehaviorSubscribed (Some (BehaviorSubscribedHold h)) :))
+  trackRead (holdInvalidators h) $ BehaviorSubscribedHold h
   liftIO $ touch h -- Otherwise, if this gets inlined enough, the hold's parent reference may get collected
   return result
+
+{-# INLINE trackRead #-}
+trackRead :: IORef (InvalidatorList x) -> SomeBehaviorSubscribed x -> BehaviorM x ()
+trackRead invalidatorsRef subscribed = do
+  askInvalidator >>= mapM_ (liftIO . addInvalidatorAmortized invalidatorsRef)
+  askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (subscribed :))
 
 data InvalidatorList x = InvalidatorList
   { invalidatorListSize :: !Int
@@ -1130,11 +1134,9 @@ instance Monad (BehaviorM x) where
   fail s = BehaviorM $ fail s
 #endif
 
-data BehaviorSubscribed x a
+data SomeBehaviorSubscribed x
    = forall p. BehaviorSubscribedHold (Hold x p)
-   | BehaviorSubscribedPull (PullSubscribed x a)
-
-newtype SomeBehaviorSubscribed x = SomeBehaviorSubscribed (Some (BehaviorSubscribed x))
+   | forall a. BehaviorSubscribedPull (PullSubscribed x a)
 
 --type role PullSubscribed representational
 data PullSubscribed x a
