@@ -821,9 +821,9 @@ behaviorPull !p = Behavior $ do
         i <- liftIO $ newInvalidatorPull p
         wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorPull"
         parentsRef <- liftIO $ newIORef []
-        holdInits <- askBehaviorHoldInits
-        a <- liftIO $ runReaderIO (unBehaviorM $ pullCompute p) (Just (wi, parentsRef), holdInits)
-        inv0 <- maybeToList <$> askInvalidator
+        !holdInits <- asks behaviorEnvHoldInits
+        a <- liftIO $ runBehaviorM (pullCompute p) $ BehaviorEnv (Just wi) (Just parentsRef) holdInits
+        inv0 <- maybeToList <$> asks behaviorEnvInvalidator
         invsRef <- liftIO $ newIORef $! InvalidatorList (length inv0) invalidatorPruneThreshold inv0
         parents <- liftIO $ readIORef parentsRef
         let subscribed = PullSubscribed
@@ -833,7 +833,7 @@ behaviorPull !p = Behavior $ do
               , pullSubscribedParents = parents
               }
         liftIO $ writeIORef (pullValue p) $ Just subscribed
-        askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (BehaviorSubscribedPull subscribed :))
+        asks behaviorEnvParents >>= mapM_ (\r -> liftIO $ modifyIORef' r (BehaviorSubscribedPull subscribed :))
         return a
 
 behaviorDyn :: Patch p => Dyn x p -> Behavior x (PatchTarget p)
@@ -850,8 +850,8 @@ readHoldTracked h = do
 {-# INLINE trackRead #-}
 trackRead :: IORef (InvalidatorList x) -> SomeBehaviorSubscribed x -> BehaviorM x ()
 trackRead invalidatorsRef subscribed = do
-  askInvalidator >>= mapM_ (liftIO . addInvalidatorAmortized invalidatorsRef)
-  askParentsRef >>= mapM_ (\r -> liftIO $ modifyIORef' r (subscribed :))
+  asks behaviorEnvInvalidator >>= mapM_ (liftIO . addInvalidatorAmortized invalidatorsRef)
+  asks behaviorEnvParents >>= mapM_ (\r -> liftIO $ modifyIORef' r (subscribed :))
 
 data InvalidatorList x = InvalidatorList
   { invalidatorListSize :: !Int
@@ -895,7 +895,7 @@ invalidatorPruneThreshold = 100
 readBehaviorUntracked :: Defer (SomeHoldInit x) m => Behavior x a -> m a
 readBehaviorUntracked b = do
   holdInits <- getDeferralQueue
-  liftIO $ runBehaviorM (readBehaviorTracked b) Nothing holdInits --TODO: Specialize readBehaviorTracked to the Nothing and Just cases
+  liftIO $ runBehaviorM (readBehaviorTracked b) $ BehaviorEnv Nothing Nothing holdInits --TODO: Specialize readBehaviorTracked to the Nothing and Just cases
 
 --------------------------------------------------------------------------------
 -- Dynamic
@@ -1021,7 +1021,7 @@ instance HasSpiderTimeline x => Defer (SomeDynInit x) (EventM x) where
 
 instance Defer (SomeHoldInit x) (BehaviorM x) where
   {-# INLINE getDeferralQueue #-}
-  getDeferralQueue = BehaviorM $ asks snd
+  getDeferralQueue = asks behaviorEnvHoldInits
 
 instance HasSpiderTimeline x => Defer (SomeMergeUpdate x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
@@ -1120,7 +1120,11 @@ getHoldEventSubscription h = do
       liftIO $ writeIORef (holdParent h) $ Just subscription
       return subscription
 
-type BehaviorEnv x = (Maybe (Weak (Invalidator x), IORef [SomeBehaviorSubscribed x]), IORef [SomeHoldInit x])
+data BehaviorEnv x = BehaviorEnv
+  { behaviorEnvInvalidator :: !(Maybe (Weak (Invalidator x)))
+  , behaviorEnvParents :: !(Maybe (IORef [SomeBehaviorSubscribed x]))
+  , behaviorEnvHoldInits :: IORef [SomeHoldInit x]
+  }
 
 -- BehaviorM can sample behaviors
 newtype BehaviorM x a = BehaviorM { unBehaviorM :: ReaderIO (BehaviorEnv x) a }
@@ -1480,7 +1484,8 @@ readSwitchParent :: SwitchSubscribed x a -> IORef [SomeHoldInit x] -> IO (Event 
 readSwitchParent subscribed holdInits = do
   i <- readIORef $ switchSubscribedOwnInvalidator subscribed
   wi <- mkWeakPtrWithDebug i "InvalidatorSwitch"
-  runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi, switchSubscribedBehaviorParents subscribed)) holdInits
+  runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) $
+    BehaviorEnv (Just wi) (Just $ switchSubscribedBehaviorParents subscribed) holdInits
 
 -- The inner events on coincidence have the type of the Reflex instance, so that
 -- the instance passes the outer event to coincidence without a coerce: the
@@ -1744,27 +1749,8 @@ data SomeResetCoincidence x = forall a. SomeResetCoincidence !(EventSubscription
 
 newtype SomeRecalculateHeight x = SomeRecalculateHeight (IO ())
 
-runBehaviorM :: BehaviorM x a -> Maybe (Weak (Invalidator x), IORef [SomeBehaviorSubscribed x]) -> IORef [SomeHoldInit x] -> IO a
-runBehaviorM a mwi holdInits = runReaderIO (unBehaviorM a) (mwi, holdInits)
-
-askInvalidator :: BehaviorM x (Maybe (Weak (Invalidator x)))
-askInvalidator = do
-  (!m, _) <- ask
-  case m of
-    Nothing -> return Nothing
-    Just (!wi, _) -> return $ Just wi
-
-askParentsRef :: BehaviorM x (Maybe (IORef [SomeBehaviorSubscribed x]))
-askParentsRef = do
-  (!m, _) <- ask
-  case m of
-    Nothing -> return Nothing
-    Just (_, !p) -> return $ Just p
-
-askBehaviorHoldInits :: BehaviorM x (IORef [SomeHoldInit x])
-askBehaviorHoldInits = do
-  (_, !his) <- ask
-  return his
+runBehaviorM :: BehaviorM x a -> BehaviorEnv x -> IO a
+runBehaviorM a = runReaderIO (unBehaviorM a)
 
 {-# INLINE getDynHold #-}
 getDynHold :: (Defer (SomeHoldInit x) m, Patch p) => Dyn x p -> m (Hold x p)
@@ -1774,7 +1760,7 @@ getDynHold d = do
     HoldDyn h -> return h
     UnsafeDyn (readV0, v') -> do
       holdInits <- getDeferralQueue
-      v0 <- liftIO $ runBehaviorM readV0 Nothing holdInits
+      v0 <- liftIO $ runBehaviorM readV0 $ BehaviorEnv Nothing Nothing holdInits
       hold' v0 v'
     BuildDyn (readV0, v') -> do
       v0 <- liftIO $ runEventM readV0
