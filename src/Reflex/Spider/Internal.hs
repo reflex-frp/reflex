@@ -1465,11 +1465,9 @@ switchUncachedImpl b = Event $ \sub -> do
         , switchSubscribedNodeId = nid
 #endif
         }
-  i <- liftIO $ newInvalidatorSwitch subscribed
-  wi <- liftIO $ mkWeakPtrWithDebug i "InvalidatorSwitch"
-  liftIO $ writeIORef invalidatorRef i
+  liftIO $ writeIORef invalidatorRef =<< newInvalidatorSwitch subscribed
   holdInits <- getDeferralQueue
-  e <- liftIO $ runBehaviorM (readBehaviorTracked b) (Just (wi, parentsRef)) holdInits
+  e <- liftIO $ readSwitchParent subscribed holdInits
   SubscribeResult subscription parentOcc <- subscribeAndRead e $ switchSubscribedSubscriber subscribed
   liftIO $ writeIORef heightRef =<< eventSubscriptionHeight subscription
   liftIO $ writeIORef currentParentRef $ SwitchParentSubscribed subscription
@@ -1490,6 +1488,13 @@ switchUncachedImpl b = Event $ \sub -> do
           (whoCreatedIORef currentParentRef)
       })
     parentOcc
+
+{-# INLINE readSwitchParent #-}
+readSwitchParent :: SwitchSubscribed x a -> IORef [SomeHoldInit x] -> IO (Event x a)
+readSwitchParent subscribed holdInits = do
+  i <- readIORef $ switchSubscribedOwnInvalidator subscribed
+  wi <- mkWeakPtrWithDebug i "InvalidatorSwitch"
+  runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi, switchSubscribedBehaviorParents subscribed)) holdInits
 
 -- The inner events on coincidence have the type of the Reflex instance, so that
 -- the instance passes the outer event to coincidence without a coerce: the
@@ -2319,10 +2324,8 @@ runFrame a = SpiderHost $ do
     readIORef (switchSubscribedCurrentParent subscribed) >>= \case
       SwitchParentUnsubscribed -> pure Nothing
       SwitchParentSubscribed oldSubscription -> do
-        i <- readIORef $ switchSubscribedOwnInvalidator subscribed
-        wi' <- mkWeakPtrWithDebug i "wi'"
         writeIORef (switchSubscribedBehaviorParents subscribed) []
-        e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) (Just (wi', switchSubscribedBehaviorParents subscribed)) $ eventEnvHoldInits env
+        e <- readSwitchParent subscribed $ eventEnvHoldInits env
         subscription <- {-# SCC "subscribeSwitch" #-} subscribeReconnect e (switchSubscribedSubscriber subscribed)
         writeIORef (switchSubscribedCurrentParent subscribed) $! SwitchParentSubscribed subscription
         return $ Just oldSubscription
