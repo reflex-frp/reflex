@@ -2587,13 +2587,6 @@ instance HasSpiderTimeline x => Reflex.Class.MonadHold (SpiderTimeline x) (Refle
   {-# INLINABLE now #-}
   now = Reflex.Spider.Internal.ReadPhase Reflex.Class.now
 
---------------------------------------------------------------------------------
--- Deprecated items
---------------------------------------------------------------------------------
-
--- | 'SpiderEnv' is the old name for 'SpiderTimeline'
-{-# DEPRECATED SpiderEnv "Use 'SpiderTimelineEnv' instead" #-}
-type SpiderEnv = SpiderTimeline
 instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTimeline x) (SpiderHostFrame x) where
   {-# INLINABLE subscribeEvent #-}
   subscribeEvent e = SpiderHostFrame $ do
