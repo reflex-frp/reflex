@@ -346,6 +346,14 @@ terminalSubscriber p = Subscriber
   , subscriberRecalculateHeight = \_ -> return ()
   }
 
+{-# INLINE ownHeightSubscriber #-}
+ownHeightSubscriber :: IORef Height -> (Height -> IO ()) -> (Height -> IO ()) -> (a -> EventM x ()) -> Subscriber x a
+ownHeightSubscriber heightRef invalidateSubscribers recalculateSubscribers propagateOccurrence = Subscriber
+  { subscriberPropagate = propagateOccurrence
+  , subscriberInvalidateHeight = \_ -> invalidateOwnHeight heightRef invalidateSubscribers
+  , subscriberRecalculateHeight = recalculateOwnHeight heightRef recalculateSubscribers . pure
+  }
+
 data HeadESubscribed x a = HeadESubscribed
   { headESubscribedSubscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
   , headESubscribedParent :: !(EventSubscription x)
@@ -371,8 +379,8 @@ headE originalE = do
           deferRecalculateHeight @x $ SomeRecalculateHeight $ do
             let heightRef = headESubscribedHeight subscribed
                 subscribers = headESubscribedSubscribers subscribed
-            invalidateOwnHeight heightRef $ WeakBag.traverse_ subscribers . invalidateSubscriberHeight
-            recalculateOwnHeight heightRef (WeakBag.traverse_ subscribers . recalculateSubscriberHeight) (pure zeroHeight)
+            invalidateOwnHeight heightRef $ invalidateBagHeight subscribers
+            recalculateOwnHeight heightRef (recalculateBagHeight subscribers) (pure zeroHeight)
         _ -> pure ()
       subscribeUntilHead :: EventM x (HeadEState x a)
       subscribeUntilHead = liftIO (readIORef stateRef) >>= \case
@@ -380,19 +388,13 @@ headE originalE = do
           subscribers <- liftIO WeakBag.empty
           occRef <- liftIO $ newIORef Nothing
           heightRef <- liftIO $ newIORef zeroHeight
-          SubscribeResult parentSubscription occ <- subscribeAndRead parentEvent $ Subscriber
-            { subscriberPropagate = \a -> do
-                setOccurrence "headE" occRef a
-                -- Propagating before unsubscribing can help avoid
-                -- teardown-then-revive when downstream would re-subscribe:
-                propagate a subscribers
-                unsubscribeAfterOccurrence occRef
-            , subscriberInvalidateHeight = \_ ->
-                invalidateOwnHeight heightRef $ WeakBag.traverse_ subscribers . invalidateSubscriberHeight
-            , subscriberRecalculateHeight =
-                recalculateOwnHeight heightRef (WeakBag.traverse_ subscribers . recalculateSubscriberHeight)
-                . pure
-            }
+          SubscribeResult parentSubscription occ <- subscribeAndRead parentEvent $
+            ownHeightSubscriber heightRef (invalidateBagHeight subscribers) (recalculateBagHeight subscribers) $ \a -> do
+              setOccurrence "headE" occRef a
+              -- Propagating before unsubscribing can help avoid
+              -- teardown-then-revive when downstream would re-subscribe:
+              propagate a subscribers
+              unsubscribeAfterOccurrence occRef
           liftIO $ writeIORef heightRef =<< eventSubscriptionHeight parentSubscription
           let !subscribed = HeadESubscribed
                 { headESubscribedSubscribers = subscribers
@@ -434,7 +436,7 @@ headE originalE = do
                occ
       HeadEStateOccurred occRef -> do
         occ <- liftIO $ readIORef occRef
-        pure $ SubscribeResult (EventSubscription (pure ()) eventSubscribedNever) occ
+        pure $ SubscribeResult eventSubscriptionNever occ
 
 data CacheSubscribed x a
    = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
@@ -497,8 +499,8 @@ cacheEventImpl e =
                   { subscriberPropagate = \a -> do
                       setOccurrence "cacheEvent" occRef a
                       propagate a subscribers
-                  , subscriberInvalidateHeight = WeakBag.traverse_ subscribers . invalidateSubscriberHeight
-                  , subscriberRecalculateHeight = WeakBag.traverse_ subscribers . recalculateSubscriberHeight
+                  , subscriberInvalidateHeight = invalidateBagHeight subscribers
+                  , subscriberRecalculateHeight = recalculateBagHeight subscribers
                   }
               for_ occ $ setOccurrence "cacheEvent" occRef
               let !subscribed = CacheSubscribed
@@ -545,7 +547,7 @@ eventRoot :: (GCompare k, HasSpiderTimeline x) => k a -> Root x k -> Event x a
 eventRoot !k !r = Event $ liftIO . subscribeAndReadRoot k r
 
 subscribeAndReadNever :: EventM x (SubscribeResult x a)
-subscribeAndReadNever = pure $ SubscribeResult (EventSubscription (return ()) eventSubscribedNever) Nothing
+subscribeAndReadNever = pure $ SubscribeResult eventSubscriptionNever Nothing
 
 eventNever :: Event x a
 eventNever = Event $ const subscribeAndReadNever
@@ -582,11 +584,11 @@ eventFan !k p !(Fan weakMaybeFanSubscribed) = Event $ \sub -> do
         , subscriberInvalidateHeight = \old -> do
             subs <- readIORef subscribersRef
             mapFor_ subs $ \(FanSubscribers s) ->
-              WeakBag.traverseWeakIntMap_ s $ invalidateSubscriberHeight old
+              WeakBag.traverseWeakIntMap_ s $ \c -> subscriberInvalidateHeight c old
         , subscriberRecalculateHeight = \new -> do
             subs <- readIORef subscribersRef
             mapFor_ subs $ \(FanSubscribers s) ->
-              WeakBag.traverseWeakIntMap_ s $ recalculateSubscriberHeight new
+              WeakBag.traverseWeakIntMap_ s $ \c -> subscriberRecalculateHeight c new
         }
       for_ parentOcc $ setOccurrence "fan" occRef
       let !subscribed = FanSubscribed
@@ -693,11 +695,13 @@ newSubscriberCoincidenceInner subscribed = debugSubscriber ("SubscriberCoinciden
   , subscriberRecalculateHeight = \_ -> recalculateCoincidenceHeight subscribed
   }
 
-invalidateSubscriberHeight :: Height -> Subscriber x a -> IO ()
-invalidateSubscriberHeight = flip subscriberInvalidateHeight
+{-# INLINE invalidateBagHeight #-}
+invalidateBagHeight :: WeakBag (Subscriber x a) -> Height -> IO ()
+invalidateBagHeight subscribers = \old -> WeakBag.traverse_ subscribers $ \sub -> subscriberInvalidateHeight sub old
 
-recalculateSubscriberHeight :: Height -> Subscriber x a -> IO ()
-recalculateSubscriberHeight = flip subscriberRecalculateHeight
+{-# INLINE recalculateBagHeight #-}
+recalculateBagHeight :: WeakBag (Subscriber x a) -> Height -> IO ()
+recalculateBagHeight subscribers = \new -> WeakBag.traverse_ subscribers $ \sub -> subscriberRecalculateHeight sub new
 
 -- | Propagate everything at the current height
 propagate :: forall x a. HasSpiderTimeline x => a -> WeakBag (Subscriber x a) -> EventM x ()
@@ -753,6 +757,9 @@ eventSubscribedRoot !r = newEventSubscribed zeroRef r (pure []) False (pure ["ro
 
 eventSubscribedNever :: EventSubscribed x
 eventSubscribedNever = newEventSubscribed zeroRef () (pure []) False (pure ["never"])
+
+eventSubscriptionNever :: EventSubscription x
+eventSubscriptionNever = EventSubscription (pure ()) eventSubscribedNever
 
 eventSubscribedNow :: EventSubscribed x
 eventSubscribedNow = newEventSubscribed zeroRef () (pure []) False (pure ["now"])
@@ -1432,10 +1439,8 @@ switchUncachedImpl b = Event $ \sub -> do
 #endif
   let !subscribed = SwitchSubscribed
         { switchSubscribedHeight = heightRef
-        , switchSubscribedSubscriber = debugSubscriber ("SubscriberSwitch" <> showNodeId subscribed) $ sub
-            { subscriberInvalidateHeight = \_ -> invalidateOwnHeight heightRef $ subscriberInvalidateHeight sub
-            , subscriberRecalculateHeight = recalculateOwnHeight heightRef (subscriberRecalculateHeight sub) . pure
-            }
+        , switchSubscribedSubscriber = debugSubscriber ("SubscriberSwitch" <> showNodeId subscribed) $
+            ownHeightSubscriber heightRef (subscriberInvalidateHeight sub) (subscriberRecalculateHeight sub) (subscriberPropagate sub)
         , switchSubscribedOwnInvalidator = invalidatorRef
         , switchSubscribedBehaviorParents = parentsRef
         , switchSubscribedParent = b
@@ -1592,9 +1597,9 @@ debugSubscriber description subscribed = Subscriber
       tracePropagate (Proxy :: Proxy x) ("subscriberPropagate: " <> description)
       subscriberPropagate subscribed m
   , subscriberInvalidateHeight = \old -> do
-      traceInvalidateHeight $ "invalidateSubscriberHeight: " <> description <> ", old = " <> show old
+      traceInvalidateHeight $ "subscriberInvalidateHeight: " <> description <> ", old = " <> show old
       subscriberInvalidateHeight subscribed old
-      traceInvalidateHeight $ "invalidateSubscriberHeight: " <> description <> ", done"
+      traceInvalidateHeight $ "subscriberInvalidateHeight: " <> description <> ", done"
   , subscriberRecalculateHeight = \new -> do
       traceInvalidateHeight $ "subscriberRecalculateHeight: " <> description <> ", new = " <> show new
       subscriberRecalculateHeight subscribed new
