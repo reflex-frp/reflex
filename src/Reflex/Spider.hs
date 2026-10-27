@@ -14,8 +14,6 @@ module Reflex.Spider
   , runSpiderHostForTimeline
   , newSpiderTimeline
   , withSpiderTimeline
-    -- * Deprecated
-  , SpiderEnv
   ) where
 
 import Reflex.Spider.Internal
