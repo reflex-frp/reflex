@@ -68,7 +68,7 @@ import GHC.Stack
 import System.IO.Unsafe
 import System.Mem.Weak
 import Unsafe.Coerce
-import Witherable (Filterable (..), mapMaybe, Witherable (..))
+import Witherable (Filterable (..), mapMaybe)
 
 #if !MIN_VERSION_base(4,18,0)
 import Control.Applicative (liftA2)
@@ -254,23 +254,6 @@ data SubscribeResult x a = SubscribeResult
   { subscribeSubscription :: EventSubscription x
   , subscribeOccurrence :: Maybe a
   }
-  deriving (Functor)
-
-instance Foldable (SubscribeResult x) where
-  {-# INLINE foldMap #-}
-  foldMap f = foldMap f . subscribeOccurrence
-
-instance Traversable (SubscribeResult x) where
-  {-# INLINE traverse #-}
-  traverse f (SubscribeResult s occ) = SubscribeResult s <$> traverse f occ
-
-instance Filterable (SubscribeResult x) where
-  {-# INLINE mapMaybe #-}
-  mapMaybe f (SubscribeResult s occ) = SubscribeResult s (occ >>= f)
-
-instance Witherable (SubscribeResult x) where
-  {-# INLINE wither #-}
-  wither f (SubscribeResult s occ) = SubscribeResult s <$> wither f occ
 
 
 -- Rewrite rules for cached events
@@ -331,11 +314,12 @@ pushCheap = pushCheapImpl
 {-# INLINE pushCheapImpl #-}
 pushCheapImpl :: forall (x :: Type) a b. HasSpiderTimeline x => (a -> EventM x (Maybe b)) -> Event x a -> Event x b
 pushCheapImpl !f e = Event $ \sub -> do
-  wither f <=< subscribeAndRead e $ debugSubscriber "push" $ sub
+  SubscribeResult subscription occ <- subscribeAndRead e $ debugSubscriber "push" $ sub
     { subscriberPropagate = \a -> do
         mb <- f a
         mapM_ (subscriberPropagate sub) mb
     }
+  SubscribeResult subscription <$> maybe (return Nothing) f occ
 
 -- | A subscriber that never triggers other 'Event's
 {-# INLINE terminalSubscriber #-}
