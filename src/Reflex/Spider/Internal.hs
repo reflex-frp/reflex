@@ -382,11 +382,7 @@ headE originalE = do
           heightRef <- liftIO $ newIORef zeroHeight
           SubscribeResult parentSubscription occ <- subscribeAndRead parentEvent $ Subscriber
             { subscriberPropagate = \a -> do
-#ifdef DEBUG_FRAME
-                liftIO $ readIORef occRef >>= debugOccurrence "headE: two occurrences in one frame"
-#endif
-                liftIO $ writeIORef occRef $ Just a
-                scheduleClear occRef
+                setOccurrence "headE" occRef a
                 -- Propagating before unsubscribing can help avoid
                 -- teardown-then-revive when downstream would re-subscribe:
                 propagate a subscribers
@@ -405,13 +401,12 @@ headE originalE = do
                 , headESubscribedHeight = heightRef
                 }
           liftIO $ writeIORef stateRef $ HeadEStateSubscribed subscribed
-          if isJust occ
-            then do
-              liftIO $ writeIORef occRef occ
-              scheduleClear occRef
+          case occ of
+            Just a -> do
+              setOccurrence "headE" occRef a
               unsubscribeAfterOccurrence occRef
               pure $ HeadEStateOccurred occRef
-            else pure $ HeadEStateSubscribed subscribed
+            Nothing -> pure $ HeadEStateSubscribed subscribed
         alreadySubscribed -> pure alreadySubscribed
   defer $ SomeMergeInit $ void subscribeUntilHead
   pure $ Event $ \sub -> do
@@ -500,18 +495,12 @@ cacheEventImpl e =
 #endif
                   $ Subscriber
                   { subscriberPropagate = \a -> do
-#ifdef DEBUG_FRAME
-                      liftIO $ readIORef occRef >>= debugOccurrence "cacheEvent: two occurrences in one frame"
-#endif
-                      liftIO $ writeIORef occRef (Just a)
-                      scheduleClear occRef
+                      setOccurrence "cacheEvent" occRef a
                       propagate a subscribers
                   , subscriberInvalidateHeight = WeakBag.traverse_ subscribers . invalidateSubscriberHeight
                   , subscriberRecalculateHeight = WeakBag.traverse_ subscribers . recalculateSubscriberHeight
                   }
-              when (isJust occ) $ do
-                liftIO $ writeIORef occRef occ -- Set the initial value of occRef; we don't need to do this if occ is Nothing
-                scheduleClear occRef
+              for_ occ $ setOccurrence "cacheEvent" occRef
               let !subscribed = CacheSubscribed
                     { _cacheSubscribed_subscribers = subscribers
                     , _cacheSubscribed_parent = parentSub
@@ -585,13 +574,9 @@ eventFan !k p !(Fan weakMaybeFanSubscribed) = Event $ \sub -> do
 #endif
           $ Subscriber
         { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
-#ifdef DEBUG_FRAME
-            liftIO $ readIORef occRef >>= debugOccurrence "fan: two occurrences in one frame"
-#endif
             subs <- liftIO $ readIORef subscribersRef
             tracePropagate (Proxy :: Proxy x) $ show (mapSize subs) <> " keys subscribed, " <> show (mapSize a) <> " keys firing"
-            liftIO $ writeIORef occRef $ Just a
-            scheduleClear occRef
+            setOccurrence "fan" occRef a
             mapForIntersection_ subs a $ \(FanSubscribers s) v ->
               withIncreasedDepth (Proxy :: Proxy x) $ WeakBag.traverseWeakIntMap_ s $ \c -> subscriberPropagate c v
         , subscriberInvalidateHeight = \old -> do
@@ -603,8 +588,7 @@ eventFan !k p !(Fan weakMaybeFanSubscribed) = Event $ \sub -> do
             mapFor_ subs $ \(FanSubscribers s) ->
               WeakBag.traverseWeakIntMap_ s $ recalculateSubscriberHeight new
         }
-      liftIO $ writeIORef occRef parentOcc
-      when (isJust parentOcc) $ scheduleClear occRef
+      for_ parentOcc $ setOccurrence "fan" occRef
       let !subscribed = FanSubscribed
             { fanSubscribedSubscribers = subscribersRef
             , fanSubscribedNextId = nextIdRef
@@ -1070,6 +1054,17 @@ instance HasSpiderTimeline x => Defer (Some Clear) (EventM x) where
 {-# INLINE scheduleClear #-}
 scheduleClear :: Defer (Some Clear) m => IORef (Maybe a) -> m ()
 scheduleClear r = defer $ Some $ Clear r
+
+{-# INLINE setOccurrence #-}
+setOccurrence :: HasSpiderTimeline x => String -> IORef (Maybe a) -> a -> EventM x ()
+#ifdef DEBUG_FRAME
+setOccurrence nodeName occRef a = do
+  liftIO $ readIORef occRef >>= debugOccurrence (nodeName <> ": two occurrences in one frame")
+#else
+setOccurrence _ occRef a = do
+#endif
+  liftIO $ writeIORef occRef $ Just a
+  scheduleClear occRef
 
 instance HasSpiderTimeline x => Defer (Some RootClear) (EventM x) where
   {-# INLINE getDeferralQueue #-}
@@ -2651,12 +2646,7 @@ instance HasSpiderTimeline x => Reflex.Host.Class.MonadSubscribeEvent (SpiderTim
   subscribeEvent e = SpiderHostFrame $ do
     --TODO: Unsubscribe eventually (manually and/or with weak ref)
     val <- liftIO $ newIORef Nothing
-    let recordOccurrence a = do
-#ifdef DEBUG_FRAME
-          liftIO $ readIORef val >>= debugOccurrence "subscribeEvent: two occurrences in one frame"
-#endif
-          liftIO $ writeIORef val $ Just a
-          scheduleClear val
+    let recordOccurrence = setOccurrence "subscribeEvent" val
     SubscribeResult subscription occ <- subscribeAndRead (unSpiderEvent e) $ terminalSubscriber recordOccurrence
     forM_ occ recordOccurrence
     return $ SpiderEventHandle
