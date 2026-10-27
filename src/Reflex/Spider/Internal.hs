@@ -331,7 +331,7 @@ pushCheap = pushCheapImpl
 {-# INLINE pushCheapImpl #-}
 pushCheapImpl :: forall (x :: Type) a b. HasSpiderTimeline x => (a -> EventM x (Maybe b)) -> Event x a -> Event x b
 pushCheapImpl !f e = Event $ \sub -> do
-  wither f <=< subscribeAndRead e $ debugSubscriber' "push" $ sub
+  wither f <=< subscribeAndRead e $ debugSubscriber "push" $ sub
     { subscriberPropagate = \a -> do
         mb <- f a
         mapM_ (subscriberPropagate sub) mb
@@ -491,7 +491,7 @@ cacheEventImpl e =
               occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
               SubscribeResult parentSub occ <- subscribeAndRead e
 #ifdef DEBUG_NODEIDS
-                  $ debugSubscriber' ("cacheEvent" <> showNodeId' nodeId)
+                  $ debugSubscriber ("cacheEvent" <> showNodeId' nodeId)
 #endif
                   $ Subscriber
                   { subscriberPropagate = \a -> do
@@ -570,7 +570,7 @@ eventFan !k p !(Fan weakMaybeFanSubscribed) = Event $ \sub -> do
       occRef <- liftIO $ newIORef Nothing
       SubscribeResult parentSub parentOcc <- subscribeAndRead p
 #ifdef DEBUG_NODEIDS
-          $ debugSubscriber' ("SubscriberFan " <> showNodeId' nodeId)
+          $ debugSubscriber ("SubscriberFan " <> showNodeId' nodeId)
 #endif
           $ Subscriber
         { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
@@ -638,8 +638,7 @@ eventDyn !j = Event $ \sub -> getDynHold j >>= \h -> subscribeHoldEvent h sub
 -- | Returns Maybe Height where Nothing means the height was not raised to the inner's height.
 subscribeCoincidenceInner :: HasSpiderTimeline x => Event x a -> Height -> CoincidenceSubscribed x a -> EventM x (Maybe a, Maybe Height, EventSubscribed x)
 subscribeCoincidenceInner inner outerHeight subscribed = do
-  subInner <- liftIO $ newSubscriberCoincidenceInner subscribed
-  SubscribeResult subscription@(EventSubscription _ innerSubd) innerOcc <- subscribeAndRead inner subInner
+  SubscribeResult subscription@(EventSubscription _ innerSubd) innerOcc <- subscribeAndRead inner $ newSubscriberCoincidenceInner subscribed
   innerHeight <- liftIO $ getEventSubscribedHeight innerSubd
   let maybeRaised = raiseHeight outerHeight innerHeight
   defer $ SomeResetCoincidence subscription $ subscribed <$ maybeRaised
@@ -655,15 +654,15 @@ data Subscriber x a = Subscriber
   , subscriberRecalculateHeight :: !(Height -> IO ())
   }
 
-newSubscriberHold :: (HasSpiderTimeline x, Patch p) => Hold x p -> IO (Subscriber x p)
-newSubscriberHold h = return $ Subscriber
+newSubscriberHold :: (HasSpiderTimeline x, Patch p) => Hold x p -> Subscriber x p
+newSubscriberHold h = Subscriber
   { subscriberPropagate = {-# SCC "traverseHold" #-} propagateSubscriberHold h
   , subscriberInvalidateHeight = \_ -> return ()
   , subscriberRecalculateHeight = \_ -> return ()
   }
 
 {-# INLINE newSubscriberCoincidenceOuter #-}
-newSubscriberCoincidenceOuter :: forall x b. HasSpiderTimeline x => CoincidenceSubscribed x b -> IO (Subscriber x (Event x b))
+newSubscriberCoincidenceOuter :: forall x b. HasSpiderTimeline x => CoincidenceSubscribed x b -> Subscriber x (Event x b)
 newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoincidenceOuter" <> showNodeId subscribed) $ Subscriber
   { subscriberPropagate = \a -> {-# SCC "traverseCoincidenceOuter" #-} do
       outerHeight <- liftIO $ readIORef $ coincidenceSubscribedHeight subscribed
@@ -688,7 +687,7 @@ newSubscriberCoincidenceOuter subscribed = debugSubscriber ("SubscriberCoinciden
   }
 
 {-# INLINE newSubscriberCoincidenceInner #-}
-newSubscriberCoincidenceInner :: forall x a. HasSpiderTimeline x => CoincidenceSubscribed x a -> IO (Subscriber x a)
+newSubscriberCoincidenceInner :: forall x a. HasSpiderTimeline x => CoincidenceSubscribed x a -> Subscriber x a
 newSubscriberCoincidenceInner subscribed = debugSubscriber ("SubscriberCoincidenceInner" <> showNodeId subscribed) $ (coincidenceSubscribedSubscriber subscribed)
   { subscriberInvalidateHeight  = \_ -> invalidateCoincidenceHeight subscribed
   , subscriberRecalculateHeight = \_ -> recalculateCoincidenceHeight subscribed
@@ -1109,7 +1108,7 @@ getHoldEventSubscription h = do
     Nothing -> do
       let e = holdEvent h
       subscriptionRef <- liftIO $ newIORef $ error "getHoldEventSubscription: subdRef uninitialized"
-      SubscribeResult subscription@(EventSubscription _ _) occ <- subscribeAndRead e =<< liftIO (newSubscriberHold h)
+      SubscribeResult subscription@(EventSubscription _ _) occ <- subscribeAndRead e $ newSubscriberHold h
       liftIO $ writeIORef subscriptionRef $! subscription
       case occ of
         Nothing -> return ()
@@ -1448,7 +1447,7 @@ switchUncachedImpl b = Event $ \sub -> do
 #endif
   let !subscribed = SwitchSubscribed
         { switchSubscribedHeight = heightRef
-        , switchSubscribedSubscriber = debugSubscriber' ("SubscriberSwitch" <> showNodeId subscribed) $ sub
+        , switchSubscribedSubscriber = debugSubscriber ("SubscriberSwitch" <> showNodeId subscribed) $ sub
             { subscriberInvalidateHeight = \_ -> invalidateOwnHeight heightRef $ subscriberInvalidateHeight sub
             , subscriberRecalculateHeight = recalculateOwnHeight heightRef (subscriberRecalculateHeight sub) . pure
             }
@@ -1522,8 +1521,7 @@ coincidenceUncachedImpl outer = Event $ \sub -> do
         , coincidenceSubscribedNodeId = nid
 #endif
         }
-  subOuter <- liftIO $ newSubscriberCoincidenceOuter subscribed
-  SubscribeResult outerSubscription outerOcc <- subscribeAndRead outer (coerce subOuter)
+  SubscribeResult outerSubscription outerOcc <- subscribeAndRead outer $ coerce $ newSubscriberCoincidenceOuter subscribed
   liftIO $ writeIORef outerParentRef outerSubscription
   outerHeight <- liftIO $ eventSubscriptionHeight outerSubscription
   (occ, height, mInnerSubd) <- case outerOcc of
@@ -1602,11 +1600,8 @@ type CanTrace x m = (HasSpiderTimeline x, MonadIO m)
 
 #ifdef DEBUG
 
-debugSubscriber :: forall x a. HasSpiderTimeline x => String -> Subscriber x a -> IO (Subscriber x a)
-debugSubscriber description = return . debugSubscriber' description
-
-debugSubscriber' :: forall x a. HasSpiderTimeline x => String -> Subscriber x a -> Subscriber x a
-debugSubscriber' description subscribed = Subscriber
+debugSubscriber :: forall x a. HasSpiderTimeline x => String -> Subscriber x a -> Subscriber x a
+debugSubscriber description subscribed = Subscriber
   {
     subscriberPropagate = \m -> do
       tracePropagate (Proxy :: Proxy x) ("subscriberPropagate: " <> description)
@@ -1672,12 +1667,8 @@ traceInvalidateHeight :: String -> IO ()
 traceInvalidateHeight _ = return ()
 
 {-# INLINE debugSubscriber #-}
-debugSubscriber :: String -> Subscriber x a -> IO (Subscriber x a)
-debugSubscriber _ = return
-
-{-# INLINE debugSubscriber' #-}
-debugSubscriber' :: String -> Subscriber x a -> Subscriber x a
-debugSubscriber' _ = id
+debugSubscriber :: String -> Subscriber x a -> Subscriber x a
+debugSubscriber _ = id
 
 
 
