@@ -1106,21 +1106,8 @@ getHoldEventSubscription h = do
   case ep of
     Just subd -> return subd
     Nothing -> do
-      let e = holdEvent h
-      subscriptionRef <- liftIO $ newIORef $ error "getHoldEventSubscription: subdRef uninitialized"
-      SubscribeResult subscription@(EventSubscription _ _) occ <- subscribeAndRead e $ newSubscriberHold h
-      liftIO $ writeIORef subscriptionRef $! subscription
-      case occ of
-        Nothing -> return ()
-        Just o -> do
-          old <- liftIO $ readIORef $ holdValue h
-          case apply o old of
-            Nothing -> return ()
-            Just new -> do
-              -- Need to evaluate these so that we don't retain the Hold itself
-              v <- liftIO $ evaluate $ holdValue h
-              i <- liftIO $ evaluate $ holdInvalidators h
-              defer $ SomeAssignment v i new
+      SubscribeResult subscription@(EventSubscription _ _) occ <- subscribeAndRead (holdEvent h) $ newSubscriberHold h
+      for_ occ $ propagateSubscriberHold h
       liftIO $ writeIORef (holdParent h) $ Just subscription
       return subscription
 
