@@ -891,9 +891,6 @@ data Dynamic x target p = Dynamic
 
 deriving instance (HasSpiderTimeline x) => Functor (Dynamic x target)
 
-
-
-
 dynamicHold :: Hold x p -> DynamicS x p
 dynamicHold !h = Dynamic
   { dynamicCurrent = behaviorHold h
@@ -916,7 +913,6 @@ dynamicDyn !d = Dynamic
 -- Combinators
 --------------------------------------------------------------------------------
 
---type role Hold representational
 data Hold x p
    = Hold { holdValue :: !(IORef (PatchTarget p))
           , holdInvalidators :: !(IORef (InvalidatorList x))
@@ -1123,7 +1119,6 @@ data SomeBehaviorSubscribed x
    = forall p. BehaviorSubscribedHold (Hold x p)
    | forall a. BehaviorSubscribedPull (PullSubscribed x a)
 
---type role PullSubscribed representational
 data PullSubscribed x a
    = PullSubscribed { pullSubscribedValue :: !a
                     , pullSubscribedInvalidators :: !(IORef (InvalidatorList x))
@@ -1131,7 +1126,6 @@ data PullSubscribed x a
                     , pullSubscribedParents :: ![SomeBehaviorSubscribed x] -- Need to keep parent behaviors alive, or they won't let us know when they're invalidated
                     }
 
---type role Pull representational
 data Pull x a
    = Pull { pullValue :: !(IORef (Maybe (PullSubscribed x a)))
           , pullCompute :: !(BehaviorM x a)
