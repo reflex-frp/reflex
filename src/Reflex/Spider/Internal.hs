@@ -5,10 +5,10 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -1020,19 +1020,17 @@ instance HasSpiderTimeline x => Defer (SomeMergeInit x) (EventM x) where
   {-# INLINE getDeferralQueue #-}
   getDeferralQueue = asksEventEnv eventEnvMergeInits
 
-class HasSpiderTimeline x => HasCurrentHeight x m | m -> x where
-  getCurrentHeight :: m Height
-  scheduleMerge :: Height -> EventM x () -> m ()
+{-# INLINE getCurrentHeight #-}
+getCurrentHeight :: HasSpiderTimeline x => EventM x Height
+getCurrentHeight = do
+  heightRef <- asksEventEnv eventEnvCurrentHeight
+  liftIO $ readIORef heightRef
 
-instance HasSpiderTimeline x => HasCurrentHeight x (EventM x) where
-  {-# INLINE getCurrentHeight #-}
-  getCurrentHeight = do
-    heightRef <- asksEventEnv eventEnvCurrentHeight
-    liftIO $ readIORef heightRef
-  {-# INLINE scheduleMerge #-}
-  scheduleMerge height subscribed = do
-    delayedRef <- asksEventEnv eventEnvDelayedMerges
-    liftIO $ modifyIORef' delayedRef $ heightQueueInsert height subscribed
+{-# INLINE scheduleMerge #-}
+scheduleMerge :: HasSpiderTimeline x => Height -> EventM x () -> EventM x ()
+scheduleMerge height subscribed = do
+  delayedRef <- asksEventEnv eventEnvDelayedMerges
+  liftIO $ modifyIORef' delayedRef $ heightQueueInsert height subscribed
 
 class HasSpiderTimeline x where
   -- | Retrieve the current SpiderTimelineEnv
