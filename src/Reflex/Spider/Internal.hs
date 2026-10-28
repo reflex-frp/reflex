@@ -1328,7 +1328,7 @@ instance HasSpiderTimeline x => Zip (Event x) where
 
 data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
                  | BuildDyn  !(EventM x (PatchTarget p), Event x p)
-                 | HoldDyn   !(Hold x p)
+                 | HoldDyn   {-# NOUNPACK #-} !(Hold x p)
 
 newtype Dyn (x :: Type) p = Dyn { unDyn :: IORef (DynType x p) }
 
