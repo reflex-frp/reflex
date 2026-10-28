@@ -824,7 +824,7 @@ behaviorPull !p = Behavior $ do
         holdInits <- askBehaviorHoldInits
         a <- liftIO $ runReaderIO (unBehaviorM $ pullCompute p) (Just (wi, parentsRef), holdInits)
         inv0 <- maybeToList <$> askInvalidator
-        invsRef <- liftIO $ newIORef $ InvalidatorList (length inv0) invalidatorPruneThreshold inv0
+        invsRef <- liftIO $ newIORef $! InvalidatorList (length inv0) invalidatorPruneThreshold inv0
         parents <- liftIO $ readIORef parentsRef
         let subscribed = PullSubscribed
               { pullSubscribedValue = a
