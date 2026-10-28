@@ -1432,10 +1432,9 @@ switchUncachedImpl b = Event $ \sub -> do
         }
   liftIO $ writeIORef invalidatorRef =<< newInvalidatorSwitch subscribed
   holdInits <- getDeferralQueue
-  e <- liftIO $ readSwitchParent subscribed holdInits
-  SubscribeResult subscription parentOcc <- subscribeAndRead e $ switchSubscribedSubscriber subscribed
+  SubscribeResult subscription parentOcc <- liftIO $
+    subscribeSwitchCurrentParent subscribed holdInits $ \parent subscriber -> runEventM $ subscribeAndRead parent subscriber
   liftIO $ writeIORef heightRef =<< eventSubscriptionHeight subscription
-  liftIO $ writeIORef currentParentRef $ SwitchParentSubscribed subscription
   pure $ SubscribeResult
     (EventSubscription
       { _eventSubscription_unsubscribe = do
@@ -1454,13 +1453,20 @@ switchUncachedImpl b = Event $ \sub -> do
       })
     parentOcc
 
-{-# INLINE readSwitchParent #-}
-readSwitchParent :: SwitchSubscribed x a -> IORef [SomeHoldInit x] -> IO (Event x a)
-readSwitchParent subscribed holdInits = do
+{-# INLINE subscribeSwitchCurrentParent #-}
+subscribeSwitchCurrentParent
+  :: SwitchSubscribed x a
+  -> IORef [SomeHoldInit x]
+  -> (Event x a -> Subscriber x a -> IO (SubscribeResult x a))
+  -> IO (SubscribeResult x a)
+subscribeSwitchCurrentParent subscribed holdInits subscribeToParent = do
   i <- readIORef $ switchSubscribedOwnInvalidator subscribed
   wi <- mkWeakPtrWithDebug i "InvalidatorSwitch"
-  runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) $
+  e <- runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) $
     BehaviorEnv (Just wi) (Just $ switchSubscribedBehaviorParents subscribed) holdInits
+  result <- subscribeToParent e $ switchSubscribedSubscriber subscribed
+  writeIORef (switchSubscribedCurrentParent subscribed) $! SwitchParentSubscribed $ subscribeSubscription result
+  pure result
 
 -- The inner events on coincidence have the type of the Reflex instance, so that
 -- the instance passes the outer event to coincidence without a coerce: the
@@ -2264,9 +2270,7 @@ runFrame a = SpiderHost $ do
       SwitchParentUnsubscribed -> pure Nothing
       SwitchParentSubscribed oldSubscription -> do
         writeIORef (switchSubscribedBehaviorParents subscribed) []
-        e <- readSwitchParent subscribed $ eventEnvHoldInits env
-        subscription <- {-# SCC "subscribeSwitch" #-} subscribeReconnect e (switchSubscribedSubscriber subscribed)
-        writeIORef (switchSubscribedCurrentParent subscribed) $! SwitchParentSubscribed subscription
+        _ <- subscribeSwitchCurrentParent subscribed (eventEnvHoldInits env) subscribeReconnect
         return $ Just oldSubscription
   liftIO $ mapM_ unsubscribe mergeSubscriptionsToKill
   liftIO $ mapM_ unsubscribe switchSubscriptionsToKill
@@ -2317,8 +2321,8 @@ runFrame a = SpiderHost $ do
       writeIORef (eventEnvRootClears env) []
 #endif
 
-    subscribeReconnect :: forall b. Event x b -> Subscriber x b -> IO (EventSubscription x)
-    subscribeReconnect e sub = do
+    subscribeReconnect :: forall b. Event x b -> Subscriber x b -> IO (SubscribeResult x b)
+    subscribeReconnect e sub = {-# SCC "subscribeSwitch" #-} do
 #ifdef DEBUG
       pendingRecalculationsBefore <- length <$> readIORef (eventEnvPendingRecalculations env)
 #endif
@@ -2333,7 +2337,7 @@ runFrame a = SpiderHost $ do
       unless (null toAssign && null coincidenceInfos && pendingRecalculationsAfter == pendingRecalculationsBefore) $ error "subscribeReconnect: the reconnect subscribe deferred a hold assignment, coincidence reset or height recalculation, which should be impossible when no event is firing"
 #endif
       clearEventEnv env
-      return $ subscribeSubscription result
+      return result
 
 --------------------------------------------------------------------------------
 -- Height algo
