@@ -63,7 +63,7 @@ isInvalidHeight :: Height -> Bool
 isInvalidHeight (Height h) = h == (-1000) || h == (-1001)
 
 isUnmarkedInvalidHeight :: Height -> Bool
-isUnmarkedInvalidHeight (Height h) = h == (-1001)
+isUnmarkedInvalidHeight (Height h) = h == (-1000)
 #else
 isInvalidHeight (Height h) = h == (-1000)
 #endif
