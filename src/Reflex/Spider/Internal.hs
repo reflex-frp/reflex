@@ -1695,7 +1695,7 @@ data EventLoopException = EventLoopException [[String]]
 instance Exception EventLoopException
 
 instance Show EventLoopException where
-  show (EventLoopException stacks) = "causality loop detected:\n" <> if null stacks
+  show (EventLoopException stacks) = "causality loop detected:\n" <> if all null stacks
     then "no location information, compile with profiling enabled for stack tree"
     else showStacks stacks
 
