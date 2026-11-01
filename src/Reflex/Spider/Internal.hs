@@ -501,32 +501,28 @@ cacheEventImpl e =
                     }
               liftIO $ writeIORef mSubscribedRef . Just =<< mkWeakPtrWithDebug subscribed "CacheSubscribed"
               return subscribed
-          liftIO $ cacheSubscription sub mSubscribedRef subscribed
-
-cacheSubscription :: Subscriber x a -> IORef (Maybe (Weak (CacheSubscribed x a))) -> CacheSubscribed x a -> IO (SubscribeResult x a)
-cacheSubscription sub mSubscribedRef subscribed = do
-  -- 'lazy' stops GHC <= 9.0 from reboxing subscribed, so that
-  -- '_eventSubscription_retained' keeps the key of the weak pointer in
-  -- 'mSubscribedRef' alive:
-  let fields = lazy subscribed
-  ticket <- WeakBag.insert sub $ _cacheSubscribed_subscribers fields
-  occ <- readIORef $ _cacheSubscribed_occurrence fields
-  let parentSub = _cacheSubscribed_parent fields
-      -- Prevent reboxing of the unpacked _cacheSubscribed_parent on every
-      -- subscribe.
-      unsubscribeParent = _eventSubscription_unsubscribe parentSub
-      es = EventSubscription
-        { _eventSubscription_unsubscribe = do
-            WeakBag.remove ticket
-            isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers fields
-            when isEmpty $ do
-              writeIORef mSubscribedRef Nothing
-              unsubscribeParent
-            touch ticket
-        , _eventSubscription_retained = toAny subscribed
-        , _eventSubscription_node = _eventSubscription_node parentSub
-        }
-  pure $ SubscribeResult es occ
+          -- 'lazy' stops GHC <= 9.0 from reboxing subscribed, so that
+          -- '_eventSubscription_retained' keeps the key of the weak pointer in
+          -- 'mSubscribedRef' alive:
+          let fields = lazy subscribed
+          ticket <- liftIO $ WeakBag.insert sub $ _cacheSubscribed_subscribers fields
+          occ <- liftIO $ readIORef $ _cacheSubscribed_occurrence fields
+          let parentSub = _cacheSubscribed_parent fields
+              -- Prevent reboxing of the unpacked _cacheSubscribed_parent on every
+              -- subscribe.
+              unsubscribeParent = _eventSubscription_unsubscribe parentSub
+              es = EventSubscription
+                { _eventSubscription_unsubscribe = do
+                    WeakBag.remove ticket
+                    isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers fields
+                    when isEmpty $ do
+                      writeIORef mSubscribedRef Nothing
+                      unsubscribeParent
+                    touch ticket
+                , _eventSubscription_retained = toAny subscribed
+                , _eventSubscription_node = _eventSubscription_node parentSub
+                }
+          pure $ SubscribeResult es occ
 
 subscribe :: Event x a -> Subscriber x a -> EventM x (EventSubscription x)
 subscribe e s = subscribeSubscription <$> subscribeAndRead e s
@@ -598,7 +594,7 @@ eventFan !k p !(Fan weakMaybeFanSubscribed) = Event $ \sub -> do
       liftIO $ writeIORef weakMaybeFanSubscribed . Just =<< mkWeakPtrWithDebug subscribed "FanSubscribed"
       pure subscribed
   liftIO $ do
-    let fields = lazy subscribed -- see 'cacheSubscription' for 'lazy' reason
+    let fields = lazy subscribed -- see 'cacheEventImpl' for 'lazy' reason
         subscribersRef = fanSubscribedSubscribers fields
     sub' <- evaluate sub
     -- Unlike the key map, the finalizer never changes fanSubscribedNextId, so a
@@ -1749,7 +1745,7 @@ subscribeAndReadRoot k r sub = do
       weakSubscribed <- mkWeakPtr subscribed $ Just $ runRootKeyTeardown (rootSubscribed r) teardownVar
       void $ atomicModifyIORef'_ (rootSubscribed r) $ DMap.insert k $ RootKey weakSubscribed teardownVar
       pure (weakSubscribed, lazy subscribed)
-  let fields = lazy subscribed -- 'lazy' used as in 'cacheSubscription'
+  let fields = lazy subscribed -- 'lazy' used as in 'cacheEventImpl'
       subscribers = rootSubscribedSubscribers fields
   ticket <- WeakBag.insert sub subscribers
   occ <- coerce . DMap.lookup k <$> readIORef (rootOccurrence r)
