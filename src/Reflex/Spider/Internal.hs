@@ -524,9 +524,6 @@ cacheEventImpl e =
                 }
           pure $ SubscribeResult es occ
 
-subscribe :: Event x a -> Subscriber x a -> EventM x (EventSubscription x)
-subscribe e s = subscribeSubscription <$> subscribeAndRead e s
-
 eventRoot :: (GCompare k, HasSpiderTimeline x) => k a -> Root x k -> Event x a
 eventRoot !k !r = Event $ liftIO . subscribeAndReadRoot k r
 
