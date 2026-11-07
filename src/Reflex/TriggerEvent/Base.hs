@@ -98,10 +98,14 @@ instance (Monad m, MonadRef m, Ref m ~ Ref IO, MonadReflexCreateTrigger t m) => 
   {-# INLINABLE newEventWithLazyTriggerWithOnComplete #-}
   newEventWithLazyTriggerWithOnComplete f = do
     events <- askEvents
-    lift . newEventWithTrigger $ \t ->
-      f $ \a cb -> do
-        reResultTrigger <- newRef $ Just t
+    reResultTrigger <- newRef Nothing
+    lift . newEventWithTrigger $ \t -> do
+      writeRef reResultTrigger $ Just t
+      teardown <- f $ \a cb ->
         writeChan events [EventTriggerRef reResultTrigger :=> TriggerInvocation a cb]
+      return $ do
+        writeRef reResultTrigger Nothing
+        teardown
 
 instance MonadRef m => MonadRef (TriggerEventT t m) where
   type Ref (TriggerEventT t m) = Ref m
