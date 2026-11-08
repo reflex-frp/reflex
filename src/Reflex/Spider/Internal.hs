@@ -20,7 +20,6 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# OPTIONS_GHC -Wunused-binds #-}
-{-# LANGUAGE TupleSections #-}
 
 -- | This module is the implementation of the 'Spider' 'Reflex' engine.  It uses
 -- a graph traversal algorithm to propagate 'Event's and 'Behavior's.
@@ -548,8 +547,8 @@ atomicModifyIORef'_ ref f = atomicModifyIORef' ref $ \old -> let !new = f old in
 
 {-# INLINE eventFan #-}
 eventFan :: forall x map v a. (HasSpiderTimeline x, IsMap map) => MapKey map a -> Event x (map v) -> Fan x map v -> Event x (v a)
-eventFan !k p !(Fan weakMaybeFanSubscribed) = Event $ \sub -> do
-  subscribed <- (liftIO $ readIORef weakMaybeFanSubscribed >>= maybe (pure Nothing) deRefWeak) >>= \case
+eventFan !k p (Fan !weakMaybeFanSubscribed) = Event $ \sub -> do
+  subscribed <- liftIO (readIORef weakMaybeFanSubscribed >>= maybe (pure Nothing) deRefWeak) >>= \case
     Just subscribed -> pure subscribed
     Nothing -> do
 #ifdef DEBUG_NODEIDS
@@ -674,10 +673,16 @@ newSubscriberCoincidenceInner subscribed = debugSubscriber ("SubscriberCoinciden
   , subscriberRecalculateHeight = \_ -> recalculateCoincidenceHeight subscribed
   }
 
+-- Callers apply this to the 'WeakBag' only, and GHC inlines an INLINE function
+-- only when it is applied to all the arguments on its left-hand side, hence
+-- the lambda.
+{- HLINT ignore invalidateBagHeight "Redundant lambda" -}
 {-# INLINE invalidateBagHeight #-}
 invalidateBagHeight :: WeakBag (Subscriber x a) -> Height -> IO ()
 invalidateBagHeight subscribers = \old -> WeakBag.traverse_ subscribers $ \sub -> subscriberInvalidateHeight sub old
 
+-- See 'invalidateBagHeight' for why this uses a lambda.
+{- HLINT ignore recalculateBagHeight "Redundant lambda" -}
 {-# INLINE recalculateBagHeight #-}
 recalculateBagHeight :: WeakBag (Subscriber x a) -> Height -> IO ()
 recalculateBagHeight subscribers = \new -> WeakBag.traverse_ subscribers $ \sub -> subscriberRecalculateHeight sub new
@@ -1669,7 +1674,7 @@ filterStack _prefix = id
 
 #ifdef DEBUG_CYCLES
 
-data EventLoopException = EventLoopException [[String]]
+newtype EventLoopException = EventLoopException [[String]]
 instance Exception EventLoopException
 
 instance Show EventLoopException where
@@ -2147,7 +2152,7 @@ runHoldInits holdInitRef dynInitRef mergeInitRef = do
 
 initHold :: forall x. HasSpiderTimeline x => SomeHoldInit x -> EventM x ()
 initHold (SomeHoldInit h) = do
-  (liftIO $ readIORef $ holdParent h) >>= \case
+  liftIO (readIORef $ holdParent h) >>= \case
     Just _ -> pure ()
     Nothing -> do
       -- Need to evaluate these so that we don't retain the Hold itself

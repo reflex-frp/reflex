@@ -23,6 +23,7 @@ main = do
         , "--ignore=Reduce duplication"
         , "--ignore=Replace case with maybe"
         , "--cpp-define=DEBUG"
+        , "--cpp-define=DEBUG_CYCLES"
         , "--ignore=Use tuple-section"
         ]
       recurseInto = and <$> sequence

@@ -1,5 +1,5 @@
 # The same settings as the hlint test-suite in test/hlint.hs.
-- arguments: [--cpp-define=DEBUG]
+- arguments: [--cpp-define=DEBUG, --cpp-define=DEBUG_CYCLES]
 
 - ignore: {name: "Redundant do"}
 - ignore: {name: "Use camelCase"}
