@@ -1,9 +1,10 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE MultiWayIf #-}
+
 module Reflex.Spider.Height
-  (Height
+  ( Height
   , pattern ZeroHeight
   , pattern InvalidHeight
   , invalidHeightBeingTraversed
@@ -60,7 +61,8 @@ pattern ZeroHeight = Height 0
 
 pattern InvalidHeight :: Height
 pattern InvalidHeight <- (isInvalidHeight -> True)
-  where InvalidHeight = Height (-1000)
+  where
+    InvalidHeight = Height (-1000)
 
 {-# INLINE isInvalidHeight #-}
 isInvalidHeight :: Height -> Bool
@@ -73,7 +75,7 @@ pattern ValidHeight :: Height
 pattern ValidHeight <- Height ((>= 0) -> True)
 
 pattern UnsafeValidHeight :: Int -> Height
-pattern UnsafeValidHeight n <- Height (\ x -> if x >= 0 then Just x else Nothing -> Just n)
+pattern UnsafeValidHeight n <- Height (\x -> if x >= 0 then Just x else Nothing -> Just n)
 
 {-# INLINE zeroHeight #-}
 zeroHeight :: Height
@@ -133,7 +135,7 @@ data HeightBag = HeightBag
   { _heightBag_invalidParents :: {-# UNPACK #-} !Int
   , _heightBag_contents :: !(IntMap Word) -- Number of parents in each height bucket
   }
-  deriving (Show, Read, Eq, Ord)
+  deriving (Eq, Ord, Read, Show)
 
 {-# INLINE heightBagEmpty #-}
 heightBagEmpty :: HeightBag
@@ -164,13 +166,15 @@ heightBagRemoveParent h b@(HeightBag invalidParents c) = heightBagVerify $ case 
 
 {-# INLINE heightBagInvalidateParent #-}
 heightBagInvalidateParent :: Height -> HeightBag -> HeightBag
-heightBagInvalidateParent h b@(HeightBag invalidParents _) = heightBagVerify $
-  HeightBag (succ invalidParents) (deleteHeight h b)
+heightBagInvalidateParent h b@(HeightBag invalidParents _) =
+  heightBagVerify $
+    HeightBag (succ invalidParents) (deleteHeight h b)
 
 {-# INLINE heightBagRecalculateParent #-}
 heightBagRecalculateParent :: Height -> HeightBag -> HeightBag
-heightBagRecalculateParent h (HeightBag invalidParents c) = heightBagVerify $
-  HeightBag (pred invalidParents) (insertHeight h c)
+heightBagRecalculateParent h (HeightBag invalidParents c) =
+  heightBagVerify $
+    HeightBag (pred invalidParents) (insertHeight h c)
 
 {-# INLINE insertHeight #-}
 insertHeight :: Height -> IntMap Word -> IntMap Word
@@ -207,7 +211,7 @@ heightBagSuccHeight (HeightBag _ c) = case IntMap.lookupMax c of
 --------------------------------------------------------------------------------
 
 newtype HeightQueue a = HeightQueue (IntMap [a])
-  deriving (Show, Read, Eq, Ord)
+  deriving (Eq, Ord, Read, Show)
 
 {-# INLINE heightQueueEmpty #-}
 heightQueueEmpty :: HeightQueue a
@@ -215,8 +219,10 @@ heightQueueEmpty = HeightQueue IntMap.empty
 
 {-# INLINE heightQueueInsert #-}
 heightQueueInsert :: Height -> a -> HeightQueue a -> HeightQueue a
-heightQueueInsert height a (HeightQueue q) = heightQueueVerifyKey height $ HeightQueue $
-  IntMap.insertWith (++) (unsafeHeightAsInt height) [a] q
+heightQueueInsert height a (HeightQueue q) =
+  heightQueueVerifyKey height
+    $ HeightQueue
+    $ IntMap.insertWith (++) (unsafeHeightAsInt height) [a] q
 
 {-# INLINE heightQueueNext #-}
 heightQueueNext :: HeightQueue a -> Maybe (Height, [a], HeightQueue a)

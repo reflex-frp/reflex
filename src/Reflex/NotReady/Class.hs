@@ -8,7 +8,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Reflex.NotReady.Class
-  ( NotReady(..)
+  ( NotReady (..)
   ) where
 
 import Control.Monad.Reader (ReaderT)

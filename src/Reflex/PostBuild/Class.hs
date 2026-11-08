@@ -1,5 +1,3 @@
--- | This module defines 'PostBuild', which indicates that an action will be
--- notified when it, and any action it's a part of, has finished executing.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -8,15 +6,17 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | This module defines 'PostBuild', which indicates that an action will be
+-- notified when it, and any action it's a part of, has finished executing.
 module Reflex.PostBuild.Class
   ( PostBuild (..)
   ) where
 
-import Reflex.Class
-
 import Control.Monad.Reader
 import Control.Monad.State
 import qualified Control.Monad.State.Strict as Strict
+
+import Reflex.Class
 
 -- | 'PostBuild' represents an action that is notified via an 'Event' when it
 -- has finished executing.  Note that the specific definition of "finished" is

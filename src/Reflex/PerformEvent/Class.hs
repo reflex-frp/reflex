@@ -1,6 +1,3 @@
--- | This module defines 'PerformEvent', which mediates the
--- interaction between a "Reflex"-based program and the external side-effecting
--- actions such as 'IO'.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -10,6 +7,9 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | This module defines 'PerformEvent', which mediates the
+-- interaction between a "Reflex"-based program and the external side-effecting
+-- actions such as 'IO'.
 module Reflex.PerformEvent.Class
   ( PerformEvent (..)
   , performEventAsync
@@ -33,11 +33,13 @@ class (Reflex t, Monad (Performable m), Monad m) => PerformEvent t m | m -> t wh
   -- | The type of action to be triggered; this is often not the same type as
   -- the triggering action.
   type Performable m :: Type -> Type
+
   -- | Perform the action contained in the given 'Event' whenever the 'Event'
   -- fires.  Return the result in another 'Event'.  Note that the output 'Event'
   -- will generally occur later than the input 'Event', since most 'Performable'
   -- actions cannot be performed during 'Event' propagation.
   performEvent :: Event t (Performable m a) -> m (Event t a)
+
   -- | Like 'performEvent', but do not return the result.  May have slightly
   -- better performance.
   performEvent_ :: Event t (Performable m ()) -> m ()
@@ -50,7 +52,7 @@ class (Reflex t, Monad (Performable m), Monad m) => PerformEvent t m | m -> t wh
 -- the callback whenever it is ready.  This will work properly, even in GHCJS
 -- (which fully implements concurrency even though JavaScript does not have
 -- built in concurrency).
-{-# INLINABLE performEventAsync #-}
+{-# INLINEABLE performEventAsync #-}
 performEventAsync :: (TriggerEvent t m, PerformEvent t m) => Event t ((a -> IO ()) -> Performable m ()) -> m (Event t a)
 performEventAsync e = do
   (eOut, triggerEOut) <- newTriggerEvent

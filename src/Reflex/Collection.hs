@@ -5,6 +5,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -12,15 +13,15 @@
 -- Module:
 --   Reflex.Collection
 module Reflex.Collection
-  (
-  -- * Widgets on Collections
+  ( -- * Widgets on Collections
     listHoldWithKey
   , listWithKey
   , listWithKeyShallowDiff
   , listViewWithKey
   , selectViewListWithKey
   , selectViewListWithKey_
-  -- * List Utils
+
+    -- * List Utils
   , list
   , simpleList
   ) where
@@ -38,15 +39,16 @@ import Data.Align
 import Data.Functor.Misc
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Map.Misc
 import Data.These
+
+import Data.Map.Misc
 
 #if !MIN_VERSION_base(4,18,0)
 import Control.Monad.Identity
 #endif
 
-import Reflex.Class
 import Reflex.Adjustable.Class
+import Reflex.Class
 import Reflex.Dynamic
 
 -- | Create a set of widgets based on the provided 'Map'. When the
@@ -61,19 +63,22 @@ listHoldWithKey
   -> m (Dynamic t (Map k a))
 listHoldWithKey m0 m' f = do
   let dm0 = mapWithFunctorToDMap $ Map.mapWithKey f m0
-      dm' = fmap
-        (PatchDMap . mapWithFunctorToDMap . Map.mapWithKey
-          (\k v -> ComposeMaybe $ fmap (f k) v)
-        )
-        m'
+      dm' =
+        fmap
+          ( PatchDMap
+              . mapWithFunctorToDMap
+              . Map.mapWithKey
+                (\k v -> ComposeMaybe $ fmap (f k) v)
+          )
+          m'
   (a0, a') <- sequenceDMapWithAdjust dm0 dm'
 
-  --TODO: Move the dmapToMap to the righthand side so it doesn't get
-  --fully redone every time
+  -- TODO: Move the dmapToMap to the righthand side so it doesn't get
+  -- fully redone every time
   fmap dmapToMap . incrementalToDynamic <$> holdIncremental a0 a'
 
---TODO: Something better than Dynamic t (Map k v) - we want something
---where the Events carry diffs, not the whole value
+-- TODO: Something better than Dynamic t (Map k v) - we want something
+-- where the Events carry diffs, not the whole value
 listWithKey
   :: forall t k v m a
    . (Ord k, Adjustable t m, MonadFix m, MonadHold t m, Eq v)
@@ -92,21 +97,21 @@ listWithKey vals mkChild = do
       -- accounted for.
       diffOnlyKeyChanges olds news =
         flip Map.mapMaybe (align olds news) $ \case
-          This _    -> Just Nothing
+          This _ -> Just Nothing
           These _ _ -> Nothing
-          That new  -> Just $ Just new
+          That new -> Just $ Just new
   rec sentVals :: Dynamic t (Map k v) <- foldDyn applyMap Map.empty changeVals
       let changeVals :: Event t (Map k (Maybe v))
           changeVals =
-            attachWith diffOnlyKeyChanges (current sentVals) $ leftmost
-              [ updated vals
-
-              -- TODO: This should probably be added to the
-              -- attachWith, not to the updated; if we were using
-              -- diffMap instead of diffMapNoEq, I think it might not
-              -- work
-              , tag (current vals) postBuild
-              ]
+            attachWith diffOnlyKeyChanges (current sentVals) $
+              leftmost
+                [ updated vals
+                , -- TODO: This should probably be added to the
+                  -- attachWith, not to the updated; if we were using
+                  -- diffMap instead of diffMapNoEq, I think it might not
+                  -- work
+                  tag (current vals) postBuild
+                ]
   listHoldWithKey Map.empty changeVals $ \k v ->
     mkChild k =<< holdUniqDyn =<< holdDyn v (select childValChangedSelector $ Const2 k)
 
@@ -125,24 +130,24 @@ listWithKeyShallowDiff initialVals valsChanged mkChild = do
   let childValChangedSelector = fanMap $ fmap (Map.mapMaybe id) valsChanged
   sentVals <- foldDyn applyMap (void initialVals) $ fmap (fmap void) valsChanged
   let relevantPatch patch _ = case patch of
-
         -- Even if we let a Nothing through when the element doesn't
         -- already exist, this doesn't cause a problem because it is
         -- ignored
         Nothing -> Just Nothing
-
         -- We don't want to let spurious re-creations of items through
-        Just _  -> Nothing
+        Just _ -> Nothing
   listHoldWithKey
-      initialVals
-      (attachWith (flip (Map.differenceWith relevantPatch))
-                  (current sentVals)
-                  valsChanged
-      )
+    initialVals
+    ( attachWith
+        (flip (Map.differenceWith relevantPatch))
+        (current sentVals)
+        valsChanged
+    )
     $ \k v -> mkChild k v $ select childValChangedSelector $ Const2 k
 
---TODO: Something better than Dynamic t (Map k v) - we want something
---where the Events carry diffs, not the whole value
+-- TODO: Something better than Dynamic t (Map k v) - we want something
+-- where the Events carry diffs, not the whole value
+
 -- | Create a dynamically-changing set of Event-valued widgets.  This
 --   is like 'listWithKey', specialized for widgets returning @/Event t a/@.
 --   'listWithKey' would return @/Dynamic t (Map k (Event t a))/@ in
@@ -184,7 +189,7 @@ selectViewListWithKey selection vals mkChild = do
   selectChild <- listWithKey vals $ \k v -> do
     let selected = demuxed selectionDemux k
     selectSelf <- mkChild k v selected
-    return $ fmap ((,) k) selectSelf
+    return $ fmap (k,) selectSelf
   return $ switchPromptlyDyn $ leftmost . Map.elems <$> selectChild
 
 -- | Like 'selectViewListWithKey' but discards the value of the list
@@ -222,6 +227,8 @@ simpleList
   -> (Dynamic t v -> m a)
   -> m (Dynamic t [a])
 simpleList xs mkChild =
-  fmap (fmap (map snd . Map.toList)) $ flip list mkChild $ fmap
-    (Map.fromList . zip [(1 :: Int) ..])
-    xs
+  fmap (fmap (map snd . Map.toList))
+    $ flip list mkChild
+    $ fmap
+      (Map.fromList . zip [(1 :: Int) ..])
+      xs

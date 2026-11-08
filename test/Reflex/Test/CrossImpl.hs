@@ -4,39 +4,37 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-
-import Prelude hiding (and, foldl, mapM, mapM_, sequence, sequence_)
-
-import Control.Monad.Ref
-import Reflex.Class
-import Reflex.Dynamic
-import Reflex.Host.Class
-import qualified Reflex.Pure as P
-import qualified Reflex.Spider.Internal as S
-import qualified Reflex.Profiled as Prof
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 import Control.Arrow (second, (&&&))
 import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.Identity hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
+import Control.Monad.Ref
 import Control.Monad.State.Strict hiding (forM, forM_, mapM, mapM_, sequence, sequence_)
 import Data.Dependent.Sum (DSum (..))
 import Data.Foldable
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
 import Data.Monoid
+import qualified Data.Set as Set
 import Data.Traversable
 import System.Exit
 import System.Mem
+import Prelude hiding (and, foldl, mapM, mapM_, sequence, sequence_)
+
+import Reflex.Class
+import Reflex.Dynamic
+import Reflex.Host.Class
+import qualified Reflex.Profiled as Prof
+import qualified Reflex.Pure as P
+import qualified Reflex.Spider.Internal as S
 
 mapToPureBehavior :: Map Int a -> Behavior PureReflexDomain a
 mapToPureBehavior m = P.Behavior $ \t -> case Map.lookupLE t m of
@@ -48,7 +46,7 @@ mapToPureEvent m = P.Event $ flip Map.lookup m
 
 relevantTestingTimes :: (Map Int a, Map Int b) -> [Int]
 relevantTestingTimes (b, e) = case Set.minView &&& Set.maxView $ Map.keysSet b `Set.union` Map.keysSet e of
-  (Just (t0, _), Just (t1, _)) -> [t0..t1+1] -- We need to go to b+1 to see the result of the final event
+  (Just (t0, _), Just (t1, _)) -> [t0 .. t1 + 1] -- We need to go to b+1 to see the result of the final event
   _ -> [] -- Doesn't actually make much sense
 
 type PureReflexDomain = P.Pure Int
@@ -89,7 +87,7 @@ testTimeline builder (bMap, eMap) = do
   let times = relevantTestingTimes (bMap, eMap)
   liftIO performGC
   outputs <- forM times $ \t -> do
-    forM_ (Map.lookup t bMap) $ \val -> mapM_ (\ rbt -> fireEvents [rbt :=> Identity val]) =<< readRef rbTrigger
+    forM_ (Map.lookup t bMap) $ \val -> mapM_ (\rbt -> fireEvents [rbt :=> Identity val]) =<< readRef rbTrigger
     bOutput <- runHostFrame $ sample b'
     eOutput <- fmap join $ forM (Map.lookup t eMap) $ \val -> do
       mret <- readRef reTrigger
@@ -102,7 +100,7 @@ testTimeline builder (bMap, eMap) = do
   return (Map.fromList $ map (second fst) outputs, Map.mapMaybe id $ Map.fromList $ map (second snd) outputs)
 
 tracePerf :: Show a => a -> b -> b
-tracePerf = flip const
+tracePerf _ x = x
 
 testAgreement :: (Eq c, Eq d, Show c, Show d) => (forall m t. TestCaseConstraint t m => (Behavior t a, Event t b) -> m (Behavior t c, Event t d)) -> (Map Int a, Map Int b) -> IO Bool
 testAgreement builder inputs = do
@@ -114,144 +112,146 @@ testAgreement builder inputs = do
   tracePerf "---------" $ return ()
   let resultsAgree = identityResult == spiderResult && identityResult == profiledResult
   if resultsAgree
-    then do --putStrLn "Success:"
-            --print identityResult
-            return ()
-    else do putStrLn "Failure:"
-            putStrLn $ "Pure result: " <> show identityResult
-            putStrLn $ "Spider result:   " <> show spiderResult
-            putStrLn $ "Profiled result:   " <> show profiledResult
+    then do
+      -- putStrLn "Success:"
+      -- print identityResult
+      return ()
+    else do
+      putStrLn "Failure:"
+      putStrLn $ "Pure result: " <> show identityResult
+      putStrLn $ "Spider result:   " <> show spiderResult
+      putStrLn $ "Profiled result:   " <> show profiledResult
   return resultsAgree
 
 type TestCaseConstraint t m = (Reflex t, MonadSample t m, MonadHold t m, MonadFix m, MonadFix (PushM t))
 
 data TestCase = forall a b c d. (Eq c, Eq d, Show c, Show d) => TestCase (Map Int a, Map Int b) (forall m t. TestCaseConstraint t m => (Behavior t a, Event t b) -> m (Behavior t c, Event t d))
 
+{- HLINT ignore testCases "Use =<<" -}
 testCases :: [(String, TestCase)]
 testCases =
   [ (,) "hold" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(_, e) -> do
-       b' <- hold "123" e
-       return (b', e)
+      b' <- hold "123" e
+      return (b', e)
   , (,) "count" $ TestCase (Map.singleton 0 (), Map.fromList [(1, ()), (2, ()), (3, ())]) $ \(_, e) -> do
-       e' <- updated <$> count e
-       b' <- hold (0 :: Int) e'
-       return (b', e')
+      e' <- updated <$> count e
+      b' <- hold (0 :: Int) e'
+      return (b', e')
   , (,) "headE-1" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       e' <- headE $ leftmost [e, e]
-       return (b, e')
+      e' <- headE $ leftmost [e, e]
+      return (b, e')
   , (,) "switch-1" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = fmap (const e) e
-       b' <- hold never e'
-       let e'' = switch b'
-       return (b, e'')
+      let e' = fmap (const e) e
+      b' <- hold never e'
+      let e'' = switch b'
+      return (b, e'')
   , (,) "switch-2" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = flip pushAlways e $ const $ do
-             let eab = splitRecombineEvent e
-             switch <$> hold eab never
-           e'' = coincidence e'
-       return (b, e'')
+      let e' = flip pushAlways e $ const $ do
+            let eab = splitRecombineEvent e
+            switch <$> hold eab never
+          e'' = coincidence e'
+      return (b, e'')
   , (,) "switch-3" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = flip pushAlways e $ const $ do
-             let eab = splitRecombineEvent e
-             switch <$> hold eab (fmap (const e) e)
-           e'' = coincidence e'
-       return (b, e'')
+      let e' = flip pushAlways e $ const $ do
+            let eab = splitRecombineEvent e
+            switch <$> hold eab (fmap (const e) e)
+          e'' = coincidence e'
+      return (b, e'')
   , (,) "switch-4" $ TestCase (Map.singleton 0 "asdf", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = leftmost [e, e]
-       e'' <- switch <$> hold e' (fmap (const e) e)
-       return (b, e'')
+      let e' = leftmost [e, e]
+      e'' <- switch <$> hold e' (fmap (const e) e)
+      return (b, e'')
   , (,) "switchHoldPromptly-1" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = fmap (const e) e
-       e'' <- switchHoldPromptly never e'
-       return (b, e'')
+      let e' = fmap (const e) e
+      e'' <- switchHoldPromptly never e'
+      return (b, e'')
   , (,) "switchHoldPromptly-2" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = fmap (const e) e
-       e'' <- switchHoldPromptly never $ leftmost [e', e']
-       return (b, e'')
+      let e' = fmap (const e) e
+      e'' <- switchHoldPromptly never $ leftmost [e', e']
+      return (b, e'')
   , (,) "switchHoldPromptly-3" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = leftmost [e, e]
-       e'' <- switchHoldPromptly never (fmap (const e) e')
-       return (b, e'')
+      let e' = leftmost [e, e]
+      e'' <- switchHoldPromptly never (fmap (const e) e')
+      return (b, e'')
   , (,) "switchHoldPromptly-4" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj"), (3, "asdf")]) $ \(b, e) -> do
-       let e' = leftmost [e, e]
-       e'' <- switchHoldPromptly never (fmap (const e') e)
-       return (b, e'')
+      let e' = leftmost [e, e]
+      e'' <- switchHoldPromptly never (fmap (const e') e)
+      return (b, e'')
   , (,) "switch-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = leftmost [e, e]
-       e'' <- switch <$> hold never (fmap (const e') e)
-       return (b, e'')
+      let e' = leftmost [e, e]
+      e'' <- switch <$> hold never (fmap (const e') e)
+      return (b, e'')
   , (,) "switchHoldPromptly-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = flip push e $ \_ -> do
-             Just <$> headE e
-       e'' <- switchHoldPromptly never e'
-       return (b, e'')
+      let e' = flip push e $ \_ -> do
+            Just <$> headE e
+      e'' <- switchHoldPromptly never e'
+      return (b, e'')
   , (,) "switchHoldPromptly-6" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = flip pushAlways e $ \_ -> do
-             switchHoldPromptly e never
-       e'' <- switchHoldPromptly never e'
-       return (b, e'')
+      let e' = flip pushAlways e $ \_ -> do
+            switchHoldPromptly e never
+      e'' <- switchHoldPromptly never e'
+      return (b, e'')
   , (,) "coincidence-1" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = flip pushAlways e $ \_ -> return e
-           e'' = coincidence e'
-       return (b, e'')
+      let e' = flip pushAlways e $ \_ -> return e
+          e'' = coincidence e'
+      return (b, e'')
   , (,) "coincidence-2" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = flip pushAlways e $ \_ -> return $ leftmost [e, e]
-           e'' = coincidence e'
-       return (b, e'')
+      let e' = flip pushAlways e $ \_ -> return $ leftmost [e, e]
+          e'' = coincidence e'
+      return (b, e'')
   , (,) "coincidence-3" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       let e' = flip pushAlways e $ \_ -> return $ coincidence $ fmap (const e) e
-           e'' = coincidence e'
-       return (b, e'')
+      let e' = flip pushAlways e $ \_ -> return $ coincidence $ fmap (const e) e
+          e'' = coincidence e'
+      return (b, e'')
   , (,) "coincidence-4" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj"), (3, "asdf")]) $ \(b, e) -> do
-       let e' = flip pushAlways e $ \_ -> headE e
-           e'' = coincidence e'
-       return (b, e'')
+      let e' = flip pushAlways e $ \_ -> headE e
+          e'' = coincidence e'
+      return (b, e'')
   , (,) "coincidence-5" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer")]) $ \(b, e) -> do
-       let eChild = flip pushAlways e $ const $ do
-             let eNewValues = leftmost [e, e]
-             return $ coincidence $ fmap (const eNewValues) eNewValues
-           e' = coincidence eChild
-       return (b, e')
+      let eChild = flip pushAlways e $ const $ do
+            let eNewValues = leftmost [e, e]
+            return $ coincidence $ fmap (const eNewValues) eNewValues
+          e' = coincidence eChild
+      return (b, e')
   , (,) "coincidence-6" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer")]) $ \(b, e) -> do
-       let eChild = flip pushAlways e $ const $ do
-             let e' = coincidence $ fmap (const e) e
-             return $ leftmost [e', e']
-           e'' = coincidence eChild
-       return (b, e'')
+      let eChild = flip pushAlways e $ const $ do
+            let e' = coincidence $ fmap (const e) e
+            return $ leftmost [e', e']
+          e'' = coincidence eChild
+      return (b, e'')
   , (,) "coincidence-7" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj"), (3, "asdf")]) $ \(b, e) -> do
-       let e' = leftmost [e, e]
-           eCoincidences = coincidence $ fmap (const e') e
-       return (b, eCoincidences)
+      let e' = leftmost [e, e]
+          eCoincidences = coincidence $ fmap (const e') e
+      return (b, eCoincidences)
   , (,) "holdWhileFiring" $ TestCase (Map.singleton 0 "zxc", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       eo <- headE e
-       bb <- hold b $ pushAlways (const $ hold "asdf" eo) eo
-       let b' = pull $ sample =<< sample bb
-       return (b', e)
+      eo <- headE e
+      bb <- hold b $ pushAlways (const $ hold "asdf" eo) eo
+      let b' = pull $ sample =<< sample bb
+      return (b', e)
   , (,) "foldDynWhileFiring" $ TestCase (Map.singleton 0 "zxc", Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(_, e) -> do
-       d <- foldDyn (:) [] $
-         pushAlways (\a -> foldDyn (:) [a] e) e
-       let b = current (join (fmap distributeListOverDynPure d))
-       return (b, e)
+      d <-
+        foldDyn (:) [] $
+          pushAlways (\a -> foldDyn (:) [a] e) e
+      let b = current (join (fmap distributeListOverDynPure d))
+      return (b, e)
   , (,) "joinDyn" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, "qwer"), (2, "lkj")]) $ \(b, e) -> do
-       bb <- hold "b" e
-       bd <- hold never . fmap (const e) =<< headE e
-       eOuter <- pushAlways sample . fmap (const bb) <$> headE e
-       let eInner = switch bd
-           e' = leftmost [eOuter, eInner]
-       return (b, e')
+      bb <- hold "b" e
+      bd <- hold never . fmap (const e) =<< headE e
+      eOuter <- pushAlways sample . fmap (const bb) <$> headE e
+      let eInner = switch bd
+          e' = leftmost [eOuter, eInner]
+      return (b, e')
   , (,) "holdUniqDyn-laziness" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList (zip [1 :: Int ..] [1 :: Int, 2, 2, 3, 3, 3, 4, 4, 4, 4])) $ \(_, e :: Event t Int) -> do
       rec result <- holdUniqDyn d
           d <- holdDyn (0 :: Int) e
       return (current result, updated result)
 
-
-
-  {-
-  , (,) "mergeIncrementalWithMove" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, PatchDMapWithMove.moveDMapKey LeftTag RightTag), (2, mempty)]) $ \(b, e :: Event t (PatchDMapWithMove (EitherTag () ()) (Const2 () ()))) -> do
-       x <- holdIncremental (DMap.singleton LeftTag $ void e) $ PatchDMapWithMove.mapPatchDMapWithMove (\(Const2 _) -> void e) <$> e
-       let e' = mergeIncrementalWithMove x :: Event t (DMap (EitherTag () ()) Identity)
-       return (b, e')
-  -}
+      {-
+      , (,) "mergeIncrementalWithMove" $ TestCase (Map.singleton 0 (0 :: Int), Map.fromList [(1, PatchDMapWithMove.moveDMapKey LeftTag RightTag), (2, mempty)]) $ \(b, e :: Event t (PatchDMapWithMove (EitherTag () ()) (Const2 () ()))) -> do
+           x <- holdIncremental (DMap.singleton LeftTag $ void e) $ PatchDMapWithMove.mapPatchDMapWithMove (\(Const2 _) -> void e) <$> e
+           let e' = mergeIncrementalWithMove x :: Event t (DMap (EitherTag () ()) Identity)
+           return (b, e')
+      -}
   ]
 
 splitRecombineEvent :: Reflex t => Event t a -> Event t String
@@ -260,12 +260,12 @@ splitRecombineEvent e =
       eb = "b" <$ e
   in leftmost [ea, eb]
 
-
 main :: IO ()
 main = do
   results <- forM testCases $ \(name, TestCase inputs builder) -> do
     putStrLn $ "Test: " <> name
     testAgreement builder inputs
-  exitWith $ if and results
-             then ExitSuccess
-             else ExitFailure 1
+  exitWith $
+    if and results
+      then ExitSuccess
+      else ExitFailure 1

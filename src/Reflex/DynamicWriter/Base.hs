@@ -6,11 +6,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
 module Reflex.DynamicWriter.Base
   ( DynamicWriterT (..)
@@ -19,7 +19,7 @@ module Reflex.DynamicWriter.Base
   ) where
 
 import Control.Monad
-import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.IO.Class
@@ -44,12 +44,13 @@ import Control.Monad.Identity
 import Data.Semigroup (Semigroup(..))
 #endif
 
+import qualified Data.Patch.MapWithMove as MapWithMove
+
 import Reflex.Adjustable.Class
 import Reflex.Class
 import Reflex.DynamicWriter.Class
 import Reflex.EventWriter.Class (EventWriter, tellEvent)
 import Reflex.Host.Class
-import qualified Data.Patch.MapWithMove as MapWithMove
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Query.Class
@@ -61,56 +62,59 @@ mapIncrementalMapValues f = unsafeMapIncremental (fmap f) (fmap f)
 
 mergeDynIncremental :: (Reflex t, Ord k) => Incremental t (PatchMap k (Dynamic t v)) -> Incremental t (PatchMap k v)
 mergeDynIncremental a = unsafeBuildIncremental (mapM (sample . current) =<< sample (currentIncremental a)) $ addedAndRemovedValues <> changedValues
-  where changedValues = fmap (PatchMap . fmap Just) $ mergeMapIncremental $ mapIncrementalMapValues updated a
-        addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ \(PatchMap m) -> PatchMap <$> mapM (mapM (sample . current)) m
+  where
+    changedValues = fmap (PatchMap . fmap Just) $ mergeMapIncremental $ mapIncrementalMapValues updated a
+    addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ \(PatchMap m) -> PatchMap <$> mapM (mapM (sample . current)) m
 
 mergeIntDynIncremental :: Reflex t => Incremental t (PatchIntMap (Dynamic t v)) -> Incremental t (PatchIntMap v)
 mergeIntDynIncremental a = unsafeBuildIncremental (mapM (sample . current) =<< sample (currentIncremental a)) $ addedAndRemovedValues <> changedValues
-  where changedValues = fmap (PatchIntMap . fmap Just) $ mergeIntIncremental $ mapIncrementalMapValues updated a
-        addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ \(PatchIntMap m) -> PatchIntMap <$> mapM (mapM (sample . current)) m
+  where
+    changedValues = fmap (PatchIntMap . fmap Just) $ mergeIntIncremental $ mapIncrementalMapValues updated a
+    addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ \(PatchIntMap m) -> PatchIntMap <$> mapM (mapM (sample . current)) m
 
 mergeDynIncrementalWithMove :: forall t k v. (Reflex t, Ord k) => Incremental t (PatchMapWithMove k (Dynamic t v)) -> Incremental t (PatchMapWithMove k v)
 mergeDynIncrementalWithMove a = unsafeBuildIncremental (mapM (sample . current) =<< sample (currentIncremental a)) $ alignWith f addedAndRemovedValues changedValues
-  where changedValues = mergeMapIncrementalWithMove $ mapIncrementalMapValues updated a
-        addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ fmap unsafePatchMapWithMove . mapM (mapM (sample . current)) . unPatchMapWithMove
-        f :: These (PatchMapWithMove k v) (Map k v) -> PatchMapWithMove k v
-        f x = unsafePatchMapWithMove $
-          let (p, changed) = case x of
-                This p_ -> (unPatchMapWithMove p_, mempty)
-                That c -> (mempty, c)
-                These p_ c -> (unPatchMapWithMove p_, c)
-              (pWithNewVals, noLongerMoved) = flip runState [] $ forM p $ MapWithMove.nodeInfoMapMFrom $ \case
-                MapWithMove.From_Insert v -> return $ MapWithMove.From_Insert v
-                MapWithMove.From_Delete -> return MapWithMove.From_Delete
-                MapWithMove.From_Move k -> case Map.lookup k changed of
-                  Nothing -> return $ MapWithMove.From_Move k
-                  Just v -> do
-                    modify (k:)
-                    return $ MapWithMove.From_Insert v
-              noLongerMovedMap = Map.fromList $ fmap (, ()) noLongerMoved
-          in Map.differenceWith (\e _ -> Just $ MapWithMove.nodeInfoSetTo Nothing e) pWithNewVals noLongerMovedMap --TODO: Check if any in the second map are not covered?
+  where
+    changedValues = mergeMapIncrementalWithMove $ mapIncrementalMapValues updated a
+    addedAndRemovedValues = flip pushAlways (updatedIncremental a) $ fmap unsafePatchMapWithMove . mapM (mapM (sample . current)) . unPatchMapWithMove
+    f :: These (PatchMapWithMove k v) (Map k v) -> PatchMapWithMove k v
+    f x =
+      unsafePatchMapWithMove $
+        let (p, changed) = case x of
+              This p_ -> (unPatchMapWithMove p_, mempty)
+              That c -> (mempty, c)
+              These p_ c -> (unPatchMapWithMove p_, c)
+            (pWithNewVals, noLongerMoved) = flip runState [] $ forM p $ MapWithMove.nodeInfoMapMFrom $ \case
+              MapWithMove.From_Insert v -> return $ MapWithMove.From_Insert v
+              MapWithMove.From_Delete -> return MapWithMove.From_Delete
+              MapWithMove.From_Move k -> case Map.lookup k changed of
+                Nothing -> return $ MapWithMove.From_Move k
+                Just v -> do
+                  modify (k :)
+                  return $ MapWithMove.From_Insert v
+            noLongerMovedMap = Map.fromList $ fmap (,()) noLongerMoved
+        in Map.differenceWith (\e _ -> Just $ MapWithMove.nodeInfoSetTo Nothing e) pWithNewVals noLongerMovedMap -- TODO: Check if any in the second map are not covered?
 
 -- | A basic implementation of 'DynamicWriter'.
-newtype DynamicWriterT t w m a = DynamicWriterT { unDynamicWriterT :: StateT [Dynamic t w] m a }
+newtype DynamicWriterT t w m a = DynamicWriterT {unDynamicWriterT :: StateT [Dynamic t w] m a}
   -- The list is kept in reverse order
   deriving
-    ( Functor
-    , Applicative
-    , Monad
-    , MonadTrans
+    ( Applicative
+    , Functor
     , MFunctor
-    , MonadIO
-    , MonadFix
+    , Monad
     , MonadAsyncException
-    , MonadException
     , MonadCatch
-    , MonadThrow
+    , MonadException
+    , MonadFix
+    , MonadIO
     , MonadMask
+    , MonadThrow
+    , MonadTrans
     )
 
 deriving instance MonadHold t m => MonadHold t (DynamicWriterT t w m)
 deriving instance MonadSample t m => MonadSample t (DynamicWriterT t w m)
-
 
 instance MonadRef m => MonadRef (DynamicWriterT t w m) where
   type Ref (DynamicWriterT t w m) = Ref m
@@ -175,11 +179,13 @@ instance (Adjustable t m, Monoid w, MonadHold t m, Reflex t) => Adjustable t (Dy
   traverseDMapWithKeyWithAdjust = traverseDMapWithKeyWithAdjustImpl traverseDMapWithKeyWithAdjust mapPatchDMap weakenPatchDMapWith mergeDynIncremental
   traverseDMapWithKeyWithAdjustWithMove = traverseDMapWithKeyWithAdjustImpl traverseDMapWithKeyWithAdjustWithMove mapPatchDMapWithMove weakenPatchDMapWithMoveWith mergeDynIncrementalWithMove
 
-traverseDMapWithKeyWithAdjustImpl :: forall t w k v' p p' v m. (PatchTarget (p' (Some k) (Dynamic t w)) ~ Map (Some k) (Dynamic t w), PatchTarget (p' (Some k) w) ~ Map (Some k) w, Patch (p' (Some k) w), Patch (p' (Some k) (Dynamic t w)), Monoid w, Reflex t, MonadHold t m)
-  => (   (forall a. k a -> v a -> m (DynamicWriterTLoweredResult t w v' a))
-      -> DMap k v
-      -> Event t (p k v)
-      -> m (DMap k (DynamicWriterTLoweredResult t w v'), Event t (p k (DynamicWriterTLoweredResult t w v')))
+traverseDMapWithKeyWithAdjustImpl
+  :: forall t w k v' p p' v m
+   . (PatchTarget (p' (Some k) (Dynamic t w)) ~ Map (Some k) (Dynamic t w), PatchTarget (p' (Some k) w) ~ Map (Some k) w, Patch (p' (Some k) w), Patch (p' (Some k) (Dynamic t w)), Monoid w, Reflex t, MonadHold t m)
+  => ( (forall a. k a -> v a -> m (DynamicWriterTLoweredResult t w v' a))
+       -> DMap k v
+       -> Event t (p k v)
+       -> m (DMap k (DynamicWriterTLoweredResult t w v'), Event t (p k (DynamicWriterTLoweredResult t w v')))
      )
   -> ((forall a. DynamicWriterTLoweredResult t w v' a -> v' a) -> p k (DynamicWriterTLoweredResult t w v') -> p k v')
   -> ((forall a. DynamicWriterTLoweredResult t w v' a -> Dynamic t w) -> p k (DynamicWriterTLoweredResult t w v') -> p' (Some k) (Dynamic t w))
@@ -197,16 +203,18 @@ traverseDMapWithKeyWithAdjustImpl base mapPatch weakenPatchWith mergeMyDynIncrem
       liftedWritten0 :: Map (Some k) (Dynamic t w)
       liftedWritten0 = weakenDMapWith getWritten result0
       liftedWritten' = ffor result' $ weakenPatchWith getWritten
-  --TODO: We should be able to improve the performance here by incrementally updating the mconcat of the merged Dynamics
+  -- TODO: We should be able to improve the performance here by incrementally updating the mconcat of the merged Dynamics
   i <- holdIncremental liftedWritten0 liftedWritten'
   tellDyn $ fmap (mconcat . Map.elems) $ incrementalToDynamic $ mergeMyDynIncremental i
   return (liftedResult0, liftedResult')
 
-traverseIntMapWithKeyWithAdjustImpl :: forall t w v' p p' v m. (PatchTarget (p' (Dynamic t w)) ~ IntMap (Dynamic t w), PatchTarget (p' w) ~ IntMap w, Patch (p' w), Patch (p' (Dynamic t w)), Monoid w, Reflex t, MonadHold t m, Functor p, p ~ p')
-  => (   (IntMap.Key -> v -> m (v', Dynamic t w))
-      -> IntMap v
-      -> Event t (p v)
-      -> m (IntMap (v', Dynamic t w), Event t (p (v', Dynamic t w)))
+traverseIntMapWithKeyWithAdjustImpl
+  :: forall t w v' p p' v m
+   . (PatchTarget (p' (Dynamic t w)) ~ IntMap (Dynamic t w), PatchTarget (p' w) ~ IntMap w, Patch (p' w), Patch (p' (Dynamic t w)), Monoid w, Reflex t, MonadHold t m, Functor p, p ~ p')
+  => ( (IntMap.Key -> v -> m (v', Dynamic t w))
+       -> IntMap v
+       -> Event t (p v)
+       -> m (IntMap (v', Dynamic t w), Event t (p (v', Dynamic t w)))
      )
   -> (Incremental t (p' (Dynamic t w)) -> Incremental t (p' w))
   -> (IntMap.Key -> v -> DynamicWriterT t w m v')
@@ -220,16 +228,17 @@ traverseIntMapWithKeyWithAdjustImpl base mergeMyDynIncremental f (dm0 :: IntMap 
       liftedWritten0 :: IntMap (Dynamic t w)
       liftedWritten0 = fmap snd result0
       liftedWritten' = fmap (fmap snd) result'
-  --TODO: We should be able to improve the performance here by incrementally updating the mconcat of the merged Dynamics
+  -- TODO: We should be able to improve the performance here by incrementally updating the mconcat of the merged Dynamics
   i <- holdIncremental liftedWritten0 liftedWritten'
   tellDyn $ fmap (mconcat . IntMap.elems) $ incrementalToDynamic $ mergeMyDynIncremental i
   return (liftedResult0, liftedResult')
 
 -- | Map a function over the output of a 'DynamicWriterT'.
-withDynamicWriterT :: (Monoid w, Monoid w', Reflex t, MonadHold t m)
-                   => (w -> w')
-                   -> DynamicWriterT t w m a
-                   -> DynamicWriterT t w' m a
+withDynamicWriterT
+  :: (Monoid w, Monoid w', Reflex t, MonadHold t m)
+  => (w -> w')
+  -> DynamicWriterT t w m a
+  -> DynamicWriterT t w' m a
 withDynamicWriterT f dw = do
   (r, d) <- lift $ do
     (r, d) <- runDynamicWriterT dw

@@ -1,19 +1,21 @@
--- | This module defines the 'DynamicWriter' class.
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | This module defines the 'DynamicWriter' class.
 module Reflex.DynamicWriter.Class
   ( MonadDynamicWriter
-  , DynamicWriter(..)
+  , DynamicWriter (..)
   ) where
 
 import Control.Monad.Reader (ReaderT, lift)
+
 import Reflex.Class (Dynamic)
 
 {-# DEPRECATED MonadDynamicWriter "Use 'DynamicWriter' instead" #-}
+
 -- | Type synonym for 'DynamicWriter'
 type MonadDynamicWriter = DynamicWriter
 

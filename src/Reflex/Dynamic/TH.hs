@@ -38,27 +38,30 @@ qDynPure qe = do
       f d = case eqT of
         Just (Refl :: d :~: Exp)
           | AppE (VarE m) eInner <- d
-          , m == 'unqMarker
-          -> do n <- lift $ newName "dynamicQuotedExpressionVariable"
-                modify ((n, eInner):)
+          , m == 'unqMarker ->
+              do
+                n <- lift $ newName "dynamicQuotedExpressionVariable"
+                modify ((n, eInner) :)
                 return $ VarE n
         _ -> gmapM f d
   (e', exprsReversed) <- runStateT (gmapM f e) []
   let exprs = reverse exprsReversed
-      arg = foldr
-        (\(_, expr) rest -> [e| FHCons $(pure expr) $rest |])
-        [e| FHNil |]
-        exprs
-      param = foldr
-        (\(name, _) rest -> [p| HCons $(pure $ VarP name) $rest |])
-        [p| HNil |]
-        exprs
-  [| (\ $param -> $(pure e')) <$> distributeFHListOverDynPure $arg |]
+      arg =
+        foldr
+          (\(_, expr) rest -> [e|FHCons $(pure expr) $rest|])
+          [e|FHNil|]
+          exprs
+      param =
+        foldr
+          (\(name, _) rest -> [p|HCons $(pure $ VarP name) $rest|])
+          [p|HNil|]
+          exprs
+  [|(\ $param -> $(pure e')) <$> distributeFHListOverDynPure $arg|]
 
 -- | Antiquote a 'Dynamic' expression.  This can /only/ be used inside of a
 -- 'qDyn' quotation.
 unqDyn :: Q Exp -> Q Exp
-unqDyn e = [| unqMarker $e |]
+unqDyn e = [|unqMarker $e|]
 
 -- | This type represents an occurrence of unqDyn before it has been processed
 -- by qDyn.  If you see it in a type error, it probably means that unqDyn has
@@ -68,7 +71,7 @@ data UnqDyn
 -- unqMarker must not be exported; it is used only as a way of smuggling data
 -- from unqDyn to qDyn
 
---TODO: It would be much nicer if the TH AST was extensible to support this kind of thing without trickery
+-- TODO: It would be much nicer if the TH AST was extensible to support this kind of thing without trickery
 unqMarker :: a -> UnqDyn
 unqMarker = error "An unqDyn expression was used outside of a qDyn expression"
 
@@ -80,28 +83,30 @@ unqMarker = error "An unqDyn expression was used outside of a qDyn expression"
 --
 -- would have a very cumbersome 'Applicative' encoding.
 mkDynPure :: QuasiQuoter
-mkDynPure = QuasiQuoter
-  { quoteExp = mkDynExp
-  , quotePat = error "mkDyn: pattern splices are not supported"
-  , quoteType = error "mkDyn: type splices are not supported"
-  , quoteDec = error "mkDyn: declaration splices are not supported"
-  }
+mkDynPure =
+  QuasiQuoter
+    { quoteExp = mkDynExp
+    , quotePat = error "mkDyn: pattern splices are not supported"
+    , quoteType = error "mkDyn: type splices are not supported"
+    , quoteDec = error "mkDyn: declaration splices are not supported"
+    }
 
 mkDynExp :: String -> Q Exp
-mkDynExp s = case Hs.parseExpWithMode Hs.defaultParseMode { Hs.extensions = [ Hs.EnableExtension Hs.TemplateHaskell ] } s of
+mkDynExp s = case Hs.parseExpWithMode Hs.defaultParseMode {Hs.extensions = [Hs.EnableExtension Hs.TemplateHaskell]} s of
   Hs.ParseFailed (Hs.SrcLoc _ l c) err -> fail $ "mkDyn:" <> show l <> ":" <> show c <> ": " <> err
   Hs.ParseOk e -> qDynPure $ return $ everywhere (id `extT` reinstateUnqDyn) $ Hs.toExp $ everywhere (id `extT` antiE) e
-    where (occName, modName) = case 'unqMarker of
-            TH.Name (TH.OccName o) (TH.NameG _ _ (TH.ModName m)) -> (o, m)
-            _ -> error "mkDyn: 'unqMarker is not a global name"
-          antiE :: Hs.Exp Hs.SrcSpanInfo -> Hs.Exp Hs.SrcSpanInfo
-          antiE x = case x of
-            Hs.SpliceExp l se ->
-              Hs.App l (Hs.Var l $ Hs.Qual l (Hs.ModuleName l modName) (Hs.Ident l occName)) $ case se of
-                Hs.IdSplice l2 v -> Hs.Var l2 $ Hs.UnQual l2 $ Hs.Ident l2 v
-                Hs.ParenSplice _ ps -> ps
-                _ -> error "mkDyn: typed splices are not supported"
-            _ -> x
-          reinstateUnqDyn (TH.Name (TH.OccName occName') (TH.NameQ (TH.ModName modName')))
-            | modName == modName' && occName == occName' = 'unqMarker
-          reinstateUnqDyn x = x
+    where
+      (occName, modName) = case 'unqMarker of
+        TH.Name (TH.OccName o) (TH.NameG _ _ (TH.ModName m)) -> (o, m)
+        _ -> error "mkDyn: 'unqMarker is not a global name"
+      antiE :: Hs.Exp Hs.SrcSpanInfo -> Hs.Exp Hs.SrcSpanInfo
+      antiE x = case x of
+        Hs.SpliceExp l se ->
+          Hs.App l (Hs.Var l $ Hs.Qual l (Hs.ModuleName l modName) (Hs.Ident l occName)) $ case se of
+            Hs.IdSplice l2 v -> Hs.Var l2 $ Hs.UnQual l2 $ Hs.Ident l2 v
+            Hs.ParenSplice _ ps -> ps
+            _ -> error "mkDyn: typed splices are not supported"
+        _ -> x
+      reinstateUnqDyn (TH.Name (TH.OccName occName') (TH.NameQ (TH.ModName modName')))
+        | modName == modName' && occName == occName' = 'unqMarker
+      reinstateUnqDyn x = x

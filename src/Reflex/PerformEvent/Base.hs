@@ -1,5 +1,3 @@
--- | This module provides 'PerformEventT', the standard implementation of
--- 'PerformEvent'.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -16,6 +14,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | This module provides 'PerformEventT', the standard implementation of
+-- 'PerformEvent'.
 module Reflex.PerformEvent.Base
   ( PerformEventT (..)
   , FireCommand (..)
@@ -23,13 +23,6 @@ module Reflex.PerformEvent.Base
   , hostPerformEventTAndRead
   , hostPerformEventT
   ) where
-
-import Reflex.Adjustable.Class
-import Reflex.Class
-import Reflex.Host.Class
-import Reflex.PerformEvent.Class
-import Reflex.Requester.Base
-import Reflex.Requester.Class
 
 import Control.Monad (void)
 import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
@@ -47,6 +40,13 @@ import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.Semigroup as S
 
+import Reflex.Adjustable.Class
+import Reflex.Class
+import Reflex.Host.Class
+import Reflex.PerformEvent.Class
+import Reflex.Requester.Base
+import Reflex.Requester.Class
+
 #if !MIN_VERSION_base(4,18,0)
 import Control.Monad.Identity
 #endif
@@ -62,7 +62,7 @@ import Control.Monad.Identity
 newtype FireCommand t m = FireCommand
   { runFireCommandAndRead
       :: forall stop acc
-      .  [DSum (EventTrigger t) Identity]
+       . [DSum (EventTrigger t) Identity]
       -> acc
       -> (acc -> ReadPhase m (Either stop acc))
       -> m (Either stop acc)
@@ -74,7 +74,7 @@ runFireCommand fc triggers = void $ runFireCommandAndRead fc triggers () (\_ -> 
 
 -- | Provides a basic implementation of 'PerformEvent'.  Note that, despite the
 -- name, 'PerformEventT' is not an instance of 'MonadTrans'.
-newtype PerformEventT t m a = PerformEventT { unPerformEventT :: RequesterT t (HostFrame t) Identity (HostFrame t) a }
+newtype PerformEventT t m a = PerformEventT {unPerformEventT :: RequesterT t (HostFrame t) Identity (HostFrame t) a}
 
 deriving instance ReflexHost t => Functor (PerformEventT t m)
 deriving instance ReflexHost t => Applicative (PerformEventT t m)
@@ -94,23 +94,26 @@ instance (PrimMonad (HostFrame t), ReflexHost t) => PrimMonad (PerformEventT t m
 
 instance (Monad (HostFrame t), ReflexHost t, Ref m ~ Ref IO) => PerformEvent t (PerformEventT t m) where
   type Performable (PerformEventT t m) = HostFrame t
-  {-# INLINABLE performEvent_ #-}
+  {-# INLINEABLE performEvent_ #-}
   performEvent_ = PerformEventT . requesting_
-  {-# INLINABLE performEvent #-}
+  {-# INLINEABLE performEvent #-}
   performEvent = PerformEventT . requestingIdentity
 
 instance ReflexHost t => Adjustable t (PerformEventT t m) where
   runWithReplace outerA0 outerA' = PerformEventT $ runWithReplaceRequesterTWith f (coerce outerA0) (coerceEvent outerA')
-    where f :: HostFrame t a -> Event t (HostFrame t b) -> RequesterT t (HostFrame t) Identity (HostFrame t) (a, Event t b)
-          f a0 a' = do
-            result0 <- lift a0
-            result' <- requestingIdentity a'
-            return (result0, result')
+    where
+      f :: HostFrame t a -> Event t (HostFrame t b) -> RequesterT t (HostFrame t) Identity (HostFrame t) (a, Event t b)
+      f a0 a' = do
+        result0 <- lift a0
+        result' <- requestingIdentity a'
+        return (result0, result')
   traverseIntMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseIntMapWithKeyWithAdjustRequesterTWith (defaultAdjustIntBase traverseIntMapPatchWithKey) patchIntMapNewElementsMap mergeIntIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
   traverseDMapWithKeyWithAdjust f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithKey) mapPatchDMap weakenPatchDMapWith patchMapNewElementsMap mergeMapIncremental (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
   traverseDMapWithKeyWithAdjustWithMove f outerDm0 outerDm' = PerformEventT $ traverseDMapWithKeyWithAdjustRequesterTWith (defaultAdjustBase traversePatchDMapWithMoveWithKey) mapPatchDMapWithMove weakenPatchDMapWithMoveWith patchMapWithMoveNewElementsMap mergeMapIncrementalWithMove (\k v -> unPerformEventT $ f k v) (coerce outerDm0) (coerceEvent outerDm')
 
-defaultAdjustBase :: forall t v v2 k' p. (Monad (HostFrame t), Reflex t)
+defaultAdjustBase
+  :: forall t v v2 k' p
+   . (Monad (HostFrame t), Reflex t)
   => ((forall a. k' a -> v a -> HostFrame t (v2 a)) -> p k' v -> HostFrame t (p k' v2))
   -> (forall a. k' a -> v a -> HostFrame t (v2 a))
   -> DMap k' v
@@ -121,7 +124,9 @@ defaultAdjustBase traversePatchWithKey f' dm0 dm' = do
   result' <- requestingIdentity $ ffor dm' $ traversePatchWithKey f'
   return (result0, result')
 
-defaultAdjustIntBase :: forall t v v2 p. (Monad (HostFrame t), Reflex t)
+defaultAdjustIntBase
+  :: forall t v v2 p
+   . (Monad (HostFrame t), Reflex t)
   => ((IntMap.Key -> v -> HostFrame t v2) -> p v -> HostFrame t (p v2))
   -> (IntMap.Key -> v -> HostFrame t v2)
   -> IntMap v
@@ -133,9 +138,9 @@ defaultAdjustIntBase traversePatchWithKey f' dm0 dm' = do
   return (result0, result')
 
 instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
-  {-# INLINABLE newEventWithTrigger #-}
+  {-# INLINEABLE newEventWithTrigger #-}
   newEventWithTrigger = PerformEventT . lift . newEventWithTrigger
-  {-# INLINABLE newFanEventWithTrigger #-}
+  {-# INLINEABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = PerformEventT $ lift $ newFanEventWithTrigger f
 
 -- | Handles the frame lifecycle for a 'PerformEventT' program.
@@ -153,55 +158,59 @@ instance ReflexHost t => MonadReflexCreateTrigger t (PerformEventT t m) where
 -- If 'Performable' occurrences happen after the initial settle, the same loop
 -- repeats. It returns the setup results, the folded observation of the frame-0
 -- settle, and a 'FireCommand' for subsequent frames.
-
-{-# INLINABLE hostPerformEventTAndRead #-}
-hostPerformEventTAndRead :: forall t m a b acc0 stop0.
-                     ( MonadReflexHost t m
-                     , MonadRef m
-                     , Ref m ~ Ref IO
-                     )
-                  => PerformEventT t m a
-                  -> (a -> HostFrame t b)
-                  -- ^ Setup on the t₀ result (e.g. do 'subscribeEvent' here).
-                  -> acc0
-                  -- ^ Initial value for the fold over the Perform-loop.
-                  -> (b -> acc0 -> ReadPhase m (Either stop0 acc0))
-                  -- ^ Perform-loop fold function.
-                  -> m (a, b, Either stop0 acc0, FireCommand t m)
+{-# INLINEABLE hostPerformEventTAndRead #-}
+hostPerformEventTAndRead
+  :: forall t m a b acc0 stop0
+   . ( MonadReflexHost t m
+     , MonadRef m
+     , Ref m ~ Ref IO
+     )
+  => PerformEventT t m a
+  -> (a -> HostFrame t b)
+  -- ^ Setup on the t₀ result (e.g. do 'subscribeEvent' here).
+  -> acc0
+  -- ^ Initial value for the fold over the Perform-loop.
+  -> (b -> acc0 -> ReadPhase m (Either stop0 acc0))
+  -- ^ Perform-loop fold function.
+  -> m (a, b, Either stop0 acc0, FireCommand t m)
 hostPerformEventTAndRead builder initialHostFrame seed step0 = do
   (response, responseTrigger) <- newEventWithTriggerRef
-  let
-    readStep :: forall stop' acc'
-             .  EventHandle t (RequesterData (HostFrame t))
-             -> (acc' -> ReadPhase m (Either stop' acc'))
-             -> acc'
-             -> ReadPhase m (Either stop' acc', Maybe (RequesterData (HostFrame t)))
-    readStep perfHandle step acc = do
-      ds <- step acc
-      more <- sequence =<< readEvent perfHandle
-      pure (ds, more)
-    -- Fold the step across the cascade until it aborts or the cascade quiesces.
-    drain :: forall stop' acc'
-          .  EventHandle t (RequesterData (HostFrame t))
-          -> (acc' -> ReadPhase m (Either stop' acc'))
-          -> (Either stop' acc', Maybe (RequesterData (HostFrame t)))
-          -> m (Either stop' acc')
-    drain _ _ (Left stop, _) = pure $ Left stop
-    drain _ _ (Right acc, Nothing) = pure $ Right acc
-    drain perfHandle step (Right acc, Just toPerform) =
-      drain perfHandle step =<< do
-        mrt <- readRef responseTrigger
-        hostFrameAndRead
-          (traverseRequesterData (fmap Identity) toPerform)
-          (\responses -> pure $ maybe [] (\rt -> [rt :=> Identity responses]) mrt)
-          (const (readStep perfHandle step acc))
-  (a, b, perfHandle, frame0) <- hostFrameAndRead
-    (do (result, eventToPerform) <- runRequesterT (unPerformEventT builder) response
-        perfHandle' :: EventHandle t (RequesterData (HostFrame t)) <- subscribeEvent eventToPerform
-        b' <- initialHostFrame result
-        pure (result, b', perfHandle'))
-    (const (pure []))
-    (\(result, b', perfHandle') -> (,,,) result b' perfHandle' <$> readStep perfHandle' (step0 b') seed)
+  let readStep
+        :: forall stop' acc'
+         . EventHandle t (RequesterData (HostFrame t))
+        -> (acc' -> ReadPhase m (Either stop' acc'))
+        -> acc'
+        -> ReadPhase m (Either stop' acc', Maybe (RequesterData (HostFrame t)))
+      readStep perfHandle step acc = do
+        ds <- step acc
+        more <- sequence =<< readEvent perfHandle
+        pure (ds, more)
+      -- Fold the step across the cascade until it aborts or the cascade quiesces.
+      drain
+        :: forall stop' acc'
+         . EventHandle t (RequesterData (HostFrame t))
+        -> (acc' -> ReadPhase m (Either stop' acc'))
+        -> (Either stop' acc', Maybe (RequesterData (HostFrame t)))
+        -> m (Either stop' acc')
+      drain _ _ (Left stop, _) = pure $ Left stop
+      drain _ _ (Right acc, Nothing) = pure $ Right acc
+      drain perfHandle step (Right acc, Just toPerform) =
+        drain perfHandle step =<< do
+          mrt <- readRef responseTrigger
+          hostFrameAndRead
+            (traverseRequesterData (fmap Identity) toPerform)
+            (\responses -> pure $ maybe [] (\rt -> [rt :=> Identity responses]) mrt)
+            (const (readStep perfHandle step acc))
+  (a, b, perfHandle, frame0) <-
+    hostFrameAndRead
+      ( do
+          (result, eventToPerform) <- runRequesterT (unPerformEventT builder) response
+          perfHandle' :: EventHandle t (RequesterData (HostFrame t)) <- subscribeEvent eventToPerform
+          b' <- initialHostFrame result
+          pure (result, b', perfHandle')
+      )
+      (const (pure []))
+      (\(result, b', perfHandle') -> (,,,) result b' perfHandle' <$> readStep perfHandle' (step0 b') seed)
   t0result <- drain perfHandle (step0 b) frame0
   pure
     ( a
@@ -213,45 +222,46 @@ hostPerformEventTAndRead builder initialHostFrame seed step0 = do
 
 -- | Like 'hostPerformEventTAndRead', but without observing the frame in which
 -- the network is built.
-{-# INLINABLE hostPerformEventT #-}
-hostPerformEventT :: forall t m a.
-                     ( MonadReflexHost t m
-                     , MonadRef m
-                     , Ref m ~ Ref IO
-                     )
-                  => PerformEventT t m a
-                  -> m (a, FireCommand t m)
+{-# INLINEABLE hostPerformEventT #-}
+hostPerformEventT
+  :: forall t m a
+   . ( MonadReflexHost t m
+     , MonadRef m
+     , Ref m ~ Ref IO
+     )
+  => PerformEventT t m a
+  -> m (a, FireCommand t m)
 hostPerformEventT builder = do
   (a, _, _, fc) <- hostPerformEventTAndRead builder (const $ pure ()) () (\_ _ -> pure $ Right ())
   pure (a, fc)
 
 instance ReflexHost t => MonadSample t (PerformEventT t m) where
-  {-# INLINABLE sample #-}
+  {-# INLINEABLE sample #-}
   sample = PerformEventT . lift . sample
 
 instance ReflexHost t => MonadHold t (PerformEventT t m) where
-  {-# INLINABLE hold #-}
+  {-# INLINEABLE hold #-}
   hold v0 v' = PerformEventT $ lift $ hold v0 v'
-  {-# INLINABLE holdDyn #-}
+  {-# INLINEABLE holdDyn #-}
   holdDyn v0 v' = PerformEventT $ lift $ holdDyn v0 v'
-  {-# INLINABLE holdIncremental #-}
+  {-# INLINEABLE holdIncremental #-}
   holdIncremental v0 v' = PerformEventT $ lift $ holdIncremental v0 v'
-  {-# INLINABLE buildDynamic #-}
+  {-# INLINEABLE buildDynamic #-}
   buildDynamic getV0 v' = PerformEventT $ lift $ buildDynamic getV0 v'
-  {-# INLINABLE headE #-}
+  {-# INLINEABLE headE #-}
   headE = PerformEventT . lift . headE
-  {-# INLINABLE now #-}
+  {-# INLINEABLE now #-}
   now = PerformEventT . lift $ now
 
 instance (MonadRef (HostFrame t), ReflexHost t) => MonadRef (PerformEventT t m) where
   type Ref (PerformEventT t m) = Ref (HostFrame t)
-  {-# INLINABLE newRef #-}
+  {-# INLINEABLE newRef #-}
   newRef = PerformEventT . lift . newRef
-  {-# INLINABLE readRef #-}
+  {-# INLINEABLE readRef #-}
   readRef = PerformEventT . lift . readRef
-  {-# INLINABLE writeRef #-}
+  {-# INLINEABLE writeRef #-}
   writeRef r = PerformEventT . lift . writeRef r
 
 instance (MonadAtomicRef (HostFrame t), ReflexHost t) => MonadAtomicRef (PerformEventT t m) where
-  {-# INLINABLE atomicModifyRef #-}
+  {-# INLINEABLE atomicModifyRef #-}
   atomicModifyRef r = PerformEventT . lift . atomicModifyRef r

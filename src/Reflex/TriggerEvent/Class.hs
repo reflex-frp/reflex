@@ -1,21 +1,22 @@
--- | This module defines 'TriggerEvent', which describes actions that may create
--- new 'Event's that can be triggered from 'IO'.
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | This module defines 'TriggerEvent', which describes actions that may create
+-- new 'Event's that can be triggered from 'IO'.
 module Reflex.TriggerEvent.Class
   ( TriggerEvent (..)
   ) where
-
-import Reflex.Class
 
 import Control.Monad.Reader
 import Control.Monad.State
 import qualified Control.Monad.State.Strict as Strict
 import Control.Monad.Trans.Maybe (MaybeT)
 
---TODO: Shouldn't have IO hard-coded
+import Reflex.Class
+
+-- TODO: Shouldn't have IO hard-coded
+
 -- | 'TriggerEvent' represents actions that can create 'Event's that can be
 -- triggered by 'IO' actions.
 class Monad m => TriggerEvent t m | m -> t where
@@ -23,10 +24,12 @@ class Monad m => TriggerEvent t m | m -> t where
   -- the resulting 'Event' will fire at some point in the future.  Note that
   -- this may not be synchronous.
   newTriggerEvent :: m (Event t a, a -> IO ())
+
   -- | Like 'newTriggerEvent', but the callback itself takes another callback,
   -- to be invoked once the requested 'Event' occurrence has finished firing.
   -- This allows synchronous operation.
-  newTriggerEventWithOnComplete :: m (Event t a, a -> IO () -> IO ()) --TODO: This and newTriggerEvent should be unified somehow
+  newTriggerEventWithOnComplete :: m (Event t a, a -> IO () -> IO ()) -- TODO: This and newTriggerEvent should be unified somehow
+
   -- | Like 'newTriggerEventWithOnComplete', but with setup and teardown.  This
   -- relatively complex type signature allows any external listeners to be
   -- subscribed lazily and then removed whenever the returned 'Event' is no

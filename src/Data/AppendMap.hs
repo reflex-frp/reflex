@@ -21,20 +21,20 @@ module Data.AppendMap
   , module Data.Map.Monoidal
   ) where
 
-import Prelude hiding (null)
-
 import Data.Coerce
 import Data.Default
 import Data.Map (Map)
 import qualified Data.Map.Internal.Debug as Map (showTree, showTreeWith)
 import Data.Map.Monoidal
-
+import Prelude hiding (null)
 
 {-# DEPRECATED AppendMap "Use 'MonoidalMap' instead" #-}
+
 -- | AppendMap is a synonym for 'Data.Map.Monoidal.MonoidalMap'
 type AppendMap = MonoidalMap
 
 {-# DEPRECATED _unAppendMap "Use 'getMonoidalMap' instead" #-}
+
 -- | A synonym for 'getMonoidalMap'
 _unAppendMap :: MonoidalMap k v -> Map k v
 _unAppendMap = getMonoidalMap
@@ -52,9 +52,10 @@ nonEmptyDelete k vs =
        else Just deleted
 
 -- | Like 'mapMaybe' but indicates whether the resulting container is empty
-mapMaybeNoNull :: (a -> Maybe b)
-               -> MonoidalMap token a
-               -> Maybe (MonoidalMap token b)
+mapMaybeNoNull
+  :: (a -> Maybe b)
+  -> MonoidalMap token a
+  -> Maybe (MonoidalMap token b)
 mapMaybeNoNull f as =
   let bs = mapMaybe f as
   in if null bs
@@ -62,6 +63,7 @@ mapMaybeNoNull f as =
        else Just bs
 
 -- TODO: Move instances to `Data.Patch`
+
 -- | Displays a 'MonoidalMap' as a tree. See 'Data.Map.Lazy.showTree' for details.
 showTree :: forall k a. (Show k, Show a) => MonoidalMap k a -> String
 showTree = coerce (Map.showTree :: Map k a -> String)
