@@ -1,0 +1,28 @@
+{
+  "nodes": {
+    "root": {
+      "inputs": {
+        "src": "src"
+      }
+    },
+    "src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790625730,
+        "narHash": "sha256-2wTH2W2zvK7z6c4brnvz6FpoM/nZY2e0OcMDk5nXaWI=",
+        "owner": "obsidiansystems",
+        "repo": "fourmolu",
+        "rev": "0d07f766a95bd3e84c7967407f424b4e1f517157",
+        "type": "github"
+      },
+      "original": {
+        "owner": "obsidiansystems",
+        "repo": "fourmolu",
+        "rev": "0d07f766a95bd3e84c7967407f424b4e1f517157",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = git@github.com:obsidiansystems/style.hs.git
+	branch = main
+	commit = 417c71ee50898b700221c0ef10ccc6c1befb4500
+	parent = 52aeffc3733b35a8045bda23ed83ba67e1811f35
+	method = merge
+	cmdver = 0.4.9
