@@ -686,8 +686,8 @@ instance (Reflex t, IsString a) => IsString (Behavior t a) where
   fromString = pure . fromString
 
 instance Reflex t => Monad (Behavior t) where
+  -- Note: it is tempting to write (_ >> b = b); however, this would result in (fail x >> return y) succeeding (returning y), which violates the law that (a >> b = a >>= \_ -> b), since the implementation of (>>=) below actually will fail. Since we can't examine 'Behavior's other than by using sample, I don't think it's possible to write (>>) to be more efficient than the (>>=) below.
   a >>= f = pull $ sample a >>= sample . f
-  -- Note: it is tempting to write (_ >> b = b); however, this would result in (fail x >> return y) succeeding (returning y), which violates the law that (a >> b = a >>= \_ -> b), since the implementation of (>>=) above actually will fail.  Since we can't examine 'Behavior's other than by using sample, I don't think it's possible to write (>>) to be more efficient than the (>>=) above.
 #if !MIN_VERSION_base(4,13,0)
   fail = error "Monad (Behavior t) does not support fail"
 #endif
@@ -1104,20 +1104,25 @@ switchHoldPromptOnlyIncremental mergePatchIncremental coincidencePatch e0 e' = d
 
 instance Reflex t => Align (Event t) where
   nil = never
+#if !MIN_VERSION_these(0, 8, 0)
+  align = alignEventWithMaybe Just
+#endif
+
 #if MIN_VERSION_these(0, 8, 0)
 instance Reflex t => Semialign (Event t) where
-#endif
   align = alignEventWithMaybe Just
+#ifdef MIN_VERSION_semialign
+#if !MIN_VERSION_semialign(1,1,0)
+  zip x y = mapMaybe justThese $ align x y
+#endif
+#endif
+#endif
 
 #ifdef MIN_VERSION_semialign
 #if MIN_VERSION_semialign(1,1,0)
 instance Reflex t => Zip (Event t) where
-#endif
   zip x y = mapMaybe justThese $ align x y
-#endif
 
-#ifdef MIN_VERSION_semialign
-#if MIN_VERSION_semialign(1,1,0)
 instance Reflex t => Unzip (Event t) where
   unzip = splitE
 #endif

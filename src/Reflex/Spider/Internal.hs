@@ -130,6 +130,38 @@ withStackOneLine expr = unsafePerformIO $ do
   return (expr . BS8.pack  . unwords . dropInternal . reverse $ stack)
     where dropInternal = filterStack "Reflex.Spider.Internal"
 
+printCallSite :: BS8.ByteString -> IO ()
+printCallSite callSite = unless (BS8.null callSite) $ BS8.hPutStrLn stderr callSite
+
+#else
+
+{-# INLINE withStackOneLine #-}
+withStackOneLine :: (() -> a) -> a
+withStackOneLine expr = expr ()
+
+{-# INLINE printCallSite #-}
+printCallSite :: () -> IO ()
+printCallSite _ = pure ()
+
+#endif
+
+#ifdef DEBUG
+#define DEBUG_NODEIDS
+#define DEBUG_FRAME
+#endif
+
+debugEnabled :: Bool
+#ifdef DEBUG
+debugEnabled = True
+#else
+debugEnabled = False
+#endif
+
+debugFrame :: Bool
+#ifdef DEBUG_FRAME
+debugFrame = True
+#else
+debugFrame = False
 #endif
 
 debugPropagate :: Bool
@@ -139,8 +171,6 @@ debugInvalidateHeight :: Bool
 debugInvalidate :: Bool
 
 #ifdef DEBUG
-#define DEBUG_NODEIDS
-#define DEBUG_FRAME
 
 #ifdef DEBUG_TRACE_PROPAGATION
 debugPropagate = True
@@ -161,7 +191,7 @@ debugInvalidate = False
 #endif
 
 class HasNodeId a where
-  getNodeId :: a -> Int
+  getNodeId :: a -> NodeId
 
 instance HasNodeId (CacheSubscribed x a) where
   getNodeId = _cacheSubscribed_nodeId
@@ -188,9 +218,14 @@ instance HasNodeId (Pull x a) where
 showNodeId :: HasNodeId a => a -> String
 showNodeId = showNodeId' . getNodeId
 
-showNodeId' :: Int -> String
+showNodeId' :: NodeId -> String
 showNodeId' = ("#"<>) . show
 
+-- | The indentation depth of trace messages.
+type TraceDepthRef = IORef Int
+
+newTraceDepthRef :: IO TraceDepthRef
+newTraceDepthRef = newIORef 0
 
 #else
 
@@ -204,26 +239,38 @@ showNodeId :: a -> String
 showNodeId _ = ""
 
 {-# INLINE showNodeId' #-}
-showNodeId' :: Int -> String
+showNodeId' :: NodeId -> String
 showNodeId' _ = ""
+
+type TraceDepthRef = ()
+
+{-# INLINE newTraceDepthRef #-}
+newTraceDepthRef :: IO TraceDepthRef
+newTraceDepthRef = pure ()
 
 #endif
 
 #ifdef DEBUG_NODEIDS
+type NodeId = Int
+
 {-# NOINLINE nextNodeIdRef #-}
 nextNodeIdRef :: IORef Int
 nextNodeIdRef = unsafePerformIO $ newIORef 1
 
-newNodeId :: IO Int
+newNodeId :: IO NodeId
 newNodeId = atomicModifyIORef' nextNodeIdRef $ \n -> (succ n, n)
+#else
+type NodeId = ()
+
+{-# INLINE newNodeId #-}
+newNodeId :: IO NodeId
+newNodeId = pure ()
 #endif
 
-#ifdef DEBUG_FRAME
 debugOccurrence :: Applicative m => String -> Maybe a -> m ()
 debugOccurrence message = \case
   Just _ -> error message
   Nothing -> pure ()
-#endif
 
 --------------------------------------------------------------------------------
 -- EventSubscription
@@ -429,9 +476,7 @@ data CacheSubscribed x a
    = CacheSubscribed { _cacheSubscribed_subscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
                      , _cacheSubscribed_parent :: {-# UNPACK #-} !(EventSubscription x)
                      , _cacheSubscribed_occurrence :: {-# UNPACK #-} !(IORef (Maybe a))
-#ifdef DEBUG_NODEIDS
-                     , _cacheSubscribed_nodeId :: {-# UNPACK #-} !Int
-#endif
+                     , _cacheSubscribed_nodeId :: {-# UNPACK #-} !NodeId
                      }
 
 nowSpiderEventM :: HasSpiderTimeline x => EventM x (R.Event (SpiderTimeline x) ())
@@ -458,30 +503,20 @@ cacheEvent = cacheEventImpl
 {-# INLINE cacheEventImpl #-}
 cacheEventImpl :: forall x a. HasSpiderTimeline x => Event x a -> Event x a
 cacheEventImpl e =
-#ifdef DEBUG_TRACE_EVENTS
   withStackOneLine $ \callSite -> Event $
-#else
-  Event $
-#endif
   unsafePerformIO $ do
     mSubscribedRef :: IORef (Maybe (Weak (CacheSubscribed x a)))
         <- newIORef Nothing
     pure $ \sub -> {-# SCC "cacheEvent" #-} do
-#ifdef DEBUG_TRACE_EVENTS
-          unless (BS8.null callSite) $ liftIO $ BS8.hPutStrLn stderr callSite
-#endif
+          liftIO $ printCallSite callSite
           subscribed <- liftIO (readIORef mSubscribedRef >>= maybe (pure Nothing) deRefWeak) >>= \case
             Just subscribed -> return subscribed
             Nothing -> do
-#ifdef DEBUG_NODEIDS
               nodeId <- liftIO newNodeId
-#endif
               subscribers <- liftIO WeakBag.empty
               occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
               SubscribeResult parentSub occ <- subscribeAndRead e
-#ifdef DEBUG_NODEIDS
                   $ debugSubscriber ("cacheEvent" <> showNodeId' nodeId)
-#endif
                   $ Subscriber
                   { subscriberPropagate = \a -> do
                       setOccurrence "cacheEvent" occRef a
@@ -494,9 +529,7 @@ cacheEventImpl e =
                     { _cacheSubscribed_subscribers = subscribers
                     , _cacheSubscribed_parent = parentSub
                     , _cacheSubscribed_occurrence = occRef
-#ifdef DEBUG_NODEIDS
                     , _cacheSubscribed_nodeId = nodeId
-#endif
                     }
               liftIO $ writeIORef mSubscribedRef . Just =<< mkWeakPtrWithDebug subscribed "CacheSubscribed"
               return subscribed
@@ -551,16 +584,12 @@ eventFan !k p (Fan !weakMaybeFanSubscribed) = Event $ \sub -> do
   subscribed <- liftIO (readIORef weakMaybeFanSubscribed >>= maybe (pure Nothing) deRefWeak) >>= \case
     Just subscribed -> pure subscribed
     Nothing -> do
-#ifdef DEBUG_NODEIDS
       nodeId <- liftIO newNodeId
-#endif
       subscribersRef <- liftIO $ newIORef mapEmpty
       nextIdRef <- liftIO $ newIORef 0
       occRef <- liftIO $ newIORef Nothing
       SubscribeResult parentSub parentOcc <- subscribeAndRead p
-#ifdef DEBUG_NODEIDS
           $ debugSubscriber ("SubscriberFan " <> showNodeId' nodeId)
-#endif
           $ Subscriber
         { subscriberPropagate = \a -> {-# SCC "traverseFan" #-} do
             subs <- liftIO $ readIORef subscribersRef
@@ -583,9 +612,7 @@ eventFan !k p (Fan !weakMaybeFanSubscribed) = Event $ \sub -> do
             , fanSubscribedNextId = nextIdRef
             , fanSubscribedOccurrence = occRef
             , fanSubscribedParent = parentSub
-#ifdef DEBUG_NODEIDS
             , fanSubscribedNodeId = nodeId
-#endif
             }
       liftIO $ writeIORef weakMaybeFanSubscribed . Just =<< mkWeakPtrWithDebug subscribed "FanSubscribed"
       pure subscribed
@@ -708,11 +735,23 @@ toAny = unsafeCoerce
 data EventNode x = EventNode
   { eventNodeHeightRef :: {-# UNPACK #-} !(IORef Height)
   -- ^ The height of the node.
-#ifdef DEBUG_CYCLES
-  , eventNodeGetParents :: !(IO [EventNode x])
-  , eventNodeWhoCreated :: !(IO [String])
-#endif
+  , eventNodeGetParents :: !(IfDebugCycles (IO [EventNode x]))
+  , eventNodeWhoCreated :: !(IfDebugCycles (IO [String]))
   }
+
+#ifdef DEBUG_CYCLES
+type IfDebugCycles a = a
+
+{-# INLINE ifDebugCycles #-}
+ifDebugCycles :: a -> IfDebugCycles a
+ifDebugCycles = id
+#else
+type IfDebugCycles a = ()
+
+{-# INLINE ifDebugCycles #-}
+ifDebugCycles :: a -> IfDebugCycles a
+ifDebugCycles _ = ()
+#endif
 
 {-# INLINE mkEventNode #-}
 mkEventNode
@@ -721,14 +760,12 @@ mkEventNode
   -> IO [EventNode x]
   -> IO [String]
   -> m (EventNode x)
-mkEventNode initialHeight _getParents _whoCreatedNode = liftIO $ do
+mkEventNode initialHeight getParents whoCreatedNode = liftIO $ do
   heightRef <- newIORef initialHeight
   pure EventNode
     { eventNodeHeightRef = heightRef
-#ifdef DEBUG_CYCLES
-    , eventNodeGetParents = _getParents
-    , eventNodeWhoCreated = _whoCreatedNode
-#endif
+    , eventNodeGetParents = ifDebugCycles getParents
+    , eventNodeWhoCreated = ifDebugCycles whoCreatedNode
     }
 
 getEventNodeHeight :: EventNode x -> IO Height
@@ -908,9 +945,7 @@ data Hold x p
           , holdInvalidators :: !(IORef (InvalidatorList x))
           , holdEvent :: Event x p -- This must be lazy, or holds cannot be defined before their input Events
           , holdParent :: !(IORef (Maybe (EventSubscription x))) -- Keeps its parent alive (will be undefined until the hold is initialized) --TODO: Probably shouldn't be an IORef
-#ifdef DEBUG_NODEIDS
-          , holdNodeId :: Int
-#endif
+          , holdNodeId :: {-# UNPACK #-} !NodeId
           }
 
 -- | A statically allocated 'SpiderTimeline'
@@ -930,9 +965,7 @@ type role SpiderTimelineEnv nominal
 data SpiderTimelineEnv' x = SpiderTimelineEnv
   { _spiderTimeline_lock :: {-# UNPACK #-} !(MVar ())
   , _spiderTimeline_eventEnv :: {-# UNPACK #-} !(EventEnv x)
-#ifdef DEBUG
-  , _spiderTimeline_depth :: {-# UNPACK #-} !(IORef Int)
-#endif
+  , _spiderTimeline_depth :: {-# UNPACK #-} !TraceDepthRef
   }
 type role SpiderTimelineEnv' phantom
 
@@ -1036,12 +1069,9 @@ scheduleClear r = defer $ Some $ Clear r
 
 {-# INLINE setOccurrence #-}
 setOccurrence :: HasSpiderTimeline x => String -> IORef (Maybe a) -> a -> EventM x ()
-#ifdef DEBUG_FRAME
 setOccurrence nodeName occRef a = do
-  liftIO $ readIORef occRef >>= debugOccurrence (nodeName <> ": two occurrences in one frame")
-#else
-setOccurrence _ occRef a = do
-#endif
+  when debugFrame $
+    liftIO $ readIORef occRef >>= debugOccurrence (nodeName <> ": two occurrences in one frame")
   liftIO $ writeIORef occRef $ Just a
   scheduleClear occRef
 
@@ -1064,17 +1094,13 @@ hold v0 e = do
   valRef <- liftIO $ newIORef v0
   invsRef <- liftIO $ newIORef emptyInvalidatorList
   parentRef <- liftIO $ newIORef Nothing
-#ifdef DEBUG_NODEIDS
   nodeId <- liftIO newNodeId
-#endif
   let h = Hold
         { holdValue = valRef
         , holdInvalidators = invsRef
         , holdEvent = e
         , holdParent = parentRef
-#ifdef DEBUG_NODEIDS
         , holdNodeId = nodeId
-#endif
         }
   defer $ SomeHoldInit h
   return h
@@ -1111,9 +1137,7 @@ data PullSubscribed x a
 data Pull x a
    = Pull { pullValue :: !(IORef (Maybe (PullSubscribed x a)))
           , pullCompute :: !(BehaviorM x a)
-#ifdef DEBUG_NODEIDS
-          , pullNodeId :: Int
-#endif
+          , pullNodeId :: {-# UNPACK #-} !NodeId
           }
 
 data Invalidator x
@@ -1122,9 +1146,7 @@ data Invalidator x
 
 data RootSubscribed x a = RootSubscribed
   { rootSubscribedSubscribers :: {-# UNPACK #-} !(WeakBag (Subscriber x a))
-#ifdef DEBUG_NODEIDS
-  , rootSubscribedNodeId :: Int
-#endif
+  , rootSubscribedNodeId :: {-# UNPACK #-} !NodeId
   }
 
 data RootKey x a = RootKey
@@ -1227,9 +1249,7 @@ data FanSubscribed x map v = FanSubscribed
   , fanSubscribedNextId :: {-# UNPACK #-} !(IORef Int)
   , fanSubscribedOccurrence :: {-# UNPACK #-} !(IORef (Maybe (map v)))
   , fanSubscribedParent :: {-# UNPACK #-} !(EventSubscription x)
-#ifdef DEBUG_NODEIDS
-  , fanSubscribedNodeId :: {-# UNPACK #-} !Int
-#endif
+  , fanSubscribedNodeId :: {-# UNPACK #-} !NodeId
   }
 
 {-# INLINE newFan #-}
@@ -1243,9 +1263,7 @@ data SwitchSubscribed x a
                       , switchSubscribedBehaviorParents :: !(IORef [SomeBehaviorSubscribed x])
                       , switchSubscribedParent :: !(Behavior x (Event x a))
                       , switchSubscribedCurrentParent :: !(IORef (SwitchParentSubscription x))
-#ifdef DEBUG_NODEIDS
-                      , switchSubscribedNodeId :: Int
-#endif
+                      , switchSubscribedNodeId :: {-# UNPACK #-} !NodeId
                       }
 
 switchSubscribedHeight :: SwitchSubscribed x a -> IORef Height
@@ -1259,9 +1277,7 @@ data CoincidenceSubscribed x a
                            , coincidenceSubscribedSubscriber :: !(Subscriber x a)
                            , coincidenceSubscribedOuterParent :: !(IORef (EventSubscription x))
                            , coincidenceSubscribedInnerParent :: !(IORef (Maybe (EventNode x)))
-#ifdef DEBUG_NODEIDS
-                           , coincidenceSubscribedNodeId :: Int
-#endif
+                           , coincidenceSubscribedNodeId :: {-# UNPACK #-} !NodeId
                            }
 
 coincidenceSubscribedHeight :: CoincidenceSubscribed x a -> IORef Height
@@ -1280,17 +1296,27 @@ instance HasSpiderTimeline x => Filterable (Event x) where
 
 instance HasSpiderTimeline x => Align (Event x) where
   nil = eventNever
-#if MIN_VERSION_these(0, 8, 0)
-instance HasSpiderTimeline x => Semialign (Event x) where
-#endif
+#if !MIN_VERSION_these(0, 8, 0)
   align ea eb = mapMaybe dmapToThese $ mergeG coerce $ dynamicConst $
      DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
+#endif
+
+#if MIN_VERSION_these(0, 8, 0)
+instance HasSpiderTimeline x => Semialign (Event x) where
+  align ea eb = mapMaybe dmapToThese $ mergeG coerce $ dynamicConst $
+     DMap.fromDistinctAscList [LeftTag :=> ea, RightTag :=> eb]
+#ifdef MIN_VERSION_semialign
+#if !MIN_VERSION_semialign(1,1,0)
+  zip x y = mapMaybe justThese $ align x y
+#endif
+#endif
+#endif
 
 #ifdef MIN_VERSION_semialign
 #if MIN_VERSION_semialign(1,1,0)
 instance HasSpiderTimeline x => Zip (Event x) where
-#endif
   zip x y = mapMaybe justThese $ align x y
+#endif
 #endif
 
 data DynType x p = UnsafeDyn !(BehaviorM x (PatchTarget p), Event x p)
@@ -1375,15 +1401,11 @@ pushMergeWithMove f nt d = cacheEventImpl (pushCheapImpl f (mergeCheapWithMoveIm
 pull :: BehaviorM x a -> Behavior x a
 pull a = unsafePerformIO $ do
   ref <- newIORef Nothing
-#ifdef DEBUG_NODEIDS
   nid <- newNodeId
-#endif
   pure $ behaviorPull $ Pull
     { pullCompute = a
     , pullValue = ref
-#ifdef DEBUG_NODEIDS
     , pullNodeId = nid
-#endif
     }
 
 {-# NOINLINE [0] switch #-}
@@ -1408,9 +1430,7 @@ switchUncachedImpl b = Event $ \sub -> do
   let heightRef = eventNodeHeightRef node
   invalidatorRef <- liftIO $ newIORef $ error "switchUncached: invalidator not yet created"
   parentsRef <- liftIO $ newIORef [] --TODO: This should be unnecessary, because it will always be filled with just the single parent behavior
-#ifdef DEBUG_NODEIDS
   nid <- liftIO newNodeId
-#endif
   let !subscribed = SwitchSubscribed
         { switchSubscribedNode = node
         , switchSubscribedSubscriber = debugSubscriber ("SubscriberSwitch" <> showNodeId subscribed) $
@@ -1419,9 +1439,7 @@ switchUncachedImpl b = Event $ \sub -> do
         , switchSubscribedBehaviorParents = parentsRef
         , switchSubscribedParent = b
         , switchSubscribedCurrentParent = currentParentRef
-#ifdef DEBUG_NODEIDS
         , switchSubscribedNodeId = nid
-#endif
         }
   liftIO $ writeIORef invalidatorRef =<< newInvalidatorSwitch subscribed
   holdInits <- getDeferralQueue
@@ -1480,17 +1498,13 @@ coincidenceUncachedImpl outer = Event $ \sub -> do
         pure $ outerParent : innerParents)
     (whoCreatedIORef outerParentRef)
   let heightRef = eventNodeHeightRef node
-#ifdef DEBUG_NODEIDS
   nid <- liftIO newNodeId
-#endif
   let !subscribed = CoincidenceSubscribed
         { coincidenceSubscribedNode = node
         , coincidenceSubscribedSubscriber = sub
         , coincidenceSubscribedOuterParent = outerParentRef
         , coincidenceSubscribedInnerParent = innerParentRef
-#ifdef DEBUG_NODEIDS
         , coincidenceSubscribedNodeId = nid
-#endif
         }
   SubscribeResult outerSubscription outerOcc <- subscribeAndRead outer $ coerce $ newSubscriberCoincidenceOuter subscribed
   liftIO $ writeIORef outerParentRef outerSubscription
@@ -1519,9 +1533,8 @@ propagateAndRead roots after = do
     forM_ roots $ \(RootTrigger (_, occRef, k) :=> a) -> do
       occBefore <- liftIO $ do
         occBefore <- readIORef occRef
-#ifdef DEBUG_FRAME
-        debugOccurrence "propagateAndRead: one trigger fired twice in one frame" $ DMap.lookup k occBefore
-#endif
+        when debugFrame $
+          debugOccurrence "propagateAndRead: one trigger fired twice in one frame" $ DMap.lookup k occBefore
         writeIORef occRef $! DMap.insert k a occBefore
         return occBefore
       when (DMap.null occBefore) $ scheduleRootClear occRef
@@ -1682,6 +1695,12 @@ instance Show EventLoopException where
     then "no location information, compile with profiling enabled for stack tree"
     else showStacks stacks
 
+throwEventLoopException :: EventNode x -> IO a
+throwEventLoopException subscribed = do
+  nodesInvolvedInCycle <- walkInvalidHeightParents subscribed
+  stacks <- forM nodesInvolvedInCycle eventNodeWhoCreated
+  throwIO (EventLoopException stacks)
+
 #else
 
 data EventLoopException = EventLoopException
@@ -1690,6 +1709,9 @@ instance Exception EventLoopException
 instance Show EventLoopException where
   show EventLoopException = "causality loop detected: \n" <>
     "compile reflex with flag 'debug-cycles' and compile with profiling enabled for stack tree"
+
+throwEventLoopException :: EventNode x -> IO a
+throwEventLoopException _ = throwIO EventLoopException
 
 #endif
 
@@ -1734,14 +1756,10 @@ subscribeAndReadRoot k r sub = do
       subscribers <- WeakBag.empty
       tracePropagate (Proxy::Proxy x) $  "subscribeAndReadRoot: calling rootInit"
       teardown <- rootInit r k $ RootTrigger (subscribers, rootOccurrence r, k)
-#ifdef DEBUG_NODEIDS
       nid <- newNodeId
-#endif
       let !subscribed = RootSubscribed
             { rootSubscribedSubscribers = subscribers
-#ifdef DEBUG_NODEIDS
             , rootSubscribedNodeId = nid
-#endif
             }
       teardownVar <- newMVar $ Just teardown
       weakSubscribed <- mkWeakPtr subscribed $ Just $ runRootKeyTeardown (rootSubscribed r) teardownVar
@@ -1920,23 +1938,11 @@ checkCycle :: HasSpiderTimeline x => EventNode x -> EventM x ()
 checkCycle subscribed = do
     height <- liftIO $ readIORef (eventNodeHeightRef subscribed)
     case height of
-      ValidHeight -> do
-#ifdef DEBUG
+      ValidHeight -> when debugEnabled $ do
         currentHeight <- getCurrentHeight
         when ((height `compareHeight` currentHeight) /= GT) $
           error $ "checkCycle: merge height " <> show height <> " not above current height " <> show currentHeight
-#else
-        pure ()
-#endif
-      InvalidHeight -> liftIO $
-#ifdef DEBUG_CYCLES
-          do
-            nodesInvolvedInCycle <- walkInvalidHeightParents subscribed
-            stacks <- forM nodesInvolvedInCycle eventNodeWhoCreated
-            throwIO (EventLoopException stacks)
-#else
-          throwIO EventLoopException
-#endif
+      InvalidHeight -> liftIO $ throwEventLoopException subscribed
 
 
 {-# INLINE genericMergeCheap #-}
@@ -1974,19 +1980,15 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
 
       invalidateMyHeight = invalidateOwnHeight heightRef (subscriberInvalidateHeight sub)
 
-#ifdef DEBUG
       checkParentCount :: IO ()
       checkParentCount = do
         parents <- readIORef parentsRef
         heights <- readIORef heightBagRef
         when (mapSize parents /= heightBagParentCount heights) $
           error $ "merge: " <> show (mapSize parents) <> " parents, but the height bag has " <> show (heightBagParentCount heights)
-#endif
 
       recalculateMyHeight = recalculateOwnHeight heightRef (subscriberRecalculateHeight sub) $ do
-#ifdef DEBUG
-        checkParentCount
-#endif
+        when debugEnabled checkParentCount
         heightBagHeight <$> readIORef heightBagRef
 
       invalidateMyHeightOnParentChange = do
@@ -2006,9 +2008,8 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
             checkCycle subscribed
             oldM <- liftIO $ readIORef accumRef
             k <- getKey
-#ifdef DEBUG_FRAME
-            debugOccurrence "merge: one parent fired twice in one frame" $ mapLookup k oldM
-#endif
+            when debugFrame $
+              debugOccurrence "merge: one parent fired twice in one frame" $ mapLookup k oldM
             let newM = mapInsert k a oldM
             tracePropagate (Proxy :: Proxy x) $ "  size oldM = " <> show (mapSize oldM) <> "; size newM = " <> show (mapSize newM)
             liftIO $ writeIORef accumRef $! newM
@@ -2041,9 +2042,7 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
           oldParents <- liftIO $ readIORef parentsRef
           (subscriptionsToKill, newParents) <- updateFunc parentSubscriber heightBagRef oldParents patch
           liftIO $ writeIORef parentsRef $! newParents
-#ifdef DEBUG
-          liftIO checkParentCount
-#endif
+          when debugEnabled $ liftIO checkParentCount
           return subscriptionsToKill
 
       deferParentUpdate patch =
@@ -2059,9 +2058,7 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
   liftIO $ writeIORef accumRef $! accum
   liftIO $ writeIORef heightRef $! myHeight
   liftIO $ writeIORef parentsRef $! initialParentState
-#ifdef DEBUG
-  liftIO checkParentCount
-#endif
+  when debugEnabled $ liftIO checkParentCount
   defer $ SomeMergeInit $ liftIO (readIORef changeSubdRef) >>= \case
     MergeChangeNotSubscribed -> do
       let changeSubscriber = terminalSubscriber $ \patch -> {-# SCC "traverseMergeChange" #-} do
@@ -2198,21 +2195,19 @@ clearEventEnv (EventEnv toAssignRef holdInitRef dynInitRef mergeUpdateRef mergeI
   writeIORef mergeUpdateRef []
   writeIORef mergeInitRef []
   writeIORef heightRef zeroHeight
-#ifdef DEBUG_FRAME
-  do toClear <- readIORef toClearRef
-     toClearRoot <- readIORef toClearRootRef
-     unless (null toClear && null toClearRoot) $
-       error "clearEventEnv: a clear was scheduled after clearOccurrences"
-#endif
+  when debugFrame $ do
+    toClear <- readIORef toClearRef
+    toClearRoot <- readIORef toClearRootRef
+    unless (null toClear && null toClearRoot) $
+      error "clearEventEnv: a clear was scheduled after clearOccurrences"
   writeIORef toClearRef []
   writeIORef toClearRootRef []
   writeIORef coincidenceInfosRef []
-#ifdef DEBUG_FRAME
-  do delayed <- readIORef delayedRef
-     case heightQueueNext delayed of
-       Nothing -> pure ()
-       Just _ -> error "clearEventEnv: unprocessed scheduled merge"
-#endif
+  when debugFrame $ do
+    delayed <- readIORef delayedRef
+    case heightQueueNext delayed of
+      Nothing -> pure ()
+      Just _ -> error "clearEventEnv: unprocessed scheduled merge"
   writeIORef delayedRef heightQueueEmpty
 
 -- | Run an event action outside of a frame
@@ -2277,11 +2272,10 @@ runFrame a = SpiderHost $ do
       SwitchParentUnsubscribed -> pure ()
       SwitchParentSubscribed parent ->
         subscriberRecalculateHeight (switchSubscribedSubscriber subscribed) =<< eventSubscriptionHeight parent
-#ifdef DEBUG_FRAME
-  do leftover <- readIORef $ eventEnvPendingRecalculations env
-     unless (null leftover) $
-       error "runFrame: pending recalculations at frame end"
-#endif
+  when debugFrame $ do
+    leftover <- readIORef $ eventEnvPendingRecalculations env
+    unless (null leftover) $
+      error "runFrame: pending recalculations at frame end"
   return result
   where
     env = spiderEventEnv @x
@@ -2292,28 +2286,26 @@ runFrame a = SpiderHost $ do
       forM_ toClear $ \(Some (Clear ref)) -> {-# SCC "clear" #-} writeIORef ref Nothing
       toClearRoot <- readIORef $ eventEnvRootClears env
       forM_ toClearRoot $ \(Some (RootClear ref)) -> {-# SCC "rootClear" #-} writeIORef ref $! DMap.empty
-#ifdef DEBUG_FRAME
       -- Empty the clear lists, so that the DEBUG_FRAME check can verify that no
       -- clear was scheduled that would have been dropped silently.
-      writeIORef (eventEnvClears env) []
-      writeIORef (eventEnvRootClears env) []
-#endif
+      when debugFrame $ do
+        writeIORef (eventEnvClears env) []
+        writeIORef (eventEnvRootClears env) []
 
     subscribeReconnect :: forall b. Event x b -> Subscriber x b -> IO (SubscribeResult x b)
     subscribeReconnect e sub = {-# SCC "subscribeSwitch" #-} do
-#ifdef DEBUG
-      pendingRecalculationsBefore <- length <$> readIORef (eventEnvPendingRecalculations env)
-#endif
+      pendingRecalculationsBefore <- if debugEnabled
+        then length <$> readIORef (eventEnvPendingRecalculations env)
+        else pure 0
       result <- runEventM $
         subscribeAndRead e sub <* runHoldInits (eventEnvHoldInits env) (eventEnvDynInits env) (eventEnvMergeInits env)
       clearOccurrences
-#ifdef DEBUG
-      when (isJust $ subscribeOccurrence result) $ error "subscribeReconnect: the new parent has an occurrence, which should be impossible when no event is firing"
-      toAssign <- readIORef $ eventEnvAssignments env
-      coincidenceInfos <- readIORef $ eventEnvResetCoincidences env
-      pendingRecalculationsAfter <- length <$> readIORef (eventEnvPendingRecalculations env)
-      unless (null toAssign && null coincidenceInfos && pendingRecalculationsAfter == pendingRecalculationsBefore) $ error "subscribeReconnect: the reconnect subscribe deferred a hold assignment, coincidence reset or height recalculation, which should be impossible when no event is firing"
-#endif
+      when debugEnabled $ do
+        when (isJust $ subscribeOccurrence result) $ error "subscribeReconnect: the new parent has an occurrence, which should be impossible when no event is firing"
+        toAssign <- readIORef $ eventEnvAssignments env
+        coincidenceInfos <- readIORef $ eventEnvResetCoincidences env
+        pendingRecalculationsAfter <- length <$> readIORef (eventEnvPendingRecalculations env)
+        unless (null toAssign && null coincidenceInfos && pendingRecalculationsAfter == pendingRecalculationsBefore) $ error "subscribeReconnect: the reconnect subscribe deferred a hold assignment, coincidence reset or height recalculation, which should be impossible when no event is firing"
       clearEventEnv env
       return result
 
@@ -2616,15 +2608,11 @@ unsafeNewSpiderTimelineEnv :: forall x. IO (SpiderTimelineEnv x)
 unsafeNewSpiderTimelineEnv = do
   lock <- newMVar ()
   env <- newEventEnv
-#ifdef DEBUG
-  depthRef <- newIORef 0
-#endif
+  depthRef <- newTraceDepthRef
   return $ STE $ SpiderTimelineEnv
     { _spiderTimeline_lock = lock
     , _spiderTimeline_eventEnv = env
-#ifdef DEBUG
     , _spiderTimeline_depth = depthRef
-#endif
     }
 
 -- | Create a new SpiderTimelineEnv
