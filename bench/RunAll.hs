@@ -160,6 +160,7 @@ main = do
       [name, readMaybe -> Just count] -> do
         case lookup name benchmarks of
           Just testCase -> testCase count
+          Nothing -> $failure $ "--run-test-case: unknown test case " <> name
         performGC
         fix $ \loop -> bool (return ()) (yield >> loop) =<< myCapabilityHasOtherRunnableThreads
         return ()

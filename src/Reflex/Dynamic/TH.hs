@@ -91,13 +91,16 @@ mkDynExp :: String -> Q Exp
 mkDynExp s = case Hs.parseExpWithMode Hs.defaultParseMode { Hs.extensions = [ Hs.EnableExtension Hs.TemplateHaskell ] } s of
   Hs.ParseFailed (Hs.SrcLoc _ l c) err -> fail $ "mkDyn:" <> show l <> ":" <> show c <> ": " <> err
   Hs.ParseOk e -> qDynPure $ return $ everywhere (id `extT` reinstateUnqDyn) $ Hs.toExp $ everywhere (id `extT` antiE) e
-    where TH.Name (TH.OccName occName) (TH.NameG _ _ (TH.ModName modName)) = 'unqMarker
+    where (occName, modName) = case 'unqMarker of
+            TH.Name (TH.OccName o) (TH.NameG _ _ (TH.ModName m)) -> (o, m)
+            _ -> error "mkDyn: 'unqMarker is not a global name"
           antiE :: Hs.Exp Hs.SrcSpanInfo -> Hs.Exp Hs.SrcSpanInfo
           antiE x = case x of
             Hs.SpliceExp l se ->
               Hs.App l (Hs.Var l $ Hs.Qual l (Hs.ModuleName l modName) (Hs.Ident l occName)) $ case se of
                 Hs.IdSplice l2 v -> Hs.Var l2 $ Hs.UnQual l2 $ Hs.Ident l2 v
                 Hs.ParenSplice _ ps -> ps
+                _ -> error "mkDyn: typed splices are not supported"
             _ -> x
           reinstateUnqDyn (TH.Name (TH.OccName occName') (TH.NameQ (TH.ModName modName')))
             | modName == modName' && occName == occName' = 'unqMarker

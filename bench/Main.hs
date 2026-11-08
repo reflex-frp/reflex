@@ -73,17 +73,17 @@ micros =
         fireEvents [key :=> Identity (42 :: Int)])
   , withSetupWHNF "fireEventsAndRead(head/merge1)"
     (setupMerge 1 >>= subscribePair)
-    (\(subd, t:_) -> fireAndRead t (42 :: Int) subd)
+    (\(subd, triggers) -> fireAndRead (firstTrigger triggers) (42 :: Int) subd)
   , withSetupWHNF "fireEventsAndRead(head/merge100)"
     (setupMerge 100 >>= subscribePair)
-    (\(subd, t:_) -> fireAndRead t (42 :: Int) subd)
+    (\(subd, triggers) -> fireAndRead (firstTrigger triggers) (42 :: Int) subd)
   , withSetupWHNF "fireEventsAndRead(head/merge10000)"
       (setupMerge 10000 >>= subscribePair)
-      (\(subd, t:_) -> fireAndRead t (42 :: Int) subd)
+      (\(subd, triggers) -> fireAndRead (firstTrigger triggers) (42 :: Int) subd)
   , withSetupWHNF "fireEventsOnly(head/merge100)"
     (setupMerge 100 >>= subscribePair)
-    (\(_, t:_) -> do
-        key <- fromJust <$> liftIO (readIORef t)
+    (\(_, triggers) -> do
+        key <- fromJust <$> liftIO (readIORef (firstTrigger triggers))
         fireEvents [key :=> Identity (42 :: Int)])
   , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev, _) -> runHostFrame (hold (42 :: Int) ev)
   , withSetupWHNF "sample" (newEventWithTriggerRef >>= runHostFrame . hold (42 :: Int) . fst) (runHostFrame . sample)
@@ -99,6 +99,10 @@ setupMerge num = do
   (evs, triggers) <- unzip <$> replicateM num newEventWithTriggerRef
   let !m = DMap.fromList [Const2 i :=> v | (i,v) <- zip [0..] evs]
   pure (merge m, triggers)
+
+firstTrigger :: [trigger] -> trigger
+firstTrigger (trigger : _) = trigger
+firstTrigger [] = error "firstTrigger: setupMerge created no events"
 
 subscribeMergeBuild :: Int -> Benchmarkable
 subscribeMergeBuild n = perRunEnv (WHNF . fst <$> runSpiderHost (setupMerge n)) $

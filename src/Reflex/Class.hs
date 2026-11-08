@@ -1690,10 +1690,13 @@ mergeWithCheap' f g = mergeWithFoldCheap' $ foldl1 g . fmap f
 {-# INLINE mergeWithFoldCheap' #-}
 mergeWithFoldCheap' :: Reflex t => (NonEmpty a -> b) -> [Event t a] -> Event t b
 mergeWithFoldCheap' f es =
-  fmapCheap (f . (\(h : t) -> h :| t) . IntMap.elems)
+  fmapCheap (f . nonEmptyElems . IntMap.elems)
   . mergeInt
   . IntMap.fromDistinctAscList
   $ zip [0 :: Int ..] es
+  where
+    nonEmptyElems (h : t) = h :| t
+    nonEmptyElems [] = error "mergeWithFoldCheap': mergeInt fired with an empty IntMap"
 
 --------------------------------------------------------------------------------
 -- Deprecated functions

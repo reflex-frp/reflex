@@ -81,14 +81,14 @@ main = do
   print os7
   os8 <- runApp' testMatchRequestsWithResponses [ Just $ TestRequest_Reverse "yoyo" ]
   print os8
-  let ![[Just [1,2,3,4,5,6,7,8,9,10]]] = os1 -- The order is reversed here: see the documentation for 'runRequesterT'
-  let ![[Just [9,7,5,3,1]],[Nothing,Nothing],[Just [10,8,6,4,2]],[Just [10,8,6,4,2],Nothing]] = os2
-  let ![[Nothing, Just [2]]] = os3
-  let ![[Nothing, Just [2]]] = os4
-  let ![[Nothing, Just [1, 2]]] = os5
-  -- let ![[Nothing, Nothing]] = os6 -- TODO re-enable this test after issue #233 has been resolved
-  let !(Just [(1,"2")]) = M.toList <$> head (head os7)
-  let !(Just [(1,"oyoy")]) = M.toList <$> head (head os8)
+  [[Just [1,2,3,4,5,6,7,8,9,10]]] <- pure os1 -- The order is reversed here: see the documentation for 'runRequesterT'
+  [[Just [9,7,5,3,1]],[Nothing,Nothing],[Just [10,8,6,4,2]],[Just [10,8,6,4,2],Nothing]] <- pure os2
+  [[Nothing, Just [2]]] <- pure os3
+  [[Nothing, Just [2]]] <- pure os4
+  [[Nothing, Just [1, 2]]] <- pure os5
+  -- [[Nothing, Nothing]] <- pure os6 -- TODO re-enable this test after issue #233 has been resolved
+  (Just [(1,"2")] : _) : _ <- pure $ fmap (fmap M.toList) <$> os7
+  (Just [(1,"oyoy")] : _) : _ <- pure $ fmap (fmap M.toList) <$> os8
 
   return ()
 
@@ -225,6 +225,7 @@ testMatchRequestsWithResponses pulse = mdo
         case words v of
           ["reverse", str] -> reverse str
           ["increment", i] -> show $ succ $ (read i :: Int)
+          _ -> error $ "testMatchRequestsWithResponses: unexpected request " <> show v
         ) <$> rawRequestMap
   (rawRequestMap, responses) <- matchResponsesWithRequests reqEncoder requests (head . M.toList <$> rawResponses)
   pure rawResponses

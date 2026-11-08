@@ -1,4 +1,4 @@
-# The same settings as the hlint test-suite in test/hlint.hs.
+# Used by .github/workflows/hlint.yml and by running `hlint src` locally.
 - arguments: [--cpp-define=DEBUG, --cpp-define=DEBUG_CYCLES]
 
 - ignore: {name: "Redundant do"}

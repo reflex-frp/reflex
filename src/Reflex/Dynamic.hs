@@ -461,11 +461,16 @@ instance RebuildSortedHList '[] where
 
 instance RebuildSortedHList t => RebuildSortedHList (h ': t) where
   rebuildSortedFHList l = case l of
-    ((HHeadPtr :=> h) : t) -> FHCons h . rebuildSortedFHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
+    ((HHeadPtr :=> h) : t) -> FHCons h . rebuildSortedFHList . map fromTailPtr $ t
     _ -> error "rebuildSortedFHList{h':t}: non-empty list with HHeadPtr expected"
   rebuildSortedHList l = case l of
-    ((HHeadPtr :=> Identity h) : t) -> HCons h . rebuildSortedHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
+    ((HHeadPtr :=> Identity h) : t) -> HCons h . rebuildSortedHList . map fromTailPtr $ t
     _ -> error "rebuildSortedHList{h':t}: non-empty list with HHeadPtr expected"
+
+-- | Change the key of an element of the list for @h ': t@ into a key for @t@.
+fromTailPtr :: DSum (HListPtr (h ': t)) f -> DSum (HListPtr t) f
+fromTailPtr (HTailPtr p :=> v) = p :=> v
+fromTailPtr (HHeadPtr :=> _) = error "rebuildSortedHList{h':t}: HHeadPtr after the first element"
 
 dmapToHList :: forall l. RebuildSortedHList l => DMap (HListPtr l) Identity -> HList l
 dmapToHList = rebuildSortedHList . DMap.toList
