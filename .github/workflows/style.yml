@@ -1,0 +1,31 @@
+name: Style
+on:
+  - push
+  - pull_request
+jobs:
+  style:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check that style.hs/ equals its upstream commit
+        run: |
+          commit=$(git config -f style.hs/.gitrepo subrepo.commit)
+          git fetch --depth 1 https://github.com/obsidiansystems/style.hs "$commit"
+          git diff --exit-code FETCH_HEAD HEAD:style.hs -- ':(exclude).gitrepo'
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            extra-substituters = https://nixcache.reflex-frp.org
+            extra-trusted-public-keys = ryantrinkle.com-1:JJiAKaRv9mWgpVAz8dwewnZe0AzzEAzPkagE9SP5NWI=
+      - name: Check formatting
+        run: git ls-files -z '*.hs' | xargs -0 nix run ./style.hs -- --mode check
+  hlint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run HLint
+        run: nix run ./style.hs#hlint -- --hint .hlint.yaml .

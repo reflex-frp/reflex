@@ -1,15 +1,11 @@
-# Used by .github/workflows/hlint.yml and by running `hlint src` locally.
-- arguments: [--cpp-define=DEBUG, --cpp-define=DEBUG_CYCLES]
+# Run hlint with
+#
+#   nix run ./style.hs#hlint -- --hint .hlint.yaml .
+#
+# to get the full set of hints.
+- arguments: [--cpp-define=DEBUG, --cpp-define=DEBUG_CYCLES, --ignore-glob=dist-*]
 
-- ignore: {name: "Redundant do"}
-- ignore: {name: "Use camelCase"}
-- ignore: {name: "Redundant $"}
-- ignore: {name: "Use &&"}
-- ignore: {name: "Use &&&"}
-- ignore: {name: "Use const"}
-- ignore: {name: "Use >=>"}
-- ignore: {name: "Use ."}
-- ignore: {name: "Use unless"}
-- ignore: {name: "Reduce duplication"}
-- ignore: {name: "Replace case with maybe"}
-- ignore: {name: "Use tuple-section"}
+# TODO: if reflex drops GHC <8.10 support, remove and standardize on
+# ImportQualifiedPost.
+- modules:
+  - {name: "**.*", qualifiedStyle: unrestricted}
