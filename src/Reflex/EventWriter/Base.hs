@@ -85,8 +85,10 @@ runEventWriterT (EventWriterT a) = do
   (result, told) <- runStateT a []
   let combineResults :: IntMap w -> w
       combineResults = sconcat
-        . (\(h : t) -> h :| t) -- Unconditional; 'mergeInt' guarantees that it will only fire with non-empty IntMaps
+        . nonEmptyElems
         . IntMap.foldl (flip (:)) [] -- Ascending key order is reverse tell order, so prepend while traversing to restore tell order
+      nonEmptyElems (h : t) = h :| t
+      nonEmptyElems [] = error "runEventWriterT: mergeInt fired with an empty IntMap"
   return (result, fmap combineResults $ mergeInt $ IntMap.fromDistinctAscList $ zip [0 ..] told)
 
 instance (Reflex t, Monad m, Semigroup w) => EventWriter t w (EventWriterT t w m) where

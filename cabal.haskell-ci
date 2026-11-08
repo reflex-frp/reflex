@@ -1,17 +1,19 @@
-distribution:  xenial
-benchmarks:    False
-unconstrained: False
-installed:     -all
+-- Settings for haskell-ci (https://github.com/haskell-CI/haskell-ci).  After a
+-- change to this file or to tested-with in reflex.cabal, run
+--
+--   haskell-ci regenerate
+--
+-- to update .github/workflows/haskell-ci.yml.
 
--- https://github.com/haskell/cabal/issues/6106
-install-dependencies: False
+distribution: noble
+
+-- Do not constrain the packages that come with GHC to their installed versions.
+installed: -all
+unconstrained: False
 
 constraint-set old-these
   ghc: <8.8
   constraints: these <1
-
-constraint-set old-witherable
-  constraints: witherable <0.3.2
 
 constraint-set debug-propagation
   constraints: reflex +debug-propagation

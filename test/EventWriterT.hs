@@ -44,7 +44,7 @@ main = do
   print os5
   os6 <- runApp' (unwrapApp delayedPulse) [Just ()]
   print os6
-  let ![[Nothing, Nothing]] = os6
+  [[Nothing, Nothing]] <- pure os6
   return ()
 
 unwrapApp :: (Reflex t, Monad m) => (a -> EventWriterT t [Int] m ()) -> a -> m (Event t [Int])
