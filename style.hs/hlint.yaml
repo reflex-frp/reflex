@@ -1,0 +1,341 @@
+#! /usr/bin/env nix
+#! nix shell github:obsidiansystems/style.hs#hlint --command sh -c ``hlint --hint "$1" "${@:2}"`` sh
+
+# The Obsidian Systems Haskell style, for hlint. See STYLE.md for the
+# reasoning, and fourmolu.yaml for the formatting half of the same style.
+#
+# hlint is a linter, not a formatter, so this config complements fourmolu
+# rather than competing with it: fourmolu handles layout, hlint handles the
+# rules about *what* you write. Both can run over the same file.
+#
+# Note that hlint always loads its own built-in hints first, whatever you pass
+# on the command line. A config like this one is therefore purely additive: it
+# can turn extra hints on, restrict what you're allowed to use, and `ignore`
+# built-ins, but it can never start from a blank slate.
+
+# STYLE.md, "Safety: avoid partial functions", the rule we feel most strongly
+# about.
+#
+# hlint ships a `partial` group covering much of this, but we spell the list
+# out instead. A `functions` restriction matches an identifier in every
+# syntactic position, so it catches `map head` and `(!! 3)` as well as
+# `head xs`; the group's rewrite rules only fire on applied uses, and let a
+# bare `map head` through entirely. Enabling both would double-report every
+# applied use, so it is one or the other.
+#
+# The list is the standard one STYLE.md points at. Functions that are only
+# partial on infinite lists are deliberately absent, as are the near-unavoidable
+# ones (div, mod, quot, succ, toEnum) that hlint's `partial-strict` group bans.
+#
+# The names are qualified, which matters. hlint matches an unqualified name
+# against every module it could have come from, so a bare `head` also bans
+# `NonEmpty.head` — which is total, and is precisely what you are supposed to
+# reach for once you have a NonEmpty. The same goes for `last`, `tail`, `init`,
+# `maximum` and `minimum`. Qualifying each entry bans the partial version and
+# leaves the NonEmpty (and Foldable1) counterparts alone.
+#
+# The cost of qualifying is that every partial source has to be spelled out, so
+# Text and ByteString appear here too: their `head`/`last`/`tail`/`init` are
+# just as partial as the list ones. `!!` and `fromJust` stay unqualified
+# because they are partial wherever they come from, NonEmpty included.
+- functions:
+  - name:
+      - Prelude.head
+      - Prelude.last
+      - Prelude.tail
+      - Prelude.init
+      - Data.List.head
+      - Data.List.last
+      - Data.List.tail
+      - Data.List.init
+      - Prelude.foldr1
+      - Prelude.foldl1
+      - Prelude.maximum
+      - Prelude.minimum
+      - Data.List.foldr1
+      - Data.List.foldl1
+      - Data.List.maximum
+      - Data.List.minimum
+      - Data.List.maximumBy
+      - Data.List.minimumBy
+      - Data.Foldable.foldr1
+      - Data.Foldable.foldl1
+      - Data.Foldable.maximum
+      - Data.Foldable.minimum
+      - Data.Foldable.maximumBy
+      - Data.Foldable.minimumBy
+      - Data.Text.head
+      - Data.Text.last
+      - Data.Text.tail
+      - Data.Text.init
+      - Data.Text.Lazy.head
+      - Data.Text.Lazy.last
+      - Data.Text.Lazy.tail
+      - Data.Text.Lazy.init
+      - Data.ByteString.head
+      - Data.ByteString.last
+      - Data.ByteString.tail
+      - Data.ByteString.init
+      - Data.ByteString.Char8.head
+      - Data.ByteString.Char8.last
+      - Data.ByteString.Char8.tail
+      - Data.ByteString.Char8.init
+      - Data.ByteString.Lazy.head
+      - Data.ByteString.Lazy.last
+      - Data.ByteString.Lazy.tail
+      - Data.ByteString.Lazy.init
+      - "!!"
+      - fromJust
+      - Data.List.NonEmpty.fromList
+    within: []
+    message: 'STYLE.md: partial function. It fails far from the mistake that caused it, with a message that tells you nothing.'
+  - name: undefined
+    within: []
+    message: 'STYLE.md: use `error` with a source location and a comment saying why the branch is unreachable.'
+  - name: ["Data.Map.!", "Data.Map.Strict.!", "Data.Map.Monoidal.!"]
+    within: []
+    message: 'STYLE.md: partial. Use `Map.lookup`, or `Map.findWithDefault`.'
+  - name: [Data.Text.Encoding.decodeUtf8, Data.Text.Lazy.Encoding.decodeUtf8]
+    within: []
+    message: 'STYLE.md: partial. Use `decodeUtf8With lenientDecode`.'
+  - name: read
+    within: []
+    message: 'STYLE.md: partial. Use `readMaybe`.'
+
+# STYLE.md, "Extensions we avoid". Each of these removes a way for code to go
+# wrong quietly.
+- extensions:
+  - name: [RecordWildCards, NamedFieldPuns]
+    within: []
+    message: 'STYLE.md: a binding site that does not name what it binds makes scoping hard to trace.'
+  - name: DeriveAnyClass
+    within: []
+    message: 'STYLE.md: it does not guarantee the methods get an implementation, which becomes a runtime crash.'
+
+# STYLE.md, "Imports". `**` rather than `*`: hlint maps `.` to `/` and matches
+# with glob semantics, so a single `*` would not match `Data.Text`.
+#
+# Exact-name and `**` rules compose, so a module listed below is still checked
+# for post-qualification. When both are wrong hlint reports the alias first,
+# and the qualification warning appears once that is fixed.
+- modules:
+  - name: "**"
+    qualifiedStyle: post
+    message: 'STYLE.md: post-qualified imports line the module names up in the same column. Needs ImportQualifiedPost, on by default since GHC 9.6.'
+  - {name: Data.Text, as: T}
+  - {name: Data.Map, as: Map}
+  - {name: Data.Map.Monoidal, as: MMap}
+  - {name: Data.Set, as: Set}
+  - {name: Data.ByteString, as: BS}
+  - {name: Data.ByteString.Lazy, as: LBS}
+
+# STYLE.md, "Formatting": append with `<>`, not `++`. They behave identically
+# on lists, but `<>` leaves the door open to changing your sequence type later.
+#
+# Always on, so it holds without the group below. hlint's own generalise
+# carries this rule too, so enabling that group reports a `++` twice.
+- warn: {lhs: a ++ b, rhs: a <> b, name: "Use <>"}
+
+# Preferring the more general of two functions that already do the same thing,
+# so loosening a type later costs no call site. Off by default, because a
+# codebase adopts this on its own schedule:
+#
+#   hlint --with-group=generalise src/
+#
+# The name is hlint's own group, so these rules join its built-in members
+# rather than replace them.
+- group:
+    name: generalise
+    enabled: false
+    rules:
+      # `<>` is the Semigroup method, where `mappend` is the Monoid one that
+      # duplicates it.
+      - warn: {lhs: mappend, rhs: "(<>)", name: "Use <>"}
+
+      # `pure`, `liftA2` and `<*>` ask for an Applicative, where the Monad-only
+      # spellings beside them are the older duplicates. `liftM` is absent
+      # because hlint suggests `fmap` for it already, and a second rule would
+      # report it twice.
+      - warn: {lhs: return, rhs: pure, name: "Use pure"}
+      - warn: {lhs: liftM2, rhs: liftA2, name: "Use liftA2"}
+      - warn: {lhs: ap, rhs: "(<*>)", name: "Use <*>"}
+
+      # The Alternative spellings, which the MonadPlus ones duplicate.
+      - warn: {lhs: msum, rhs: asum, name: "Use asum"}
+      - warn: {lhs: mplus, rhs: "(<|>)", name: "Use <|>"}
+      - warn: {lhs: mzero, rhs: empty, name: "Use empty"}
+
+      # The Traversable spellings, which ask for an Applicative where the `M`
+      # spellings ask for a Monad.
+      - warn: {lhs: mapM, rhs: traverse, name: "Use traverse"}
+      - warn: {lhs: mapM_, rhs: traverse_, name: "Use traverse_"}
+      - warn: {lhs: forM, rhs: for, name: "Use for"}
+      - warn: {lhs: forM_, rhs: for_, name: "Use for_"}
+
+      # The Foldable spellings, which take any container where these take a
+      # list.
+      - warn: {lhs: mconcat, rhs: fold, name: "Use fold"}
+      - warn: {lhs: concat, rhs: fold, name: "Use fold"}
+      - warn: {lhs: concatMap, rhs: foldMap, name: "Use foldMap"}
+
+      # A Map is a Functor and a Foldable, so it needs no spellings of its own.
+      # Qualified, because a bare `map` or `elems` would match far more than a
+      # Map.
+      - warn: {lhs: Data.Map.map, rhs: fmap, name: "Use fmap"}
+      - warn: {lhs: Data.Map.Strict.map, rhs: fmap, name: "Use fmap"}
+      - warn: {lhs: Data.Map.Monoidal.map, rhs: fmap, name: "Use fmap"}
+      - warn: {lhs: Data.Map.elems, rhs: toList, name: "Use toList"}
+      - warn: {lhs: Data.Map.Strict.elems, rhs: toList, name: "Use toList"}
+      - warn: {lhs: Data.Map.Monoidal.elems, rhs: toList, name: "Use toList"}
+
+# Built-in hints that contradict STYLE.md.
+#
+# `Use camelCase` fires on every `myRecord_fieldName` and `MySumType_Ctor`,
+# i.e. on exactly the naming convention STYLE.md mandates.
+- ignore: {name: Use camelCase}
+
+# The rest suggest a partial function we just banned, so they fire alongside
+# "Avoid restricted function" and push the reader toward the very thing the
+# restriction above forbids: `x !! 0` -> `head x`, `head (sort x)` ->
+# `minimum x`, `head (reverse x)` -> `last x`, and so on.
+- ignore: {name: Use head}
+- ignore: {name: Use last}
+- ignore: {name: Use init}
+- ignore: {name: Use tail}
+- ignore: {name: Use minimum}
+- ignore: {name: Use maximum}
+- ignore: {name: Use foldr1}
+- ignore: {name: Use foldl1}
+
+# `concat [a, b]` -> `a ++ b`, which contradicts the `<>` rule above.
+- ignore: {name: Use ++}
+
+# `when (not p)` -> `unless p`. Both spellings are fine, so this is left to the
+# author: a `when (not p)` sitting next to a `when q` reads as one parallel
+# pair, where swapping in `unless` makes the reader match up two different
+# words and a dropped negation to see that the guards are related.
+- ignore: {name: Use unless}
+
+# `\s -> "pre" <> s` -> `("pre" <>)`. Naming the argument is often the clearer
+# of the two, and which one wins is a judgement call the linter is not well
+# placed to make, so leave it to the author.
+#
+# Note this gives up the other half of the hint, `\x -> f x` -> `f`, which is a
+# plain eta-reduction and is usually an improvement. `Eta reduce` still covers
+# that shape at the top level of a definition; only lambdas nested inside an
+# expression go unremarked.
+- ignore: {name: Avoid lambda}
+
+# `and [a, b]` -> `a && b`, and `or [a, b]` -> `a || b`. Both spellings are
+# correct, so the author chooses. The list form gives each condition its own
+# line. A long list stays readable. A new condition is a one-line diff. The
+# hint fires at every list length, so it reports the list form everywhere.
+- ignore: {name: "Use &&"}
+- ignore: {name: "Use ||"}
+
+# Left on deliberately, so nobody "fixes" them later:
+#
+# - The `dollar` group stays off. It rewrites `a $ b $ c` to `a . b $ c`, but
+#   STYLE.md prefers `$` to `.` when either would read the same.
+# - `Redundant $` stays on. It only fires when the argument is atomic (`f $ x`),
+#   so it does not conflict with "prefer `$` to trailing parentheses".
+# - `Use lambda-case` stays on. It matches STYLE.md's "Prefer `case` to multiple
+#   clauses", whose preferred form is `\case`.
+
+# Extensions Obsidian projects turn on in the cabal file. hlint does not read
+# cabal files, so without this it misparses anything that relies on them: a
+# module with no per-module LANGUAGE pragmas is exactly the case the shared
+# cabal preamble is meant to produce, and hlint would choke on the first
+# quasiquote or multiline string.
+#
+# This mirrors the preamble's `default-extensions`, which is a superset of
+# STYLE.md's "Extensions we'd turn on by default". That is deliberate: the list
+# is here only to make hlint parse what GHC already accepts, not to endorse
+# every entry. ImportQualifiedPost is required by the import rule above, and
+# the No* entries match the extensions the `extensions` restriction bans.
+- arguments:
+  - -XAllowAmbiguousTypes
+  - -XApplicativeDo
+  - -XBangPatterns
+  - -XBinaryLiterals
+  - -XBlockArguments
+  - -XConstrainedClassMethods
+  - -XConstraintKinds
+  - -XDataKinds
+  - -XDefaultSignatures
+  - -XDeriveDataTypeable
+  - -XDeriveFoldable
+  - -XDeriveFunctor
+  - -XDeriveGeneric
+  - -XDeriveLift
+  - -XDeriveTraversable
+  - -XDerivingStrategies
+  - -XDerivingVia
+  - -XDisambiguateRecordFields
+  - -XDoAndIfThenElse
+  - -XDuplicateRecordFields
+  - -XEmptyCase
+  - -XEmptyDataDecls
+  - -XEmptyDataDeriving
+  - -XExistentialQuantification
+  - -XExplicitForAll
+  - -XExplicitNamespaces
+  - -XExtendedDefaultRules
+  - -XFlexibleContexts
+  - -XFlexibleInstances
+  - -XFunctionalDependencies
+  - -XGADTs
+  - -XGeneralizedNewtypeDeriving
+  - -XHexFloatLiterals
+  - -XImportQualifiedPost
+  - -XImpredicativeTypes
+  - -XInstanceSigs
+  - -XKindSignatures
+  - -XLambdaCase
+  - -XLexicalNegation
+  - -XLiberalTypeSynonyms
+  - -XMonadComprehensions
+  - -XMultilineStrings
+  - -XMultiParamTypeClasses
+  - -XMultiWayIf
+  - -XNamedDefaults
+  - -XNegativeLiterals
+  - -XNoDeriveAnyClass
+  - -XNoNamedFieldPuns
+  - -XNoRecordWildCards
+  - -XNumericUnderscores
+  - -XOrPatterns
+  - -XOverloadedLabels
+  - -XOverloadedLists
+  - -XOverloadedRecordDot
+  - -XOverloadedStrings
+  - -XPackageImports
+  - -XParallelListComp
+  - -XPartialTypeSignatures
+  - -XPatternGuards
+  - -XPatternSynonyms
+  - -XPolyKinds
+  - -XPostfixOperators
+  - -XQualifiedDo
+  - -XQuantifiedConstraints
+  - -XQuasiQuotes
+  - -XRankNTypes
+  - -XRecursiveDo
+  - -XRequiredTypeArguments
+  - -XRoleAnnotations
+  - -XScopedTypeVariables
+  - -XStandaloneDeriving
+  - -XStandaloneKindSignatures
+  - -XTemplateHaskell
+  - -XTemplateHaskellQuotes
+  - -XTransformListComp
+  - -XTupleSections
+  - -XTypeApplications
+  - -XTypeData
+  - -XTypeFamilies
+  - -XTypeFamilyDependencies
+  - -XTypeOperators
+  - -XTypeSynonymInstances
+  - -XUndecidableInstances
+  - -XUnicodeSyntax
+  - -XViewPatterns
