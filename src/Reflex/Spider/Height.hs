@@ -6,10 +6,8 @@ module Reflex.Spider.Height
   (Height
   , pattern ZeroHeight
   , pattern InvalidHeight
-#if defined(DEBUG_CYCLES)
   , invalidHeightBeingTraversed
   , isUnmarkedInvalidHeight
-#endif
   , pattern ValidHeight
   , zeroHeight
   , invalidHeight
@@ -43,6 +41,13 @@ import Data.List (foldl')
 -- Height data
 --------------------------------------------------------------------------------
 
+debugCycles :: Bool
+#ifdef DEBUG_CYCLES
+debugCycles = True
+#else
+debugCycles = False
+#endif
+
 newtype Height = Height Int
   deriving (Show)
 
@@ -59,14 +64,10 @@ pattern InvalidHeight <- (isInvalidHeight -> True)
 
 {-# INLINE isInvalidHeight #-}
 isInvalidHeight :: Height -> Bool
-#ifdef DEBUG_CYCLES
-isInvalidHeight (Height h) = h == (-1000) || h == (-1001)
+isInvalidHeight (Height h) = h == (-1000) || debugCycles && h == (-1001)
 
 isUnmarkedInvalidHeight :: Height -> Bool
 isUnmarkedInvalidHeight (Height h) = h == (-1000)
-#else
-isInvalidHeight (Height h) = h == (-1000)
-#endif
 
 pattern ValidHeight :: Height
 pattern ValidHeight <- Height ((>= 0) -> True)
@@ -86,14 +87,10 @@ invalidHeight = Height (-1000)
 maxHeight :: Height
 maxHeight = Height maxBound
 
-#ifdef DEBUG_CYCLES
-
 -- | An invalid height that is currently being traversed, e.g. by walkInvalidHeightParents
 {-# INLINE invalidHeightBeingTraversed #-}
 invalidHeightBeingTraversed :: Height
 invalidHeightBeingTraversed = Height (-1001)
-
-#endif
 
 {-# COMPLETE InvalidHeight, ValidHeight #-}
 {-# COMPLETE InvalidHeight, UnsafeValidHeight #-}

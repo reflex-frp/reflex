@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | This module defines the 'WeakBag' type, which represents a mutable
@@ -23,8 +24,8 @@ import Prelude hiding (traverse)
 
 import Control.Exception
 import Control.Monad.IO.Class
-import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
+import Data.IntMap.Internal (IntMap (Nil, Tip))
 import qualified Data.IntMap.Internal as IntMap.Internal
 import Data.Functor (void)
 import Data.IORef
@@ -106,13 +107,18 @@ traverseWeakIntMap_ items f = go items
     -- This is a very hot function in Reflex and directly recursing over the
     -- internal data structure is a noticable improvement over using forM_:
     go :: IntMap (Weak a) -> m ()
+    go (IntMapBin l r) = go l >> go r
+    go (Tip _ c) = mapM_ f =<< liftIO (deRefWeak c)
+    go Nil = pure ()
+
+pattern IntMapBin :: IntMap a -> IntMap a -> IntMap a
 #if MIN_VERSION_containers(0,8,0)
-    go (IntMap.Internal.Bin _ l r) = go l >> go r
+pattern IntMapBin l r <- IntMap.Internal.Bin _ l r
 #else
-    go (IntMap.Internal.Bin _ _ l r) = go l >> go r
+pattern IntMapBin l r <- IntMap.Internal.Bin _ _ l r
 #endif
-    go (IntMap.Internal.Tip _ c) = mapM_ f =<< liftIO (deRefWeak c)
-    go IntMap.Internal.Nil = pure ()
+
+{-# COMPLETE IntMapBin, Tip, Nil #-}
 
 {-# DEPRECATED traverse "Use 'traverse_' instead" #-}
 traverse :: MonadIO m => WeakBag a -> (a -> m ()) -> m ()

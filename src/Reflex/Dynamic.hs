@@ -492,18 +492,12 @@ instance AllAreFunctors f '[] where
   type FunctorList f '[] = '[]
   toFHList l = case l of
     HNil -> FHNil
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
   fromFHList FHNil = HNil
 
 instance AllAreFunctors f t => AllAreFunctors f (h ': t) where
   type FunctorList f (h ': t) = f h ': FunctorList f t
   toFHList l = case l of
     a `HCons` b -> a `FHCons` toFHList b
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
   fromFHList (a `FHCons` b) = a `HCons` fromFHList b
 
 -- | Convert a datastructure whose constituent parts are all 'Dynamic's into a
@@ -528,24 +522,15 @@ instance IsHList (a, b) where
   toHList (a, b) = hBuild a b
   fromHList l = case l of
     a `HCons` b `HCons` HNil -> (a, b)
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
 
 instance IsHList (a, b, c, d) where
   type HListElems (a, b, c, d) = [a, b, c, d]
   toHList (a, b, c, d) = hBuild a b c d
   fromHList l = case l of
     a `HCons` b `HCons` c `HCons` d `HCons` HNil -> (a, b, c, d)
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
 
 instance IsHList (a, b, c, d, e, f) where
   type HListElems (a, b, c, d, e, f) = [a, b, c, d, e, f]
   toHList (a, b, c, d, e, f) = hBuild a b c d e f
   fromHList l = case l of
     a `HCons` b `HCons` c `HCons` d `HCons` e `HCons` f `HCons` HNil -> (a, b, c, d, e, f)
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
