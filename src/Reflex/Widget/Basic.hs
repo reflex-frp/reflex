@@ -7,11 +7,10 @@ module Reflex.Widget.Basic where
 
 import Control.Monad.Fix (MonadFix)
 import Data.Map (Map)
-
-import Reflex.Class
-import Reflex.Adjustable.Class
 import Data.Patch.MapWithMove
 
+import Reflex.Adjustable.Class
+import Reflex.Class
 
 -- | Build sortable content in such a way that re-sorting it can cause minimal
 -- disruption to an existing context.
@@ -29,11 +28,16 @@ import Data.Patch.MapWithMove
 -- >   (\k v -> text $ "\n" ++ show k ++ " " ++ v)  -- show each element on a new line
 -- >   (Map.fromList $ zip [0..] [(3, "a"), (2, "b"), (1, "c")])
 -- >   sortEvent
-sortableList :: forall t m k v a. (MonadHold t m, MonadFix m, Adjustable t m, Ord k)
-             => (k -> v -> m a) -- ^ Function to render the content for each key/value pair
-             -> Map k v -- ^ The sortable list with an initial ordering determined by the @Map@ keys in ascending order
-             -> Event t (v -> v -> Ordering) -- ^ An event carrying a sort function for the list
-             -> m (Map k a)
+sortableList
+  :: forall t m k v a
+   . (MonadHold t m, MonadFix m, Adjustable t m, Ord k)
+  => (k -> v -> m a)
+  -- ^ Function to render the content for each key/value pair
+  -> Map k v
+  -- ^ The sortable list with an initial ordering determined by the @Map@ keys in ascending order
+  -> Event t (v -> v -> Ordering)
+  -- ^ An event carrying a sort function for the list
+  -> m (Map k a)
 sortableList f m0 reSortFunc = do
   rec let reSortPatch = attachWith (flip patchThatSortsMapWith) (currentIncremental m) reSortFunc
       m <- holdIncremental m0 reSortPatch

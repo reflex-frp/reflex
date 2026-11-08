@@ -14,8 +14,8 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Primitive (PrimMonad)
 import Control.Monad.Ref (MonadRef, Ref, readRef)
 import Data.Dependent.Sum (DSum (..), (==>))
-import Data.Foldable (for_, asum)
-import Data.Functor.Identity (Identity(..))
+import Data.Foldable (asum, for_)
+import Data.Functor.Identity (Identity (..))
 import Data.IORef (IORef, readIORef)
 import Data.Maybe (catMaybes)
 import Data.Traversable (for)
@@ -56,7 +56,7 @@ type MonadHeadlessApp t m =
 -- testing. Each headless network runs on its own spider timeline.
 runHeadlessApp
   :: forall a
-  .  (forall t m. MonadHeadlessApp t m => m (Event t a))
+   . (forall t m. MonadHeadlessApp t m => m (Event t a))
   -- ^ The action to be run in the headless FRP network. The FRP network is
   -- closed at the first occurrence of the resulting 'Event'.
   -> IO a
@@ -73,21 +73,17 @@ runHeadlessApp guest =
     -- Run the "guest" application, providing the appropriate context. We'll
     -- pure the result of the action, and a 'FireCommand' that will be used to
     -- trigger events.
-    (result, fc@(FireCommand fire)) <- do
-      hostPerformEventT $                 -- Allows the guest app to run
-                                          -- 'performEvent', so that actions
-                                          -- (e.g., IO actions) can be run when
-                                          -- 'Event's fire.
-
-        flip runPostBuildT postBuild $    -- Allows the guest app to access to
-                                          -- a "post-build" 'Event'
-
-          flip runTriggerEventT events $  -- Allows the guest app to create new
-                                          -- events and triggers and write
-                                          -- those triggers to a channel from
-                                          -- which they will be read and
-                                          -- processed.
-            guest
+    (result, fc@(FireCommand fire)) <-
+      -- Allows the guest app to run 'performEvent', so that actions (e.g., IO
+      -- actions) can be run when 'Event's fire.
+      hostPerformEventT
+        -- Allows the guest app to access to a "post-build" 'Event'
+        . flip runPostBuildT postBuild
+        -- Allows the guest app to create new events and triggers and write
+        -- those triggers to a channel from which they will be read and
+        -- processed.
+        . flip runTriggerEventT events
+        $ guest
 
     -- Read the trigger reference for the post-build event. This will be
     -- 'Nothing' if the guest application hasn't subscribed to this event.
@@ -126,15 +122,13 @@ runHeadlessApp guest =
             -- Ideally, we should cut off the event loop as soon as this fires,
             -- but Performable doesn't currently give us an easy way to do that.
             shutdownNow = asum shutdownEventFirings
-        case shutdownNow of
-          Just exitResult -> pure exitResult
-          Nothing -> loop
+        maybe loop pure shutdownNow
   where
     -- Use the given 'FireCommand' to fire events that have subscribers
     -- and call the callback for the 'TriggerInvocation' of each.
     fireEventTriggerRefs
       :: forall b m t
-      .  MonadIO m
+       . MonadIO m
       => FireCommand t m
       -> [DSum (EventTriggerRef t) TriggerInvocation]
       -> ReadPhase m b

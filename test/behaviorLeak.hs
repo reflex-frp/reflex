@@ -5,6 +5,7 @@
 -- | Test whether Applicative combination of Behaviors leaks memory when one of
 -- the Behaviors' source events never occurs.
 -- (https://github.com/reflex-frp/reflex/issues/490)
+module Main where
 
 import Control.Monad
 import Control.Monad.IO.Class
@@ -12,13 +13,13 @@ import Control.Monad.Primitive (touch)
 import Control.Monad.Ref
 import Data.Dependent.Sum
 import Data.Functor.Identity
-import Data.Maybe (fromJust)
 import GHC.Stats
-import Reflex
-import Reflex.Host.Class
 import System.Exit
 import System.Mem (performMajorGC)
 import Text.Printf
+
+import Reflex
+import Reflex.Host.Class
 
 warmupTicks :: Int
 warmupTicks = 200000
@@ -47,7 +48,7 @@ main = do
   runSpiderHost $ do
     (tickE, tickTriggerRef) <- newEventWithTriggerRef
     b <- runHostFrame $ testCase tickE
-    trigger <- fromJust <$> readRef tickTriggerRef
+    Just trigger <- readRef tickTriggerRef
     let fireOnce = void $ fireEventsAndRead [trigger :=> Identity ()] $ do
           v <- sample b
           v `seq` pure ()
@@ -74,6 +75,9 @@ main = do
           printf "Failed: Behavior Applicative space leak\n"
           printf "    first-window avg live bytes:  %d\n" firstWindowAvg
           printf "    second-window avg live bytes: %d\n" secondWindowAvg
-          printf "    growth over %d intervening ticks: %d bytes (allowed %d)\n"
-            ticksBetweenWindows growth allowedGrowthBytes
+          printf
+            "    growth over %d intervening ticks: %d bytes (allowed %d)\n"
+            ticksBetweenWindows
+            growth
+            allowedGrowthBytes
           exitFailure

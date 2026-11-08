@@ -11,59 +11,50 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Main where
 
-import Criterion.Main
-import Criterion.Types
-
-import Reflex
-import Reflex.Host.Class
-
-import Reflex.Plan.Reflex
-import Reflex.TestPlan
-
-import qualified Reflex.Bench.Focused as Focused
-import Reflex.Spider.Internal (SpiderEventHandle)
-
 import Control.Applicative
-import Control.DeepSeq (NFData (..))
-
-import Prelude
-import System.IO
-import System.Mem
-
 import Control.Arrow
 import Control.Concurrent
 import Control.Concurrent.STM
+import Control.DeepSeq (NFData (..))
 import Control.Exception
 import Control.Monad
 import Control.Monad.Trans
+import Criterion.Main
+import Criterion.Types
 import Data.Bool
 import Data.Function
-import Data.Int
 import Data.IORef
+import Data.Int
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Monoid
 import Data.Time.Clock
 import Debug.Trace.LocationTH
 import GHC.Stats
 import System.Environment
+import System.IO
+import System.Mem
 import System.Mem.Weak
 import System.Process
 import Text.Read
-
 import Unsafe.Coerce
+import Prelude
 
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Reflex
+import qualified Reflex.Bench.Focused as Focused
+import Reflex.Host.Class
+import Reflex.Plan.Reflex
+import Reflex.Spider.Internal (SpiderEventHandle)
+import Reflex.TestPlan
 
 type MonadReflexHost' t m = (MonadReflexHost t m, MonadIORef m, MonadIORef (HostFrame t))
 
-
-setupFiring ::   (MonadReflexHost t m, MonadIORef m) => Plan t (Event t a) -> m (EventHandle t a, Schedule t)
+setupFiring :: (MonadReflexHost t m, MonadIORef m) => Plan t (Event t a) -> m (EventHandle t a, Schedule t)
 setupFiring p = do
   (e, s) <- runPlan p
   h <- subscribeEvent e
@@ -87,7 +78,7 @@ instance NFData (Firing t) where
 benchFiring :: forall t m. (MonadReflexHost' t m, MonadSample t m) => (forall a. m a -> IO a) -> TestCase -> Int -> IO ()
 benchFiring runHost tc n = runHost $ do
   let runIterations :: m a -> m ()
-      runIterations test = replicateM_ (10*n) $ do
+      runIterations test = replicateM_ (10 * n) $ do
         result <- test
         liftIO $ evaluate result
   case tc of
@@ -117,37 +108,38 @@ benchmarks = implGroup "spider" runSpiderHost cases
     implGroup :: (MonadReflexHost' t m, MonadSample t m) => String -> (forall a. m a -> IO a) -> [(String, TestCase)] -> [(String, Int -> IO ())]
     implGroup name runHost = group name . fmap (second (benchFiring runHost))
     group name = fmap $ first ((name <> "/") <>)
-    sub n frames = group ("subscribing " ++ show (n, frames)) $ Focused.subscribing n frames
-    headEs n frames = group ("headE " ++ show (n, frames)) $ Focused.headEs n frames
-    firing n     = group ("firing "    <> show n) $ Focused.firing n
-    merging n    = group ("merging "   <> show n) $ Focused.merging n
-    fans n       = group ("fans "      <> show n) $ Focused.fans n
+    sub n frames = group ("subscribing " <> show (n, frames)) $ Focused.subscribing n frames
+    headEs n frames = group ("headE " <> show (n, frames)) $ Focused.headEs n frames
+    firing n = group ("firing " <> show n) $ Focused.firing n
+    merging n = group ("merging " <> show n) $ Focused.merging n
+    fans n = group ("fans " <> show n) $ Focused.fans n
     mergePatches n = group ("mergePatches " <> show n) $ Focused.mergePatches n
-    dynamics n   = group ("dynamics "  <> show n) $ Focused.dynamics n
-    shared w     = group ("sharedInvalidators " <> show w) $ Focused.sharedInvalidators w
+    dynamics n = group ("dynamics " <> show n) $ Focused.dynamics n
+    shared w = group ("sharedInvalidators " <> show w) $ Focused.sharedInvalidators w
     eventWriter w = group ("eventWriter " <> show w) $ Focused.eventWriters w
-    cases = concat
-      [ sub 100 40
-      , headEs 100 40
-      , dynamics 100
-      , dynamics 1000
-      , firing 1000
-      , firing 10000
-      , merging 10
-      , merging 50
-      , merging 100
-      , merging 200
-      , fans 10
-      , fans 100
-      , mergePatches 100
-      , mergePatches 1000
-      , shared 30
-      , shared 100
-      , shared 300
-      , shared 1000
-      , eventWriter 100
-      , eventWriter 1000
-      ]
+    cases =
+      concat
+        [ sub 100 40
+        , headEs 100 40
+        , dynamics 100
+        , dynamics 1000
+        , firing 1000
+        , firing 10000
+        , merging 10
+        , merging 50
+        , merging 100
+        , merging 200
+        , fans 10
+        , fans 100
+        , mergePatches 100
+        , mergePatches 1000
+        , shared 30
+        , shared 100
+        , shared 300
+        , shared 1000
+        , eventWriter 100
+        , eventWriter 1000
+        ]
 
 pattern RunTestCaseFlag = "--run-test-case"
 
@@ -171,4 +163,4 @@ main = do
         fix $ \loop -> bool (return ()) (yield >> loop) =<< myCapabilityHasOtherRunnableThreads
         return ()
       _ -> $failure "--run-test-case: expected test name and iteration count to follow"
-    _ -> defaultMainWith (defaultConfig { timeLimit = 20, csvFile = Just "dmap-original.csv", reportFile = Just "report.html" }) $ fmap (spawnBenchmark . fst) benchmarks
+    _ -> defaultMainWith (defaultConfig {timeLimit = 20, csvFile = Just "dmap-original.csv", reportFile = Just "report.html"}) $ fmap (spawnBenchmark . fst) benchmarks

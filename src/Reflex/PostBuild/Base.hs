@@ -1,5 +1,3 @@
--- | This module defines 'PostBuildT', the standard implementation of
--- 'PostBuild'.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -8,18 +6,22 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | This module defines 'PostBuildT', the standard implementation of
+-- 'PostBuild'.
 module Reflex.PostBuild.Base
   ( PostBuildT (..)
   , runPostBuildT
-  -- * Internal
+
+    -- * Internal
   , mapIntMapWithAdjustImpl
   , mapDMapWithAdjustImpl
   ) where
 
-import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Primitive
@@ -38,33 +40,33 @@ import Control.Applicative (liftA2)
 import Control.Monad.Identity
 #endif
 
-import Reflex.Class
 import Reflex.Adjustable.Class
+import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.TriggerEvent.Class
 
 -- | Provides a basic implementation of 'PostBuild'.
-newtype PostBuildT t m a = PostBuildT { unPostBuildT :: ReaderT (Event t ()) m a }
+newtype PostBuildT t m a = PostBuildT {unPostBuildT :: ReaderT (Event t ()) m a}
   deriving
-    ( Functor
-    , Applicative
+    ( Applicative
+    , Functor
     , Monad
+    , MonadAsyncException
+    , MonadCatch
+    , MonadException
     , MonadFix
     , MonadIO
-    , MonadTrans
-    , MonadException
-    , MonadAsyncException
     , MonadMask
     , MonadThrow
-    , MonadCatch
+    , MonadTrans
     )
 
 -- | Run a 'PostBuildT' action.  An 'Event' should be provided that fires
 -- immediately after the action is finished running; no other 'Event's should
 -- fire first.
-{-# INLINABLE runPostBuildT #-}
+{-# INLINEABLE runPostBuildT #-}
 runPostBuildT :: PostBuildT t m a -> Event t () -> m a
 runPostBuildT (PostBuildT a) = runReaderT a
 
@@ -80,58 +82,58 @@ instance PrimMonad m => PrimMonad (PostBuildT x m) where
   primitive = lift . primitive
 
 instance (Reflex t, Monad m) => PostBuild t (PostBuildT t m) where
-  {-# INLINABLE getPostBuild #-}
+  {-# INLINEABLE getPostBuild #-}
   getPostBuild = PostBuildT ask
 
 instance MonadSample t m => MonadSample t (PostBuildT t m) where
-  {-# INLINABLE sample #-}
+  {-# INLINEABLE sample #-}
   sample = lift . sample
 
 instance MonadHold t m => MonadHold t (PostBuildT t m) where
-  {-# INLINABLE hold #-}
+  {-# INLINEABLE hold #-}
   hold v0 = lift . hold v0
-  {-# INLINABLE holdDyn #-}
+  {-# INLINEABLE holdDyn #-}
   holdDyn v0 = lift . holdDyn v0
-  {-# INLINABLE holdIncremental #-}
+  {-# INLINEABLE holdIncremental #-}
   holdIncremental v0 = lift . holdIncremental v0
-  {-# INLINABLE buildDynamic #-}
+  {-# INLINEABLE buildDynamic #-}
   buildDynamic a0 = lift . buildDynamic a0
-  {-# INLINABLE headE #-}
+  {-# INLINEABLE headE #-}
   headE = lift . headE
-  {-# INLINABLE now #-}
+  {-# INLINEABLE now #-}
   now = lift now
 
 instance PerformEvent t m => PerformEvent t (PostBuildT t m) where
   type Performable (PostBuildT t m) = Performable m
-  {-# INLINABLE performEvent_ #-}
+  {-# INLINEABLE performEvent_ #-}
   performEvent_ = lift . performEvent_
-  {-# INLINABLE performEvent #-}
+  {-# INLINEABLE performEvent #-}
   performEvent = lift . performEvent
 
 instance (ReflexHost t, MonadReflexCreateTrigger t m) => MonadReflexCreateTrigger t (PostBuildT t m) where
-  {-# INLINABLE newEventWithTrigger #-}
+  {-# INLINEABLE newEventWithTrigger #-}
   newEventWithTrigger = PostBuildT . lift . newEventWithTrigger
-  {-# INLINABLE newFanEventWithTrigger #-}
+  {-# INLINEABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = PostBuildT $ lift $ newFanEventWithTrigger f
 
 instance TriggerEvent t m => TriggerEvent t (PostBuildT t m) where
-  {-# INLINABLE newTriggerEvent #-}
+  {-# INLINEABLE newTriggerEvent #-}
   newTriggerEvent = lift newTriggerEvent
-  {-# INLINABLE newTriggerEventWithOnComplete #-}
+  {-# INLINEABLE newTriggerEventWithOnComplete #-}
   newTriggerEventWithOnComplete = lift newTriggerEventWithOnComplete
   newEventWithLazyTriggerWithOnComplete = lift . newEventWithLazyTriggerWithOnComplete
 
 instance MonadRef m => MonadRef (PostBuildT t m) where
   type Ref (PostBuildT t m) = Ref m
-  {-# INLINABLE newRef #-}
+  {-# INLINEABLE newRef #-}
   newRef = lift . newRef
-  {-# INLINABLE readRef #-}
+  {-# INLINEABLE readRef #-}
   readRef = lift . readRef
-  {-# INLINABLE writeRef #-}
+  {-# INLINEABLE writeRef #-}
   writeRef r = lift . writeRef r
 
 instance MonadAtomicRef m => MonadAtomicRef (PostBuildT t m) where
-  {-# INLINABLE atomicModifyRef #-}
+  {-# INLINEABLE atomicModifyRef #-}
   atomicModifyRef r = lift . atomicModifyRef r
 
 instance (Reflex t, MonadHold t m, MonadFix m, Adjustable t m, PerformEvent t m) => Adjustable t (PostBuildT t m) where
@@ -139,20 +141,22 @@ instance (Reflex t, MonadHold t m, MonadFix m, Adjustable t m, PerformEvent t m)
     postBuild <- getPostBuild
     lift $ do
       rec result@(_, result') <- runWithReplace (runPostBuildT a0 postBuild) $ fmap (\v -> runPostBuildT v =<< headE voidResult') a'
-          let voidResult' = fmapCheap (\_ -> ()) result'
+          let voidResult' = fmapCheap (const ()) result'
       return result
-  {-# INLINABLE traverseIntMapWithKeyWithAdjust #-}
+  {-# INLINEABLE traverseIntMapWithKeyWithAdjust #-}
   traverseIntMapWithKeyWithAdjust = mapIntMapWithAdjustImpl traverseIntMapWithKeyWithAdjust
-  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
+  {-# INLINEABLE traverseDMapWithKeyWithAdjust #-}
   traverseDMapWithKeyWithAdjust = mapDMapWithAdjustImpl traverseDMapWithKeyWithAdjust mapPatchDMap
   traverseDMapWithKeyWithAdjustWithMove = mapDMapWithAdjustImpl traverseDMapWithKeyWithAdjustWithMove mapPatchDMapWithMove
 
-{-# INLINABLE mapIntMapWithAdjustImpl #-}
-mapIntMapWithAdjustImpl :: forall t m v v' p. (Reflex t, MonadFix m, MonadHold t m, Functor p)
-  => (   (IntMap.Key -> (Event t (), v) -> m v')
-      -> IntMap (Event t (), v)
-      -> Event t (p (Event t (), v))
-      -> m (IntMap v', Event t (p v'))
+{-# INLINEABLE mapIntMapWithAdjustImpl #-}
+mapIntMapWithAdjustImpl
+  :: forall t m v v' p
+   . (Reflex t, MonadFix m, MonadHold t m, Functor p)
+  => ( (IntMap.Key -> (Event t (), v) -> m v')
+       -> IntMap (Event t (), v)
+       -> Event t (p (Event t (), v))
+       -> m (IntMap v', Event t (p v'))
      )
   -> (IntMap.Key -> v -> PostBuildT t m v')
   -> IntMap v
@@ -160,7 +164,7 @@ mapIntMapWithAdjustImpl :: forall t m v v' p. (Reflex t, MonadFix m, MonadHold t
   -> PostBuildT t m (IntMap v', Event t (p v'))
 mapIntMapWithAdjustImpl base f dm0 dm' = do
   postBuild <- getPostBuild
-  let loweredDm0 = fmap ((,) postBuild) dm0
+  let loweredDm0 = fmap (postBuild,) dm0
       f' :: IntMap.Key -> (Event t (), v) -> m v'
       f' k (e, v) = do
         runPostBuildT (f k v) e
@@ -170,15 +174,17 @@ mapIntMapWithAdjustImpl base f dm0 dm' = do
         numberedDm' <- numberOccurrencesFrom 1 dm'
         let postBuild' = fanInt $ fmapCheap (`IntMap.singleton` ()) cohortDone
             loweredDm' = flip pushAlways numberedDm' $ \(n, p) -> do
-              return $ fmap ((,) (selectInt postBuild' n)) p
+              return $ fmap (selectInt postBuild' n,) p
     return (result0, result')
 
-{-# INLINABLE mapDMapWithAdjustImpl #-}
-mapDMapWithAdjustImpl :: forall t m k v v' p. (Reflex t, MonadFix m, MonadHold t m)
-  => (   (forall a. k a -> Compose ((,) (Bool, Event t ())) v a -> m (v' a))
-      -> DMap k (Compose ((,) (Bool, Event t ())) v)
-      -> Event t (p k (Compose ((,) (Bool, Event t ())) v))
-      -> m (DMap k v', Event t (p k v'))
+{-# INLINEABLE mapDMapWithAdjustImpl #-}
+mapDMapWithAdjustImpl
+  :: forall t m k v v' p
+   . (Reflex t, MonadFix m, MonadHold t m)
+  => ( (forall a. k a -> Compose ((,) (Bool, Event t ())) v a -> m (v' a))
+       -> DMap k (Compose ((,) (Bool, Event t ())) v)
+       -> Event t (p k (Compose ((,) (Bool, Event t ())) v))
+       -> m (DMap k v', Event t (p k v'))
      )
   -> ((forall a. v a -> Compose ((,) (Bool, Event t ())) v a) -> p k v -> p k (Compose ((,) (Bool, Event t ())) v))
   -> (forall a. k a -> v a -> PostBuildT t m (v' a))
@@ -190,13 +196,14 @@ mapDMapWithAdjustImpl base mapPatch f dm0 dm' = do
   let loweredDm0 = DMap.map (Compose . (,) (False, postBuild)) dm0
       f' :: forall a. k a -> Compose ((,) (Bool, Event t ())) v a -> m (v' a)
       f' k (Compose ((shouldHeadE, e), v)) = do
-        eOnce <- if shouldHeadE
-          then headE e --TODO: Avoid doing this headE so many times; once per loweredDm' firing ought to be OK, but it's not totally trivial to do because result' might be firing at the same time, and we don't want *that* to be the postBuild occurrence
-          else return e
+        eOnce <-
+          if shouldHeadE
+            then headE e -- TODO: Avoid doing this headE so many times; once per loweredDm' firing ought to be OK, but it's not totally trivial to do because result' might be firing at the same time, and we don't want *that* to be the postBuild occurrence
+            else return e
         runPostBuildT (f k v) eOnce
   lift $ do
     rec (result0, result') <- base f' loweredDm0 loweredDm'
-        let voidResult' = fmapCheap (\_ -> ()) result'
+        let voidResult' = fmapCheap (const ()) result'
         let loweredDm' = ffor dm' $ mapPatch (Compose . (,) (True, voidResult'))
     return (result0, result')
 
@@ -207,7 +214,7 @@ mapDMapWithAdjustImpl base mapPatch f dm0 dm' = do
 -- | Deprecated
 instance TransControl.MonadTransControl (PostBuildT t) where
   type StT (PostBuildT t) a = TransControl.StT (ReaderT (Event t ())) a
-  {-# INLINABLE liftWith #-}
+  {-# INLINEABLE liftWith #-}
   liftWith = TransControl.defaultLiftWith PostBuildT unPostBuildT
-  {-# INLINABLE restoreT #-}
+  {-# INLINEABLE restoreT #-}
   restoreT = TransControl.defaultRestoreT PostBuildT

@@ -25,19 +25,18 @@ module Data.FastMutableIntMap
   , toList
   ) where
 
---TODO: Pure JS version
---TODO: Fast copy to FastIntMap
---TODO: Fast patch type
-
-import Prelude hiding (lookup)
+-- TODO: Pure JS version
+-- TODO: Fast copy to FastIntMap
+-- TODO: Fast patch type
 
 import Control.Monad.IO.Class
 import Data.Foldable (traverse_)
+import Data.IORef
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
-import Data.IORef
 import Data.Patch.Class
 import Data.Patch.IntMap
+import Prelude hiding (lookup)
 
 -- | A 'FastMutableIntMap' holds a map of values of type @a@ and allows low-overhead modifications via IO.
 -- Operations on 'FastMutableIntMap' run in IO.

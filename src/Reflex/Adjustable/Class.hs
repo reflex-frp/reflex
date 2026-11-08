@@ -16,29 +16,29 @@
 --   such that, when observed after the firing of any such 'Event', the result
 --   is as though the action was originally run with the 'Event's value.
 module Reflex.Adjustable.Class
-  (
-  -- * The Adjustable typeclass
-    Adjustable(..)
+  ( -- * The Adjustable typeclass
+    Adjustable (..)
   , sequenceDMapWithAdjust
   , sequenceDMapWithAdjustWithMove
   , mapMapWithAdjustWithMove
-  -- * Deprecated aliases
+
+    -- * Deprecated aliases
   , MonadAdjust
   ) where
 
 import Control.Monad.Identity
 import Control.Monad.Reader
 import Data.Dependent.Map (DMap)
-import Data.GADT.Compare (GCompare(..))
 import qualified Data.Dependent.Map as DMap
 import Data.Functor.Constant
 import Data.Functor.Misc
+import Data.GADT.Compare (GCompare (..))
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IntMap
 import Data.Map (Map)
+import Data.Patch.DMapWithMove
 
 import Reflex.Class
-import Data.Patch.DMapWithMove
 
 -- | A 'Monad' that supports adjustment over time.  After an action has been
 -- run, if the given events fire, it will adjust itself so that its net effect
@@ -64,19 +64,21 @@ class (Reflex t, Monad m) => Adjustable t m | m -> t where
     -> DMap k v
     -> Event t (PatchDMap k v)
     -> m (DMap k v', Event t (PatchDMap k v'))
-  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
-  traverseDMapWithKeyWithAdjust f dm0 dm' = fmap (fmap (fmap fromPatchWithMove)) $
-    traverseDMapWithKeyWithAdjustWithMove f dm0 $ fmap toPatchWithMove dm'
-   where
-    toPatchWithMove (PatchDMap m) = PatchDMapWithMove $ DMap.map toNodeInfoWithMove m
-    toNodeInfoWithMove = \case
-      ComposeMaybe (Just v) -> NodeInfo (From_Insert v) $ ComposeMaybe Nothing
-      ComposeMaybe Nothing -> NodeInfo From_Delete $ ComposeMaybe Nothing
-    fromPatchWithMove (PatchDMapWithMove m) = PatchDMap $ DMap.map fromNodeInfoWithMove m
-    fromNodeInfoWithMove (NodeInfo from _) = ComposeMaybe $ case from of
-      From_Insert v -> Just v
-      From_Delete -> Nothing
-      From_Move _ -> error "traverseDMapWithKeyWithAdjust: implementation of traverseDMapWithKeyWithAdjustWithMove inserted spurious move"
+  {-# INLINEABLE traverseDMapWithKeyWithAdjust #-}
+  traverseDMapWithKeyWithAdjust f dm0 dm' =
+    fmap (fmap (fmap fromPatchWithMove))
+      $ traverseDMapWithKeyWithAdjustWithMove f dm0
+      $ fmap toPatchWithMove dm'
+    where
+      toPatchWithMove (PatchDMap m) = PatchDMapWithMove $ DMap.map toNodeInfoWithMove m
+      toNodeInfoWithMove = \case
+        ComposeMaybe (Just v) -> NodeInfo (From_Insert v) $ ComposeMaybe Nothing
+        ComposeMaybe Nothing -> NodeInfo From_Delete $ ComposeMaybe Nothing
+      fromPatchWithMove (PatchDMapWithMove m) = PatchDMap $ DMap.map fromNodeInfoWithMove m
+      fromNodeInfoWithMove (NodeInfo from _) = ComposeMaybe $ case from of
+        From_Insert v -> Just v
+        From_Delete -> Nothing
+        From_Move _ -> error "traverseDMapWithKeyWithAdjust: implementation of traverseDMapWithKeyWithAdjustWithMove inserted spurious move"
 
   traverseDMapWithKeyWithAdjustWithMove
     :: GCompare k
@@ -120,7 +122,8 @@ sequenceDMapWithAdjustWithMove = traverseDMapWithKeyWithAdjustWithMove $ \_ -> f
 -- | Traverses a 'Map', running the provided 'Adjustable' action. The provided 'Event' of patches to the 'Map'
 -- can add, remove, update, move, or swap values.
 mapMapWithAdjustWithMove
-  :: forall t m k v v'. (Adjustable t m, Ord k)
+  :: forall t m k v v'
+   . (Adjustable t m, Ord k)
   => (k -> v -> m v')
   -> Map k v
   -> Event t (PatchMapWithMove k v)
@@ -134,5 +137,6 @@ mapMapWithAdjustWithMove f m0 m' = do
 --------------------------------------------------------------------------------
 
 {-# DEPRECATED MonadAdjust "Use Adjustable instead" #-}
+
 -- | Synonym for 'Adjustable'
 type MonadAdjust = Adjustable

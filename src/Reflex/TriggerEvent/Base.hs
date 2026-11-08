@@ -1,5 +1,3 @@
--- | This module defines 'TriggerEventT', the standard implementation of
--- 'TriggerEvent'.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -8,6 +6,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
+-- | This module defines 'TriggerEventT', the standard implementation of
+-- 'TriggerEvent'.
 module Reflex.TriggerEvent.Base
   ( TriggerEventT (..)
   , runTriggerEventT
@@ -17,7 +17,7 @@ module Reflex.TriggerEvent.Base
   ) where
 
 import Control.Concurrent
-import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Primitive
@@ -33,8 +33,8 @@ import Control.Applicative (liftA2)
 import Data.Monoid ((<>))
 #endif
 
-import Reflex.Class
 import Reflex.Adjustable.Class
+import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
@@ -45,11 +45,11 @@ import Reflex.TriggerEvent.Class
 data TriggerInvocation a = TriggerInvocation a (IO ())
 
 -- | A reference to an 'EventTrigger' suitable for firing with 'TriggerEventT'.
-newtype EventTriggerRef t a = EventTriggerRef { unEventTriggerRef :: IORef (Maybe (EventTrigger t a)) }
+newtype EventTriggerRef t a = EventTriggerRef {unEventTriggerRef :: IORef (Maybe (EventTrigger t a))}
 
 -- | A basic implementation of 'TriggerEvent'.
-newtype TriggerEventT t m a = TriggerEventT { unTriggerEventT :: ReaderT (Chan [DSum (EventTriggerRef t) TriggerInvocation]) m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadException, MonadAsyncException, MonadCatch, MonadThrow, MonadMask)
+newtype TriggerEventT t m a = TriggerEventT {unTriggerEventT :: ReaderT (Chan [DSum (EventTriggerRef t) TriggerInvocation]) m a}
+  deriving (Applicative, Functor, Monad, MonadAsyncException, MonadCatch, MonadException, MonadFix, MonadIO, MonadMask, MonadThrow)
 
 -- | Run a 'TriggerEventT' action.  The argument should be a 'Chan' into which
 -- 'TriggerInvocation's can be passed; it is expected that some other thread
@@ -59,43 +59,43 @@ runTriggerEventT :: TriggerEventT t m a -> Chan [DSum (EventTriggerRef t) Trigge
 runTriggerEventT = runReaderT . unTriggerEventT
 
 instance MonadTrans (TriggerEventT t) where
-  {-# INLINABLE lift #-}
+  {-# INLINEABLE lift #-}
   lift = TriggerEventT . lift
 
 instance PrimMonad m => PrimMonad (TriggerEventT t m) where
   type PrimState (TriggerEventT t m) = PrimState m
-  {-# INLINABLE primitive #-}
+  {-# INLINEABLE primitive #-}
   primitive = lift . primitive
 
 instance PerformEvent t m => PerformEvent t (TriggerEventT t m) where
   type Performable (TriggerEventT t m) = Performable m
-  {-# INLINABLE performEvent_ #-}
+  {-# INLINEABLE performEvent_ #-}
   performEvent_ e = lift $ performEvent_ e
-  {-# INLINABLE performEvent #-}
+  {-# INLINEABLE performEvent #-}
   performEvent e = lift $ performEvent e
 
 instance PostBuild t m => PostBuild t (TriggerEventT t m) where
-  {-# INLINABLE getPostBuild #-}
+  {-# INLINEABLE getPostBuild #-}
   getPostBuild = lift getPostBuild
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (TriggerEventT t m) where
-  {-# INLINABLE newEventWithTrigger #-}
+  {-# INLINEABLE newEventWithTrigger #-}
   newEventWithTrigger = lift . newEventWithTrigger
-  {-# INLINABLE newFanEventWithTrigger #-}
+  {-# INLINEABLE newFanEventWithTrigger #-}
   newFanEventWithTrigger f = lift $ newFanEventWithTrigger f
 
 instance (Monad m, MonadRef m, Ref m ~ Ref IO, MonadReflexCreateTrigger t m) => TriggerEvent t (TriggerEventT t m) where
-  {-# INLINABLE newTriggerEvent #-}
+  {-# INLINEABLE newTriggerEvent #-}
   newTriggerEvent = do
     (e, t) <- newTriggerEventWithOnComplete
     return (e, \a -> t a $ return ())
-  {-# INLINABLE newTriggerEventWithOnComplete #-}
+  {-# INLINEABLE newTriggerEventWithOnComplete #-}
   newTriggerEventWithOnComplete = do
     events <- askEvents
     (eResult, reResultTrigger) <- lift newEventWithTriggerRef
     return . (,) eResult $ \a cb ->
       writeChan events [EventTriggerRef reResultTrigger :=> TriggerInvocation a cb]
-  {-# INLINABLE newEventWithLazyTriggerWithOnComplete #-}
+  {-# INLINEABLE newEventWithLazyTriggerWithOnComplete #-}
   newEventWithLazyTriggerWithOnComplete f = do
     events <- askEvents
     reResultTrigger <- newRef Nothing
@@ -109,43 +109,43 @@ instance (Monad m, MonadRef m, Ref m ~ Ref IO, MonadReflexCreateTrigger t m) => 
 
 instance MonadRef m => MonadRef (TriggerEventT t m) where
   type Ref (TriggerEventT t m) = Ref m
-  {-# INLINABLE newRef #-}
+  {-# INLINEABLE newRef #-}
   newRef = lift . newRef
-  {-# INLINABLE readRef #-}
+  {-# INLINEABLE readRef #-}
   readRef = lift . readRef
-  {-# INLINABLE writeRef #-}
+  {-# INLINEABLE writeRef #-}
   writeRef r = lift . writeRef r
 
 instance MonadAtomicRef m => MonadAtomicRef (TriggerEventT t m) where
-  {-# INLINABLE atomicModifyRef #-}
+  {-# INLINEABLE atomicModifyRef #-}
   atomicModifyRef r = lift . atomicModifyRef r
 
 instance MonadSample t m => MonadSample t (TriggerEventT t m) where
-  {-# INLINABLE sample #-}
+  {-# INLINEABLE sample #-}
   sample = lift . sample
 
 instance MonadHold t m => MonadHold t (TriggerEventT t m) where
-  {-# INLINABLE hold #-}
+  {-# INLINEABLE hold #-}
   hold v0 v' = lift $ hold v0 v'
-  {-# INLINABLE holdDyn #-}
+  {-# INLINEABLE holdDyn #-}
   holdDyn v0 v' = lift $ holdDyn v0 v'
-  {-# INLINABLE holdIncremental #-}
+  {-# INLINEABLE holdIncremental #-}
   holdIncremental v0 v' = lift $ holdIncremental v0 v'
-  {-# INLINABLE buildDynamic #-}
+  {-# INLINEABLE buildDynamic #-}
   buildDynamic a0 = lift . buildDynamic a0
-  {-# INLINABLE headE #-}
+  {-# INLINEABLE headE #-}
   headE = lift . headE
-  {-# INLINABLE now #-}
+  {-# INLINEABLE now #-}
   now = lift now
 
 instance Adjustable t m => Adjustable t (TriggerEventT t m) where
-  {-# INLINABLE runWithReplace #-}
+  {-# INLINEABLE runWithReplace #-}
   runWithReplace (TriggerEventT a0) a' = TriggerEventT $ runWithReplace a0 (coerceEvent a')
-  {-# INLINABLE traverseIntMapWithKeyWithAdjust #-}
+  {-# INLINEABLE traverseIntMapWithKeyWithAdjust #-}
   traverseIntMapWithKeyWithAdjust f dm0 dm' = TriggerEventT $ traverseIntMapWithKeyWithAdjust (coerce . f) dm0 dm'
-  {-# INLINABLE traverseDMapWithKeyWithAdjust #-}
+  {-# INLINEABLE traverseDMapWithKeyWithAdjust #-}
   traverseDMapWithKeyWithAdjust f dm0 dm' = TriggerEventT $ traverseDMapWithKeyWithAdjust (coerce . f) dm0 dm'
-  {-# INLINABLE traverseDMapWithKeyWithAdjustWithMove #-}
+  {-# INLINEABLE traverseDMapWithKeyWithAdjustWithMove #-}
   traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = TriggerEventT $ traverseDMapWithKeyWithAdjustWithMove (coerce . f) dm0 dm'
 
 -- TODO: Monoid and Semigroup can likely be derived once ReaderT has them.
@@ -155,7 +155,6 @@ instance (Monoid a, Applicative m) => Monoid (TriggerEventT t m a) where
 
 instance (S.Semigroup a, Applicative m) => S.Semigroup (TriggerEventT t m a) where
   (<>) = liftA2 (S.<>)
-
 
 -- | Retrieve the current 'Chan'; event trigger invocations pushed into it will
 -- be fired.

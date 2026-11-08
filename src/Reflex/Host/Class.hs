@@ -26,16 +26,14 @@ module Reflex.Host.Class
   , fireEventRefAndRead
   ) where
 
-import Reflex.Class
-
 import Control.Monad.Fix
 import Control.Monad.Identity
 import Control.Monad.Ref
 import Control.Monad.Trans
 import Control.Monad.Trans.Cont (ContT)
 import Control.Monad.Trans.Except (ExceptT)
-import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.RWS (RWST)
+import Control.Monad.Trans.Reader (ReaderT)
 import Control.Monad.Trans.State (StateT)
 import qualified Control.Monad.Trans.State.Strict as Strict
 import Control.Monad.Trans.Writer (WriterT)
@@ -43,15 +41,20 @@ import Data.Dependent.Sum (DSum (..))
 import Data.GADT.Compare
 import Data.Kind (Type)
 
+import Reflex.Class
+
 -- | Framework implementation support class for the reflex implementation
 -- represented by @t@.
-class ( Reflex t
-      , MonadReflexCreateTrigger t (HostFrame t)
-      , MonadSample t (HostFrame t)
-      , MonadHold t (HostFrame t)
-      , MonadFix (HostFrame t)
-      , MonadSubscribeEvent t (HostFrame t)
-      ) => ReflexHost t where
+class
+  ( Reflex t
+  , MonadReflexCreateTrigger t (HostFrame t)
+  , MonadSample t (HostFrame t)
+  , MonadHold t (HostFrame t)
+  , MonadFix (HostFrame t)
+  , MonadSubscribeEvent t (HostFrame t)
+  ) =>
+  ReflexHost t
+  where
   type EventTrigger t :: Type -> Type
   type EventHandle t :: Type -> Type
   type HostFrame t :: Type -> Type
@@ -105,17 +108,23 @@ class (Applicative m, Monad m) => MonadReflexCreateTrigger t m | m -> t where
   -- is executed, the event may still be set up again in the future. Also, the
   -- setup and teardown actions must not run a frame.
   newEventWithTrigger :: (EventTrigger t a -> IO (IO ())) -> m (Event t a)
+
   newFanEventWithTrigger :: GCompare k => (forall a. k a -> EventTrigger t a -> IO (IO ())) -> m (EventSelector t k)
 
 -- | 'MonadReflexHost' designates monads that can run reflex frames.
-class ( ReflexHost t
-      , MonadReflexCreateTrigger t m
-      , MonadSubscribeEvent t m
-      , MonadReadEvent t (ReadPhase m)
-      , MonadSample t (ReadPhase m)
-      , MonadHold t (ReadPhase m)
-      ) => MonadReflexHost t m | m -> t where
+class
+  ( ReflexHost t
+  , MonadReflexCreateTrigger t m
+  , MonadSubscribeEvent t m
+  , MonadReadEvent t (ReadPhase m)
+  , MonadSample t (ReadPhase m)
+  , MonadHold t (ReadPhase m)
+  ) =>
+  MonadReflexHost t m
+    | m -> t
+  where
   type ReadPhase m :: Type -> Type
+
   -- | Propagate some events firings and read the values of events afterwards.
   --
   -- This function will create a new frame to fire the given events. It will
@@ -190,7 +199,6 @@ fireEventRefAndRead mtRef input e = do
         Nothing -> return Nothing
         Just getValue -> fmap Just getValue
 
-
 --------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
@@ -231,7 +239,6 @@ instance MonadReflexHost t m => MonadReflexHost t (StateT s m) where
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   runHostFrame = lift . runHostFrame
 
-
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (Strict.StateT s m) where
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
@@ -243,8 +250,6 @@ instance MonadReflexHost t m => MonadReflexHost t (Strict.StateT s m) where
   type ReadPhase (Strict.StateT s m) = ReadPhase m
   fireEventsAndRead dm a = lift $ fireEventsAndRead dm a
   runHostFrame = lift . runHostFrame
-
-
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ContT r m) where
   newEventWithTrigger = lift . newEventWithTrigger

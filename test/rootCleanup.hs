@@ -1,10 +1,11 @@
 import Control.Concurrent
 import Control.Monad
 import Data.IORef
-import Reflex
-import Reflex.Host.Class
 import System.Exit
 import System.Mem
+
+import Reflex
+import Reflex.Host.Class
 
 main :: IO ()
 main = do

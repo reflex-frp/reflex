@@ -19,7 +19,6 @@ module Reflex.Query.Class
   , QueryMorphism (..)
   , SelectedCount (..)
   , combineSelectedCounts
-
   , MonadQuery (..)
   , tellQueryDyn
   , queryDyn
@@ -36,10 +35,10 @@ import Data.Data
 import Data.Ix
 import Data.Kind (Type)
 import Data.Map.Monoidal (MonoidalMap)
-import qualified Data.Map.Monoidal as MonoidalMap
+import qualified Data.Map.Monoidal as MMap
+import Data.Monoid hiding ((<>))
 import Data.Semigroup.Commutative
 import Data.Void
-import Data.Monoid hiding ((<>))
 import Foreign.Storable
 
 #if !MIN_VERSION_base(4,18,0)
@@ -59,7 +58,7 @@ class (Monoid (QueryResult a), Semigroup (QueryResult a)) => Query a where
 
 instance (Ord k, Query v) => Query (MonoidalMap k v) where
   type QueryResult (MonoidalMap k v) = MonoidalMap k (QueryResult v)
-  crop q r = MonoidalMap.intersectionWith (flip crop) r q
+  crop q r = MMap.intersectionWith (flip crop) r q
 
 -- | the result of two queries is both results.
 instance (Query a, Query b) => Query (a, b) where
@@ -101,10 +100,11 @@ data QueryMorphism q q' = QueryMorphism
 
 instance Category QueryMorphism where
   id = QueryMorphism id id
-  qm . qm' = QueryMorphism
-    { _queryMorphism_mapQuery = mapQuery qm . mapQuery qm'
-    , _queryMorphism_mapQueryResult = mapQueryResult qm' . mapQueryResult qm
-    }
+  qm . qm' =
+    QueryMorphism
+      { _queryMorphism_mapQuery = mapQuery qm . mapQuery qm'
+      , _queryMorphism_mapQueryResult = mapQueryResult qm' . mapQueryResult qm
+      }
 
 -- | Apply a 'QueryMorphism' to a 'Query'
 mapQuery :: QueryMorphism q q' -> q -> q'
@@ -116,8 +116,8 @@ mapQueryResult = _queryMorphism_mapQueryResult
 
 -- | This type can be used to track of the frequency of interest in a given 'Query'. See note on
 -- 'combineSelectedCounts'
-newtype SelectedCount = SelectedCount { unSelectedCount :: Int }
-  deriving (Eq, Ord, Show, Read, Integral, Num, Bounded, Enum, Real, Ix, Bits, FiniteBits, Storable, Data)
+newtype SelectedCount = SelectedCount {unSelectedCount :: Int}
+  deriving (Bits, Bounded, Data, Enum, Eq, FiniteBits, Integral, Ix, Num, Ord, Read, Real, Show, Storable)
 
 instance Semigroup SelectedCount where
   SelectedCount a <> SelectedCount b = SelectedCount (a + b)

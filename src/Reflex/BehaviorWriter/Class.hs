@@ -1,22 +1,23 @@
-{-|
-Module: Reflex.BehaviorWriter.Class
-Description: This module defines the 'BehaviorWriter' class
--}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- |
+-- Module: Reflex.BehaviorWriter.Class
+-- Description: This module defines the 'BehaviorWriter' class
 module Reflex.BehaviorWriter.Class
   ( MonadBehaviorWriter
-  , BehaviorWriter(..)
+  , BehaviorWriter (..)
   ) where
 
 import Control.Monad.Reader (ReaderT, lift)
+
 import Reflex.Class (Behavior)
 
 {-# DEPRECATED MonadBehaviorWriter "Use 'BehaviorWriter' instead" #-}
+
 -- | Type synonym for 'BehaviorWriter'
 type MonadBehaviorWriter = BehaviorWriter
 

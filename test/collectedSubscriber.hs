@@ -1,9 +1,13 @@
 {-# LANGUAGE LambdaCase #-}
+
 -- | Regression tests for space leaks & useless propagation. When the only
 -- subscriber of an event is garbage collected instead of unsubscribed, the
 -- event must still unsubscribe from its parent; otherwise the subscriptions up
 -- to the root stay alive for as long as the application keeps a reference to
 -- the event.
+module Main where
+
+import Control.Concurrent (newEmptyMVar, putMVar, tryTakeMVar, yield)
 import Control.Exception (evaluate)
 import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
@@ -13,15 +17,14 @@ import Data.Functor.Misc (Const2 (..))
 import Data.IORef (modifyIORef', newIORef, readIORef, writeIORef)
 import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
-import Control.Concurrent (newEmptyMVar, putMVar, tryTakeMVar, yield)
-import System.Mem.Weak (mkWeakPtr)
 import System.Mem (performMajorGC)
+import System.Mem.Weak (mkWeakPtr)
+import Test.Tasty (defaultMain, testGroup)
+import Test.Tasty.HUnit
 
 import Reflex
 import Reflex.Host.Class
 import qualified Reflex.Spider.Internal as S
-import Test.Tasty (defaultMain, testGroup)
-import Test.Tasty.HUnit
 
 type T = SpiderTimeline Global
 
@@ -58,42 +61,47 @@ collectAndSettle = do
   writeIORef sentinel ()
   performMajorGC
   let spin :: Int -> IO ()
-      spin retries = tryTakeMVar done >>= \case
-        Just () -> pure ()
-        Nothing
-          | retries <= 0 -> putStrLn "  warning: sentinel finalizer did not run"
-          | otherwise -> yield >> performMajorGC >> spin (retries - 1)
+      spin retries =
+        tryTakeMVar done >>= \case
+          Just () -> pure ()
+          Nothing
+            | retries <= 0 -> putStrLn "  warning: sentinel finalizer did not run"
+            | otherwise -> yield >> performMajorGC >> spin (retries - 1)
   spin 1000
   _ <- evaluate weakSentinel
   pure ()
 
 main :: IO ()
-main = defaultMain $ testGroup "events unsubscribe from parent after GC of last subscriber"
-  [ testCase "cacheEvent" $
-      collectTheOnlySubscriber $ \root ->
-        let cached = S.SpiderEvent $ S.cacheEvent $ S.unSpiderEvent root
-        in (cached, cached)
-  , testCase "merge" $
-      collectTheOnlySubscriber $ \root ->
-        let merged = leftmost [root]
-        in (merged, merged)
-  -- For fan/fanInt we want unsubscribing from the parent even if the event selector is retained:
-  , testCase "fan" $
-      collectTheOnlySubscriber $ \root ->
-        let selector = fanMap $ fmapCheap (Map.singleton (0 :: Int)) root
-        in (select selector (Const2 0), selector)
-  , testCase "fanInt" $
-      collectTheOnlySubscriber $ \root ->
-        let selector = fanInt $ fmapCheap (IntMap.singleton 0) root
-        in (selectInt selector 0, selector)
-  , testCase "root" $
-      collectTheOnlySubscriber $ \root -> (root, root)
-  , testCase "switch" $
-      collectTheOnlySubscriber $ \root ->
-        let switched = switch (constant root)
-        in (switched, switched)
-  , testCase "coincidence" $
-      collectTheOnlySubscriber $ \root ->
-        let inner = coincidence (fmapCheap (const root) root)
-        in (inner, inner)
-  ]
+main =
+  defaultMain $
+    testGroup
+      "events unsubscribe from parent after GC of last subscriber"
+      [ testCase "cacheEvent" $
+          collectTheOnlySubscriber $ \root ->
+            let cached = S.SpiderEvent $ S.cacheEvent $ S.unSpiderEvent root
+            in (cached, cached)
+      , testCase "merge" $
+          collectTheOnlySubscriber $ \root ->
+            let merged = leftmost [root]
+            in (merged, merged)
+      , -- For fan/fanInt we want unsubscribing from the parent even if the event selector is retained:
+        testCase "fan" $
+          collectTheOnlySubscriber $ \root ->
+            let selector = fanMap $ fmapCheap (Map.singleton (0 :: Int)) root
+            in (select selector (Const2 0), selector)
+      , testCase "fanInt" $
+          collectTheOnlySubscriber $ \root ->
+            let selector = fanInt $ fmapCheap (IntMap.singleton 0) root
+            in (selectInt selector 0, selector)
+      , testCase "root" $
+          collectTheOnlySubscriber $
+            \root -> (root, root)
+      , testCase "switch" $
+          collectTheOnlySubscriber $ \root ->
+            let switched = switch (constant root)
+            in (switched, switched)
+      , testCase "coincidence" $
+          collectTheOnlySubscriber $ \root ->
+            let inner = coincidence (fmapCheap (const root) root)
+            in (inner, inner)
+      ]

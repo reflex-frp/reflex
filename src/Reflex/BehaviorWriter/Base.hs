@@ -1,7 +1,3 @@
-{-|
-Module: Reflex.BehaviorWriter.Base
-Description: Implementation of BehaviorWriter
--}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -9,11 +5,14 @@ Description: Implementation of BehaviorWriter
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
+-- |
+-- Module: Reflex.BehaviorWriter.Base
+-- Description: Implementation of BehaviorWriter
 module Reflex.BehaviorWriter.Base
   ( BehaviorWriterT (..)
   , runBehaviorWriterT
@@ -21,7 +20,7 @@ module Reflex.BehaviorWriter.Base
   ) where
 
 import Control.Monad
-import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.IO.Class
@@ -42,9 +41,9 @@ import Data.Some (Some)
 import Control.Monad.Identity
 #endif
 
-import Reflex.Class
 import Reflex.Adjustable.Class
 import Reflex.BehaviorWriter.Class
+import Reflex.Class
 import Reflex.Host.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
@@ -53,21 +52,21 @@ import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
 -- | A basic implementation of 'BehaviorWriter'.
-newtype BehaviorWriterT t w m a = BehaviorWriterT { unBehaviorWriterT :: StateT [Behavior t w] m a }
+newtype BehaviorWriterT t w m a = BehaviorWriterT {unBehaviorWriterT :: StateT [Behavior t w] m a}
   -- The list is kept in reverse order
   deriving
-    ( Functor
-    , Applicative
-    , Monad
-    , MonadTrans
+    ( Applicative
+    , Functor
     , MFunctor
-    , MonadIO
-    , MonadFix
+    , Monad
     , MonadAsyncException
-    , MonadException
     , MonadCatch
-    , MonadThrow
+    , MonadException
+    , MonadFix
+    , MonadIO
     , MonadMask
+    , MonadThrow
+    , MonadTrans
     )
 
 -- | Run a 'BehaviorWriterT' action.  The behavior writer output will be provided
@@ -78,10 +77,11 @@ runBehaviorWriterT (BehaviorWriterT a) = do
   return (result, mconcat $ reverse ws)
 
 -- | Map a function over the output of a 'BehaviorWriterT'.
-withBehaviorWriterT :: (Monoid w, Monoid w', Reflex t, MonadHold t m)
-                   => (w -> w')
-                   -> BehaviorWriterT t w m a
-                   -> BehaviorWriterT t w' m a
+withBehaviorWriterT
+  :: (Monoid w, Monoid w', Reflex t, MonadHold t m)
+  => (w -> w')
+  -> BehaviorWriterT t w m a
+  -> BehaviorWriterT t w' m a
 withBehaviorWriterT f dw = do
   (r, d) <- lift $ do
     (r, d) <- runBehaviorWriterT dw
@@ -151,8 +151,8 @@ instance (Adjustable t m, Monoid w, MonadHold t m, Reflex t) => Adjustable t (Be
   traverseDMapWithKeyWithAdjustWithMove = traverseDMapWithKeyWithAdjustImpl traverseDMapWithKeyWithAdjustWithMove mapPatchDMapWithMove weakenPatchDMapWithMoveWith
 
 traverseIntMapWithKeyWithAdjustImpl
-  :: forall t w v' p p' v m.
-     ( PatchTarget (p' (Behavior t w)) ~ IntMap (Behavior t w)
+  :: forall t w v' p p' v m
+   . ( PatchTarget (p' (Behavior t w)) ~ IntMap (Behavior t w)
      , Patch (p' (Behavior t w))
      , Monoid w
      , Reflex t
@@ -160,10 +160,10 @@ traverseIntMapWithKeyWithAdjustImpl
      , Functor p
      , p ~ p'
      )
-  => (   (IntMap.Key -> v -> m (v', Behavior t w))
-      -> IntMap v
-      -> Event t (p v)
-      -> m (IntMap (v', Behavior t w), Event t (p (v', Behavior t w)))
+  => ( (IntMap.Key -> v -> m (v', Behavior t w))
+       -> IntMap v
+       -> Event t (p v)
+       -> m (IntMap (v', Behavior t w), Event t (p (v', Behavior t w)))
      )
   -> (IntMap.Key -> v -> BehaviorWriterT t w m v')
   -> IntMap v
@@ -185,17 +185,17 @@ traverseIntMapWithKeyWithAdjustImpl base f (dm0 :: IntMap v) dm' = do
 newtype BehaviorWriterTLoweredResult t w v a = BehaviorWriterTLoweredResult (v a, Behavior t w)
 
 traverseDMapWithKeyWithAdjustImpl
-  :: forall t w k v' p p' v m.
-     ( PatchTarget (p' (Some k) (Behavior t w)) ~ Map (Some k) (Behavior t w)
+  :: forall t w k v' p p' v m
+   . ( PatchTarget (p' (Some k) (Behavior t w)) ~ Map (Some k) (Behavior t w)
      , Patch (p' (Some k) (Behavior t w))
      , Monoid w
      , Reflex t
      , MonadHold t m
      )
-  => (   (forall a. k a -> v a -> m (BehaviorWriterTLoweredResult t w v' a))
-      -> DMap k v
-      -> Event t (p k v)
-      -> m (DMap k (BehaviorWriterTLoweredResult t w v'), Event t (p k (BehaviorWriterTLoweredResult t w v')))
+  => ( (forall a. k a -> v a -> m (BehaviorWriterTLoweredResult t w v' a))
+       -> DMap k v
+       -> Event t (p k v)
+       -> m (DMap k (BehaviorWriterTLoweredResult t w v'), Event t (p k (BehaviorWriterTLoweredResult t w v')))
      )
   -> ((forall a. BehaviorWriterTLoweredResult t w v' a -> v' a) -> p k (BehaviorWriterTLoweredResult t w v') -> p k v')
   -> ((forall a. BehaviorWriterTLoweredResult t w v' a -> Behavior t w) -> p k (BehaviorWriterTLoweredResult t w v') -> p' (Some k) (Behavior t w))
