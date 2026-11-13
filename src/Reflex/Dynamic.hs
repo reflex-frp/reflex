@@ -5,7 +5,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecursiveDo #-}
@@ -14,6 +13,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 -- |
 -- Module:
@@ -62,8 +62,10 @@ module Reflex.Dynamic
   , Demux
   , demux
   , demuxed
+
     -- * Miscellaneous
-    -- Things that probably aren't very useful:
+
+  -- Things that probably aren't very useful:
   , HList (..)
   , FHList (..)
   , collectDynPure
@@ -72,6 +74,7 @@ module Reflex.Dynamic
   , AllAreFunctors (..)
   , HListPtr (..)
   , distributeFHListOverDynPure
+
     -- * Unsafe
   , unsafeDynamic
   ) where
@@ -91,7 +94,6 @@ import Data.Map (Map)
 import Data.Maybe
 import Data.These
 import Data.Type.Equality ((:~:) (..))
-
 import Debug.Trace (trace)
 
 #if !MIN_VERSION_base(4,18,0)
@@ -166,7 +168,7 @@ foldDynMaybeM = accumMaybeMDyn . flip
 
 -- | Create a new 'Dynamic' that counts the occurrences of the 'Event'.
 count :: (Reflex t, MonadHold t m, MonadFix m, Num b) => Event t a -> m (Dynamic t b)
-count e = holdDyn 0 =<< zipListWithEvent const (iterate (+1) 1) e
+count e = holdDyn 0 =<< zipListWithEvent const (iterate (+ 1) 1) e
 
 -- | Create a new 'Dynamic' using the initial value that flips its
 -- value every time the 'Event' occurs.
@@ -209,7 +211,7 @@ distributeMapOverDynPure = fmap dmapToMap . distributeDMapOverDynPure . mapWithF
 
 -- | Convert an 'IntMap' with 'Dynamic' elements into a 'Dynamic' of an 'IntMap' with
 -- non-'Dynamic' elements.
-distributeIntMapOverDynPure :: (Reflex t) => IntMap (Dynamic t v) -> Dynamic t (IntMap v)
+distributeIntMapOverDynPure :: Reflex t => IntMap (Dynamic t v) -> Dynamic t (IntMap v)
 distributeIntMapOverDynPure = fmap dmapToIntMap . distributeDMapOverDynPure . intMapWithFunctorToDMap
 
 -- | Convert a list with 'Dynamic' elements into a 'Dynamic' of a list with
@@ -218,7 +220,8 @@ distributeIntMapOverDynPure = fmap dmapToIntMap . distributeDMapOverDynPure . in
 distributeListOverDynPure :: Reflex t => [Dynamic t v] -> Dynamic t [v]
 distributeListOverDynPure = distributeListOverDyn
 
---TODO: Generalize this to functors other than Maps
+-- TODO: Generalize this to functors other than Maps
+
 -- | Combine a 'Dynamic' of a 'Map' of 'Dynamic's into a 'Dynamic'
 -- with the current values of the 'Dynamic's in a map.
 joinDynThroughMap :: forall t k a. (Reflex t, Ord k) => Dynamic t (Map k (Dynamic t a)) -> Dynamic t (Map k a)
@@ -226,7 +229,7 @@ joinDynThroughMap = (distributeMapOverDynPure =<<)
 
 -- | Combine a 'Dynamic' of an 'IntMap' of 'Dynamic's into a 'Dynamic'
 -- with the current values of the 'Dynamic's in a map.
-joinDynThroughIntMap :: forall t a. (Reflex t) => Dynamic t (IntMap (Dynamic t a)) -> Dynamic t (IntMap a)
+joinDynThroughIntMap :: forall t a. Reflex t => Dynamic t (IntMap (Dynamic t a)) -> Dynamic t (IntMap a)
 joinDynThroughIntMap = (distributeIntMapOverDynPure =<<)
 
 -- | Print the value of the 'Dynamic' when it is first read and on each
@@ -302,39 +305,44 @@ attachPromptlyDynWithMaybe f d e =
 -- outer constructor changes back to 'Nothing'.
 maybeDyn :: forall t a m. (Reflex t, MonadFix m, MonadHold t m) => Dynamic t (Maybe a) -> m (Dynamic t (Maybe (Dynamic t a)))
 maybeDyn = fmap (fmap unpack) . eitherDyn . fmap pack
-  where pack = \case
-          Nothing -> Left ()
-          Just a -> Right a
-        unpack = \case
-          Left _ -> Nothing
-          Right a -> Just a
+  where
+    pack = \case
+      Nothing -> Left ()
+      Just a -> Right a
+    unpack = \case
+      Left _ -> Nothing
+      Right a -> Just a
 
 -- | Turns a 'Dynamic t (Either a b)' into a 'Dynamic t (Either (Dynamic t a) (Dynamic t b))' such that
 -- the outer 'Dynamic' is updated only when the 'Either' constructor changes (e.g., from 'Left' to 'Right').
 eitherDyn :: forall t a b m. (Reflex t, MonadFix m, MonadHold t m) => Dynamic t (Either a b) -> m (Dynamic t (Either (Dynamic t a) (Dynamic t b)))
 eitherDyn = fmap (fmap unpack) . factorDyn . fmap eitherToDSum
-  where unpack :: DSum (EitherTag a b) (Compose (Dynamic t) Identity) -> Either (Dynamic t a) (Dynamic t b)
-        unpack = \case
-          LeftTag :=> Compose a -> Left $ coerceDynamic a
-          RightTag :=> Compose b -> Right $ coerceDynamic b
+  where
+    unpack :: DSum (EitherTag a b) (Compose (Dynamic t) Identity) -> Either (Dynamic t a) (Dynamic t b)
+    unpack = \case
+      LeftTag :=> Compose a -> Left $ coerceDynamic a
+      RightTag :=> Compose b -> Right $ coerceDynamic b
 
 -- | Factor a 'Dynamic t DSum' into a 'Dynamic' 'DSum' containing nested 'Dynamic' values.
 -- The outer 'Dynamic' updates only when the key of the 'DSum' changes, while the update of the inner
 -- 'Dynamic' represents updates within the current key.
-factorDyn :: forall t m k v. (Reflex t, MonadHold t m, GEq k)
-          => Dynamic t (DSum k v) -> m (Dynamic t (DSum k (Compose (Dynamic t) v)))
-factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
-  update :: Event t (DSum k (Compose (Dynamic t) v))
-  update = flip push (updated d) $ \(newKey :=> newVal) -> do
-     (oldKey :=> _) <- sample (current d)
-     case newKey `geq` oldKey of
-      Just Refl -> return Nothing
-      Nothing -> Just <$> holdKey (newKey :=> newVal)
+factorDyn
+  :: forall t m k v
+   . (Reflex t, MonadHold t m, GEq k)
+  => Dynamic t (DSum k v) -> m (Dynamic t (DSum k (Compose (Dynamic t) v)))
+factorDyn d = buildDynamic (sample (current d) >>= holdKey) update
+  where
+    update :: Event t (DSum k (Compose (Dynamic t) v))
+    update = flip push (updated d) $ \(newKey :=> newVal) -> do
+      (oldKey :=> _) <- sample (current d)
+      case newKey `geq` oldKey of
+        Just Refl -> return Nothing
+        Nothing -> Just <$> holdKey (newKey :=> newVal)
 
-  holdKey (k :=> v) = do
-    inner' <- filterEventKey k (updated d)
-    inner <- holdDyn v inner'
-    return $ k :=> Compose inner
+    holdKey (k :=> v) = do
+      inner' <- filterEventKey k (updated d)
+      inner <- holdDyn v inner'
+      return $ k :=> Compose inner
 
 --------------------------------------------------------------------------------
 -- Demux
@@ -351,19 +359,31 @@ factorDyn d = buildDynamic (sample (current d) >>= holdKey) update  where
 --
 -- However, when 'demuxed' is used multiple times, the complexity is only
 -- /O(log(n))/, rather than /O(n)/ for fmap.
-data Demux t k = Demux { demuxValue :: Behavior t k
-                       , demuxSelector :: EventSelector t (Const2 k Bool)
-                       }
+data Demux t k = Demux
+  { demuxValue :: Behavior t k
+  , demuxSelector :: EventSelector t (Const2 k Bool)
+  }
 
 -- | Demultiplex an input value to a 'Demux' with many outputs.  At any given
 -- time, whichever output is indicated by the given 'Dynamic' will be 'True'.
 demux :: (Reflex t, Ord k) => Dynamic t k -> Demux t k
-demux k = Demux (current k)
-                (fan $ attachWith (\k0 k1 -> if k0 == k1
-                                                then DMap.empty
-                                                else DMap.fromList [Const2 k0 :=> Identity False,
-                                                                    Const2 k1 :=> Identity True])
-                                  (current k) (updated k))
+demux k =
+  Demux
+    (current k)
+    ( fan $
+        attachWith
+          ( \k0 k1 ->
+              if k0 == k1
+                then DMap.empty
+                else
+                  DMap.fromList
+                    [ Const2 k0 :=> Identity False
+                    , Const2 k1 :=> Identity True
+                    ]
+          )
+          (current k)
+          (updated k)
+    )
 
 -- | Select a particular output of the 'Demux'; this is equivalent to (but much
 -- faster than) mapping over the original 'Dynamic' and checking whether it is
@@ -371,19 +391,19 @@ demux k = Demux (current k)
 demuxed :: (Reflex t, Eq k) => Demux t k -> k -> Dynamic t Bool
 demuxed d k =
   let e = select (demuxSelector d) (Const2 k)
-  in unsafeBuildDynamic (fmap (==k) $ sample $ demuxValue d) e
+  in unsafeBuildDynamic (fmap (== k) $ sample $ demuxValue d) e
 
 --------------------------------------------------------------------------------
 -- collectDyn
 --------------------------------------------------------------------------------
 
---TODO: This whole section is badly in need of cleanup
+-- TODO: This whole section is badly in need of cleanup
 
 -- | A heterogeneous list whose type and length are fixed statically.  This is
 -- reproduced from the 'HList' package due to integration issues, and because
 -- very little other functionality from that library is needed.
-data HList (l::[Type]) where
-  HNil  :: HList '[]
+data HList (l :: [Type]) where
+  HNil :: HList '[]
   HCons :: e -> HList l -> HList (e ': l)
 
 infixr 2 `HCons`
@@ -399,18 +419,22 @@ hRevApp (HCons x l) l' = hRevApp l (HCons x l')
 hReverse :: HList l -> HList (HRevApp l '[])
 hReverse l = hRevApp l HNil
 
-hBuild :: (HBuild' '[] r) => r
-hBuild =  hBuild' HNil
+hBuild :: HBuild' '[] r => r
+hBuild = hBuild' HNil
 
 class HBuild' l r where
-    hBuild' :: HList l -> r
+  hBuild' :: HList l -> r
 
-instance (l' ~ HRevApp l '[])
-      => HBuild' l (HList l') where
+instance
+  l' ~ HRevApp l '[]
+  => HBuild' l (HList l')
+  where
   hBuild' = hReverse
 
-instance HBuild' (a ': l) r
-      => HBuild' l (a->r) where
+instance
+  HBuild' (a ': l) r
+  => HBuild' l (a -> r)
+  where
   hBuild' l x = hBuild' (HCons x l)
 
 -- | Like 'HList', but with a functor wrapping each element.
@@ -440,10 +464,11 @@ deriving instance Ord (HListPtr l a)
 
 fhlistToDMap :: forall (f :: Type -> Type) l. FHList f l -> DMap (HListPtr l) f
 fhlistToDMap = DMap.fromList . go
-  where go :: forall l'. FHList f l' -> [DSum (HListPtr l') f]
-        go = \case
-          FHNil -> []
-          FHCons h t -> (HHeadPtr :=> h) : map (\(p :=> v) -> HTailPtr p :=> v) (go t)
+  where
+    go :: forall l'. FHList f l' -> [DSum (HListPtr l') f]
+    go = \case
+      FHNil -> []
+      FHCons h t -> (HHeadPtr :=> h) : map (\(p :=> v) -> HTailPtr p :=> v) (go t)
 
 -- | This class allows 'HList's and 'FHlist's to be built from regular lists;
 -- they must be contiguous and sorted.
@@ -461,11 +486,16 @@ instance RebuildSortedHList '[] where
 
 instance RebuildSortedHList t => RebuildSortedHList (h ': t) where
   rebuildSortedFHList l = case l of
-    ((HHeadPtr :=> h) : t) -> FHCons h . rebuildSortedFHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
+    ((HHeadPtr :=> h) : t) -> FHCons h . rebuildSortedFHList . map fromTailPtr $ t
     _ -> error "rebuildSortedFHList{h':t}: non-empty list with HHeadPtr expected"
   rebuildSortedHList l = case l of
-    ((HHeadPtr :=> Identity h) : t) -> HCons h . rebuildSortedHList . map (\(HTailPtr p :=> v) -> p :=> v) $ t
+    ((HHeadPtr :=> Identity h) : t) -> HCons h . rebuildSortedHList . map fromTailPtr $ t
     _ -> error "rebuildSortedHList{h':t}: non-empty list with HHeadPtr expected"
+
+-- | Change the key of an element of the list for @h ': t@ into a key for @t@.
+fromTailPtr :: DSum (HListPtr (h ': t)) f -> DSum (HListPtr t) f
+fromTailPtr (HTailPtr p :=> v) = p :=> v
+fromTailPtr (HHeadPtr :=> _) = error "rebuildSortedHList{h':t}: HHeadPtr after the first element"
 
 dmapToHList :: forall l. RebuildSortedHList l => DMap (HListPtr l) Identity -> HList l
 dmapToHList = rebuildSortedHList . DMap.toList
@@ -487,29 +517,26 @@ instance AllAreFunctors f '[] where
   type FunctorList f '[] = '[]
   toFHList l = case l of
     HNil -> FHNil
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
   fromFHList FHNil = HNil
 
 instance AllAreFunctors f t => AllAreFunctors f (h ': t) where
   type FunctorList f (h ': t) = f h ': FunctorList f t
   toFHList l = case l of
     a `HCons` b -> a `FHCons` toFHList b
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "toFHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
   fromFHList (a `FHCons` b) = a `HCons` fromFHList b
 
 -- | Convert a datastructure whose constituent parts are all 'Dynamic's into a
 -- single 'Dynamic' whose value represents all the current values of the input's
 -- constituent 'Dynamic's.
-collectDynPure :: ( RebuildSortedHList (HListElems b)
-                  , IsHList a, IsHList b
-                  , AllAreFunctors (Dynamic t) (HListElems b)
-                  , Reflex t
-                  , HListElems a ~ FunctorList (Dynamic t) (HListElems b)
-                  ) => a -> Dynamic t b
+collectDynPure
+  :: ( RebuildSortedHList (HListElems b)
+     , IsHList a
+     , IsHList b
+     , AllAreFunctors (Dynamic t) (HListElems b)
+     , Reflex t
+     , HListElems a ~ FunctorList (Dynamic t) (HListElems b)
+     )
+  => a -> Dynamic t b
 collectDynPure ds = fmap fromHList $ distributeFHListOverDynPure $ toFHList $ toHList ds
 
 -- | Poor man's 'Generic's for product types only.
@@ -523,24 +550,15 @@ instance IsHList (a, b) where
   toHList (a, b) = hBuild a b
   fromHList l = case l of
     a `HCons` b `HCons` HNil -> (a, b)
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
 
 instance IsHList (a, b, c, d) where
   type HListElems (a, b, c, d) = [a, b, c, d]
   toHList (a, b, c, d) = hBuild a b c d
   fromHList l = case l of
     a `HCons` b `HCons` c `HCons` d `HCons` HNil -> (a, b, c, d)
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif
 
 instance IsHList (a, b, c, d, e, f) where
   type HListElems (a, b, c, d, e, f) = [a, b, c, d, e, f]
   toHList (a, b, c, d, e, f) = hBuild a b c d e f
   fromHList l = case l of
     a `HCons` b `HCons` c `HCons` d `HCons` e `HCons` f `HCons` HNil -> (a, b, c, d, e, f)
-#if !defined(__GLASGOW_HASKELL__) || __GLASGOW_HASKELL__ < 800
-    _ -> error "fromHList: impossible" -- Otherwise, GHC complains of a non-exhaustive pattern match; see https://ghc.haskell.org/trac/ghc/ticket/4139
-#endif

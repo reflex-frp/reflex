@@ -19,15 +19,15 @@ module Reflex.Workflow
 import Control.Arrow ((***))
 import Control.Monad.Fix (MonadFix)
 
-import Reflex.Class
 import Reflex.Adjustable.Class
+import Reflex.Class
 import Reflex.Network
 import Reflex.NotReady.Class
 
 -- | A widget in a workflow
 --
 -- When the 'Event' returned by a 'Workflow' fires, the current 'Workflow' is replaced by the one inside the firing 'Event'. A series of 'Workflow's must share the same return type.
-newtype Workflow t m a = Workflow { unWorkflow :: m (a, Event t (Workflow t m a)) }
+newtype Workflow t m a = Workflow {unWorkflow :: m (a, Event t (Workflow t m a))}
 
 -- | Runs a 'Workflow' and returns the 'Dynamic' result of the 'Workflow' (i.e., a 'Dynamic' of the value produced by the current 'Workflow' node, and whose update 'Event' fires whenever one 'Workflow' is replaced by another).
 workflow :: forall t m a. (Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (Dynamic t a)

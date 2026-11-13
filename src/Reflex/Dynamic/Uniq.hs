@@ -29,12 +29,12 @@ import Reflex.Class
 -- unnecessary update propagation; this is much more efficient than performing
 -- full comparisons.  However, when the 'UniqDynamic' is converted back into a
 -- regular 'Dynamic', a full comparison is performed.
-newtype UniqDynamic t a = UniqDynamic { unUniqDynamic :: Dynamic t a }
+newtype UniqDynamic t a = UniqDynamic {unUniqDynamic :: Dynamic t a}
 
 -- | Construct a 'UniqDynamic' by eliminating redundant updates from a 'Dynamic'.
 uniqDynamic :: Reflex t => Dynamic t a -> UniqDynamic t a
 uniqDynamic d = UniqDynamic $ unsafeBuildDynamic (sample $ current d) $ flip pushCheap (updated d) $ \new -> do
-  old <- sample $ current d --TODO: Is it better to sample ourselves here?
+  old <- sample $ current d -- TODO: Is it better to sample ourselves here?
   return $ unsafeJustChanged old new
 
 -- | Retrieve a normal 'Dynamic' from a 'UniqDynamic'.  This will perform a
@@ -75,8 +75,8 @@ unsafePtrEq a b = case a `seq` b `seq` reallyUnsafePtrEquality# a b of
 unsafeJustChanged :: a -> a -> Maybe a
 unsafeJustChanged old new =
   if old `unsafePtrEq` new
-  then Nothing
-  else Just new
+    then Nothing
+    else Just new
 
 instance Reflex t => Accumulator t (UniqDynamic t) where
   accumMaybeM f z e = do

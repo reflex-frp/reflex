@@ -6,9 +6,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
 module Reflex.Query.Base
   ( QueryT (..)
@@ -20,7 +20,7 @@ module Reflex.Query.Base
   , mapQueryT
   ) where
 
-import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Morph
@@ -31,7 +31,7 @@ import Control.Monad.State.Strict
 import Data.Align
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
-import Data.Dependent.Sum (DSum(..))
+import Data.Dependent.Sum (DSum (..))
 import Data.Foldable
 import Data.Functor.Compose
 import Data.Functor.Misc
@@ -43,7 +43,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Semigroup as S
 import Data.Semigroup.Commutative
-import Data.Some (Some(Some))
+import Data.Some (Some (Some))
 import Data.These
 
 #if !MIN_VERSION_base(4,18,0)
@@ -51,21 +51,22 @@ import Control.Applicative (liftA2)
 import Data.Monoid ((<>))
 #endif
 
-import Reflex.Class
+import qualified Data.Patch.MapWithMove as MapWithMove
+
 import Reflex.Adjustable.Class
+import Reflex.Class
 import Reflex.DynamicWriter.Class
 import Reflex.EventWriter.Base
 import Reflex.EventWriter.Class
 import Reflex.Host.Class
-import qualified Data.Patch.MapWithMove as MapWithMove
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Query.Class
 import Reflex.Requester.Class
 import Reflex.TriggerEvent.Class
 
-newtype QueryT t q m a = QueryT { unQueryT :: StateT [Behavior t q] (EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m)) a }
-  deriving (Functor, Applicative, Monad, MonadException, MonadFix, MonadIO, MonadAtomicRef, MonadCatch, MonadThrow, MonadMask)
+newtype QueryT t q m a = QueryT {unQueryT :: StateT [Behavior t q] (EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m)) a}
+  deriving (Applicative, Functor, Monad, MonadAtomicRef, MonadCatch, MonadException, MonadFix, MonadIO, MonadMask, MonadThrow)
 
 deriving instance MonadHold t m => MonadHold t (QueryT t q m)
 deriving instance MonadSample t m => MonadSample t (QueryT t q m)
@@ -93,7 +94,7 @@ instance (Reflex t, MonadFix m, Group q, Commutative q, Query q, Eq q, MonadHold
     ((r0, bs0), r') <- QueryT $ lift $ runWithReplace (runStateT a0 []) $ fmapCheap (flip runStateT [] . unQueryT) a'
     let sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
         sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
-        bs' = fmapCheap snd $ r'
+        bs' = fmapCheap snd r'
     bbs <- hold bs0 bs'
     let patches = flip pushCheap bs' $ \newBs -> do
           oldBs <- sample bbs
@@ -108,20 +109,26 @@ instance (Reflex t, MonadFix m, Group q, Commutative q, Query q, Eq q, MonadHold
         f' k v = fmap QueryTLoweredResult $ flip runStateT [] $ unQueryT $ f k v
     (result0, result') <- QueryT $ lift $ traverseIntMapWithKeyWithAdjust f' im0 im'
     let liftedResult0 = IntMap.map getQueryTLoweredResultValue result0
-        liftedResult' = fforCheap result' $ \(PatchIntMap p) -> PatchIntMap $
-          IntMap.map (fmap getQueryTLoweredResultValue) p
+        liftedResult' = fforCheap result' $ \(PatchIntMap p) ->
+          PatchIntMap $
+            IntMap.map (fmap getQueryTLoweredResultValue) p
         liftedBs0 :: IntMap [Behavior t q]
         liftedBs0 = IntMap.map getQueryTLoweredResultWritten result0
         liftedBs' :: Event t (PatchIntMap [Behavior t q])
-        liftedBs' = fforCheap result' $ \(PatchIntMap p) -> PatchIntMap $
-          IntMap.map (fmap getQueryTLoweredResultWritten) p
+        liftedBs' = fforCheap result' $ \(PatchIntMap p) ->
+          PatchIntMap $
+            IntMap.map (fmap getQueryTLoweredResultWritten) p
         sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
         sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
-        accumBehaviors :: forall m'. MonadHold t m'
-                       => IntMap [Behavior t q]
-                       -> PatchIntMap [Behavior t q]
-                       -> m' ( Maybe (IntMap [Behavior t q])
-                             , Maybe (AdditivePatch q))
+        accumBehaviors
+          :: forall m'
+           . MonadHold t m'
+          => IntMap [Behavior t q]
+          -> PatchIntMap [Behavior t q]
+          -> m'
+               ( Maybe (IntMap [Behavior t q])
+               , Maybe (AdditivePatch q)
+               )
         -- f accumulates the child behavior state we receive from running traverseIntMapWithKeyWithAdjust for the underlying monad.
         -- When an update occurs, it also computes a patch to communicate to the parent QueryT state.
         -- bs0 is a Map denoting the behaviors of the current children.
@@ -147,26 +154,33 @@ instance (Reflex t, MonadFix m, Group q, Commutative q, Query q, Eq q, MonadHold
     tellQueryIncremental $ unsafeBuildIncremental (fold <$> mapM sampleBs liftedBs0) qpatch
     return (liftedResult0, liftedResult')
 
-  traverseDMapWithKeyWithAdjust :: forall (k :: Type -> Type) v v'. (GCompare k) => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> QueryT t q m (DMap k v', Event t (PatchDMap k v'))
+  traverseDMapWithKeyWithAdjust :: forall (k :: Type -> Type) v v'. GCompare k => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMap k v) -> QueryT t q m (DMap k v', Event t (PatchDMap k v'))
   traverseDMapWithKeyWithAdjust f dm0 dm' = do
     let f' :: forall a. k a -> v a -> EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m) (Compose (QueryTLoweredResult t q) v' a)
         f' k v = fmap (Compose . QueryTLoweredResult) $ flip runStateT [] $ unQueryT $ f k v
     (result0, result') <- QueryT $ lift $ traverseDMapWithKeyWithAdjust f' dm0 dm'
     let liftedResult0 = mapKeyValuePairsMonotonic (\(k :=> Compose r) -> k :=> getQueryTLoweredResultValue r) result0
-        liftedResult' = fforCheap result' $ \(PatchDMap p) -> PatchDMap $
-          mapKeyValuePairsMonotonic (\(k :=> ComposeMaybe mr) -> k :=> ComposeMaybe (fmap (getQueryTLoweredResultValue . getCompose) mr)) p
+        liftedResult' = fforCheap result' $ \(PatchDMap p) ->
+          PatchDMap $
+            mapKeyValuePairsMonotonic (\(k :=> ComposeMaybe mr) -> k :=> ComposeMaybe (fmap (getQueryTLoweredResultValue . getCompose) mr)) p
         liftedBs0 :: Map (Some k) [Behavior t q]
         liftedBs0 = Map.fromDistinctAscList $ (\(k :=> Compose r) -> (Some k, getQueryTLoweredResultWritten r)) <$> DMap.toList result0
         liftedBs' :: Event t (PatchMap (Some k) [Behavior t q])
-        liftedBs' = fforCheap result' $ \(PatchDMap p) -> PatchMap $
-          Map.fromDistinctAscList $ (\(k :=> ComposeMaybe mr) -> (Some k, fmap (getQueryTLoweredResultWritten . getCompose) mr)) <$> DMap.toList p
+        liftedBs' = fforCheap result' $ \(PatchDMap p) ->
+          PatchMap
+            $ Map.fromDistinctAscList
+            $ (\(k :=> ComposeMaybe mr) -> (Some k, fmap (getQueryTLoweredResultWritten . getCompose) mr)) <$> DMap.toList p
         sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
         sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
-        accumBehaviors :: forall m'. MonadHold t m'
-                       => Map (Some k) [Behavior t q]
-                       -> PatchMap (Some k) [Behavior t q]
-                       -> m' ( Maybe (Map (Some k) [Behavior t q])
-                             , Maybe (AdditivePatch q))
+        accumBehaviors
+          :: forall m'
+           . MonadHold t m'
+          => Map (Some k) [Behavior t q]
+          -> PatchMap (Some k) [Behavior t q]
+          -> m'
+               ( Maybe (Map (Some k) [Behavior t q])
+               , Maybe (AdditivePatch q)
+               )
         -- f accumulates the child behavior state we receive from running traverseDMapWithKeyWithAdjust for the underlying monad.
         -- When an update occurs, it also computes a patch to communicate to the parent QueryT state.
         -- bs0 is a Map denoting the behaviors of the current children.
@@ -192,7 +206,7 @@ instance (Reflex t, MonadFix m, Group q, Commutative q, Query q, Eq q, MonadHold
     tellQueryIncremental $ unsafeBuildIncremental (fold <$> mapM sampleBs liftedBs0) qpatch
     return (liftedResult0, liftedResult')
 
-  traverseDMapWithKeyWithAdjustWithMove :: forall (k :: Type -> Type) v v'. (GCompare k) => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> QueryT t q m (DMap k v', Event t (PatchDMapWithMove k v'))
+  traverseDMapWithKeyWithAdjustWithMove :: forall (k :: Type -> Type) v v'. GCompare k => (forall a. k a -> v a -> QueryT t q m (v' a)) -> DMap k v -> Event t (PatchDMapWithMove k v) -> QueryT t q m (DMap k v', Event t (PatchDMapWithMove k v'))
   traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = do
     let f' :: forall a. k a -> v a -> EventWriterT t q (ReaderT (Dynamic t (QueryResult q)) m) (Compose (QueryTLoweredResult t q) v' a)
         f' k v = fmap (Compose . QueryTLoweredResult) $ flip runStateT [] $ unQueryT $ f k v
@@ -202,15 +216,24 @@ instance (Reflex t, MonadFix m, Group q, Commutative q, Query q, Eq q, MonadHold
         liftedBs0 :: Map (Some k) [Behavior t q]
         liftedBs0 = Map.fromDistinctAscList $ (\(k :=> Compose r) -> (Some k, getQueryTLoweredResultWritten r)) <$> DMap.toList result0
         liftedBs' :: Event t (PatchMapWithMove (Some k) [Behavior t q])
-        liftedBs' = fforCheap result' $ weakenPatchDMapWithMoveWith (getQueryTLoweredResultWritten . getCompose) {- \(PatchDMap p) -> PatchMapWithMove $
-          Map.fromDistinctAscList $ (\(k :=> mr) -> (Some k, fmap (fmap (getQueryTLoweredResultWritten . getCompose)) mr)) <$> DMap.toList p -}
+        liftedBs' =
+          fforCheap result' $
+            weakenPatchDMapWithMoveWith
+              ( getQueryTLoweredResultWritten . getCompose {- \(PatchDMap p) -> PatchMapWithMove $
+                                                           Map.fromDistinctAscList $ (\(k :=> mr) -> (Some k, fmap (fmap (getQueryTLoweredResultWritten . getCompose)) mr)) <$> DMap.toList p -}
+              )
+
         sampleBs :: forall m'. MonadSample t m' => [Behavior t q] -> m' q
         sampleBs = foldlM (\b a -> (b <>) <$> sample a) mempty
-        accumBehaviors' :: forall m'. MonadHold t m'
-                        => Map (Some k) [Behavior t q]
-                        -> PatchMapWithMove (Some k) [Behavior t q]
-                        -> m' ( Maybe (Map (Some k) [Behavior t q])
-                              , Maybe (AdditivePatch q))
+        accumBehaviors'
+          :: forall m'
+           . MonadHold t m'
+          => Map (Some k) [Behavior t q]
+          -> PatchMapWithMove (Some k) [Behavior t q]
+          -> m'
+               ( Maybe (Map (Some k) [Behavior t q])
+               , Maybe (AdditivePatch q)
+               )
         -- f accumulates the child behavior state we receive from running traverseDMapWithKeyWithAdjustWithMove for the underlying monad.
         -- When an update occurs, it also computes a patch to communicate to the parent QueryT state.
         -- bs0 is a Map denoting the behaviors of the current children.
@@ -235,7 +258,7 @@ instance (Reflex t, MonadFix m, Group q, Commutative q, Query q, Eq q, MonadHold
                   MapWithMove.From_Move k'
                     | k' == k -> return Nothing
                     | otherwise -> case Map.lookup k' bs0 of
-                  -- If we are moving from a non-existent key, that is a delete
+                        -- If we are moving from a non-existent key, that is a delete
                         Nothing -> maskMempty . negateG <$> sampleBs oldBs
                         Just newBs -> maskMempty <$> ((~~) <$> sampleBs newBs <*> sampleBs oldBs)
           -- we compute the patch by iterating over the update PatchMap and proceeding by cases. Then we fold over the
@@ -259,7 +282,7 @@ instance PrimMonad m => PrimMonad (QueryT t q m) where
 instance PostBuild t m => PostBuild t (QueryT t q m) where
   getPostBuild = lift getPostBuild
 
-instance (MonadAsyncException m) => MonadAsyncException (QueryT t q m) where
+instance MonadAsyncException m => MonadAsyncException (QueryT t q m) where
   mask f = QueryT $ mask $ \unMask -> unQueryT $ f $ QueryT . unMask . unQueryT
 
 instance TriggerEvent t m => TriggerEvent t (QueryT t q m) where
@@ -291,16 +314,18 @@ instance (S.Semigroup a, Monad m) => S.Semigroup (QueryT t q m a) where
   (<>) = liftA2 (S.<>)
 
 -- | withQueryT's QueryMorphism argument needs to be a group homomorphism in order to behave correctly
-withQueryT :: (Reflex t, MonadHold t m, Group q, Group q', Commutative q, Commutative q', Query q')
-           => QueryMorphism q q'
-           -> QueryT t q m a
-           -> QueryT t q' m a
+withQueryT
+  :: (Reflex t, MonadHold t m, Group q, Group q', Commutative q, Commutative q', Query q')
+  => QueryMorphism q q'
+  -> QueryT t q m a
+  -> QueryT t q' m a
 withQueryT f a = do
   r' <- askQueryResult
   (result, q) <- lift $ runQueryT a $ mapQueryResult f <$> r'
-  tellQueryIncremental $ unsafeBuildIncremental
-    (fmap (mapQuery f) (sample (currentIncremental q)))
-    (fmapCheap (AdditivePatch . mapQuery f . unAdditivePatch) $ updatedIncremental q)
+  tellQueryIncremental $
+    unsafeBuildIncremental
+      (fmap (mapQuery f) (sample (currentIncremental q)))
+      (fmapCheap (AdditivePatch . mapQuery f . unAdditivePatch) $ updatedIncremental q)
   return result
 
 -- | Maps a function over a 'QueryT' that can change the underlying monad
@@ -308,34 +333,36 @@ mapQueryT :: (forall b. m b -> n b) -> QueryT t q m a -> QueryT t q n a
 mapQueryT f (QueryT a) = QueryT $ mapStateT (mapEventWriterT (mapReaderT f)) a
 
 -- | dynWithQueryT's (Dynamic t QueryMorphism) argument needs to be a group homomorphism at all times in order to behave correctly
-dynWithQueryT :: (Reflex t, MonadHold t m, Group q, Commutative q, Group q', Commutative q', Query q')
-           => Dynamic t (QueryMorphism q q')
-           -> QueryT t q m a
-           -> QueryT t q' m a
+dynWithQueryT
+  :: (Reflex t, MonadHold t m, Group q, Commutative q, Group q', Commutative q', Query q')
+  => Dynamic t (QueryMorphism q q')
+  -> QueryT t q m a
+  -> QueryT t q' m a
 dynWithQueryT f q = do
   r' <- askQueryResult
   (result, q') <- lift $ runQueryT q $ zipDynWith mapQueryResult f r'
   tellQueryIncremental $ zipDynIncrementalWith mapQuery f q'
   return result
- where zipDynIncrementalWith g da ib =
-         let eab = align (updated da) (updatedIncremental ib)
-             ec = flip push eab $ \case
-                 This a -> do
-                   aOld <- sample $ current da
-                   b <- sample $ currentIncremental ib
-                   return $ Just $ AdditivePatch (g a b ~~ g aOld b)
-                 That (AdditivePatch b) -> do
-                   a <- sample $ current da
-                   return $ Just $ AdditivePatch $ g a b
-                 These a (AdditivePatch b) -> do
-                   aOld <- sample $ current da
-                   bOld <- sample $ currentIncremental ib
-                   return $ Just $ AdditivePatch $ mconcat [ g a bOld, negateG (g aOld bOld), g a b]
-         in unsafeBuildIncremental (g <$> sample (current da) <*> sample (currentIncremental ib)) ec
+  where
+    zipDynIncrementalWith g da ib =
+      let eab = align (updated da) (updatedIncremental ib)
+          ec = flip push eab $ \case
+            This a -> do
+              aOld <- sample $ current da
+              b <- sample $ currentIncremental ib
+              return $ Just $ AdditivePatch (g a b ~~ g aOld b)
+            That (AdditivePatch b) -> do
+              a <- sample $ current da
+              return $ Just $ AdditivePatch $ g a b
+            These a (AdditivePatch b) -> do
+              aOld <- sample $ current da
+              bOld <- sample $ currentIncremental ib
+              return $ Just $ AdditivePatch $ mconcat [g a bOld, negateG (g aOld bOld), g a b]
+      in unsafeBuildIncremental (g <$> sample (current da) <*> sample (currentIncremental ib)) ec
 
 instance (Monad m, Group q, Commutative q, Query q, Reflex t) => MonadQuery t q (QueryT t q m) where
   tellQueryIncremental q = do
-    QueryT (modify (currentIncremental q:))
+    QueryT (modify (currentIncremental q :))
     QueryT (lift (tellEvent (fmapCheap unAdditivePatch (updatedIncremental q))))
   askQueryResult = QueryT ask
   queryIncremental q = do

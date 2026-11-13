@@ -1,0 +1,11 @@
+# Run hlint with
+#
+#   nix run ./style.hs#hlint -- --hint .hlint.yaml .
+#
+# to get the full set of hints.
+- arguments: [--cpp-define=DEBUG, --cpp-define=DEBUG_CYCLES, --ignore-glob=dist-*]
+
+# TODO: if reflex drops GHC <8.10 support, remove and standardize on
+# ImportQualifiedPost.
+- modules:
+  - {name: "**.*", qualifiedStyle: unrestricted}

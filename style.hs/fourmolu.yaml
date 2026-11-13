@@ -1,0 +1,41 @@
+#! /usr/bin/env nix
+#! nix shell github:obsidiansystems/style.hs#fourmolu --command sh -c ``fourmolu --config "$1" "${@:2}"`` sh
+
+indentation: 2
+column-limit: none
+function-arrows: leading
+comma-style: leading
+record-style: aligned
+import-export-style: leading
+indent-wheres: true
+record-brace-space: true
+haddock-style: single-line
+haddock-style-module: single-line
+let-style: inline
+in-style: no-space
+single-constraint-parens: never
+single-deriving-parens: always
+sort-constraints: false
+sort-derived-classes: true
+sort-deriving-clauses: true
+trailing-section-operators: true
+unicode: never
+respectful: true
+
+import-grouping:
+  - name: "External"
+    rules:
+      - match: all
+        priority: 100
+  - name: "Common"
+    rules:
+      - glob: Common.**
+  - name: "Frontend"
+    rules:
+      - glob: Frontend.**
+  - name: "Backend"
+    rules:
+      - glob: Backend.**
+  - name: "Local"
+    rules:
+      - match: local-modules

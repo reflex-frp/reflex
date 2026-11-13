@@ -1,5 +1,3 @@
--- | This module provides 'EventWriterT', the standard implementation of
--- 'EventWriter'.
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -11,6 +9,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | This module provides 'EventWriterT', the standard implementation of
+-- 'EventWriter'.
 module Reflex.EventWriter.Base
   ( EventWriterT (..)
   , runEventWriterT
@@ -20,18 +20,7 @@ module Reflex.EventWriter.Base
   , withEventWriterT
   ) where
 
-import Reflex.Adjustable.Class
-import Reflex.Class
-import Reflex.EventWriter.Class (EventWriter, tellEvent)
-import Reflex.DynamicWriter.Class (DynamicWriter, tellDyn)
-import Reflex.Host.Class
-import Reflex.PerformEvent.Class
-import Reflex.PostBuild.Class
-import Reflex.Query.Class
-import Reflex.Requester.Class
-import Reflex.TriggerEvent.Class
-
-import Control.Monad.Catch (MonadMask, MonadThrow, MonadCatch)
+import Control.Monad.Catch (MonadCatch, MonadMask, MonadThrow)
 import Control.Monad.Exception
 import Control.Monad.Fix
 import Control.Monad.Morph
@@ -53,21 +42,32 @@ import Data.Semigroup
 import Data.Some (Some)
 import Data.Tuple
 
+import Reflex.Adjustable.Class
+import Reflex.Class
+import Reflex.DynamicWriter.Class (DynamicWriter, tellDyn)
+import Reflex.EventWriter.Class (EventWriter, tellEvent)
+import Reflex.Host.Class
+import Reflex.PerformEvent.Class
+import Reflex.PostBuild.Class
+import Reflex.Query.Class
+import Reflex.Requester.Class
+import Reflex.TriggerEvent.Class
+
 -- | A basic implementation of 'EventWriter'.
-newtype EventWriterT t w m a = EventWriterT { unEventWriterT :: StateT [Event t w] m a }
+newtype EventWriterT t w m a = EventWriterT {unEventWriterT :: StateT [Event t w] m a}
   deriving
-    ( Functor
-    , Applicative
-    , Monad
-    , MonadTrans
+    ( Applicative
+    , Functor
     , MFunctor
+    , Monad
+    , MonadAsyncException
+    , MonadCatch
+    , MonadException
     , MonadFix
     , MonadIO
-    , MonadException
-    , MonadAsyncException
     , MonadMask
-    , MonadCatch
     , MonadThrow
+    , MonadTrans
     )
 
 -- TODO: When 'Data.IntMap.fromDistinctDescList' becomes available
@@ -84,9 +84,12 @@ runEventWriterT :: forall t m w a. (Reflex t, Monad m, Semigroup w) => EventWrit
 runEventWriterT (EventWriterT a) = do
   (result, told) <- runStateT a []
   let combineResults :: IntMap w -> w
-      combineResults = sconcat
-        . (\(h : t) -> h :| t) -- Unconditional; 'mergeInt' guarantees that it will only fire with non-empty IntMaps
-        . IntMap.foldl (flip (:)) [] -- Ascending key order is reverse tell order, so prepend while traversing to restore tell order
+      combineResults =
+        sconcat
+          . nonEmptyElems
+          . IntMap.foldl (flip (:)) [] -- Ascending key order is reverse tell order, so prepend while traversing to restore tell order
+      nonEmptyElems (h : t) = h :| t
+      nonEmptyElems [] = error "runEventWriterT: mergeInt fired with an empty IntMap"
   return (result, fmap combineResults $ mergeInt $ IntMap.fromDistinctAscList $ zip [0 ..] told)
 
 instance (Reflex t, Monad m, Semigroup w) => EventWriter t w (EventWriterT t w m) where
@@ -96,17 +99,17 @@ instance MonadSample t m => MonadSample t (EventWriterT t w m) where
   sample = lift . sample
 
 instance MonadHold t m => MonadHold t (EventWriterT t w m) where
-  {-# INLINABLE hold #-}
+  {-# INLINEABLE hold #-}
   hold v0 = lift . hold v0
-  {-# INLINABLE holdDyn #-}
+  {-# INLINEABLE holdDyn #-}
   holdDyn v0 = lift . holdDyn v0
-  {-# INLINABLE holdIncremental #-}
+  {-# INLINEABLE holdIncremental #-}
   holdIncremental v0 = lift . holdIncremental v0
-  {-# INLINABLE buildDynamic #-}
+  {-# INLINEABLE buildDynamic #-}
   buildDynamic a0 = lift . buildDynamic a0
-  {-# INLINABLE headE #-}
+  {-# INLINEABLE headE #-}
   headE = lift . headE
-  {-# INLINABLE now #-}
+  {-# INLINEABLE now #-}
   now = lift now
 
 instance (Reflex t, Adjustable t m, MonadHold t m, Semigroup w) => Adjustable t (EventWriterT t w m) where
@@ -125,11 +128,13 @@ instance Requester t m => Requester t (EventWriterT t w m) where
 -- 'runWithReplace' for 'EventWriterT'.  This is necessary when the underlying
 -- monad doesn't have a 'Adjustable' instance or to override the default
 -- 'Adjustable' behavior.
-runWithReplaceEventWriterTWith :: forall m t w a b. (Reflex t, MonadHold t m, Semigroup w)
-                               => (forall a' b'. m a' -> Event t (m b') -> EventWriterT t w m (a', Event t b'))
-                               -> EventWriterT t w m a
-                               -> Event t (EventWriterT t w m b)
-                               -> EventWriterT t w m (a, Event t b)
+runWithReplaceEventWriterTWith
+  :: forall m t w a b
+   . (Reflex t, MonadHold t m, Semigroup w)
+  => (forall a' b'. m a' -> Event t (m b') -> EventWriterT t w m (a', Event t b'))
+  -> EventWriterT t w m a
+  -> Event t (EventWriterT t w m b)
+  -> EventWriterT t w m (a, Event t b)
 runWithReplaceEventWriterTWith f a0 a' = do
   (result0, result') <- f (runEventWriterT a0) $ fmapCheap runEventWriterT a'
   tellEvent =<< switchHoldPromptOnly (snd result0) (fmapCheap snd result')
@@ -138,7 +143,7 @@ runWithReplaceEventWriterTWith f a0 a' = do
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceIntMapWithAdjust'.
 sequenceIntMapWithAdjustEventWriterTWith
   :: forall t m p w v v'
-  .  ( Reflex t
+   . ( Reflex t
      , MonadHold t m
      , Semigroup w
      , Functor p
@@ -147,10 +152,10 @@ sequenceIntMapWithAdjustEventWriterTWith
      , Patch (p w)
      , PatchTarget (p w) ~ IntMap w
      )
-  => (   (IntMap.Key -> v -> m (Event t w, v'))
-      -> IntMap v
-      -> Event t (p v)
-      -> EventWriterT t w m (IntMap (Event t w, v'), Event t (p (Event t w, v')))
+  => ( (IntMap.Key -> v -> m (Event t w, v'))
+       -> IntMap v
+       -> Event t (p v)
+       -> EventWriterT t w m (IntMap (Event t w, v'), Event t (p (Event t w, v')))
      )
   -> (Incremental t (p (Event t w)) -> Event t (PatchTarget (p w)))
   -> (Event t (p (Event t w)) -> Event t (p w))
@@ -178,7 +183,7 @@ sequenceIntMapWithAdjustEventWriterTWith base mergePatchIncremental coincidenceP
 -- | Like 'runWithReplaceEventWriterTWith', but for 'sequenceDMapWithAdjust'.
 sequenceDMapWithAdjustEventWriterTWith
   :: forall t m p p' w k v v'
-  .  ( Reflex t
+   . ( Reflex t
      , MonadHold t m
      , Semigroup w
      , Patch (p' (Some k) (Event t w))
@@ -187,10 +192,10 @@ sequenceDMapWithAdjustEventWriterTWith
      , Patch (p' (Some k) w)
      , PatchTarget (p' (Some k) w) ~ Map (Some k) w
      )
-  => (   (forall a. k a -> v a -> m (Compose ((,) (Event t w)) v' a))
-      -> DMap k v
-      -> Event t (p k v)
-      -> EventWriterT t w m (DMap k (Compose ((,) (Event t w)) v'), Event t (p k (Compose ((,) (Event t w)) v')))
+  => ( (forall a. k a -> v a -> m (Compose ((,) (Event t w)) v' a))
+       -> DMap k v
+       -> Event t (p k v)
+       -> EventWriterT t w m (DMap k (Compose ((,) (Event t w)) v'), Event t (p k (Compose ((,) (Event t w)) v')))
      )
   -> ((forall a. Compose ((,) (Event t w)) v' a -> v' a) -> p k (Compose ((,) (Event t w)) v') -> p k v')
   -> ((forall a. Compose ((,) (Event t w)) v' a -> Event t w) -> p k (Compose ((,) (Event t w)) v') -> p' (Some k) (Event t w))
@@ -261,10 +266,11 @@ instance PrimMonad m => PrimMonad (EventWriterT t w m) where
   primitive = lift . primitive
 
 -- | Map a function over the output of a 'EventWriterT'.
-withEventWriterT :: (Semigroup w, Semigroup w', Reflex t, MonadHold t m)
-                 => (w -> w')
-                 -> EventWriterT t w m a
-                 -> EventWriterT t w' m a
+withEventWriterT
+  :: (Semigroup w, Semigroup w', Reflex t, MonadHold t m)
+  => (w -> w')
+  -> EventWriterT t w m a
+  -> EventWriterT t w' m a
 withEventWriterT f ew = do
   (r, e) <- lift $ do
     (r, e) <- runEventWriterT ew

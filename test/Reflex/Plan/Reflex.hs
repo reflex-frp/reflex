@@ -8,58 +8,51 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
+
 module Reflex.Plan.Reflex
-  ( TestPlan(..)
+  ( TestPlan (..)
   , runPlan
   , setupFiring
   , Plan (..)
   , Schedule
   , Firing (..)
   , MonadIORef
-
-
   , readSchedule
   , readSchedule_
   , testSchedule
   , readEvent'
   , makeDense
-
   , runTestE
   , runTestB
-
   ) where
+
+import Control.Applicative
+import Control.DeepSeq
+import Control.Exception
+import Control.Monad
+import Control.Monad.Fix
+import Control.Monad.Identity
+import Control.Monad.Ref
+import Control.Monad.State.Strict
+import Data.Dependent.Sum (DSum (..))
+import Data.IORef
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
+import Data.Maybe
+import Data.Monoid
+import Data.Traversable (sequenceA, traverse)
+import System.Mem
+-- Note: this import must come last to silence warnings from AMP
+import Prelude
 
 import Reflex.Class
 import Reflex.Host.Class
 import Reflex.TestPlan
 
-import Control.Applicative
-import Control.Monad
-import Control.Monad.Fix
-import Control.Monad.Identity
-import Control.Monad.State.Strict
-
-import Control.Monad.Ref
-import Data.Dependent.Sum (DSum (..))
-import qualified Data.IntMap.Strict as IntMap
-import Data.Maybe
-import Data.Monoid
-import Data.Traversable (sequenceA, traverse)
-
-import Control.DeepSeq
-import Control.Exception
-import Data.IntMap.Strict (IntMap)
-import Data.IORef
-import System.Mem
-
--- Note: this import must come last to silence warnings from AMP
-import Prelude
-
 type MonadIORef m = (MonadIO m, MonadRef m, Ref m ~ Ref IO)
 
 data Firing t where
   Firing :: IORef (Maybe (EventTrigger t a)) -> a -> Firing t
-
 
 type Schedule t = IntMap [Firing t]
 
@@ -74,25 +67,22 @@ deriving instance ReflexHost t => MonadSample t (Plan t)
 deriving instance ReflexHost t => MonadHold t (Plan t)
 deriving instance ReflexHost t => MonadFix (Plan t)
 
-
 instance (ReflexHost t, MonadRef (HostFrame t), Ref (HostFrame t) ~ Ref IO) => TestPlan t (Plan t) where
   plan occurrences = Plan $ do
     (e, ref) <- newEventWithTriggerRef
     modify (IntMap.unionWith mappend (firings ref))
     return e
-
     where
       firings ref = IntMap.fromList (makeFiring ref <$> occurrences)
       makeFiring ref (t, a) = (fromIntegral t, [Firing ref a])
 
-
-firingTrigger :: (ReflexHost t, MonadIO m) => Firing t -> m (Maybe (DSum  (EventTrigger t) Identity))
+firingTrigger :: (ReflexHost t, MonadIO m) => Firing t -> m (Maybe (DSum (EventTrigger t) Identity))
 firingTrigger (Firing ref a) = liftIO $ fmap (:=> Identity a) <$> readIORef ref
 
-runPlan :: (MonadReflexHost t m) => Plan t a -> m (a, Schedule t)
+runPlan :: MonadReflexHost t m => Plan t a -> m (a, Schedule t)
 runPlan (Plan p) = runHostFrame $ runStateT p mempty
 
-setupFiring :: (MonadReflexHost t m) => Plan t (Event t a) -> m (EventHandle t a, Schedule t)
+setupFiring :: MonadReflexHost t m => Plan t (Event t a) -> m (EventHandle t a, Schedule t)
 setupFiring (Plan p) = runHostFrame $ do
   (e, s) <- runStateT p mempty
   h <- subscribeEvent e
@@ -102,9 +92,8 @@ makeDense :: Schedule t -> Schedule t
 makeDense s = fromMaybe (emptyRange 0) $ do
   (end, _) <- fst <$> IntMap.maxViewWithKey s
   return $ IntMap.union s (emptyRange end)
-    where
-      emptyRange end = IntMap.fromList (zip [0..end + 1] (repeat []))
-
+  where
+    emptyRange end = IntMap.fromList [(i, []) | i <- [0 .. end + 1]]
 
 -- For the purposes of testing, we add in a zero frame and extend one frame (to observe changes to behaviors
 -- after the last event)
@@ -119,13 +108,12 @@ readSchedule_ :: (MonadReflexHost t m, MonadIORef m, NFData a) => Schedule t -> 
 readSchedule_ schedule readResult = mapM_ (uncurry $ triggerFrame readResult) $ IntMap.toList schedule
 
 triggerFrame :: (MonadReflexHost t m, MonadIORef m, NFData a) => ReadPhase m a -> Int -> [Firing t] -> m a
-triggerFrame readResult _ occs =  do
-    triggers <- catMaybes <$> traverse firingTrigger occs
-    liftIO . evaluate . force =<< fireEventsAndRead triggers readResult
+triggerFrame readResult _ occs = do
+  triggers <- catMaybes <$> traverse firingTrigger occs
+  liftIO . evaluate . force =<< fireEventsAndRead triggers readResult
 
 readEvent' :: MonadReadEvent t m => EventHandle t a -> m (Maybe a)
 readEvent' = readEvent >=> sequenceA
-
 
 -- Convenience functions for running tests producing Events/Behaviors
 
@@ -139,10 +127,11 @@ testScheduleRest schedule readResult =
 runTest :: (MonadReflexHost t m, MonadIORef m, NFData b) => HostFrame t (Schedule t, a) -> (a -> ReadPhase m b) -> m (IntMap b)
 runTest build readResult = do
   liftIO performGC
-  (s, a, frame0) <- hostFrameAndRead
-    build
-    (\(s, _) -> catMaybes <$> traverse firingTrigger (IntMap.findWithDefault [] 0 s))
-    (\(s, a) -> do v <- readResult a; pure (s, a, v))
+  (s, a, frame0) <-
+    hostFrameAndRead
+      build
+      (\(s, _) -> catMaybes <$> traverse firingTrigger (IntMap.findWithDefault [] 0 s))
+      (\(s, a) -> do v <- readResult a; pure (s, a, v))
   frame0' <- liftIO . evaluate . force $ frame0
   rest <- testScheduleRest s (readResult a)
   pure $ IntMap.insert 0 frame0' rest
@@ -152,5 +141,3 @@ runTestB (Plan p) = runTest (do (b, s) <- runStateT p mempty; pure (s, b)) sampl
 
 runTestE :: (MonadReflexHost t m, MonadIORef m, NFData a) => Plan t (Event t a) -> m (IntMap (Maybe a))
 runTestE (Plan p) = runTest (do (e, s) <- runStateT p mempty; h <- subscribeEvent e; pure (s, h)) readEvent'
-
-

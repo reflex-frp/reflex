@@ -12,8 +12,8 @@ module Reflex.Network
   , untilReady
   ) where
 
-import Reflex.Class
 import Reflex.Adjustable.Class
+import Reflex.Class
 import Reflex.NotReady.Class
 
 -- | A 'Dynamic' "network": Takes a 'Dynamic' of network-creating actions and replaces the network whenever the 'Dynamic' updates.

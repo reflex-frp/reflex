@@ -5,13 +5,13 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE RankNTypes #-}
 
 -- |
 -- Module:
@@ -33,8 +33,8 @@ import Data.Coerce
 import Data.Dependent.Map (DMap)
 import Data.GADT.Compare (GCompare)
 import Data.IORef
-import Data.List
 import Data.Kind (Type)
+import Data.List
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import Data.Ord
@@ -75,11 +75,11 @@ data CostCentreTree = CostCentreTree
   , _costCentreTree_cumulativeEntries :: !Int
   , _costCentreTree_children :: !(Map (Ptr CostCentre) CostCentreTree)
   }
-  deriving (Show, Eq, Ord)
+  deriving (Eq, Ord, Show)
 
 instance S.Semigroup CostCentreTree where
   (CostCentreTree oa ea ca) <> (CostCentreTree ob eb cb) =
-      CostCentreTree (oa + ob) (ea + eb) $ Map.unionWith (S.<>) ca cb
+    CostCentreTree (oa + ob) (ea + eb) $ Map.unionWith (S.<>) ca cb
 
 instance Monoid CostCentreTree where
   mempty = CostCentreTree 0 0 mempty
@@ -87,9 +87,11 @@ instance Monoid CostCentreTree where
 
 getCostCentreStack :: Ptr CostCentreStack -> IO [Ptr CostCentre]
 getCostCentreStack = go []
-  where go l ccs = if ccs == nullPtr
-          then return l
-          else do
+  where
+    go l ccs =
+      if ccs == nullPtr
+        then return l
+        else do
           cc <- ccsCC ccs
           parent <- ccsParent ccs
           go (cc : l) parent
@@ -106,17 +108,18 @@ getCostCentreTree = do
 
 formatCostCentreTree :: CostCentreTree -> IO String
 formatCostCentreTree cct0 = unlines . reverse <$> execStateT (go 0 cct0) []
-  where go :: Int -> CostCentreTree -> StateT [String] IO ()
-        go depth cct = do
-          let children = sortOn (Down . _costCentreTree_cumulativeEntries . snd) $ Map.toList $ _costCentreTree_children cct
-              indent = mconcat $ replicate depth "  "
-          forM_ children $ \(cc, childCct) -> do
-            lbl <- liftIO $ peekCString utf8 =<< ccLabel cc
-            mdl <- liftIO $ peekCString utf8 =<< ccModule cc
-            loc <- liftIO $ peekCString utf8 =<< ccSrcSpan cc
-            let description = mdl <> "." <> lbl <> " (" <> loc <> ")"
-            modify $ (:) $ indent <> description <> "\t" <> show (_costCentreTree_cumulativeEntries childCct) <> "\t" <> show (_costCentreTree_ownEntries childCct)
-            go (succ depth) childCct
+  where
+    go :: Int -> CostCentreTree -> StateT [String] IO ()
+    go depth cct = do
+      let children = sortOn (Down . _costCentreTree_cumulativeEntries . snd) $ Map.toList $ _costCentreTree_children cct
+          indent = mconcat $ replicate depth "  "
+      forM_ children $ \(cc, childCct) -> do
+        lbl <- liftIO $ peekCString utf8 =<< ccLabel cc
+        mdl <- liftIO $ peekCString utf8 =<< ccModule cc
+        loc <- liftIO $ peekCString utf8 =<< ccSrcSpan cc
+        let description = mdl <> "." <> lbl <> " (" <> loc <> ")"
+        modify $ (:) $ indent <> description <> "\t" <> show (_costCentreTree_cumulativeEntries childCct) <> "\t" <> show (_costCentreTree_ownEntries childCct)
+        go (succ depth) childCct
 
 showProfilingData :: IO ()
 showProfilingData = do
@@ -126,8 +129,8 @@ writeProfilingData :: FilePath -> IO ()
 writeProfilingData p = do
   writeFile p =<< formatCostCentreTree =<< getCostCentreTree
 
-newtype ProfiledM m a = ProfiledM { runProfiledM :: m a }
-  deriving (Functor, Applicative, Monad, MonadFix, MonadException, MonadAsyncException)
+newtype ProfiledM m a = ProfiledM {runProfiledM :: m a}
+  deriving (Applicative, Functor, Monad, MonadAsyncException, MonadException, MonadFix)
 
 profileEvent :: Reflex t => Event t a -> Event t a
 profileEvent e = unsafePerformIO $ do
@@ -137,13 +140,13 @@ profileEvent e = unsafePerformIO $ do
         return $ return $ Just x
   return $ pushCheap f e
 
---TODO: Instead of profiling just the input or output of each one, profile all the inputs and all the outputs
+-- TODO: Instead of profiling just the input or output of each one, profile all the inputs and all the outputs
 
 instance Reflex t => Reflex (ProfiledTimeline t) where
-  newtype Behavior (ProfiledTimeline t) a = Behavior_Profiled { unBehavior_Profiled :: Behavior t a }
-  newtype Event (ProfiledTimeline t) a = Event_Profiled { unEvent_Profiled :: Event t a }
-  newtype Dynamic (ProfiledTimeline t) a = Dynamic_Profiled { unDynamic_Profiled :: Dynamic t a }
-  newtype Incremental (ProfiledTimeline t) p = Incremental_Profiled { unIncremental_Profiled :: Incremental t p }
+  newtype Behavior (ProfiledTimeline t) a = Behavior_Profiled {unBehavior_Profiled :: Behavior t a}
+  newtype Event (ProfiledTimeline t) a = Event_Profiled {unEvent_Profiled :: Event t a}
+  newtype Dynamic (ProfiledTimeline t) a = Dynamic_Profiled {unDynamic_Profiled :: Dynamic t a}
+  newtype Incremental (ProfiledTimeline t) p = Incremental_Profiled {unIncremental_Profiled :: Incremental t p}
   type PushM (ProfiledTimeline t) = ProfiledM (PushM t)
   type PullM (ProfiledTimeline t) = ProfiledM (PullM t)
   never = Event_Profiled never
@@ -152,9 +155,12 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
   pushCheap f (Event_Profiled e) = coerce $ pushCheap (coerce f) $ profileEvent e
   pull = Behavior_Profiled . pull . coerce
   fanG (Event_Profiled e) = EventSelectorG $ coerce $ selectG (fanG $ profileEvent e)
-  mergeG :: forall z (k :: z -> Type) q v. GCompare k
+  mergeG
+    :: forall z (k :: z -> Type) q v
+     . GCompare k
     => (forall a. q a -> Event (ProfiledTimeline t) (v a))
-    -> DMap k q -> Event (ProfiledTimeline t) (DMap k v)
+    -> DMap k q
+    -> Event (ProfiledTimeline t) (DMap k v)
   mergeG nt = Event_Profiled #. mergeG (coerce nt)
   switch (Behavior_Profiled b) = coerce $ profileEvent $ switch (coerceBehavior b)
   coincidence (Event_Profiled e) = coerce $ profileEvent $ coincidence (coerceEvent e)
@@ -175,8 +181,10 @@ instance Reflex t => Reflex (ProfiledTimeline t) where
     Coercion `trans` dynamicCoercion @t c `trans` Coercion
   incrementalCoercion c d =
     Coercion `trans` incrementalCoercion @t c d `trans` Coercion
-  mergeIntIncremental = Event_Profiled . mergeIntIncremental .
-    coerceWith (Coercion `trans` incrementalCoercion Coercion Coercion `trans` Coercion)
+  mergeIntIncremental =
+    Event_Profiled
+      . mergeIntIncremental
+      . coerceWith (Coercion `trans` incrementalCoercion Coercion Coercion `trans` Coercion)
   fanInt (Event_Profiled e) = coerce $ fanInt $ profileEvent e
 
 deriving instance Functor (Dynamic t) => Functor (Dynamic (ProfiledTimeline t))
@@ -195,14 +203,18 @@ instance MonadSample t m => MonadSample (ProfiledTimeline t) (ProfiledM m) where
   sample (Behavior_Profiled b) = ProfiledM $ sample b
 
 instance Adjustable t m => Adjustable (ProfiledTimeline t) (ProfiledM m) where
-  runWithReplace a0 a' = (fmap . fmap) coerce . lift $
-    runWithReplace (coerce a0) (coerce $ coerce <$> a')
-  traverseIntMapWithKeyWithAdjust f dm0 dm' = (fmap . fmap) coerce . lift $
-    traverseIntMapWithKeyWithAdjust (\k v -> coerce $ f k v) dm0 (coerce dm')
-  traverseDMapWithKeyWithAdjust f dm0 dm' = (fmap . fmap) coerce . lift $
-    traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) dm0 (coerce dm')
-  traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = (fmap . fmap) coerce . lift $
-    traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) dm0 (coerce dm')
+  runWithReplace a0 a' =
+    (fmap . fmap) coerce . lift $
+      runWithReplace (coerce a0) (coerce $ coerce <$> a')
+  traverseIntMapWithKeyWithAdjust f dm0 dm' =
+    (fmap . fmap) coerce . lift $
+      traverseIntMapWithKeyWithAdjust (\k v -> coerce $ f k v) dm0 (coerce dm')
+  traverseDMapWithKeyWithAdjust f dm0 dm' =
+    (fmap . fmap) coerce . lift $
+      traverseDMapWithKeyWithAdjust (\k v -> coerce $ f k v) dm0 (coerce dm')
+  traverseDMapWithKeyWithAdjustWithMove f dm0 dm' =
+    (fmap . fmap) coerce . lift $
+      traverseDMapWithKeyWithAdjustWithMove (\k v -> coerce $ f k v) dm0 (coerce dm')
 
 instance MonadTrans ProfiledM where
   lift = ProfiledM

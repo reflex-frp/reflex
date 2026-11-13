@@ -3,7 +3,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
-
 -- The instance for NFData (TVar a) is an orphan, but necessary here
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -13,21 +12,22 @@ import Control.Concurrent.STM
 import Control.DeepSeq
 import Control.Exception (evaluate)
 import Control.Monad
-import Control.Monad.Identity
 import Control.Monad.IO.Class
+import Control.Monad.Identity
 import Criterion.Main
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.Functor.Misc
 import Data.IORef
-import Data.Maybe (fromJust)
+
 import Reflex
 import Reflex.Host.Class
 
 main :: IO ()
-main = defaultMain
-  [ bgroup "micro" micros ]
+main =
+  defaultMain
+    [bgroup "micro" micros]
 
 instance NFData (TVar a) where
   rnf x = seq x ()
@@ -50,55 +50,76 @@ micros =
   , env (newIORef (42 :: Int)) (bench "readIORef" . whnfIO . readIORef)
   , bench "newTVar" $ whnfIO $ void $ newTVarIO ()
   , env (newTVarIO (42 :: Int)) (bench "readTVar" . whnfIO . readTVarIO)
-  , bench "newEventWithTrigger" $ whnfIO . void $ runSpiderHost $ newEventWithTrigger $
-      \trigger -> return () <$ evaluate trigger
+  , bench "newEventWithTrigger" $
+      whnfIO . void $
+        runSpiderHost $
+          newEventWithTrigger $
+            \trigger -> return () <$ evaluate trigger
   , bench "newEventWithTriggerRef" $ whnfIO . void $ runSpiderHost newEventWithTriggerRef
   , withSetupWHNF "subscribeEvent" newEventWithTriggerRef $ runHostFrame . subscribeEvent . fst
-  , withSetupWHNF "subscribeSwitch"
-    (do iv <- fst <$> newEventWithTriggerRef
-        ev <- fst <$> newEventWithTriggerRef
-        runHostFrame (hold iv ev))
-    (runHostFrame . subscribeEvent . switch)
+  , withSetupWHNF
+      "subscribeSwitch"
+      ( do
+          iv <- fst <$> newEventWithTriggerRef
+          ev <- fst <$> newEventWithTriggerRef
+          runHostFrame (hold iv ev)
+      )
+      (runHostFrame . subscribeEvent . switch)
   , bench "subscribeMerge(1)" $ subscribeMergeBuild 1
   , bench "subscribeMerge(100)" $ subscribeMergeBuild 100
   , bench "subscribeMerge(10000)" $ subscribeMergeBuild 10000
   , bench "runHostFrame" $ whnfIO $ runSpiderHost $ runHostFrame $ return ()
-  , withSetupWHNF "fireEventsAndRead(single/single)"
-    (newEventWithTriggerRef >>= subscribePair)
-    (\(subd, trigger) -> fireAndRead trigger (42 :: Int) subd)
-  , withSetupWHNF "fireEventsOnly"
-    (newEventWithTriggerRef >>= subscribePair)
-    (\(_, trigger) -> do
-        key <- fromJust <$> liftIO (readIORef trigger)
-        fireEvents [key :=> Identity (42 :: Int)])
-  , withSetupWHNF "fireEventsAndRead(head/merge1)"
-    (setupMerge 1 >>= subscribePair)
-    (\(subd, t:_) -> fireAndRead t (42 :: Int) subd)
-  , withSetupWHNF "fireEventsAndRead(head/merge100)"
-    (setupMerge 100 >>= subscribePair)
-    (\(subd, t:_) -> fireAndRead t (42 :: Int) subd)
-  , withSetupWHNF "fireEventsAndRead(head/merge10000)"
+  , withSetupWHNF
+      "fireEventsAndRead(single/single)"
+      (newEventWithTriggerRef >>= subscribePair)
+      (\(subd, trigger) -> fireAndRead trigger (42 :: Int) subd)
+  , withSetupWHNF
+      "fireEventsOnly"
+      (newEventWithTriggerRef >>= subscribePair)
+      ( \(_, trigger) -> do
+          Just key <- liftIO (readIORef trigger)
+          fireEvents [key :=> Identity (42 :: Int)]
+      )
+  , withSetupWHNF
+      "fireEventsAndRead(head/merge1)"
+      (setupMerge 1 >>= subscribePair)
+      (\(subd, triggers) -> fireAndRead (firstTrigger triggers) (42 :: Int) subd)
+  , withSetupWHNF
+      "fireEventsAndRead(head/merge100)"
+      (setupMerge 100 >>= subscribePair)
+      (\(subd, triggers) -> fireAndRead (firstTrigger triggers) (42 :: Int) subd)
+  , withSetupWHNF
+      "fireEventsAndRead(head/merge10000)"
       (setupMerge 10000 >>= subscribePair)
-      (\(subd, t:_) -> fireAndRead t (42 :: Int) subd)
-  , withSetupWHNF "fireEventsOnly(head/merge100)"
-    (setupMerge 100 >>= subscribePair)
-    (\(_, t:_) -> do
-        key <- fromJust <$> liftIO (readIORef t)
-        fireEvents [key :=> Identity (42 :: Int)])
+      (\(subd, triggers) -> fireAndRead (firstTrigger triggers) (42 :: Int) subd)
+  , withSetupWHNF
+      "fireEventsOnly(head/merge100)"
+      (setupMerge 100 >>= subscribePair)
+      ( \(_, triggers) -> do
+          Just key <- liftIO (readIORef (firstTrigger triggers))
+          fireEvents [key :=> Identity (42 :: Int)]
+      )
   , withSetupWHNF "hold" newEventWithTriggerRef $ \(ev, _) -> runHostFrame (hold (42 :: Int) ev)
   , withSetupWHNF "sample" (newEventWithTriggerRef >>= runHostFrame . hold (42 :: Int) . fst) (runHostFrame . sample)
   , withSetupWHNF "headE" newEventWithTriggerRef $ \(ev, _) -> runHostFrame (headE ev)
   , withSetupWHNF "subscribeHeadE" (newEventWithTriggerRef >>= runHostFrame . headE . fst) (runHostFrame . subscribeEvent)
   ]
 
-setupMerge :: Int
-           -> SpiderHost Global ( Event (SpiderTimeline Global) (DMap (Const2 Int a) Identity)
-                                , [IORef (Maybe (EventTrigger Spider a))]
-                                )
+setupMerge
+  :: Int
+  -> SpiderHost
+       Global
+       ( Event (SpiderTimeline Global) (DMap (Const2 Int a) Identity)
+       , [IORef (Maybe (EventTrigger Spider a))]
+       )
 setupMerge num = do
   (evs, triggers) <- unzip <$> replicateM num newEventWithTriggerRef
-  let !m = DMap.fromList [Const2 i :=> v | (i,v) <- zip [0..] evs]
+  let !m = DMap.fromList [Const2 i :=> v | (i, v) <- zip [0 ..] evs]
   pure (merge m, triggers)
+
+firstTrigger :: [trigger] -> trigger
+firstTrigger (trigger : _) = trigger
+firstTrigger [] = error "firstTrigger: setupMerge created no events"
 
 subscribeMergeBuild :: Int -> Benchmarkable
 subscribeMergeBuild n = perRunEnv (WHNF . fst <$> runSpiderHost (setupMerge n)) $
@@ -107,8 +128,11 @@ subscribeMergeBuild n = perRunEnv (WHNF . fst <$> runSpiderHost (setupMerge n)) 
 subscribePair :: (Event (SpiderTimeline Global) a, b) -> SpiderHost Global (EventHandle (SpiderTimeline Global) a, b)
 subscribePair (ev, b) = (,b) <$> runHostFrame (subscribeEvent ev)
 
-fireAndRead :: IORef (Maybe (EventTrigger (SpiderTimeline Global) a)) -> a -> EventHandle (SpiderTimeline Global) b
-            -> SpiderHost Global (Maybe b)
+fireAndRead
+  :: IORef (Maybe (EventTrigger (SpiderTimeline Global) a))
+  -> a
+  -> EventHandle (SpiderTimeline Global) b
+  -> SpiderHost Global (Maybe b)
 fireAndRead trigger val subd = do
-  key <- fromJust <$> liftIO (readIORef trigger)
+  Just key <- liftIO (readIORef trigger)
   fireEventsAndRead [key :=> Identity val] $ readEvent subd >>= sequence

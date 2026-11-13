@@ -55,7 +55,7 @@ type MonadHeadlessApp t m =
 -- testing. Each headless network runs on its own spider timeline.
 runHeadlessApp
   :: forall a
-  .  (forall t m. MonadHeadlessApp t m => m (Event t a))
+   . (forall t m. MonadHeadlessApp t m => m (Event t a))
   -- ^ The action to be run in the headless FRP network. The FRP network is
   -- closed at the first occurrence of the resulting 'Event'.
   -> IO a
@@ -68,13 +68,15 @@ runHeadlessApp guest =
     let untilShutdown handle () = do
           mExit <- sequence =<< readEvent handle
           pure $ maybe (Right ()) Left mExit
-    (_, shutdownEventHandle, shutdownImmediately, fc) <- hostPerformEventTAndRead
-          ( runPostBuildT   -- guest can access the post-build 'Event'
-          . flip runTriggerEventT events   -- guest can create triggers, queued to 'events'
-          $ guest )
-          subscribeEvent
-          ()
-          untilShutdown
+    (_, shutdownEventHandle, shutdownImmediately, fc) <-
+      hostPerformEventTAndRead
+        ( runPostBuildT -- guest can access the post-build 'Event'
+            . flip runTriggerEventT events -- guest can create triggers, queued to 'events'
+            $ guest
+        )
+        subscribeEvent
+        ()
+        untilShutdown
     case shutdownImmediately of
       Left exitResult -> pure exitResult
       -- Main loop: block for the next external event, fire it, perform the effects

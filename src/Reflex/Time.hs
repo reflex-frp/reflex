@@ -9,6 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
+
 -- |
 -- Module:
 --   Reflex.Time
@@ -42,13 +43,14 @@ import Reflex.TriggerEvent.Class
 
 -- | Metadata associated with a timer "tick"
 data TickInfo
-  = TickInfo { _tickInfo_lastUTC :: UTCTime
-             -- ^ UTC time immediately after the last tick.
-             , _tickInfo_n :: Integer
-             -- ^ Number of time periods or ticks since the start of the timer
-             , _tickInfo_alreadyElapsed :: NominalDiffTime
-             -- ^ Amount of time that has elapsed in the current tick period.
-             }
+  = TickInfo
+  { _tickInfo_lastUTC :: UTCTime
+  -- ^ UTC time immediately after the last tick.
+  , _tickInfo_n :: Integer
+  -- ^ Number of time periods or ticks since the start of the timer
+  , _tickInfo_alreadyElapsed :: NominalDiffTime
+  -- ^ Amount of time that has elapsed in the current tick period.
+  }
   deriving (Eq, Ord, Show)
 
 -- | Fires an 'Event' once every time provided interval elapses, approximately.
@@ -68,33 +70,34 @@ tickLossyFromPostBuildTime dt = do
 -- | Fires an 'Event' approximately each time the provided interval elapses. If the system starts running behind, occurrences will be dropped rather than buffered.
 -- Each occurrence of the resulting event will contain the index of the current interval, with 0 representing the provided initial time.
 tickLossyFrom
-    :: (PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m)
-    => NominalDiffTime
-    -- ^ The length of a tick interval
-    -> UTCTime
-    -- ^ The basis time from which intervals count and with which the initial calculation of elapsed time will be made.
-    -> Event t a
-    -- ^ Event that starts a tick generation thread.  Usually you want this to
-    -- be something like the result of getPostBuild that only fires once.  But
-    -- there could be uses for starting multiple timer threads.
-    -> m (Event t TickInfo)
+  :: (PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m)
+  => NominalDiffTime
+  -- ^ The length of a tick interval
+  -> UTCTime
+  -- ^ The basis time from which intervals count and with which the initial calculation of elapsed time will be made.
+  -> Event t a
+  -- ^ Event that starts a tick generation thread.  Usually you want this to
+  -- be something like the result of getPostBuild that only fires once.  But
+  -- there could be uses for starting multiple timer threads.
+  -> m (Event t TickInfo)
 tickLossyFrom dt t0 e = tickLossyFrom' $ (dt, t0) <$ e
 
 -- | Generalization of tickLossyFrom that takes the delay and initial time as an 'Event'.
 tickLossyFrom'
-    :: (PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m)
-    => Event t (NominalDiffTime, UTCTime)
-    -- ^ Event that starts a tick generation thread.  Usually you want this to
-    -- be something like the result of 'getPostBuild' that only fires once.  But
-    -- there could be uses for starting multiple timer threads.
-    -> m (Event t TickInfo)
+  :: (PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadFix m)
+  => Event t (NominalDiffTime, UTCTime)
+  -- ^ Event that starts a tick generation thread.  Usually you want this to
+  -- be something like the result of 'getPostBuild' that only fires once.  But
+  -- there could be uses for starting multiple timer threads.
+  -> m (Event t TickInfo)
 tickLossyFrom' e = do
   rec result <- performEventAsync $ callAtNextInterval <$> leftmost [e, snd <$> result]
   return $ fst <$> result
-  where callAtNextInterval pair cb = void $ liftIO $ forkIO $ do
-          tick <- uncurry getCurrentTick pair
-          Concurrent.delay $ ceiling $ (fst pair - _tickInfo_alreadyElapsed tick) * 1000000
-          cb (tick, pair)
+  where
+    callAtNextInterval pair cb = void $ liftIO $ forkIO $ do
+      tick <- uncurry getCurrentTick pair
+      Concurrent.delay $ ceiling $ (fst pair - _tickInfo_alreadyElapsed tick) * 1000000
+      cb (tick, pair)
 
 -- | Like 'tickLossy', but immediately calculates the first tick and provides a 'Dynamic' that is updated as ticks fire.
 clockLossy :: (MonadIO m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m), MonadHold t m, MonadFix m) => NominalDiffTime -> UTCTime -> m (Dynamic t TickInfo)
@@ -137,7 +140,6 @@ poissonLossyFrom
   -> m (Event t TickInfo)
 poissonLossyFrom rnd rate = inhomogeneousPoissonFrom rnd (constant rate) rate
 
-
 -- | Send events with Poisson timing with the given basis and rate
 --   Each occurrence of the resulting event will contain the index of
 --   the current interval, with 0 representing the basis time.
@@ -163,18 +165,16 @@ inhomogeneousPoissonFrom
   -> Event t a
   -> m (Event t TickInfo)
 inhomogeneousPoissonFrom rnd rate maxRate t0 e = do
-
   -- Create a thread for producing homogeneous poisson events
   -- along with random Doubles (usage of Double's explained below)
-  ticksWithRateRand <- performEventAsync $
-                       fmap callAtNextInterval e
+  ticksWithRateRand <-
+    performEventAsync $
+      fmap callAtNextInterval e
 
   -- Filter homogeneous events according to associated
   -- random values and the current rate parameter
   return $ attachWithMaybe filterFun rate ticksWithRateRand
-
   where
-
     -- Inhomogeneous poisson processes are built from faster
     -- homogeneous ones by randomly dropping events from the
     -- fast process. For each fast homogeneous event, choose
@@ -183,7 +183,7 @@ inhomogeneousPoissonFrom rnd rate maxRate t0 e = do
     -- random sample, then keep this event, otherwise drop it
     filterFun :: Double -> (TickInfo, Double) -> Maybe TickInfo
     filterFun r (tInfo, p)
-      | r >= p    = Just tInfo
+      | r >= p = Just tInfo
       | otherwise = Nothing
 
     callAtNextInterval _ cb = void $ liftIO $ forkIO $ go t0 rnd cb 0
@@ -193,16 +193,16 @@ inhomogeneousPoissonFrom rnd rate maxRate t0 e = do
 
       -- Generate random numbers for this poisson interval (u)
       -- and sample-retention likelihood (p)
-      let (u, nextGen)            = randomR (0,1) lastGen
-          (p :: Double, nextGen') = randomR (0,maxRate) nextGen
+      let (u, nextGen) = randomR (0, 1) lastGen
+          (p :: Double, nextGen') = randomR (0, maxRate) nextGen
 
       -- Inter-event interval is drawn from exponential
       -- distribution accourding to u
-      let dt             = realToFrac $ (-1) * log u / maxRate :: NominalDiffTime
-          nEvents        = lastN + 1
+      let dt = realToFrac $ (-1) * log u / maxRate :: NominalDiffTime
+          nEvents = lastN + 1
           alreadyElapsed = diffUTCTime t tTargetLast
-          tTarget        = addUTCTime dt tTargetLast
-          thisDelay      = realToFrac $ diffUTCTime tTarget t :: Double
+          tTarget = addUTCTime dt tTargetLast
+          thisDelay = realToFrac $ diffUTCTime tTarget t :: Double
       Concurrent.delay $ ceiling $ thisDelay * 1000000
       _ <- cb (TickInfo t nEvents alreadyElapsed, p)
       go tTarget nextGen' cb nEvents
@@ -234,14 +234,15 @@ debounce dt e = do
 batchOccurrences :: (MonadFix m, MonadHold t m, PerformEvent t m, TriggerEvent t m, MonadIO (Performable m)) => NominalDiffTime -> Event t a -> m (Event t (Seq a))
 batchOccurrences t newValues = do
   let f s x = (Just newState, out)
-        where newState = case x of
-                This a -> s |> a
-                That _ -> mempty
-                These a _ -> Seq.singleton a
-              out = case x of
-                This _ -> if Seq.null s then Just () else Nothing
-                That _ -> Nothing
-                These _ _ -> Just ()
+        where
+          newState = case x of
+            This a -> s |> a
+            That _ -> mempty
+            These a _ -> Seq.singleton a
+          out = case x of
+            This _ -> if Seq.null s then Just () else Nothing
+            That _ -> Nothing
+            These _ _ -> Just ()
   rec (buffer, toDelay) <- mapAccumMaybe f mempty $ align newValues delayed
       delayed <- delay t toDelay
   return $ tag buffer delayed
@@ -254,24 +255,28 @@ throttle t e = do
   let f (immediate, buffer) x = case x of -- (Just newState, out)
         This a -- If only the input event fires
           | immediate -> -- and we're in immediate mode
-            -- Immediate mode turns off, and the buffer is empty.
-            -- We fire the output event with the input event value immediately.
-            (Just (False, Nothing), Just a)
+          -- Immediate mode turns off, and the buffer is empty.
+          -- We fire the output event with the input event value immediately.
+              (Just (False, Nothing), Just a)
           | otherwise -> -- and we're not in immediate mode
-            -- Immediate mode remains off, and we replace the contents of the buffer (if any) with the input value.
-            -- We don't fire the output event.
-            (Just (False, Just a), Nothing)
-        That _ -> -- If only the delayed output event fires,
+          -- Immediate mode remains off, and we replace the contents of the buffer (if any) with the input value.
+          -- We don't fire the output event.
+              (Just (False, Just a), Nothing)
+        That _ ->
+          -- If only the delayed output event fires,
           case buffer of
-            Nothing -> -- and the buffer is empty:
+            Nothing ->
+              -- and the buffer is empty:
               -- Immediate mode turns back on, and the buffer remains empty.
               -- We don't fire.
               (Just (True, Nothing), Nothing)
-            Just b -> -- and the buffer is full:
+            Just b ->
+              -- and the buffer is full:
               -- Immediate mode remains off, and the buffer is cleared.
               -- We fire with the buffered value.
               (Just (False, Nothing), Just b)
-        These a _ -> -- If both the input and delayed output event fire simultaneously:
+        These a _ ->
+          -- If both the input and delayed output event fire simultaneously:
           -- Immediate mode turns off, and the buffer is empty.
           -- We fire with the input event's value, as it is the most recent we have seen at this moment.
           (Just (False, Nothing), Just a)
@@ -282,13 +287,13 @@ throttle t e = do
 data ThrottleState b
   = ThrottleState_Immediate
   | ThrottleState_Buffered (ThrottleBuffer b)
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data)
+  deriving (Data, Eq, Foldable, Functor, Generic, Ord, Show, Traversable)
 
 data ThrottleBuffer b
   = ThrottleBuffer_Empty -- Empty conflicts with lens, and hiding it would require turning
-                         -- on PatternSynonyms
+  -- on PatternSynonyms
   | ThrottleBuffer_Full b
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Generic, Data)
+  deriving (Data, Eq, Foldable, Functor, Generic, Ord, Show, Traversable)
 
 instance Semigroup b => Semigroup (ThrottleBuffer b) where
   x <> y = case x of
@@ -312,56 +317,77 @@ instance Semigroup b => Monoid (ThrottleBuffer b) where
 --
 -- NB: The provided lag function must *actually* delay the event.
 throttleBatchWithLag :: (MonadFix m, MonadHold t m, PerformEvent t m, Semigroup a) => (Event t () -> m (Event t ())) -> Event t a -> m (Event t a)
+
 -- Invariants:
+
 -- * Immediate mode must turn off whenever output is produced.
+
 -- * Output must be produced whenever immediate mode turns from on to off.
+
 -- * Immediate mode can only go from off to on when the delayed event fires.
+
 -- * Every input firing must go into either an immediate output firing or the
+
 --   buffer, but not both.
+
 -- * An existing full buffer must either stay in the buffer or go to output,
+
 --   but not both.
 throttleBatchWithLag lag e = do
   let f state x = case x of -- (Just $ newState, out)
-        This a -> -- If only the input event fires
+        This a ->
+          -- If only the input event fires
           case state of
-            ThrottleState_Immediate -> -- and we're in immediate mode
+            ThrottleState_Immediate ->
+              -- and we're in immediate mode
               -- Immediate mode turns off, and the buffer is empty.
               -- We fire the output event with the input event value immediately.
-              (Just $ ThrottleState_Buffered $ ThrottleBuffer_Empty, Just a)
-            ThrottleState_Buffered b -> -- and we're not in immediate mode
+              (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just a)
+            ThrottleState_Buffered b ->
+              -- and we're not in immediate mode
               -- Immediate mode remains off, and we accumulate the input value.
               -- We don't fire the output event.
               (Just $ ThrottleState_Buffered $ b <> ThrottleBuffer_Full a, Nothing)
-        That _ -> -- If only the delayed output event fires,
+        That _ ->
+          -- If only the delayed output event fires,
           case state of
-            ThrottleState_Immediate -> -- and we're in immediate mode
+            ThrottleState_Immediate ->
+              -- and we're in immediate mode
               -- Nothing happens.
               (Nothing, Nothing)
-            ThrottleState_Buffered ThrottleBuffer_Empty -> -- and the buffer is empty:
+            ThrottleState_Buffered ThrottleBuffer_Empty ->
+              -- and the buffer is empty:
               -- Immediate mode turns back on, and the buffer remains empty.
               -- We don't fire.
               (Just ThrottleState_Immediate, Nothing)
-            ThrottleState_Buffered (ThrottleBuffer_Full b) -> -- and the buffer is full:
+            ThrottleState_Buffered (ThrottleBuffer_Full b) ->
+              -- and the buffer is full:
               -- Immediate mode remains off, and the buffer is cleared.
               -- We fire with the buffered value.
               (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just b)
-        These a _ -> -- If both the input and delayed output event fire simultaneously:
+        These a _ ->
+          -- If both the input and delayed output event fire simultaneously:
           case state of
-            ThrottleState_Immediate -> -- and we're in immediate mode
+            ThrottleState_Immediate ->
+              -- and we're in immediate mode
               -- Immediate mode turns off, and the buffer is empty.
               -- We fire with the input event's value, as it is the most recent we have seen at this moment.
               (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just a)
-            ThrottleState_Buffered ThrottleBuffer_Empty -> -- and the buffer is empty:
+            ThrottleState_Buffered ThrottleBuffer_Empty ->
+              -- and the buffer is empty:
               -- Immediate mode stays off, and the buffer remains empty.
               -- We fire with the input event's value.
               (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just a)
-            ThrottleState_Buffered (ThrottleBuffer_Full b) -> -- and the buffer is full:
+            ThrottleState_Buffered (ThrottleBuffer_Full b) ->
+              -- and the buffer is full:
               -- Immediate mode remains off, and the buffer is cleared.
               -- We fire with everything including the buffered value.
               (Just $ ThrottleState_Buffered ThrottleBuffer_Empty, Just (b <> a))
-  rec (_stateDyn, outE) <- mapAccumMaybeDyn f
-        ThrottleState_Immediate -- We start in immediate mode with an empty buffer.
-        (align e delayed)
+  rec (_stateDyn, outE) <-
+        mapAccumMaybeDyn
+          f
+          ThrottleState_Immediate -- We start in immediate mode with an empty buffer.
+          (align e delayed)
       delayed <- lag (void outE)
   return outE
 
@@ -369,7 +395,7 @@ tickInfo_lastUTC :: Functor f => (UTCTime -> f UTCTime) -> TickInfo -> f TickInf
 tickInfo_lastUTC f (TickInfo x1 x2 x3) = (\y -> TickInfo y x2 x3) <$> f x1
 {-# INLINE tickInfo_lastUTC #-}
 
-tickInfo_n :: Functor f => (Integer  -> f Integer ) -> TickInfo -> f TickInfo
+tickInfo_n :: Functor f => (Integer -> f Integer) -> TickInfo -> f TickInfo
 tickInfo_n f (TickInfo x1 x2 x3) = (\y -> TickInfo x1 y x3) <$> f x2
 {-# INLINE tickInfo_n #-}
 

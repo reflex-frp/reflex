@@ -1,36 +1,36 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE LambdaCase #-}
+
 module Main where
 
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Ref
 import Data.Align
+import Data.Coerce
 import Data.Dependent.Map (DMap)
 import qualified Data.Dependent.Map as DMap
 import Data.Dependent.Sum
 import Data.Functor.Identity
+import Data.Functor.Misc
 import Data.GADT.Compare
 import Data.IORef
+import Data.Maybe (isNothing)
+import Data.Patch
 import Data.Semigroup
 import Data.These
-import Data.Type.Equality ((:~:)(Refl))
-
-import Data.Functor.Misc
-import Data.Patch
+import Data.Type.Equality ((:~:) (Refl))
+import System.Exit
+import System.Mem
 
 import qualified Reflex.Class as R
 import qualified Reflex.Host.Class as Host
 import qualified Reflex.Spider.Internal as S
-
-import System.Exit
-import System.Mem
-import Data.Coerce
 
 main :: IO ()
 main = do
@@ -44,6 +44,7 @@ main = do
       putStrLn "headE fired for a subscriber that subscribed after its first occurrence"
       exitFailure
 
+{- HLINT ignore checkHeadEAtMostOnce "Functor law" -}
 checkHeadEAtMostOnce :: IO Bool
 checkHeadEAtMostOnce = S.runSpiderHost $ do
   (inputEvent, inputTriggerRef) <- Host.newEventWithTriggerRef
@@ -55,11 +56,12 @@ checkHeadEAtMostOnce = S.runSpiderHost $ do
   Host.fireEvents [trigger :=> Identity "first"]
   liftIO performMajorGC
   lateHandle <- Host.runHostFrame $ Host.subscribeEvent headOfInput
-  lateOccurrence <- Host.fireEventsAndRead [trigger :=> Identity "second"] $
-    Host.readEvent lateHandle >>= \case
-      Nothing -> return Nothing
-      Just getValue -> Just <$> getValue
-  return $ lateOccurrence == Nothing
+  lateOccurrence <-
+    Host.fireEventsAndRead [trigger :=> Identity "second"] $
+      Host.readEvent lateHandle >>= \case
+        Nothing -> return Nothing
+        Just getValue -> Just <$> getValue
+  return $ isNothing lateOccurrence
 
 hostPerf :: IORef (Maybe Int) -> IO ()
 hostPerf ref = S.runSpiderHost $ do
@@ -71,26 +73,39 @@ hostPerf ref = S.runSpiderHost $ do
       eadd = S.unSpiderEvent eadd'
   liftIO $ putStrLn "#creating event graph"
   eventToPerform <- Host.runHostFrame $ do
-    (reqMap :: S.Event S.Global (DMap (Const2 Int (DMap Tell (S.SpiderHostFrame S.Global))) Identity))
-      <- S.SpiderHostFrame
-       $ fmap ( S.mergeG coerce
-              . S.dynamicHold)
-       $ S.hold DMap.empty
-       -- Construct a new heap object for the subscriber, invalidating any weak references to the subscriber if they are not retained
-       $ (\e -> S.Event $ \sub -> do
-            S.SubscribeResult s o <- S.subscribeAndRead e $ sub
-               { S.subscriberPropagate = S.subscriberPropagate sub
-               }
-            return (S.SubscribeResult s o))
-       $ runIdentity . runIdentity <$> S.selectG
-          (S.fanG $ S.pushCheap (return . Just . mapKeyValuePairsMonotonic (\(t :=> e) -> WrapArg t :=> Identity e)) response)
-          (WrapArg Request)
-    return $ alignWith (mergeThese (<>))
-      (flip S.pushCheap eadd $ \_ -> return $ Just $ DMap.singleton Request $ do
-        liftIO $ putStrLn "#eadd fired"
-        return $ PatchDMap $ DMap.singleton (Const2 (1 :: Int)) $ ComposeMaybe $ Just
-               $ S.pushCheap (return . Just . DMap.singleton Action . (\_ -> liftIO (writeIORef ref (Just 1)))) $ eadd)
-      (flip S.pushCheap reqMap $ \m -> return $ Just $ mconcat $ (\(Const2 _ :=> Identity reqs) -> reqs) <$> DMap.toList m)
+    (reqMap :: S.Event S.Global (DMap (Const2 Int (DMap Tell (S.SpiderHostFrame S.Global))) Identity)) <-
+      S.SpiderHostFrame
+        $ fmap
+          ( S.mergeG coerce
+              . S.dynamicHold
+          )
+        $ S.hold DMap.empty
+        -- Construct a new heap object for the subscriber, invalidating any weak references to the subscriber if they are not retained
+        $ ( \e -> S.Event $ \sub -> do
+              S.SubscribeResult s o <-
+                S.subscribeAndRead e $
+                  sub
+                    { S.subscriberPropagate = S.subscriberPropagate sub
+                    }
+              return (S.SubscribeResult s o)
+          )
+        $ runIdentity . runIdentity
+          <$> S.selectG
+            (S.fanG $ S.pushCheap (return . Just . mapKeyValuePairsMonotonic (\(t :=> e) -> WrapArg t :=> Identity e)) response)
+            (WrapArg Request)
+    return $
+      alignWith
+        (mergeThese (<>))
+        ( flip S.pushCheap eadd $ \_ -> return $ Just $ DMap.singleton Request $ do
+            liftIO $ putStrLn "#eadd fired"
+            return
+              $ PatchDMap
+              $ DMap.singleton (Const2 (1 :: Int))
+              $ ComposeMaybe
+              $ Just
+              $ S.pushCheap (return . Just . DMap.singleton Action . (\_ -> liftIO (writeIORef ref (Just 1)))) eadd
+        )
+        (flip S.pushCheap reqMap $ \m -> return $ Just $ mconcat $ (\(Const2 _ :=> Identity reqs) -> reqs) <$> DMap.toList m)
   ---- epilogue
   eventToPerformHandle <- Host.runHostFrame $ Host.subscribeEvent (S.SpiderEvent eventToPerform)
   liftIO $ putStrLn "#performing GC" >> performMajorGC
