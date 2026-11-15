@@ -841,7 +841,9 @@ walkInvalidHeightParents s0 = do
 
 {-# INLINE subscribeHoldEvent #-}
 subscribeHoldEvent :: Hold x p -> Subscriber x p -> EventM x (SubscribeResult x p)
-subscribeHoldEvent = subscribeAndRead . holdEvent
+subscribeHoldEvent h subscriber = do
+  HoldLive e _ _ <- liftIO $ readIORef $ holdState h
+  subscribeAndRead e subscriber
 
 --------------------------------------------------------------------------------
 -- Behavior
@@ -896,7 +898,8 @@ behaviorDyn !d = Behavior $ readHoldTracked =<< getDynHold d
 readHoldTracked :: Hold x p -> BehaviorM x (PatchTarget p)
 readHoldTracked h = do
   result <- liftIO $ readIORef $ holdValue h
-  trackRead (holdInvalidators h) $ BehaviorSubscribedHold h
+  HoldLive _ invalidators _ <- liftIO $ readIORef $ holdState h
+  trackRead invalidators $ BehaviorSubscribedHold h
   liftIO $ touch h -- Otherwise, if this gets inlined enough, the hold's parent reference may get collected
   return result
 
@@ -963,7 +966,7 @@ type DynamicS x p = Dynamic x (PatchTarget p) p
 
 data Dynamic x target p = Dynamic
   { dynamicCurrent :: !(Behavior x target)
-  , dynamicUpdated :: Event x p -- This must be lazy; see the comment on holdEvent --TODO: Would this let us eliminate `Dyn`?
+  , dynamicUpdated :: Event x p -- This must be lazy; see the comment on HoldState --TODO: Would this let us eliminate `Dyn`?
   }
 
 deriving instance HasSpiderTimeline x => Functor (Dynamic x target)
@@ -996,11 +999,15 @@ dynamicDyn !d =
 data Hold x p
   = Hold
   { holdValue :: !(IORef (PatchTarget p))
-  , holdInvalidators :: !(IORef (InvalidatorList x))
-  , holdEvent :: Event x p -- This must be lazy, or holds cannot be defined before their input Events
-  , holdParent :: !(IORef (Maybe (EventSubscription x))) -- Keeps its parent alive (will be undefined until the hold is initialized) --TODO: Probably shouldn't be an IORef
+  , holdState :: !(IORef (HoldState x p))
   , holdNodeId :: {-# UNPACK #-} !NodeId
   }
+
+data HoldState x p
+  = -- | The subscription to the event is Nothing until the hold's init runs.
+    -- The event field must stay lazy, or holds cannot be defined before their
+    -- input events.
+    HoldLive (Event x p) !(IORef (InvalidatorList x)) !(Maybe (EventSubscription x))
 
 -- | A statically allocated 'SpiderTimeline'
 data Global
@@ -1151,14 +1158,12 @@ hold :: (Patch p, Defer (SomeHoldInit x) m) => PatchTarget p -> Event x p -> m (
 hold v0 e = do
   valRef <- liftIO $ newIORef v0
   invsRef <- liftIO $ newIORef emptyInvalidatorList
-  parentRef <- liftIO $ newIORef Nothing
+  stateRef <- liftIO $ newIORef $ HoldLive e invsRef Nothing
   nodeId <- liftIO newNodeId
   let h =
         Hold
           { holdValue = valRef
-          , holdInvalidators = invsRef
-          , holdEvent = e
-          , holdParent = parentRef
+          , holdState = stateRef
           , holdNodeId = nodeId
           }
   defer $ SomeHoldInit h
@@ -2277,19 +2282,17 @@ runHoldInits holdInitRef dynInitRef mergeInitRef = do
 
 initHold :: forall x. HasSpiderTimeline x => SomeHoldInit x -> EventM x ()
 initHold (SomeHoldInit h) = do
-  liftIO (readIORef $ holdParent h) >>= \case
-    Just _ -> pure ()
-    Nothing -> do
-      -- Need to evaluate these so that we don't retain the Hold itself
+  liftIO (readIORef $ holdState h) >>= \case
+    HoldLive e invalidators Nothing -> do
+      -- Need to evaluate this so that we don't retain the Hold itself
       valueRef <- liftIO $ evaluate $ holdValue h
-      invalidators <- liftIO $ evaluate $ holdInvalidators h
       let applyPatch patch = do
             old <- {-# SCC "read" #-} liftIO $ readIORef valueRef
             for_ ({-# SCC "apply" #-} apply patch old) $ \new -> do
               withIncreasedDepth (Proxy :: Proxy x) $
                 tracePropagate (Proxy :: Proxy x) ("initHold: assigning Hold" <> showNodeId h)
               defer $ {-# SCC "assignment" #-} SomeAssignment valueRef invalidators new
-      SubscribeResult subscription occ <- subscribeAndRead (holdEvent h) $ terminalSubscriber $ \a ->
+      SubscribeResult subscription occ <- subscribeAndRead e $ terminalSubscriber $ \a ->
         {-# SCC "traverseHold" #-}
         do
           when debugPropagate $ traceM (Proxy :: Proxy x) $ liftIO $ do
@@ -2297,7 +2300,8 @@ initHold (SomeHoldInit h) = do
             return $ "SubscriberHold" <> showNodeId h <> ": " <> show n
           applyPatch a
       for_ occ applyPatch
-      liftIO $ writeIORef (holdParent h) $ Just subscription
+      liftIO $ writeIORef (holdState h) $ HoldLive e invalidators $ Just subscription
+    _ -> pure ()
 
 initDyn :: HasSpiderTimeline x => SomeDynInit x -> EventM x ()
 initDyn (SomeDynInit d) = void $ getDynHold d
