@@ -81,6 +81,7 @@ main =
       , unsubscribedSwitchReleasesBehavior
       , unsubscribedSwitchIsNotInvalidated
       , mergeUnsubscribedAfterItsPatchChangedItsHeight
+      , coincidenceUnsubscribedAfterItRaisedItsHeight
       ]
 
 unsubscribeAfterCollection :: TestTree
@@ -192,6 +193,37 @@ mergeUnsubscribedAfterItsPatchChangedItsHeight =
               collection <- holdIncremental (IntMap.singleton 0 merged) (PatchIntMap (IntMap.singleton 0 Nothing) <$ input)
               pure $ sum <$> mergeIntIncremental collection
           )
+        , -- The coincidence unsubscribes from its inner event at the end of the
+          -- frame.
+          ("the merge is the inner event of a coincidence", \input merged -> pure $ coincidence $ merged <$ input)
+        ]
+          :: [(String, Event T Int -> Event T Int -> HostFrame T (Event T Int))]
+    ]
+
+-- | A coincidence that raised its height and was dropped in the same frame
+-- must not reset its height (checked under DEBUG_FRAME).
+coincidenceUnsubscribedAfterItRaisedItsHeight :: TestTree
+coincidenceUnsubscribedAfterItRaisedItsHeight =
+  testGroup
+    "a coincidence that raised its height, and whose subscriber unsubscribes in the same frame"
+    [ testCase name $ do
+        occurrence <- runSpiderHost $ do
+          (input, inputTriggerRef) <- newEventWithTriggerRef
+          handle <- runHostFrame $ do
+            -- A merge of the input is higher than the input.
+            let raised = coincidence $ leftmost [input] <$ input
+            subscribeEvent =<< dropAtFirstOccurrence input raised
+          fireEventRefAndRead inputTriggerRef 1 handle
+        occurrence @?= Just 1
+    | (name, dropAtFirstOccurrence) <-
+        [ ("a headE of a merge unsubscribes in the propagation", \_ e -> headE $ leftmost [e])
+        ,
+          ( "a patch removes the coincidence from a merge"
+          , \input e -> do
+              members <- holdIncremental (IntMap.singleton 0 e) (PatchIntMap (IntMap.singleton 0 Nothing) <$ input)
+              pure $ sum <$> mergeIntIncremental members
+          )
+        , ("the coincidence is the inner event of a coincidence", \input e -> pure $ coincidence $ e <$ input)
         ]
           :: [(String, Event T Int -> Event T Int -> HostFrame T (Event T Int))]
     ]
