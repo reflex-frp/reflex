@@ -80,6 +80,7 @@ main =
       [ unsubscribeAfterCollection
       , unsubscribedSwitchReleasesBehavior
       , unsubscribedSwitchIsNotInvalidated
+      , mergeUnsubscribedAfterItsPatchChangedItsHeight
       ]
 
 unsubscribeAfterCollection :: TestTree
@@ -160,3 +161,37 @@ unsubscribedSwitchIsNotInvalidated =
       fireEventRef updatesTriggerRef 1
       _ <- liftIO $ evaluate subscription
       pure ()
+
+-- | A merge's patch changes its height in the frame in which its only
+-- subscriber drops it. The merge must then keep its height, because that
+-- subscriber belongs to a released cacheEvent record (checked under
+-- DEBUG_FRAME).
+mergeUnsubscribedAfterItsPatchChangedItsHeight :: TestTree
+mergeUnsubscribedAfterItsPatchChangedItsHeight =
+  testGroup
+    "a merge whose patch changes its height in the frame in which its subscriber drops it"
+    [ testCase (patchName <> ", " <> dropName) $ do
+        occurrence <- runSpiderHost $ do
+          (input, inputTriggerRef) <- newEventWithTriggerRef
+          handle <- runHostFrame $ do
+            members <- holdIncremental (IntMap.singleton 0 input) (patchOnInput input <$ input)
+            subscribeEvent =<< dropOnInput input (sum <$> mergeIntIncremental members)
+          fireEventRefAndRead inputTriggerRef 1 handle
+        occurrence @?= Just 1
+    | (patchName, patchOnInput) <-
+        [ ("the patch removes the only member", \_ -> PatchIntMap (IntMap.singleton 0 Nothing))
+        , -- A merge of the input is higher than the input.
+          ("the patch adds a higher member", \input -> PatchIntMap (IntMap.singleton 1 (Just (leftmost [input]))))
+        ]
+          :: [(String, Event T Int -> PatchIntMap (Event T Int))]
+    , (dropName, dropOnInput) <-
+        [ ("a switch leaves the merge", \input merged -> switchHold merged (never <$ input))
+        ,
+          ( "a patch removes the merge from a merge"
+          , \input merged -> do
+              collection <- holdIncremental (IntMap.singleton 0 merged) (PatchIntMap (IntMap.singleton 0 Nothing) <$ input)
+              pure $ sum <$> mergeIntIncremental collection
+          )
+        ]
+          :: [(String, Event T Int -> Event T Int -> HostFrame T (Event T Int))]
+    ]

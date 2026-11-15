@@ -2097,7 +2097,12 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
         -- TODO: Assert that vals is not empty
         subscriberPropagate sub vals
 
-      invalidateMyHeight = invalidateOwnHeight heightRef (subscriberInvalidateHeight sub)
+      invalidateMyHeight = do
+        when debugFrame $
+          readIORef changeSubdRef >>= \case
+            MergeChangeUnsubscribed -> error "merge: the height of an unsubscribed merge changes"
+            _ -> pure ()
+        invalidateOwnHeight heightRef (subscriberInvalidateHeight sub)
 
       checkParentCount :: IO ()
       checkParentCount = do
@@ -2111,15 +2116,20 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
         when debugEnabled checkParentCount
         heightBagHeight <$> readIORef heightBagRef
 
-      invalidateMyHeightOnParentChange = do
-        own <- readIORef heightRef
-        case own of
-          ValidHeight -> do
-            heights <- readIORef heightBagRef
-            case heightBagHeight heights of
-              new@ValidHeight | compareHeight own new == EQ -> pure ()
-              _ -> invalidateMyHeight
-          InvalidHeight -> pure ()
+      invalidateMyHeightOnParentChange =
+        readIORef changeSubdRef >>= \case
+          -- runFrame runs the frame's unsubscriptions before this, so the
+          -- merge may already be unsubscribed. Then it keeps its height.
+          MergeChangeUnsubscribed -> pure ()
+          _ -> do
+            own <- readIORef heightRef
+            case own of
+              ValidHeight -> do
+                heights <- readIORef heightBagRef
+                case heightBagHeight heights of
+                  new@ValidHeight | compareHeight own new == EQ -> pure ()
+                  _ -> invalidateMyHeight
+              InvalidHeight -> pure ()
 
       {-# INLINE parentSubscriber #-}
       parentSubscriber :: forall a. EventM x (MapKey map a) -> Subscriber x (v a)
