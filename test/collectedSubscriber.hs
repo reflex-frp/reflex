@@ -14,12 +14,13 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Dependent.Sum (DSum ((:=>)))
 import Data.Functor.Identity (Identity (..))
 import Data.Functor.Misc (Const2 (..))
-import Data.IORef (modifyIORef', newIORef, readIORef, writeIORef)
+import Data.IORef (IORef, mkWeakIORef, modifyIORef', newIORef, readIORef, writeIORef)
 import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
+import Data.Maybe (isNothing)
 import System.Mem (performMajorGC)
-import System.Mem.Weak (mkWeakPtr)
-import Test.Tasty (defaultMain, testGroup)
+import System.Mem.Weak (Weak, deRefWeak, mkWeakPtr)
+import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit
 
 import Reflex
@@ -75,33 +76,72 @@ main :: IO ()
 main =
   defaultMain $
     testGroup
-      "events unsubscribe from parent after GC of last subscriber"
-      [ testCase "cacheEvent" $
-          collectTheOnlySubscriber $ \root ->
-            let cached = S.SpiderEvent $ S.cacheEvent $ S.unSpiderEvent root
-            in (cached, cached)
-      , testCase "merge" $
-          collectTheOnlySubscriber $ \root ->
-            let merged = leftmost [root]
-            in (merged, merged)
-      , -- For fan/fanInt we want unsubscribing from the parent even if the event selector is retained:
-        testCase "fan" $
-          collectTheOnlySubscriber $ \root ->
-            let selector = fanMap $ fmapCheap (Map.singleton (0 :: Int)) root
-            in (select selector (Const2 0), selector)
-      , testCase "fanInt" $
-          collectTheOnlySubscriber $ \root ->
-            let selector = fanInt $ fmapCheap (IntMap.singleton 0) root
-            in (selectInt selector 0, selector)
-      , testCase "root" $
-          collectTheOnlySubscriber $
-            \root -> (root, root)
-      , testCase "switch" $
-          collectTheOnlySubscriber $ \root ->
-            let switched = switch (constant root)
-            in (switched, switched)
-      , testCase "coincidence" $
-          collectTheOnlySubscriber $ \root ->
-            let inner = coincidence (fmapCheap (const root) root)
-            in (inner, inner)
+      "collectedSubscriber"
+      [ unsubscribeAfterCollection
+      , unsubscribedSwitchReleasesBehavior
       ]
+
+unsubscribeAfterCollection :: TestTree
+unsubscribeAfterCollection =
+  testGroup
+    "events unsubscribe from parent after GC of last subscriber"
+    [ testCase "cacheEvent" $
+        collectTheOnlySubscriber $ \root ->
+          let cached = S.SpiderEvent $ S.cacheEvent $ S.unSpiderEvent root
+          in (cached, cached)
+    , testCase "merge" $
+        collectTheOnlySubscriber $ \root ->
+          let merged = leftmost [root]
+          in (merged, merged)
+    , -- For fan/fanInt we want unsubscribing from the parent even if the event selector is retained:
+      testCase "fan" $
+        collectTheOnlySubscriber $ \root ->
+          let selector = fanMap $ fmapCheap (Map.singleton (0 :: Int)) root
+          in (select selector (Const2 0), selector)
+    , testCase "fanInt" $
+        collectTheOnlySubscriber $ \root ->
+          let selector = fanInt $ fmapCheap (IntMap.singleton 0) root
+          in (selectInt selector 0, selector)
+    , testCase "root" $
+        collectTheOnlySubscriber $
+          \root -> (root, root)
+    , testCase "switch" $
+        collectTheOnlySubscriber $ \root ->
+          let switched = switch (constant root)
+          in (switched, switched)
+    , testCase "coincidence" $
+        collectTheOnlySubscriber $ \root ->
+          let inner = coincidence (fmapCheap (const root) root)
+          in (inner, inner)
+    ]
+
+subscribeSwitchOverPull :: Behavior T Int -> Event T Int -> S.SpiderHostFrame Global (S.EventSubscription Global, Weak (IORef ()))
+subscribeSwitchOverPull held inner = S.SpiderHostFrame $ do
+  captured <- liftIO $ newIORef ()
+  weakCaptured <- liftIO $ mkWeakIORef captured (pure ())
+  let behavior = S.pull $ do
+        _ <- S.readBehaviorTracked $ S.unSpiderBehavior held
+        liftIO $ readIORef captured
+        pure $ S.unSpiderEvent inner
+      ignore =
+        S.Subscriber
+          { S.subscriberPropagate = \_ -> pure ()
+          , S.subscriberInvalidateHeight = \_ -> pure ()
+          , S.subscriberRecalculateHeight = \_ -> pure ()
+          }
+  S.SubscribeResult subscription _ <- S.subscribeAndRead (S.switchUncached behavior) ignore
+  pure (subscription, weakCaptured)
+
+unsubscribedSwitchReleasesBehavior :: TestTree
+unsubscribedSwitchReleasesBehavior =
+  testCase "an unsubscribed switch does not retain what its behavior captured or read" $ do
+    (subscription, weakCaptured) <- runSpiderHost $ do
+      (updates, _) <- newEventWithTriggerRef
+      runHostFrame $ do
+        held <- hold 0 updates
+        subscribeSwitchOverPull held updates
+    S.unsubscribe subscription
+    collectAndSettle
+    capturedIsCollected <- isNothing <$> deRefWeak weakCaptured
+    _ <- evaluate subscription
+    assertBool "the value that the behavior captured is collected" capturedIsCollected
