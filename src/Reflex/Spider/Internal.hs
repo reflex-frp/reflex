@@ -1336,7 +1336,7 @@ switchSubscribedHeight :: SwitchSubscribed x a -> IORef Height
 switchSubscribedHeight = eventNodeHeightRef . switchSubscribedNode
 
 data SwitchState x a
-  = SwitchLive !(Behavior x (Event x a)) !(IORef [SomeBehaviorSubscribed x]) !(EventSubscription x)
+  = SwitchLive !(Behavior x (Event x a)) !(IORef [SomeBehaviorSubscribed x]) !(Weak (Invalidator x)) !(EventSubscription x)
   | SwitchParentUnsubscribed
 
 data CoincidenceSubscribed x a
@@ -1503,7 +1503,7 @@ switchUncachedImpl b = Event $ \sub -> do
     mkEventNode
       (error "switchUncached: height not yet known")
       ( readIORef stateRef >>= \case
-          SwitchLive _ _ parent -> pure [_eventSubscription_node parent]
+          SwitchLive _ _ _ parent -> pure [_eventSubscription_node parent]
           SwitchParentUnsubscribed -> pure []
       )
       (whoCreatedIORef stateRef)
@@ -1532,7 +1532,9 @@ switchUncachedImpl b = Event $ \sub -> do
       ( EventSubscription
           { _eventSubscription_unsubscribe = do
               readIORef stateRef >>= \case
-                SwitchLive _ _ parent -> unsubscribe parent
+                SwitchLive _ _ weakInvalidator parent -> do
+                  unsubscribe parent
+                  finalize weakInvalidator
                 SwitchParentUnsubscribed -> pure ()
               writeIORef stateRef SwitchParentUnsubscribed
           , _eventSubscription_retained = toAny subscribed
@@ -1556,7 +1558,7 @@ subscribeSwitchCurrentParent subscribed parentBehavior readSetRef holdInits subs
     runBehaviorM (readBehaviorTracked parentBehavior) $
       BehaviorEnv (Just wi) (Just readSetRef) holdInits
   result <- subscribeToParent e $ switchSubscribedSubscriber subscribed
-  writeIORef (switchSubscribedState subscribed) $! SwitchLive parentBehavior readSetRef $ subscribeSubscription result
+  writeIORef (switchSubscribedState subscribed) $! SwitchLive parentBehavior readSetRef wi $ subscribeSubscription result
   pure result
 
 -- The inner events on coincidence have the type of the Reflex instance, so that
@@ -2377,18 +2379,20 @@ runFrame a = SpiderHost $ do
   switchSubscriptionsToKill <- fmap catMaybes . forM toReconnect $ \(SomeSwitchSubscribed subscribed) ->
     {-# SCC "switchSubscribed" #-}
     readIORef (switchSubscribedState subscribed) >>= \case
-      SwitchParentUnsubscribed -> pure Nothing
-      SwitchLive behavior readSetRef oldSubscription -> do
+      SwitchLive behavior readSetRef _ oldSubscription -> do
         writeIORef readSetRef []
         _ <- subscribeSwitchCurrentParent subscribed behavior readSetRef (eventEnvHoldInits env) subscribeReconnect
         return $ Just oldSubscription
+      -- Can't happen: unsubscribing finalizes the switch's weak invalidator,
+      -- and nothing unsubscribes a switch between the assignments and here.
+      SwitchParentUnsubscribed -> error "runFrame: an unsubscribed switch was invalidated"
   liftIO $ mapM_ unsubscribe mergeSubscriptionsToKill
   liftIO $ mapM_ unsubscribe switchSubscriptionsToKill
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) ->
     {-# SCC "switchSubscribed" #-}
     readIORef (switchSubscribedState subscribed) >>= \case
       SwitchParentUnsubscribed -> pure ()
-      SwitchLive _ _ parent -> do
+      SwitchLive _ _ _ parent -> do
         parentHeight <- eventSubscriptionHeight parent
         myHeight <- readIORef $ switchSubscribedHeight subscribed
         case myHeight of
@@ -2408,7 +2412,7 @@ runFrame a = SpiderHost $ do
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) ->
     readIORef (switchSubscribedState subscribed) >>= \case
       SwitchParentUnsubscribed -> pure ()
-      SwitchLive _ _ parent ->
+      SwitchLive _ _ _ parent ->
         subscriberRecalculateHeight (switchSubscribedSubscriber subscribed) =<< eventSubscriptionHeight parent
   when debugFrame $ do
     leftover <- readIORef $ eventEnvPendingRecalculations env
