@@ -58,7 +58,7 @@ import Data.Proxy
 import Data.These
 import Data.Traversable
 import Data.Type.Equality ((:~:) (Refl))
-import GHC.Exts hiding (toList)
+import GHC.Exts hiding (build, toList)
 import GHC.IORef (IORef (..))
 
 import Control.Monad.ReaderIO
@@ -523,56 +523,68 @@ cacheEventImpl e =
         {-# SCC "cacheEvent" #-}
         do
           liftIO $ printCallSite callSite
-          subscribed <-
-            liftIO (readIORef mSubscribedRef >>= maybe (pure Nothing) deRefWeak) >>= \case
-              Just subscribed -> return subscribed
-              Nothing -> do
-                nodeId <- liftIO newNodeId
-                subscribers <- liftIO WeakBag.empty
-                occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
-                SubscribeResult parentSub occ <-
-                  subscribeAndRead e
-                    $ debugSubscriber ("cacheEvent" <> showNodeId' nodeId)
-                    $ Subscriber
-                      { subscriberPropagate = \a -> do
-                          setOccurrence "cacheEvent" occRef a
-                          propagate a subscribers
-                      , subscriberInvalidateHeight = invalidateBagHeight subscribers
-                      , subscriberRecalculateHeight = recalculateBagHeight subscribers
-                      }
-                for_ occ $ setOccurrence "cacheEvent" occRef
-                let !subscribed =
-                      CacheSubscribed
-                        { _cacheSubscribed_subscribers = subscribers
-                        , _cacheSubscribed_parent = parentSub
-                        , _cacheSubscribed_occurrence = occRef
-                        , _cacheSubscribed_nodeId = nodeId
-                        }
-                liftIO $ writeIORef mSubscribedRef . Just =<< mkWeakPtrWithDebug subscribed "CacheSubscribed"
-                return subscribed
-          -- 'lazy' stops GHC <= 9.0 from reboxing subscribed, so that
-          -- '_eventSubscription_retained' keeps the key of the weak pointer in
-          -- 'mSubscribedRef' alive:
-          let fields = lazy subscribed
-          ticket <- liftIO $ WeakBag.insert sub $ _cacheSubscribed_subscribers fields
-          occ <- liftIO $ readIORef $ _cacheSubscribed_occurrence fields
-          let parentSub = _cacheSubscribed_parent fields
-              -- Prevent reboxing of the unpacked _cacheSubscribed_parent on every
-              -- subscribe.
-              unsubscribeParent = _eventSubscription_unsubscribe parentSub
-              es =
-                EventSubscription
-                  { _eventSubscription_unsubscribe = do
-                      WeakBag.remove ticket
-                      isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers fields
-                      when isEmpty $ do
-                        writeIORef mSubscribedRef Nothing
-                        unsubscribeParent
-                      touch ticket
-                  , _eventSubscription_retained = toAny subscribed
-                  , _eventSubscription_node = _eventSubscription_node parentSub
-                  }
-          pure $ SubscribeResult es occ
+          subscribeCached mSubscribedRef "CacheSubscribed" build $ \subscribed -> do
+            -- 'lazy' stops GHC <= 9.0 from reboxing subscribed, so that
+            -- '_eventSubscription_retained' keeps the key of the weak pointer in
+            -- 'mSubscribedRef' alive:
+            let fields = lazy subscribed
+            ticket <- liftIO $ WeakBag.insert sub $ _cacheSubscribed_subscribers fields
+            occ <- liftIO $ readIORef $ _cacheSubscribed_occurrence fields
+            let parentSub = _cacheSubscribed_parent fields
+                -- Prevent reboxing of the unpacked _cacheSubscribed_parent on every
+                -- subscribe.
+                unsubscribeParent = _eventSubscription_unsubscribe parentSub
+                es =
+                  EventSubscription
+                    { _eventSubscription_unsubscribe = do
+                        WeakBag.remove ticket
+                        isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers fields
+                        when isEmpty $ do
+                          writeIORef mSubscribedRef Nothing
+                          unsubscribeParent
+                        touch ticket
+                    , _eventSubscription_retained = toAny subscribed
+                    , _eventSubscription_node = _eventSubscription_node parentSub
+                    }
+            pure $ SubscribeResult es occ
+  where
+    build = do
+      nodeId <- liftIO newNodeId
+      subscribers <- liftIO WeakBag.empty
+      occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
+      SubscribeResult parentSub occ <-
+        subscribeAndRead e
+          $ debugSubscriber ("cacheEvent" <> showNodeId' nodeId)
+          $ Subscriber
+            { subscriberPropagate = \a -> do
+                setOccurrence "cacheEvent" occRef a
+                propagate a subscribers
+            , subscriberInvalidateHeight = invalidateBagHeight subscribers
+            , subscriberRecalculateHeight = recalculateBagHeight subscribers
+            }
+      for_ occ $ setOccurrence "cacheEvent" occRef
+      pure $!
+        CacheSubscribed
+          { _cacheSubscribed_subscribers = subscribers
+          , _cacheSubscribed_parent = parentSub
+          , _cacheSubscribed_occurrence = occRef
+          , _cacheSubscribed_nodeId = nodeId
+          }
+
+{-# INLINE subscribeCached #-}
+subscribeCached
+  :: IORef (Maybe (Weak r))
+  -> String
+  -> EventM x r
+  -> (r -> EventM x (SubscribeResult x b))
+  -> EventM x (SubscribeResult x b)
+subscribeCached weakSubscribedRef debugNote build addSubscriber =
+  liftIO (readIORef weakSubscribedRef >>= maybe (pure Nothing) deRefWeak) >>= maybe buildRecord addSubscriber
+  where
+    buildRecord = do
+      subscribed <- build
+      liftIO $ writeIORef weakSubscribedRef . Just =<< mkWeakPtrWithDebug subscribed debugNote
+      addSubscriber subscribed
 
 subscribe :: Event x a -> Subscriber x a -> EventM x (EventSubscription x)
 subscribe e s = subscribeSubscription <$> subscribeAndRead e s
@@ -601,48 +613,8 @@ atomicModifyIORef'_ ref f = atomicModifyIORef' ref $ \old -> let !new = f old in
 
 {-# INLINE eventFan #-}
 eventFan :: forall x map v a. (HasSpiderTimeline x, IsMap map) => MapKey map a -> Event x (map v) -> Fan x map v -> Event x (v a)
-eventFan !k p (Fan !weakMaybeFanSubscribed) = Event $ \sub -> do
-  subscribed <-
-    liftIO (readIORef weakMaybeFanSubscribed >>= maybe (pure Nothing) deRefWeak) >>= \case
-      Just subscribed -> pure subscribed
-      Nothing -> do
-        nodeId <- liftIO newNodeId
-        subscribersRef <- liftIO $ newIORef mapEmpty
-        nextIdRef <- liftIO $ newIORef 0
-        occRef <- liftIO $ newIORef Nothing
-        SubscribeResult parentSub parentOcc <-
-          subscribeAndRead p
-            $ debugSubscriber ("SubscriberFan " <> showNodeId' nodeId)
-            $ Subscriber
-              { subscriberPropagate = \a ->
-                  {-# SCC "traverseFan" #-}
-                  do
-                    subs <- liftIO $ readIORef subscribersRef
-                    tracePropagate (Proxy :: Proxy x) $ show (mapSize subs) <> " keys subscribed, " <> show (mapSize a) <> " keys firing"
-                    setOccurrence "fan" occRef a
-                    mapForIntersection_ subs a $ \(FanSubscribers s) v ->
-                      withIncreasedDepth (Proxy :: Proxy x) $ WeakBag.traverseWeakIntMap_ s $ \c -> subscriberPropagate c v
-              , subscriberInvalidateHeight = \old -> do
-                  subs <- readIORef subscribersRef
-                  mapFor_ subs $ \(FanSubscribers s) ->
-                    WeakBag.traverseWeakIntMap_ s $ \c -> subscriberInvalidateHeight c old
-              , subscriberRecalculateHeight = \new -> do
-                  subs <- readIORef subscribersRef
-                  mapFor_ subs $ \(FanSubscribers s) ->
-                    WeakBag.traverseWeakIntMap_ s $ \c -> subscriberRecalculateHeight c new
-              }
-        for_ parentOcc $ setOccurrence "fan" occRef
-        let !subscribed =
-              FanSubscribed
-                { fanSubscribedSubscribers = subscribersRef
-                , fanSubscribedNextId = nextIdRef
-                , fanSubscribedOccurrence = occRef
-                , fanSubscribedParent = parentSub
-                , fanSubscribedNodeId = nodeId
-                }
-        liftIO $ writeIORef weakMaybeFanSubscribed . Just =<< mkWeakPtrWithDebug subscribed "FanSubscribed"
-        pure subscribed
-  liftIO $ do
+eventFan !k p (Fan !weakMaybeFanSubscribed) = Event $ \sub ->
+  subscribeCached weakMaybeFanSubscribed "FanSubscribed" build $ \subscribed -> liftIO $ do
     let fields = lazy subscribed -- see 'cacheEventImpl' for 'lazy' reason
         subscribersRef = fanSubscribedSubscribers fields
     sub' <- evaluate sub
@@ -667,6 +639,42 @@ eventFan !k p (Fan !weakMaybeFanSubscribed) = Event $ \sub -> do
               unsubscribe $ fanSubscribedParent fields
           touch sub'
     pure $ SubscribeResult (EventSubscription unsubscribeKey (toAny subscribed) (_eventSubscription_node $ fanSubscribedParent fields)) $ mapLookup k =<< currentOcc
+  where
+    build = do
+      nodeId <- liftIO newNodeId
+      subscribersRef <- liftIO $ newIORef mapEmpty
+      nextIdRef <- liftIO $ newIORef 0
+      occRef <- liftIO $ newIORef Nothing
+      SubscribeResult parentSub parentOcc <-
+        subscribeAndRead p
+          $ debugSubscriber ("SubscriberFan " <> showNodeId' nodeId)
+          $ Subscriber
+            { subscriberPropagate = \a ->
+                {-# SCC "traverseFan" #-}
+                do
+                  subs <- liftIO $ readIORef subscribersRef
+                  tracePropagate (Proxy :: Proxy x) $ show (mapSize subs) <> " keys subscribed, " <> show (mapSize a) <> " keys firing"
+                  setOccurrence "fan" occRef a
+                  mapForIntersection_ subs a $ \(FanSubscribers s) v ->
+                    withIncreasedDepth (Proxy :: Proxy x) $ WeakBag.traverseWeakIntMap_ s $ \c -> subscriberPropagate c v
+            , subscriberInvalidateHeight = \old -> do
+                subs <- readIORef subscribersRef
+                mapFor_ subs $ \(FanSubscribers s) ->
+                  WeakBag.traverseWeakIntMap_ s $ \c -> subscriberInvalidateHeight c old
+            , subscriberRecalculateHeight = \new -> do
+                subs <- readIORef subscribersRef
+                mapFor_ subs $ \(FanSubscribers s) ->
+                  WeakBag.traverseWeakIntMap_ s $ \c -> subscriberRecalculateHeight c new
+            }
+      for_ parentOcc $ setOccurrence "fan" occRef
+      pure $!
+        FanSubscribed
+          { fanSubscribedSubscribers = subscribersRef
+          , fanSubscribedNextId = nextIdRef
+          , fanSubscribedOccurrence = occRef
+          , fanSubscribedParent = parentSub
+          , fanSubscribedNodeId = nodeId
+          }
 
 eventHold :: Hold x p -> Event x p
 eventHold !h = Event $ subscribeHoldEvent h
