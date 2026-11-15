@@ -79,6 +79,7 @@ main =
       "collectedSubscriber"
       [ unsubscribeAfterCollection
       , unsubscribedSwitchReleasesBehavior
+      , unsubscribedSwitchIsNotInvalidated
       ]
 
 unsubscribeAfterCollection :: TestTree
@@ -145,3 +146,17 @@ unsubscribedSwitchReleasesBehavior =
     capturedIsCollected <- isNothing <$> deRefWeak weakCaptured
     _ <- evaluate subscription
     assertBool "the value that the behavior captured is collected" capturedIsCollected
+
+-- | 'S.runFrame' errors if this reconnects the unsubscribed switch.
+unsubscribedSwitchIsNotInvalidated :: TestTree
+unsubscribedSwitchIsNotInvalidated =
+  testCase "an update of a hold that an unsubscribed switch read does not invalidate the switch" $
+    runSpiderHost $ do
+      (updates, updatesTriggerRef) <- newEventWithTriggerRef
+      (subscription, _) <- runHostFrame $ do
+        held <- hold 0 updates
+        subscribeSwitchOverPull held updates
+      liftIO $ S.unsubscribe subscription
+      fireEventRef updatesTriggerRef 1
+      _ <- liftIO $ evaluate subscription
+      pure ()
