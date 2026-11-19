@@ -1,5 +1,49 @@
 # Revision history for reflex
 
+## 0.10.0.0
+
+### Breaking changes
+Not expected to affect any user code:
+
+* The modules `Reflex.FastWeak` and `Data.FastWeakBag` and the `fast-weak` cabal flag are removed. On GHCJS, Spider now always uses `System.Mem.Weak`.
+* `Data.WeakBag`: `insert` no longer takes a weak reference and a callback, `singleton` and `_weakBag_children` are removed, and `isEmpty` and `traverseWeakIntMap_` are new.
+* Many changes to `Reflex.Spider.Internal`. The height code moved to the new module `Reflex.Spider.Height`.
+* `EventWriterT` now wraps `StateT [Event t w] m`.
+* The deprecated type synonym `SpiderEnv` is removed. Use `SpiderTimeline` instead.
+
+### Deprecations
+
+* `mergeIntMap` and `mergeIntMapIncremental` are deprecated in favour of `mergeInt` and `mergeIntIncremental` ([#537](https://github.com/reflex-frp/reflex/pull/537)).
+
+### Fixes
+
+* Fix a space leak in `fanInt`: it stayed subscribed to its parent for as long as its `EventSelectorInt` was retained. `fan` and `fanInt` now share one implementation ([#554](https://github.com/reflex-frp/reflex/pull/554)).
+* Fix `cacheEvent` storing a thunk instead of a weak reference, which kept its subscription alive until the thunk was evaluated ([#552](https://github.com/reflex-frp/reflex/pull/552)).
+* `newFanEventWithTrigger` can now fire multiple keys in one frame ([#555](https://github.com/reflex-frp/reflex/pull/555)).
+* Fix incremental merges not initializing the holds and merges that are created when a patch adds a parent ([#552](https://github.com/reflex-frp/reflex/pull/552)).
+* `merge` and the other `DMap` merges now check for causality loops on every parent occurrence, not only on the first one in a frame ([#556](https://github.com/reflex-frp/reflex/pull/556)).
+* Fix races between the finalizer thread and the frame thread in root events.
+* Fix lost occurrences in `TriggerEventT`'s `newEventWithLazyTriggerWithOnComplete`: an occurrence queued before the event was torn down and set up again didn't reach the new subscribers.
+* Fix a race between the finalizer thread and the frame thread in `fan`: the per-key subscriber map is now updated atomically.
+* Fix a race in `switch`: if a finalizer unsubscribed a switch during a frame, the switch still subscribed to its new parent and unsubscribed from its old parent twice.
+* Incremental merges no longer subscribe to new parents from patches after they are unsubscribed.
+* Correct the `Dynamic` `Monad` instance in `Reflex.Pure` ([#549](https://github.com/reflex-frp/reflex/pull/549)).
+
+### Improvements
+
+* All event nodes in Spider are now garbage collected together with the last subscriber instead of being unsubscribed by a finalizer.
+* Spider now has its own `headE` implementation instead of using `slowHeadE` ([#546](https://github.com/reflex-frp/reflex/pull/546)).
+* Reconnecting switches at the end of a frame does less work ([#548](https://github.com/reflex-frp/reflex/pull/548)).
+* `EventWriterT` now uses `mergeInt`, which is more efficient ([#539](https://github.com/reflex-frp/reflex/pull/539)).
+* All Spider merges now share one implementation, and a merge only invalidates its subscribers' heights when its own height changes ([#556](https://github.com/reflex-frp/reflex/pull/556)).
+* Wide int-based merges no longer take quadratic time when all their parents change height.
+* Rewrite RULES are rewritten and more comprehensive ([#556](https://github.com/reflex-frp/reflex/pull/556)).
+* Spider's `ReflexHost`, `MonadReflexHost`, `MonadSample` and `MonadHold` instances are now specialized at `Global` ([#555](https://github.com/reflex-frp/reflex/pull/555)).
+* With GHC 9.12 and later, reflex is built with `-fexpose-overloaded-unfoldings`, so its overloaded functions can be specialized in user code ([#556](https://github.com/reflex-frp/reflex/pull/556)).
+* Smaller optimizations in fans, holds, weak bags, height bags, merges and `cacheEvent`.
+* New `debug-frame` cabal flag guarding frame invariants, for use during development or debugging, or simply as extra precaution ([#551](https://github.com/reflex-frp/reflex/pull/551)).
+* Support for GHC 9.14 by @ymeister in [#528](https://github.com/reflex-frp/reflex/pull/528).
+
 ## 0.9.4.1
 
 * Bug fix for `CausalityLoopException`s caused by incorrect coincidence and merge height invalidation by @parenthetical in [#536](https://github.com/reflex-frp/reflex/pull/536).
