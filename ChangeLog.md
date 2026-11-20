@@ -2,9 +2,77 @@
 
 ## Unreleased
 
-* Breaking Change: `runQueryT`, `withQueryT`, and `dynWithQueryT` now require the `MonadHold t m` constraint instead of `MonadFix m`. This is due to [#530](https://github.com/reflex-frp/reflex/pull/530) by @parenthetical fixing an implementation detail in `runQueryT`.
-* Breaking Change: the modules `Reflex.FastWeak` and `Data.FastWeakBag` and the `fast-weak` cabal flag are removed.
-* Fix: `newFanEventWithTrigger` can now fire multiple keys in one frame.
+The goal of this release is to bring hosts closer to Reflex's denotational model of time as implemented by `Reflex.Pure`. Host functions no longer add unintended instants of their own, and the denotationally meaningful `now` event replaces `getPostBuild`.
+
+### Breaking changes
+
+* `runQueryT`, `withQueryT`, and `dynWithQueryT` now require the `MonadHold t m` constraint instead of `MonadFix m`. This is due to [#530](https://github.com/reflex-frp/reflex/pull/530) fixing an implementation detail in `runQueryT`.
+* `MonadReflexHost` has a single method now, `hostFrameAndRead`, which runs a `HostFrame` action, fires triggers and reads events at the same instant. `fireEventsAndRead` and `runHostFrame` are made regular functions. `ReflexHost` now requires `MonadIO (HostFrame t)` ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* Each `sample`, `hold` or `subscribeEvent` in `SpiderHost` used to run at its own instant, so you could miss an occurrence of `now`. `SpiderHost` is no longer an instance of `MonadSample`, `MonadHold` or `MonadSubscribeEvent`, and `MonadReflexHost` no longer requires `MonadSubscribeEvent`. Call these functions inside `runHostFrame` instead, like `runHostFrame (subscribeEvent e)` ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* `FireCommand`'s field is now `runFireCommandAndRead`. It no longer returns a list with one result per instant. Instead, its read callback runs at each instant: first the triggers' instant, then each instant where `performEvent` results occur. The callback passes an accumulator along and can return `Left` to stop. `runFireCommand` is now a function that fires triggers without reading ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* `runPostBuildT` no longer takes a post-build event; it just unwraps `PostBuildT`. Also, `Reflex.PostBuild.Base` no longer exports `mapIntMapWithAdjustImpl` and `mapDMapWithAdjustImpl` ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* `getPostBuild` is now simply `now`, and `PostBuild` has `MonadHold` as a superclass. Functions like `listWithKey`, `networkView`, `workflowView` and `tickLossy` need `MonadHold` instead of `PostBuild` ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* `Data.FastMutableIntMap` is removed ([#556](https://github.com/reflex-frp/reflex/pull/556)).
+
+### Deprecations
+
+* The `PostBuild` class is deprecated. Use the denotative `now` of `MonadHold` instead ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+
+### Fixes
+
+* `runHeadlessApp`: `getPostBuild` used to occur one instant after the app started. It now occurs at the instant the app starts, since it's just `now` ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* `runHeadlessApp` now returns at the instant the shutdown event occurs. It used to keep going until no `performEvent` actions were left ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* `hostPerformEventT`: `performEvent` used to do nothing for occurrences at the instant `hostPerformEventT` runs its argument, like the occurrence of `now`. These actions now run, and their results occur at the next instant ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* Spider's `subscribeEvent` used to miss an occurrence at the instant it subscribes, like the occurrence of `now` ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+
+### Improvements
+
+* Add `hostPerformEventTAndRead`, a version of `hostPerformEventT` that also lets you read events at the instant it runs its argument and at each instant where `performEvent` results occur ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* Add `MonadSample` and `MonadHold` instances for the lazy `StateT`.
+
+## 0.10.0.0
+
+### Breaking changes
+Not expected to affect any user code:
+
+* The modules `Reflex.FastWeak` and `Data.FastWeakBag` and the `fast-weak` cabal flag are removed. On GHCJS, Spider now always uses `System.Mem.Weak`.
+* `Data.WeakBag`: `insert` no longer takes a weak reference and a callback, `singleton` and `_weakBag_children` are removed, and `isEmpty` and `traverseWeakIntMap_` are new.
+* Many changes to `Reflex.Spider.Internal`. The height code moved to the new module `Reflex.Spider.Height`.
+* `EventWriterT` now wraps `StateT [Event t w] m`.
+* The deprecated type synonym `SpiderEnv` is removed. Use `SpiderTimeline` instead.
+
+### Deprecations
+
+* `mergeIntMap` and `mergeIntMapIncremental` are deprecated in favour of `mergeInt` and `mergeIntIncremental` ([#537](https://github.com/reflex-frp/reflex/pull/537)).
+
+### Fixes
+
+* Fix a space leak in `fanInt`: it stayed subscribed to its parent for as long as its `EventSelectorInt` was retained. `fan` and `fanInt` now share one implementation ([#554](https://github.com/reflex-frp/reflex/pull/554)).
+* Fix `cacheEvent` storing a thunk instead of a weak reference, which kept its subscription alive until the thunk was evaluated ([#552](https://github.com/reflex-frp/reflex/pull/552)).
+* `newFanEventWithTrigger` can now fire multiple keys in one frame ([#555](https://github.com/reflex-frp/reflex/pull/555)).
+* Fix incremental merges not initializing the holds and merges that are created when a patch adds a parent ([#552](https://github.com/reflex-frp/reflex/pull/552)).
+* `merge` and the other `DMap` merges now check for causality loops on every parent occurrence, not only on the first one in a frame ([#556](https://github.com/reflex-frp/reflex/pull/556)).
+* Fix races between the finalizer thread and the frame thread in root events.
+* Fix lost occurrences in `TriggerEventT`'s `newEventWithLazyTriggerWithOnComplete`: an occurrence queued before the event was torn down and set up again didn't reach the new subscribers.
+* Fix a race between the finalizer thread and the frame thread in `fan`: the per-key subscriber map is now updated atomically.
+* Fix a race in `switch`: if a finalizer unsubscribed a switch during a frame, the switch still subscribed to its new parent and unsubscribed from its old parent twice.
+* Incremental merges no longer subscribe to new parents from patches after they are unsubscribed.
+* Correct the `Dynamic` `Monad` instance in `Reflex.Pure` ([#549](https://github.com/reflex-frp/reflex/pull/549)).
+
+### Improvements
+
+* All event nodes in Spider are now garbage collected together with the last subscriber instead of being unsubscribed by a finalizer.
+* Spider now has its own `headE` implementation instead of using `slowHeadE` ([#546](https://github.com/reflex-frp/reflex/pull/546)).
+* Reconnecting switches at the end of a frame does less work ([#548](https://github.com/reflex-frp/reflex/pull/548)).
+* `EventWriterT` now uses `mergeInt`, which is more efficient ([#539](https://github.com/reflex-frp/reflex/pull/539)).
+* All Spider merges now share one implementation, and a merge only invalidates its subscribers' heights when its own height changes ([#556](https://github.com/reflex-frp/reflex/pull/556)).
+* Wide int-based merges no longer take quadratic time when all their parents change height.
+* Rewrite RULES are rewritten and more comprehensive ([#556](https://github.com/reflex-frp/reflex/pull/556)).
+* Spider's `ReflexHost`, `MonadReflexHost`, `MonadSample` and `MonadHold` instances are now specialized at `Global` ([#555](https://github.com/reflex-frp/reflex/pull/555)).
+* With GHC 9.12 and later, reflex is built with `-fexpose-overloaded-unfoldings`, so its overloaded functions can be specialized in user code ([#556](https://github.com/reflex-frp/reflex/pull/556)).
+* Smaller optimizations in fans, holds, weak bags, height bags, merges and `cacheEvent`.
+* New `debug-frame` cabal flag guarding frame invariants, for use during development or debugging, or simply as extra precaution ([#551](https://github.com/reflex-frp/reflex/pull/551)).
+* Support for GHC 9.14 by @ymeister in [#528](https://github.com/reflex-frp/reflex/pull/528).
 
 ## 0.9.4.1
 
