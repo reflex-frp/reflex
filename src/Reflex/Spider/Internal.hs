@@ -111,8 +111,6 @@ import qualified Data.WeakBag as WeakBag
 import qualified Reflex.Class
 import qualified Reflex.Class as R
 import qualified Reflex.Host.Class
-import Reflex.NotReady.Class
-import Reflex.PerformEvent.Base (PerformEventT)
 
 #ifdef DEBUG_TRACE_EVENTS
 import qualified Data.ByteString.Char8 as BS8
@@ -2971,10 +2969,6 @@ instance Monad (SpiderHostFrame x) where
   fail s = SpiderHostFrame $ fail s
 #endif
 
-instance NotReady (SpiderTimeline x) (SpiderHostFrame x) where
-  notReadyUntil _ = pure ()
-  notReady = pure ()
-
 newEventWithTriggerIO :: forall x a. HasSpiderTimeline x => (RootTrigger x a -> IO (IO ())) -> IO (Event x a)
 newEventWithTriggerIO f = do
   es <- newFanEventWithTriggerIO $ \Refl -> f
@@ -3017,11 +3011,3 @@ instance MonadAtomicRef (SpiderHostFrame x) where
 instance PrimMonad (SpiderHostFrame x) where
   type PrimState (SpiderHostFrame x) = PrimState IO
   primitive = SpiderHostFrame . EventM . primitive
-
-instance NotReady (SpiderTimeline x) (SpiderHost x) where
-  notReadyUntil _ = return ()
-  notReady = return ()
-
-instance HasSpiderTimeline x => NotReady (SpiderTimeline x) (PerformEventT (SpiderTimeline x) (SpiderHost x)) where
-  notReadyUntil _ = return ()
-  notReady = return ()

@@ -57,7 +57,6 @@ import Reflex.Class
 import Reflex.DynamicWriter.Class
 import Reflex.EventWriter.Class
 import Reflex.Host.Class
-import Reflex.NotReady.Class
 import Reflex.PerformEvent.Class
 import Reflex.PostBuild.Class
 import Reflex.Query.Class
@@ -234,10 +233,6 @@ instance TriggerEvent t m => TriggerEvent (ProfiledTimeline t) (ProfiledM m) whe
 
 instance PostBuild t m => PostBuild (ProfiledTimeline t) (ProfiledM m) where
   getPostBuild = coerce <$> lift getPostBuild
-
-instance NotReady t m => NotReady (ProfiledTimeline t) (ProfiledM m) where
-  notReady = lift notReady
-  notReadyUntil = lift . notReadyUntil . coerce
 
 instance BehaviorWriter t w m => BehaviorWriter (ProfiledTimeline t) w (ProfiledM m) where
   tellBehavior = lift . tellBehavior . coerce

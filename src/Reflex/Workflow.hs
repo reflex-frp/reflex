@@ -22,7 +22,6 @@ import Control.Monad.Fix (MonadFix)
 import Reflex.Adjustable.Class
 import Reflex.Class
 import Reflex.Network
-import Reflex.NotReady.Class
 
 -- | A widget in a workflow
 --
@@ -36,7 +35,7 @@ workflow w0 = do
   return $ fmap fst eResult
 
 -- | Similar to 'workflow', but outputs an 'Event' that fires at post-build time and whenever the current 'Workflow' is replaced by the next 'Workflow'.
-workflowView :: forall t m a. (NotReady t m, Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (Event t a)
+workflowView :: forall t m a. (Adjustable t m, MonadFix m, MonadHold t m) => Workflow t m a -> m (Event t a)
 workflowView w0 = do
   rec eResult <- networkView . fmap unWorkflow =<< holdDyn w0 eReplace
       eReplace <- fmap switch $ hold never $ fmap snd eResult
