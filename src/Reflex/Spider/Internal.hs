@@ -523,56 +523,86 @@ cacheEventImpl e =
         {-# SCC "cacheEvent" #-}
         do
           liftIO $ printCallSite callSite
-          subscribed <-
-            liftIO (readIORef mSubscribedRef >>= maybe (pure Nothing) deRefWeak) >>= \case
-              Just subscribed -> return subscribed
-              Nothing -> do
-                nodeId <- liftIO newNodeId
-                subscribers <- liftIO WeakBag.empty
-                occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
-                SubscribeResult parentSub occ <-
-                  subscribeAndRead e
-                    $ debugSubscriber ("cacheEvent" <> showNodeId' nodeId)
-                    $ Subscriber
-                      { subscriberPropagate = \a -> do
-                          setOccurrence "cacheEvent" occRef a
-                          propagate a subscribers
-                      , subscriberInvalidateHeight = invalidateBagHeight subscribers
-                      , subscriberRecalculateHeight = recalculateBagHeight subscribers
-                      }
-                for_ occ $ setOccurrence "cacheEvent" occRef
-                let !subscribed =
-                      CacheSubscribed
-                        { _cacheSubscribed_subscribers = subscribers
-                        , _cacheSubscribed_parent = parentSub
-                        , _cacheSubscribed_occurrence = occRef
-                        , _cacheSubscribed_nodeId = nodeId
-                        }
-                liftIO $ writeIORef mSubscribedRef . Just =<< mkWeakPtrWithDebug subscribed "CacheSubscribed"
-                return subscribed
-          -- 'lazy' stops GHC <= 9.0 from reboxing subscribed, so that
-          -- '_eventSubscription_retained' keeps the key of the weak pointer in
-          -- 'mSubscribedRef' alive:
-          let fields = lazy subscribed
-          ticket <- liftIO $ WeakBag.insert sub $ _cacheSubscribed_subscribers fields
-          occ <- liftIO $ readIORef $ _cacheSubscribed_occurrence fields
-          let parentSub = _cacheSubscribed_parent fields
-              -- Prevent reboxing of the unpacked _cacheSubscribed_parent on every
-              -- subscribe.
-              unsubscribeParent = _eventSubscription_unsubscribe parentSub
-              es =
-                EventSubscription
-                  { _eventSubscription_unsubscribe = do
-                      WeakBag.remove ticket
-                      isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers fields
-                      when isEmpty $ do
-                        writeIORef mSubscribedRef Nothing
-                        unsubscribeParent
-                      touch ticket
-                  , _eventSubscription_retained = toAny subscribed
-                  , _eventSubscription_node = _eventSubscription_node parentSub
-                  }
-          pure $ SubscribeResult es occ
+          subscribeCached mSubscribedRef "CacheSubscribed" (build mSubscribedRef) $ \subscribed -> do
+            -- 'lazy' stops GHC <= 9.0 from reboxing subscribed, so that
+            -- '_eventSubscription_retained' keeps the key of the weak pointer in
+            -- 'mSubscribedRef' alive:
+            let fields = lazy subscribed
+            ticket <- liftIO $ WeakBag.insert sub $ _cacheSubscribed_subscribers fields
+            occ <- liftIO $ readIORef $ _cacheSubscribed_occurrence fields
+            let parentSub = _cacheSubscribed_parent fields
+                -- Prevent reboxing of the unpacked _cacheSubscribed_parent on every
+                -- subscribe.
+                unsubscribeParent = _eventSubscription_unsubscribe parentSub
+                es =
+                  EventSubscription
+                    { _eventSubscription_unsubscribe = do
+                        WeakBag.remove ticket
+                        isEmpty <- WeakBag.isEmpty $ _cacheSubscribed_subscribers fields
+                        when isEmpty $ do
+                          writeIORef mSubscribedRef Nothing
+                          unsubscribeParent
+                        touch ticket
+                    , _eventSubscription_retained = toAny subscribed
+                    , _eventSubscription_node = _eventSubscription_node parentSub
+                    }
+            pure $ SubscribeResult es occ
+  where
+    build mSubscribedRef = do
+      nodeId <- liftIO newNodeId
+      subscribers <- liftIO WeakBag.empty
+      occRef <- liftIO $ newIORef Nothing -- This should never be read prior to being set below
+      let checkNotReleased = checkRecordNotReleased "cacheEvent" mSubscribedRef ((== occRef) . _cacheSubscribed_occurrence)
+      SubscribeResult parentSub occ <-
+        subscribeAndRead e
+          $ debugSubscriber ("cacheEvent" <> showNodeId' nodeId)
+          $ Subscriber
+            { subscriberPropagate = \a -> do
+                liftIO checkNotReleased
+                setOccurrence "cacheEvent" occRef a
+                propagate a subscribers
+            , subscriberInvalidateHeight = \old -> do
+                checkNotReleased
+                invalidateBagHeight subscribers old
+            , subscriberRecalculateHeight = \new -> do
+                checkNotReleased
+                recalculateBagHeight subscribers new
+            }
+      for_ occ $ setOccurrence "cacheEvent" occRef
+      pure $!
+        CacheSubscribed
+          { _cacheSubscribed_subscribers = subscribers
+          , _cacheSubscribed_parent = parentSub
+          , _cacheSubscribed_occurrence = occRef
+          , _cacheSubscribed_nodeId = nodeId
+          }
+
+{-# INLINE subscribeCached #-}
+subscribeCached
+  :: IORef (Maybe (Weak r))
+  -> String
+  -> EventM x r
+  -> (r -> EventM x (SubscribeResult x b))
+  -> EventM x (SubscribeResult x b)
+subscribeCached weakSubscribedRef debugNote build addSubscriber =
+  liftIO (readIORef weakSubscribedRef >>= maybe (pure Nothing) deRefWeak) >>= maybe buildRecord addSubscriber
+  where
+    buildRecord = do
+      subscribed <- build
+      liftIO $ writeIORef weakSubscribedRef . Just =<< mkWeakPtrWithDebug subscribed debugNote
+      addSubscriber subscribed
+
+-- | DEBUG_FRAME: fail if a parent notifies a released 'cacheEvent' or fan
+-- record. A finalized weak pointer passes, since we can't tell which it was.
+{-# INLINE checkRecordNotReleased #-}
+checkRecordNotReleased :: String -> IORef (Maybe (Weak r)) -> (r -> Bool) -> IO ()
+checkRecordNotReleased debugNote weakSubscribedRef isThisRecord =
+  when debugFrame $ do
+    released <-
+      readIORef weakSubscribedRef >>= \case
+        Nothing -> pure True
+        Just weakCurrent -> maybe False (not . isThisRecord) <$> deRefWeak weakCurrent
+    when released $ error $ debugNote <> ": a node notifies the subscriber of a released record"
 
 eventRoot :: (GCompare k, HasSpiderTimeline x) => k a -> Root x k -> Event x a
 eventRoot !k !r = Event $ liftIO . subscribeAndReadRoot k r
@@ -598,48 +628,8 @@ atomicModifyIORef'_ ref f = atomicModifyIORef' ref $ \old -> let !new = f old in
 
 {-# INLINE eventFan #-}
 eventFan :: forall x map v a. (HasSpiderTimeline x, IsMap map) => MapKey map a -> Event x (map v) -> Fan x map v -> Event x (v a)
-eventFan !k p (Fan !weakMaybeFanSubscribed) = Event $ \sub -> do
-  subscribed <-
-    liftIO (readIORef weakMaybeFanSubscribed >>= maybe (pure Nothing) deRefWeak) >>= \case
-      Just subscribed -> pure subscribed
-      Nothing -> do
-        nodeId <- liftIO newNodeId
-        subscribersRef <- liftIO $ newIORef mapEmpty
-        nextIdRef <- liftIO $ newIORef 0
-        occRef <- liftIO $ newIORef Nothing
-        SubscribeResult parentSub parentOcc <-
-          subscribeAndRead p
-            $ debugSubscriber ("SubscriberFan " <> showNodeId' nodeId)
-            $ Subscriber
-              { subscriberPropagate = \a ->
-                  {-# SCC "traverseFan" #-}
-                  do
-                    subs <- liftIO $ readIORef subscribersRef
-                    tracePropagate (Proxy :: Proxy x) $ show (mapSize subs) <> " keys subscribed, " <> show (mapSize a) <> " keys firing"
-                    setOccurrence "fan" occRef a
-                    mapForIntersection_ subs a $ \(FanSubscribers s) v ->
-                      withIncreasedDepth (Proxy :: Proxy x) $ WeakBag.traverseWeakIntMap_ s $ \c -> subscriberPropagate c v
-              , subscriberInvalidateHeight = \old -> do
-                  subs <- readIORef subscribersRef
-                  mapFor_ subs $ \(FanSubscribers s) ->
-                    WeakBag.traverseWeakIntMap_ s $ \c -> subscriberInvalidateHeight c old
-              , subscriberRecalculateHeight = \new -> do
-                  subs <- readIORef subscribersRef
-                  mapFor_ subs $ \(FanSubscribers s) ->
-                    WeakBag.traverseWeakIntMap_ s $ \c -> subscriberRecalculateHeight c new
-              }
-        for_ parentOcc $ setOccurrence "fan" occRef
-        let !subscribed =
-              FanSubscribed
-                { fanSubscribedSubscribers = subscribersRef
-                , fanSubscribedNextId = nextIdRef
-                , fanSubscribedOccurrence = occRef
-                , fanSubscribedParent = parentSub
-                , fanSubscribedNodeId = nodeId
-                }
-        liftIO $ writeIORef weakMaybeFanSubscribed . Just =<< mkWeakPtrWithDebug subscribed "FanSubscribed"
-        pure subscribed
-  liftIO $ do
+eventFan !k p (Fan !weakMaybeFanSubscribed) = Event $ \sub ->
+  subscribeCached weakMaybeFanSubscribed "FanSubscribed" build $ \subscribed -> liftIO $ do
     let fields = lazy subscribed -- see 'cacheEventImpl' for 'lazy' reason
         subscribersRef = fanSubscribedSubscribers fields
     sub' <- evaluate sub
@@ -664,6 +654,46 @@ eventFan !k p (Fan !weakMaybeFanSubscribed) = Event $ \sub -> do
               unsubscribe $ fanSubscribedParent fields
           touch sub'
     pure $ SubscribeResult (EventSubscription unsubscribeKey (toAny subscribed) (_eventSubscription_node $ fanSubscribedParent fields)) $ mapLookup k =<< currentOcc
+  where
+    build = do
+      nodeId <- liftIO newNodeId
+      subscribersRef <- liftIO $ newIORef mapEmpty
+      nextIdRef <- liftIO $ newIORef 0
+      occRef <- liftIO $ newIORef Nothing
+      let checkNotReleased = checkRecordNotReleased "fan" weakMaybeFanSubscribed ((== subscribersRef) . fanSubscribedSubscribers)
+      SubscribeResult parentSub parentOcc <-
+        subscribeAndRead p
+          $ debugSubscriber ("SubscriberFan " <> showNodeId' nodeId)
+          $ Subscriber
+            { subscriberPropagate = \a ->
+                {-# SCC "traverseFan" #-}
+                do
+                  liftIO checkNotReleased
+                  subs <- liftIO $ readIORef subscribersRef
+                  tracePropagate (Proxy :: Proxy x) $ show (mapSize subs) <> " keys subscribed, " <> show (mapSize a) <> " keys firing"
+                  setOccurrence "fan" occRef a
+                  mapForIntersection_ subs a $ \(FanSubscribers s) v ->
+                    withIncreasedDepth (Proxy :: Proxy x) $ WeakBag.traverseWeakIntMap_ s $ \c -> subscriberPropagate c v
+            , subscriberInvalidateHeight = \old -> do
+                checkNotReleased
+                subs <- readIORef subscribersRef
+                mapFor_ subs $ \(FanSubscribers s) ->
+                  WeakBag.traverseWeakIntMap_ s $ \c -> subscriberInvalidateHeight c old
+            , subscriberRecalculateHeight = \new -> do
+                checkNotReleased
+                subs <- readIORef subscribersRef
+                mapFor_ subs $ \(FanSubscribers s) ->
+                  WeakBag.traverseWeakIntMap_ s $ \c -> subscriberRecalculateHeight c new
+            }
+      for_ parentOcc $ setOccurrence "fan" occRef
+      pure $!
+        FanSubscribed
+          { fanSubscribedSubscribers = subscribersRef
+          , fanSubscribedNextId = nextIdRef
+          , fanSubscribedOccurrence = occRef
+          , fanSubscribedParent = parentSub
+          , fanSubscribedNodeId = nodeId
+          }
 
 eventHold :: Hold x p -> Event x p
 eventHold !h = Event $ subscribeHoldEvent h
@@ -830,7 +860,9 @@ walkInvalidHeightParents s0 = do
 
 {-# INLINE subscribeHoldEvent #-}
 subscribeHoldEvent :: Hold x p -> Subscriber x p -> EventM x (SubscribeResult x p)
-subscribeHoldEvent = subscribeAndRead . holdEvent
+subscribeHoldEvent h subscriber = do
+  HoldLive e _ _ <- liftIO $ readIORef $ holdState h
+  subscribeAndRead e subscriber
 
 --------------------------------------------------------------------------------
 -- Behavior
@@ -885,7 +917,8 @@ behaviorDyn !d = Behavior $ readHoldTracked =<< getDynHold d
 readHoldTracked :: Hold x p -> BehaviorM x (PatchTarget p)
 readHoldTracked h = do
   result <- liftIO $ readIORef $ holdValue h
-  trackRead (holdInvalidators h) $ BehaviorSubscribedHold h
+  HoldLive _ invalidators _ <- liftIO $ readIORef $ holdState h
+  trackRead invalidators $ BehaviorSubscribedHold h
   liftIO $ touch h -- Otherwise, if this gets inlined enough, the hold's parent reference may get collected
   return result
 
@@ -952,7 +985,7 @@ type DynamicS x p = Dynamic x (PatchTarget p) p
 
 data Dynamic x target p = Dynamic
   { dynamicCurrent :: !(Behavior x target)
-  , dynamicUpdated :: Event x p -- This must be lazy; see the comment on holdEvent --TODO: Would this let us eliminate `Dyn`?
+  , dynamicUpdated :: Event x p -- This must be lazy; see the comment on HoldState --TODO: Would this let us eliminate `Dyn`?
   }
 
 deriving instance HasSpiderTimeline x => Functor (Dynamic x target)
@@ -985,11 +1018,15 @@ dynamicDyn !d =
 data Hold x p
   = Hold
   { holdValue :: !(IORef (PatchTarget p))
-  , holdInvalidators :: !(IORef (InvalidatorList x))
-  , holdEvent :: Event x p -- This must be lazy, or holds cannot be defined before their input Events
-  , holdParent :: !(IORef (Maybe (EventSubscription x))) -- Keeps its parent alive (will be undefined until the hold is initialized) --TODO: Probably shouldn't be an IORef
+  , holdState :: !(IORef (HoldState x p))
   , holdNodeId :: {-# UNPACK #-} !NodeId
   }
+
+data HoldState x p
+  = -- | The subscription to the event is Nothing until the hold's init runs.
+    -- The event field must stay lazy, or holds cannot be defined before their
+    -- input events.
+    HoldLive (Event x p) !(IORef (InvalidatorList x)) !(Maybe (EventSubscription x))
 
 -- | A statically allocated 'SpiderTimeline'
 data Global
@@ -1140,14 +1177,12 @@ hold :: (Patch p, Defer (SomeHoldInit x) m) => PatchTarget p -> Event x p -> m (
 hold v0 e = do
   valRef <- liftIO $ newIORef v0
   invsRef <- liftIO $ newIORef emptyInvalidatorList
-  parentRef <- liftIO $ newIORef Nothing
+  stateRef <- liftIO $ newIORef $ HoldLive e invsRef Nothing
   nodeId <- liftIO newNodeId
   let h =
         Hold
           { holdValue = valRef
-          , holdInvalidators = invsRef
-          , holdEvent = e
-          , holdParent = parentRef
+          , holdState = stateRef
           , holdNodeId = nodeId
           }
   defer $ SomeHoldInit h
@@ -1312,23 +1347,23 @@ data SwitchSubscribed x a
   { switchSubscribedNode :: {-# NOUNPACK #-} !(EventNode x)
   , switchSubscribedSubscriber :: !(Subscriber x a)
   , switchSubscribedOwnInvalidator :: !(IORef (Invalidator x))
-  , switchSubscribedBehaviorParents :: !(IORef [SomeBehaviorSubscribed x])
-  , switchSubscribedParent :: !(Behavior x (Event x a))
-  , switchSubscribedCurrentParent :: !(IORef (SwitchParentSubscription x))
+  , switchSubscribedState :: !(IORef (SwitchState x a))
   , switchSubscribedNodeId :: {-# UNPACK #-} !NodeId
   }
 
 switchSubscribedHeight :: SwitchSubscribed x a -> IORef Height
 switchSubscribedHeight = eventNodeHeightRef . switchSubscribedNode
 
-data SwitchParentSubscription x
-  = SwitchParentSubscribed !(EventSubscription x)
+data SwitchState x a
+  = SwitchLive !(Behavior x (Event x a)) !(IORef [SomeBehaviorSubscribed x]) !(Weak (Invalidator x)) !(EventSubscription x)
   | SwitchParentUnsubscribed
+
 data CoincidenceSubscribed x a
   = CoincidenceSubscribed
   { coincidenceSubscribedNode :: {-# NOUNPACK #-} !(EventNode x)
   , coincidenceSubscribedSubscriber :: !(Subscriber x a)
-  , coincidenceSubscribedOuterParent :: !(IORef (EventSubscription x))
+  , coincidenceSubscribedOuterParent :: !(IORef (Maybe (EventSubscription x)))
+  -- ^ Nothing once unsubscribed.
   , coincidenceSubscribedInnerParent :: !(IORef (Maybe (EventNode x)))
   , coincidenceSubscribedNodeId :: {-# UNPACK #-} !NodeId
   }
@@ -1483,18 +1518,18 @@ switchUncached = switchUncachedImpl
 {-# INLINE switchUncachedImpl #-}
 switchUncachedImpl :: forall x a. HasSpiderTimeline x => Behavior x (Event x a) -> Event x a
 switchUncachedImpl b = Event $ \sub -> do
-  currentParentRef <- liftIO $ newIORef $ error "switchUncached: current parent not yet subscribed"
+  stateRef <- liftIO $ newIORef $ error "switchUncached: current parent not yet subscribed"
   node <-
     mkEventNode
       (error "switchUncached: height not yet known")
-      ( readIORef currentParentRef >>= \case
-          SwitchParentSubscribed parent -> pure [_eventSubscription_node parent]
+      ( readIORef stateRef >>= \case
+          SwitchLive _ _ _ parent -> pure [_eventSubscription_node parent]
           SwitchParentUnsubscribed -> pure []
       )
-      (whoCreatedIORef currentParentRef)
+      (whoCreatedIORef stateRef)
   let heightRef = eventNodeHeightRef node
   invalidatorRef <- liftIO $ newIORef $ error "switchUncached: invalidator not yet created"
-  parentsRef <- liftIO $ newIORef [] -- TODO: This should be unnecessary, because it will always be filled with just the single parent behavior
+  readSetRef <- liftIO $ newIORef [] -- TODO: This should be unnecessary, because it will always be filled with just the single parent behavior
   nid <- liftIO newNodeId
   let !subscribed =
         SwitchSubscribed
@@ -1503,25 +1538,25 @@ switchUncachedImpl b = Event $ \sub -> do
               debugSubscriber ("SubscriberSwitch" <> showNodeId subscribed) $
                 ownHeightSubscriber heightRef (subscriberInvalidateHeight sub) (subscriberRecalculateHeight sub) (subscriberPropagate sub)
           , switchSubscribedOwnInvalidator = invalidatorRef
-          , switchSubscribedBehaviorParents = parentsRef
-          , switchSubscribedParent = b
-          , switchSubscribedCurrentParent = currentParentRef
+          , switchSubscribedState = stateRef
           , switchSubscribedNodeId = nid
           }
   liftIO $ writeIORef invalidatorRef =<< newInvalidatorSwitch subscribed
   holdInits <- getDeferralQueue
   SubscribeResult subscription parentOcc <- liftIO $
-    subscribeSwitchCurrentParent subscribed holdInits $
+    subscribeSwitchCurrentParent subscribed b readSetRef holdInits $
       \parent subscriber -> runEventM $ subscribeAndRead parent subscriber
   liftIO $ writeIORef heightRef =<< eventSubscriptionHeight subscription
   pure $
     SubscribeResult
       ( EventSubscription
           { _eventSubscription_unsubscribe = do
-              readIORef currentParentRef >>= \case
-                SwitchParentSubscribed parent -> unsubscribe parent
+              readIORef stateRef >>= \case
+                SwitchLive _ _ weakInvalidator parent -> do
+                  unsubscribe parent
+                  finalize weakInvalidator
                 SwitchParentUnsubscribed -> pure ()
-              writeIORef currentParentRef SwitchParentUnsubscribed
+              writeIORef stateRef SwitchParentUnsubscribed
           , _eventSubscription_retained = toAny subscribed
           , _eventSubscription_node = node
           }
@@ -1531,17 +1566,19 @@ switchUncachedImpl b = Event $ \sub -> do
 {-# INLINE subscribeSwitchCurrentParent #-}
 subscribeSwitchCurrentParent
   :: SwitchSubscribed x a
+  -> Behavior x (Event x a)
+  -> IORef [SomeBehaviorSubscribed x]
   -> IORef [SomeHoldInit x]
   -> (Event x a -> Subscriber x a -> IO (SubscribeResult x a))
   -> IO (SubscribeResult x a)
-subscribeSwitchCurrentParent subscribed holdInits subscribeToParent = do
+subscribeSwitchCurrentParent subscribed parentBehavior readSetRef holdInits subscribeToParent = do
   i <- readIORef $ switchSubscribedOwnInvalidator subscribed
   wi <- mkWeakPtrWithDebug i "InvalidatorSwitch"
   e <-
-    runBehaviorM (readBehaviorTracked (switchSubscribedParent subscribed)) $
-      BehaviorEnv (Just wi) (Just $ switchSubscribedBehaviorParents subscribed) holdInits
+    runBehaviorM (readBehaviorTracked parentBehavior) $
+      BehaviorEnv (Just wi) (Just readSetRef) holdInits
   result <- subscribeToParent e $ switchSubscribedSubscriber subscribed
-  writeIORef (switchSubscribedCurrentParent subscribed) $! SwitchParentSubscribed $ subscribeSubscription result
+  writeIORef (switchSubscribedState subscribed) $! SwitchLive parentBehavior readSetRef wi $ subscribeSubscription result
   pure result
 
 -- The inner events on coincidence have the type of the Reflex instance, so that
@@ -1566,9 +1603,9 @@ coincidenceUncachedImpl outer = Event $ \sub -> do
     mkEventNode
       (error "coincidenceUncached: height not yet known")
       ( do
-          outerParent <- _eventSubscription_node <$> readIORef outerParentRef
+          outerParents <- maybeToList . fmap _eventSubscription_node <$> readIORef outerParentRef
           innerParents <- maybeToList <$> readIORef innerParentRef
-          pure $ outerParent : innerParents
+          pure $ outerParents <> innerParents
       )
       (whoCreatedIORef outerParentRef)
   let heightRef = eventNodeHeightRef node
@@ -1582,7 +1619,7 @@ coincidenceUncachedImpl outer = Event $ \sub -> do
           , coincidenceSubscribedNodeId = nid
           }
   SubscribeResult outerSubscription outerOcc <- subscribeAndRead outer $ coerce $ newSubscriberCoincidenceOuter subscribed
-  liftIO $ writeIORef outerParentRef outerSubscription
+  liftIO $ writeIORef outerParentRef $ Just outerSubscription
   outerHeight <- liftIO $ eventSubscriptionHeight outerSubscription
   (occ, height, mInnerSubd) <- case outerOcc of
     Nothing -> return (Nothing, outerHeight, Nothing)
@@ -1595,7 +1632,13 @@ coincidenceUncachedImpl outer = Event $ \sub -> do
   pure $
     SubscribeResult
       ( EventSubscription
-          { _eventSubscription_unsubscribe = unsubscribe =<< readIORef outerParentRef
+          { _eventSubscription_unsubscribe =
+              readIORef outerParentRef >>= \case
+                Just subscription -> do
+                  unsubscribe subscription
+                  writeIORef outerParentRef Nothing
+                -- A subscription is unsubscribed at most once.
+                Nothing -> error "coincidence: unsubscribe from an unsubscribed coincidence"
           , _eventSubscription_retained = toAny subscribed
           , _eventSubscription_node = node
           }
@@ -1795,6 +1838,8 @@ throwEventLoopException _ = throwIO EventLoopException
 
 -- | 'CoincidenceSubscribed' is present only when the coincidence raised its height while subscribing to the inner event.
 data SomeResetCoincidence x = forall a. SomeResetCoincidence !(EventSubscription x) !(Maybe (CoincidenceSubscribed x a))
+
+data SomeRaisedCoincidence x = forall a. SomeRaisedCoincidence (CoincidenceSubscribed x a)
 
 newtype SomeRecalculateHeight x = SomeRecalculateHeight (IO ())
 
@@ -2083,7 +2128,16 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
         -- TODO: Assert that vals is not empty
         subscriberPropagate sub vals
 
-      invalidateMyHeight = invalidateOwnHeight heightRef (subscriberInvalidateHeight sub)
+      invalidateMyHeight = do
+        checkNotUnsubscribed "the height of an unsubscribed merge changes"
+        invalidateOwnHeight heightRef (subscriberInvalidateHeight sub)
+
+      -- An unsubscribed merge never changes its height.
+      checkNotUnsubscribed debugNote =
+        when debugFrame $
+          readIORef changeSubdRef >>= \case
+            MergeChangeUnsubscribed -> error $ "merge: " <> debugNote
+            _ -> pure ()
 
       checkParentCount :: IO ()
       checkParentCount = do
@@ -2094,18 +2148,24 @@ genericMergeCheap getParent getInitialSubscribers updateFunc d = Event $ \sub ->
           $ "merge: " <> show (mapSize parents) <> " parents, but the height bag has " <> show (heightBagParentCount heights)
 
       recalculateMyHeight = recalculateOwnHeight heightRef (subscriberRecalculateHeight sub) $ do
+        checkNotUnsubscribed "an unsubscribed merge recalculates its height"
         when debugEnabled checkParentCount
         heightBagHeight <$> readIORef heightBagRef
 
-      invalidateMyHeightOnParentChange = do
-        own <- readIORef heightRef
-        case own of
-          ValidHeight -> do
-            heights <- readIORef heightBagRef
-            case heightBagHeight heights of
-              new@ValidHeight | compareHeight own new == EQ -> pure ()
-              _ -> invalidateMyHeight
-          InvalidHeight -> pure ()
+      invalidateMyHeightOnParentChange =
+        readIORef changeSubdRef >>= \case
+          -- runFrame runs the frame's unsubscriptions before this, so the
+          -- merge may already be unsubscribed. Then it keeps its height.
+          MergeChangeUnsubscribed -> pure ()
+          _ -> do
+            own <- readIORef heightRef
+            case own of
+              ValidHeight -> do
+                heights <- readIORef heightBagRef
+                case heightBagHeight heights of
+                  new@ValidHeight | compareHeight own new == EQ -> pure ()
+                  _ -> invalidateMyHeight
+              InvalidHeight -> pure ()
 
       {-# INLINE parentSubscriber #-}
       parentSubscriber :: forall a. EventM x (MapKey map a) -> Subscriber x (v a)
@@ -2264,19 +2324,17 @@ runHoldInits holdInitRef dynInitRef mergeInitRef = do
 
 initHold :: forall x. HasSpiderTimeline x => SomeHoldInit x -> EventM x ()
 initHold (SomeHoldInit h) = do
-  liftIO (readIORef $ holdParent h) >>= \case
-    Just _ -> pure ()
-    Nothing -> do
-      -- Need to evaluate these so that we don't retain the Hold itself
+  liftIO (readIORef $ holdState h) >>= \case
+    HoldLive e invalidators Nothing -> do
+      -- Need to evaluate this so that we don't retain the Hold itself
       valueRef <- liftIO $ evaluate $ holdValue h
-      invalidators <- liftIO $ evaluate $ holdInvalidators h
       let applyPatch patch = do
             old <- {-# SCC "read" #-} liftIO $ readIORef valueRef
             for_ ({-# SCC "apply" #-} apply patch old) $ \new -> do
               withIncreasedDepth (Proxy :: Proxy x) $
                 tracePropagate (Proxy :: Proxy x) ("initHold: assigning Hold" <> showNodeId h)
               defer $ {-# SCC "assignment" #-} SomeAssignment valueRef invalidators new
-      SubscribeResult subscription occ <- subscribeAndRead (holdEvent h) $ terminalSubscriber $ \a ->
+      SubscribeResult subscription occ <- subscribeAndRead e $ terminalSubscriber $ \a ->
         {-# SCC "traverseHold" #-}
         do
           when debugPropagate $ traceM (Proxy :: Proxy x) $ liftIO $ do
@@ -2284,7 +2342,8 @@ initHold (SomeHoldInit h) = do
             return $ "SubscriberHold" <> showNodeId h <> ": " <> show n
           applyPatch a
       for_ occ applyPatch
-      liftIO $ writeIORef (holdParent h) $ Just subscription
+      liftIO $ writeIORef (holdState h) $ HoldLive e invalidators $ Just subscription
+    _ -> pure ()
 
 initDyn :: HasSpiderTimeline x => SomeDynInit x -> EventM x ()
 initDyn (SomeDynInit d) = void $ getDynHold d
@@ -2359,19 +2418,28 @@ runFrame a = SpiderHost $ do
   clearEventEnv env
   switchSubscriptionsToKill <- fmap catMaybes . forM toReconnect $ \(SomeSwitchSubscribed subscribed) ->
     {-# SCC "switchSubscribed" #-}
-    readIORef (switchSubscribedCurrentParent subscribed) >>= \case
-      SwitchParentUnsubscribed -> pure Nothing
-      SwitchParentSubscribed oldSubscription -> do
-        writeIORef (switchSubscribedBehaviorParents subscribed) []
-        _ <- subscribeSwitchCurrentParent subscribed (eventEnvHoldInits env) subscribeReconnect
+    readIORef (switchSubscribedState subscribed) >>= \case
+      SwitchLive behavior readSetRef _ oldSubscription -> do
+        writeIORef readSetRef []
+        _ <- subscribeSwitchCurrentParent subscribed behavior readSetRef (eventEnvHoldInits env) subscribeReconnect
         return $ Just oldSubscription
+      -- Can't happen: unsubscribing finalizes the switch's weak invalidator,
+      -- and nothing unsubscribes a switch between the assignments and here.
+      SwitchParentUnsubscribed -> error "runFrame: an unsubscribed switch was invalidated"
   liftIO $ mapM_ unsubscribe mergeSubscriptionsToKill
   liftIO $ mapM_ unsubscribe switchSubscriptionsToKill
+  let unsubscribeInner raised [] = pure raised
+      unsubscribeInner raised (SomeResetCoincidence innerSubscription raisedCoincidence : rest) = do
+        unsubscribe innerSubscription
+        case raisedCoincidence of
+          Nothing -> unsubscribeInner raised rest
+          Just subscribed -> unsubscribeInner (SomeRaisedCoincidence subscribed : raised) rest
+  raisedCoincidences <- unsubscribeInner [] coincidenceInfos
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) ->
     {-# SCC "switchSubscribed" #-}
-    readIORef (switchSubscribedCurrentParent subscribed) >>= \case
+    readIORef (switchSubscribedState subscribed) >>= \case
       SwitchParentUnsubscribed -> pure ()
-      SwitchParentSubscribed parent -> do
+      SwitchLive _ _ _ parent -> do
         parentHeight <- eventSubscriptionHeight parent
         myHeight <- readIORef $ switchSubscribedHeight subscribed
         case myHeight of
@@ -2383,15 +2451,18 @@ runFrame a = SpiderHost $ do
             when heightChanged $
               subscriberInvalidateHeight (switchSubscribedSubscriber subscribed) myHeight
   mapM_ _someMergeUpdate_invalidateHeight mergeUpdates
-  forM_ coincidenceInfos $ \(SomeResetCoincidence subscription mInvalidate) -> do
-    unsubscribe subscription
-    mapM_ invalidateCoincidenceHeight mInvalidate
+  -- Raised coincidences go back to the height of their outer parent.
+  forM_ raisedCoincidences $ \(SomeRaisedCoincidence subscribed) ->
+    readIORef (coincidenceSubscribedOuterParent subscribed) >>= \case
+      Just _ -> invalidateCoincidenceHeight subscribed
+      -- Unsubscribed in this frame: it keeps its height.
+      Nothing -> pure ()
   runPendingRecalculations env
   mapM_ _someMergeUpdate_recalculateHeight mergeUpdates
   forM_ toReconnect $ \(SomeSwitchSubscribed subscribed) ->
-    readIORef (switchSubscribedCurrentParent subscribed) >>= \case
+    readIORef (switchSubscribedState subscribed) >>= \case
       SwitchParentUnsubscribed -> pure ()
-      SwitchParentSubscribed parent ->
+      SwitchLive _ _ _ parent ->
         subscriberRecalculateHeight (switchSubscribedSubscriber subscribed) =<< eventSubscriptionHeight parent
   when debugFrame $ do
     leftover <- readIORef $ eventEnvPendingRecalculations env
@@ -2507,7 +2578,11 @@ recalculateCoincidenceHeight subscribed =
 
 calculateCoincidenceHeight :: CoincidenceSubscribed x a -> IO Height
 calculateCoincidenceHeight subscribed = do
-  outerHeight <- eventSubscriptionHeight =<< readIORef (coincidenceSubscribedOuterParent subscribed)
+  outerHeight <-
+    readIORef (coincidenceSubscribedOuterParent subscribed) >>= \case
+      Just outerSubscription -> eventSubscriptionHeight outerSubscription
+      -- Can't happen: runFrame skips unsubscribed coincidences.
+      Nothing -> error "coincidence: the height of an unsubscribed coincidence changes"
   innerHeight <- maybe (return zeroHeight) getEventNodeHeight =<< readIORef (coincidenceSubscribedInnerParent subscribed)
   pure $ coincidenceHeight outerHeight innerHeight
 
