@@ -16,7 +16,8 @@ The goal of this release is to bring hosts closer to Reflex's denotational model
 
 ### Deprecations
 
-* The `PostBuild` class is deprecated. Use the denotative `now` of `MonadHold` instead ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* The `PostBuild` class is deprecated. Use `now` of `MonadHold` instead ([#547](https://github.com/reflex-frp/reflex/pull/547)).
+* The legacy `NotReady` class is deprecated and removed as a constraint from library functions. It is an artifact from early reflex development and no longer has a purpose.
 
 ### Fixes
 
